@@ -461,6 +461,47 @@ R9. RUNLOG.md: one line per event — time, ticket, model, event (DISPATCHED / R
 R10. If you are interrupted, the next orchestrator resumes from the first ticket in §10.2 that has no
      MERGED-GREEN or PARKED line in RUNLOG.md.
 
+### 10.1A Operational amendments (owner-authorised 2026-11-16, after the T-070 dispatch)
+
+These fix defects of this plan that the first ticket exposed. Where one contradicts R1 to R10, it wins.
+
+R11. WORKTREES, AND PARALLEL STAYS PARALLEL. Every worker is dispatched with worktree isolation and
+     works ONLY in its own working directory. This replaces "+ the repository path" in R3: a brief
+     never names the main checkout as the place to work (T-070's brief did, so the worker left its
+     worktree idle and edited the main checkout). Every brief says instead, verbatim: "Your current
+     working directory is your own checkout of the repository. Work only there. Do not cd to any other
+     copy of the repository. Commit there, on the branch you are already on; do not create or switch
+     branches." The orchestrator merges whatever branch that worktree is on (it need not be named
+     t/<ticket id>) and writes the branch name in RUNLOG.md. Tickets that section 10.2 allows in
+     parallel run in parallel; they are not queued one by one into the main checkout. Between
+     dispatches the main checkout stays on `main` with no uncommitted tracked changes, and after each
+     dispatch the orchestrator confirms with `git worktree list` that the new worktree starts at the
+     current `main` commit.
+R12. THE ENGINE IN A WORKTREE. `tools/godot/` is gitignored, so a worktree has no engine and the
+     `tools\godot\godot.exe` of section 4 does not exist there. Every brief that runs Godot carries
+     the line: "Godot is NOT in your checkout. Use the absolute path <main checkout>	ools\godot\godot.exe
+     (quote it, the path has a space) wherever a command says tools\godot\godot.exe. Never download or
+     copy the engine. tools\gate.ps1 finds the engine by itself." That path is the only mention of the
+     main checkout a brief may contain.
+R13. A CUT-OFF TURN IS NOT A FAILURE. A worker turn that ends without a verdict (no response file, a
+     last message such as "retrying") was cut off, not failed. Send "Continue from where you stopped;
+     finish the remaining deliverables" to the SAME worker thread, up to 3 times, as long as each turn
+     adds to the diff. A failure under R2 is counted only when the worker says it is done and a check or
+     the gate is red, or when a continue adds nothing.
+R14. DECISION NUMBERS UNDER PARALLEL WORK. Two workers that each take "the next free D-number" produce
+     the same number twice. A worker therefore numbers a new DECISIONS.md entry with its ticket id:
+     `D-T012-1`, `D-T012-2` (this replaces any "numbered from D-0NN upward" in a ticket). Entries are
+     appended at the end of their section; when two branches append at the same place the orchestrator
+     keeps both, as for `core/stats.gd` in section 7.
+R15. NEW FILES. If a file-creation tool call stalls or fails, create the file from the shell instead
+     (heredoc, one file per call). Briefs for code tickets carry this line.
+R16. THE GATE EXISTS. `tools/gate.ps1` is in the repository (written ahead of T-001 so that R6 has a
+     gate from the first merge). T-001 keeps it and still owes everything else in its Do list;
+     `run_all.gd` must print `TESTS n passed m failed` (the gate reads that line) and must not try to
+     load `test_terrain_parity.gd`, which is a standalone script the gate runs as its own step.
+R17. STALE COUNT IN T-002. Its Done-when says "selftest 12/12"; the validator has had 15 planted
+     defects since generator version 3. Dispatch T-002 with the addendum "selftest 15/15 (not 12/12)".
+
 ### 10.2 MANDATORY — in this order; each one MERGED-GREEN or PARKED with a written reason
 
 Within a step, tickets on one line may run in parallel (inside R2); merge in the order listed.
