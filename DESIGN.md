@@ -54,22 +54,25 @@ else; a metric that is green while a row above is violated is a bug in the metri
 A level is complete **only** by entering the open beacon. No timer ends a level. Death ends the run.
 
 ### 3.1 Player state
-- **Void charges: 2.** The player holds 2 void charges and the HUD shows them as **2 pips** (filled =
-  held, hollow = spent). Charges are the second axis of the leave-or-linger decision: lingering risks
-  charges that leaving would restore.
+- **Void charges: 2.** A new run starts with **2** void charges and the HUD shows them as **2 pips**
+  (filled = held, hollow = spent). **Charges carry over between levels: there is no reset at a level
+  boundary** — the only ways to gain a charge are the beacon's restore (below) and the start of a new
+  run. Charges are the second axis of the leave-or-linger decision: lingering risks charges that
+  leaving would restore.
 - **Void fall** (below the kill plane): **−1 charge**; the player respawns on the last safe tile after
   0.8 s with 1.0 s of respawn invulnerability (enemy contact, tripmines and the nuke do not kill during
   it) and a chain reset. **A fall at 0 charges is a real death** (`D-VOID`) — no respawn, run over.
   Two charges therefore buy two falls; the third kills.
   - Safe tile = solid, not glitched floor (toucher-infected), not inside any hazard footprint (mine
-    blast radius, nuke ring, void zone, shockwave ring, telegraphed patch) at the moment of respawn;
-    re-validated against the current world state before teleporting.
+    blast radius, nuke ring, void zone, shockwave ring, telegraphed patch) at the moment of respawn,
+    and **at least 6 u from every enemy body and projectile**; re-validated against the current world
+    state before teleporting.
   - History = a ring of the last 8 round-trip-reachable tiles the player stood on for ≥ 0.5 s, held
     in simulation state (a pure function of the inputs — no extra synced state). Respawn takes the
     newest entry that passes re-validation; if none does, the player's spawn tile on the dais.
-- **Entering the beacon restores exactly 1 charge, capped at 2** (Hungry Void: cap 1). It also restores
-  the Subspacial Barrier shield (§8). Nothing else restores a charge; Field Dressing (§8) only makes
-  one fall per level free.
+- **Entering the beacon restores exactly 1 charge on entry, capped at 2** (Hungry Void: cap 1). It also
+  restores the Subspacial Barrier shield (§8). Nothing else restores a charge; Field Dressing (§8) only
+  makes one fall per level free.
 - **Last Light**: once per run, and ONLY while the player holds at least 1 void charge, a killing blow
   from an enemy, a tripmine or the nuke instead teleports the player to the beacon dais with the
   charges they had and 2.0 s of invulnerability. At 0 charges Last Light does nothing: every death at
@@ -116,7 +119,10 @@ the stipend + Paycheck.
 - Tell: black framed box, six-pointed star centre, constant pink particles (`#FF4FD8`), slow rotation
   (5-frame cycle, 1 rev / 4 s). Beyond **12 u** it shows the same rim glow as a black gift; inside
   12 u the particles and star are visible.
-- Contact (player within 0.9 u): blast radius 3 u, **kills**. Resolution order on contact:
+- **Contact** = the player's centre within **0.9 u** (horizontal distance) of the tripmine box, at
+  **any height** — jumping over a mine does NOT avoid contact. A tripmine is a wall on its tile: the
+  walkable bypass is the only way past it. A bypass is a walkable route that stays outside the mine's
+  0.9 u trigger cylinder. On contact: blast radius 3 u, **kills**. Resolution order on contact:
   1. **Defuse roll** (Defuse Kit, §8): `roll = mix(mix(run_seed, level), slot_id) mod 100`; if
      `roll < 20 × stacks` (cap 60) the mine is **defused** — it is consumed, there is no blast and no
      death, and the chain resets. With 0 stacks the roll can never pass.
@@ -126,6 +132,9 @@ the stipend + Paycheck.
      spent as the final save (teleport to the beacon dais); the mine is consumed.
   4. Otherwise the player is **killed** (`D-MINE`).
   The order is fixed: defuse roll, then Subspacial Barrier shield, then Last Light (D-053).
+  The generator guarantees that no mine sits on a tile without a walkable bypass (TERRAIN_SPEC §6.8,
+  validator check; the terrain decision for the tripmine bypass rule is D-026) — a mine can always be
+  walked around.
   The defuse roll is a pure function of `(run_seed, level, slot_id, stacks owned)` — all synced state,
   so every client computes the same outcome and a mine's fate is fixed for the whole level. `mix` is
   the terrain generator's mix function (TERRAIN_SPEC §3). Buying a stack re-rolls the level's mines
@@ -173,9 +182,41 @@ Behavior source rule (DECISIONS D-040): the behavior sentence in ENEMIES.md is t
 from nullscape.wiki where they fit that sentence (research/NULLSCAPE_PATTERNS.md §5), otherwise they
 are set here. Image references use number + exact filename as ENEMIES.md requires.
 
-Common spawn rule: enemies appear 6.0 s after level start, at the anchor of their preferred kind
-farthest-but-within 60 u of the player and never within 25 u. "Floats" = moves in a straight line
+Common spawn rule: enemies appear 6.0 s after level start (Early Bird: 2.0 s). The spawn tile is
+chosen by a fixed fallback order, evaluated on the simulation state at that tick:
+(a) the anchor of the enemy's preferred kind (table below);
+(b) if the level has no anchor of that kind: a `lane` anchor;
+(c) if no anchor qualifies: any round-trip-reachable tile at least 25 u from the spawn point.
+The existing constraints stay: never within 25 u of the player, and among the candidates that pass,
+the farthest-but-within 60 u of the player. The within-60 u preference is dropped at step (c) — a
+round-trip tile farther than 60 u is still a legal spawn when no anchor qualifies. Tie-break so two
+implementers pick the same tile: farthest from the player first, then the lowest anchor index (steps
+(a) and (b)) or the lowest tile index in the level's tile order (step (c)). The choice reads only
+simulation state — the player position, the level's anchor list and round-trip set, and the enemy's
+own seeded stream — so it is deterministic and identical on every client. The anchor kinds that exist
+are `perch`, `open`, `lane` and `nook` (D-056). "Floats" = moves in a straight line
 through geometry and over the void at the stated speed.
+
+Preferred anchor kind per enemy (this table is the spec; a paragraph that names a kind must agree):
+
+| enemy | preferred kind | note |
+|---|---|---|
+| kiwi cat | `nook` | |
+| coil | `lane` | stepped walkways and stair runs (§5.2) |
+| thicc ben | none | teleports to the player; its initial position is fallback (c) |
+| Isagi | `perch` | falls back per the order above (§5.4) |
+| nuke | none | a launcher, no body on the map |
+| YOU?! | `open` | |
+| gift Larper | none | it lives in gift slots (§3.3) |
+| toucher | `lane` | |
+| seal | `lane` | |
+| address me | none | appears 6 u in front of the player |
+| Claude | `open` | |
+| gin ichimaru | `perch` | his strike appearances keep his own 15–25 u rule (§5.12) |
+
+`none` means the enemy has no preferred anchor kind: it skips (a) and (b). Ben's initial position is
+fallback (c); the nuke has no body on the map; gift Larper lives in gift slots; address me appears in
+front of the player.
 
 | # | name (Nullscape) | min level | max votes | each vote adds |
 |---|---|---|---|---|
@@ -208,7 +249,7 @@ Landing on a player (within 1.2 u) = **kill**. Landing shockwave: radius 6 u, pu
 8 u/s, **does not kill**, locks class abilities for 2.0 s. A jump timed so the player is airborne at
 landing avoids the shockwave. 5-frame squash→extend cycle.
 *Pressure:* forces movement; the knockback is what kills (off ledges).
-*Terrain:* stepped walkways, ledges and stair runs (`hop` anchors) — anywhere a shove means the void.
+*Terrain:* stepped walkways, ledges and stair runs (`lane` anchors) — anywhere a shove means the void.
 
 ### 5.3 thicc ben — Image 3 = "thiccben.png"
 Every 13.35 s teleports to the closest player. Telegraph: black smoke at the destination for 1.25 s,
@@ -222,13 +263,19 @@ into the void or into another enemy. 1 PNG; teleport is VFX.
 launch slams you into the slab above.
 
 ### 5.4 Isagi — Image 4 = "isagi_idle.jpeg", Image 5 = "ISAGI_SHOOT.webp", Image 6 = "blueballprojectile.webp"
-Holds a `perch` or `lane` anchor; every 12 s relocates to the anchor of those kinds nearest the
-player with line of sight. With line of sight: wind-up 1.2 s (idle sprite flashes + voice cue) → burst
-of **3 balls** 0.15 s apart, 22 u/s, straight at the player's position at release, radius 0.5 u, life
-3.0 s, stopped by any tile or prop → cooldown 2.5 s. Ball hit = **kill**.
+Prefers `perch` anchors (spawn rule §5); every 12 s he relocates to the `perch` anchor nearest the
+player with line of sight, and falls back to `lane` only when no perch qualifies. With line of sight:
+wind-up 1.2 s (idle sprite flashes + voice cue) → burst of **3 balls** 0.15 s apart, 22 u/s, radius
+0.5 u, life 3.0 s, stopped by any tile or prop → cooldown 2.5 s. Ball hit = **kill**.
+**Ball flight:** each ball leaves from **1.0 u above Isagi's tile** and flies **straight in 3D** to the
+player's **centre at release** (centre = feet + 0.9 u); the line is fixed at release and never homes.
+Hit test: the ball's centre within **0.5 u** of the player's centre. A **jump** (centre rises up to
+2.25 u) or a **2 HU step** (1.0 u) therefore clears the line — the ball passes under the player; a
+1 HU step (0.5 u) does not.
 *Pressure:* denies open ground; turns the gold-phase sprint into cover-to-cover movement.
-*Terrain:* bastion platforms and spire tops (perches), nooks (their wall is his cover
-puzzle), props everywhere. Line of sight is why props exist.
+*Terrain:* bastion platforms and spire tops (perches) are his ground; nooks and `ell` corners break his
+line. Props are sparse (0–7 per level, all on platforms), so height and corners are the cover you can
+count on and a prop is a bonus.
 
 ### 5.5 nuke — Image 7 = "NUKE.jpeg"
 Loop: lock a player (ground ring follows them) and track 2.5 s with a beep rising 2 → 8 Hz → the ring
@@ -392,10 +439,10 @@ Severity: M = Mild, H = Harsh, B = Brutal. "st" = max stacks.
 | zoomies | Zoomies | kiwi cat | 3 | M | 2 | every 12 s each cat sprints at +60% speed for 3 s after a double meow | break line by height; it still cannot turn fast |
 | litter | The Litter | kiwi cat | 8 | H | 1 | each cat is followed by a kitten (60% size, 4.5 u/s, kills on contact) 6 u behind | kite them into a line, then cross |
 | overwound | Overwound | coil | 2 | M | 2 | coil idle time 3.0 → 2.0 s (then 1.5 s) | keep jumping at landings |
-| aftershock | Aftershock | coil | 9 | H | 1 | landing sends a second shockwave 0.5 s later, radius 9 u | double hop |
+| aftershock | Aftershock | coil | 9 | H | 1 | landing sends a second shockwave 0.5 s later, radius 9 u | double jump |
 | quarter_chimes | Quarter Chimes | thicc ben | 4 | M | 1 | ben's teleport interval 13.35 → 9 s | keep moving |
 | long_toll | The Long Toll | thicc ben | 10 | H | 1 | every ben teleport tolls twice: a second ben arrives at the same locked point 1.5 s after the first | air control is 100% — steer ≥ 4 u sideways during the launch |
-| egoist | Egoist | Isagi | 8 | H | 2 | +1 ball per burst per stack | longer cover hops — one ball kills |
+| egoist | Egoist | Isagi | 8 | H | 2 | +1 ball per burst per stack | longer cover runs — one ball kills |
 | direct_shot | Direct Shot | Isagi | 14 | B | 1 | balls ricochet once off tiles/props | break sightline entirely — a ricochet kills too, so don't hug cover |
 | second_strike | Second Strike | nuke | 6 | H | 1 | a second missile lands 1.0 s after the first on your new position | keep running after the first — the second kills too |
 | bunker_buster | Bunker Buster | nuke | 12 | B | 1 | explosions delete props within the blast for the rest of the level | fight in the open on purpose, save cover |
@@ -439,7 +486,7 @@ Severity: M = Mild, H = Harsh, B = Brutal. "st" = max stacks.
 | hasty | Hasty | 9 | B | 2 | every enemy telegraph is 15% shorter per stack | Early Warning |
 | crumbling | Crumbling | 10 | B | 1 | 1-wide walkway tiles fall 1.2 s after being stepped on and return after 5 s | keep moving; never returns to a soft-lock because they regrow |
 | leaky_purse | Leaky Purse | 4 | M | 1 | a void fall drops 5% of this level's earned gold (max 20 g per fall) | Stand Fast; Field Dressing |
-| cold_start | Cold Start | 3 | M | 1 | class ability starts each level on cooldown and recharges 25% slower (Athletic: −5% speed instead) | Quick Recovery |
+| cold_start | Cold Start | 3 | M | 1 | class ability starts each level on cooldown and recharges 25% slower (Athletic: coyote time −0.05 s instead) | Quick Recovery |
 
 ## 8. Upgrades (36 at launch) and the shop
 

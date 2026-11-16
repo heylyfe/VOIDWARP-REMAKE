@@ -66,7 +66,7 @@ BIG = 9999.0        # sentinel reported for unreachable-ish distances
 
 HARD_CHECKS = ("H2", "H3", "H4", "H5", "H6", "H7", "H8", "H9", "H10",
                "H11", "H12", "H13", "H14", "H16", "H17", "H18", "H19",
-               "H20", "H21", "H22")
+               "H20", "H21", "H22", "H23")
 HARNESS_CHECKS = ("H1",) + HARD_CHECKS + ("H15",)
 METRIC_NAMES = ("walkable", "playable_pct", "platforms", "walkways", "dead_ends",
                 "max_depth", "arms", "loops", "drops", "pads", "chokepoints",
@@ -354,6 +354,192 @@ def articulation_points(nodes, adj):
         if root_children > 1:
             aps.add(root)
     return aps
+
+
+# ---------------------------------------------------------------------------
+# tripmine bypass (TERRAIN_SPEC section 6.8): H23, and the D1/D2 denominators.
+# Brute force by construction: for a mine set M, remove the tiles and every
+# jump/drop/pad edge whose horizontal segment passes within 0.9 u of a mine
+# centre, then recompute the round-trip set from scratch.
+# ---------------------------------------------------------------------------
+
+MINE_SCALE = 10     # coordinates scaled by 10 so the 0.9 u test is integer-only
+MINE_R2 = 81        # 0.9 u squared, in scaled coordinates
+
+
+def seg_hits_mine(ax, az, bx, bz, mx, mz):
+    """True iff the segment between tile centres (ax,az)-(bx,bz) passes within 0.9 u of (mx,mz).
+    Clamp the projection parameter with integer dot products; compare 100*d^2 to 81*len^2 for an
+    interior foot and d^2 to 81 for a foot at either endpoint."""
+    px = MINE_SCALE * ax + 5
+    pz = MINE_SCALE * az + 5
+    qx = MINE_SCALE * bx + 5
+    qz = MINE_SCALE * bz + 5
+    tx = MINE_SCALE * mx + 5
+    tz = MINE_SCALE * mz + 5
+    vx = qx - px
+    vz = qz - pz
+    wx = tx - px
+    wz = tz - pz
+    len2 = vx * vx + vz * vz
+    dot = wx * vx + wz * vz
+    if dot <= 0:
+        return wx * wx + wz * wz <= MINE_R2
+    if dot >= len2:
+        ux = tx - qx
+        uz = tz - qz
+        return ux * ux + uz * uz <= MINE_R2
+    return (wx * wx + wz * wz) * len2 - dot * dot <= MINE_R2 * len2
+
+
+class MineJudge:
+    """Independent brute-force judge for the tripmine bypass rule (spec 6.8.2-6.8.4).
+
+    A slot tile m is ELIGIBLE iff the bypass graph B({m}) keeps every tile that was round-trip
+    reachable in the full graph (except m itself) round-trip reachable. The JOINT RULE is the same
+    statement for the level's whole mine set.
+    """
+
+    def __init__(self, base, adj, slot_tiles=None):
+        self.base = base
+        self.n = base["n"]
+        self.tiles = base["tiles"]
+        self.nb = neighbors(adj)
+        self.nb_rev = [[] for _ in range(self.n)]
+        for i in range(self.n):
+            for j in self.nb[i]:
+                self.nb_rev[j].append(i)
+        self.beacon = find_tile(base, 0, 0, 1)
+        self.slot_tiles = slot_tiles if slot_tiles is not None else []
+        # every out-edge, walk included: the cylinder test is applied to all of them, never assumed
+        self.out_edges = [[] for _ in range(self.n)]
+        for i in range(self.n):
+            for j in self.nb[i]:
+                self.out_edges[i].append(j)
+        # tile bucket by cell, so a slot only looks at the tiles an edge could start from
+        self.cell = {}
+        for i in range(self.n):
+            c = (self.tiles[i][0], self.tiles[i][1])
+            if c in self.cell:
+                self.cell[c].append(i)
+            else:
+                self.cell[c] = [i]
+        self._cross = {}
+        self._elig = {}
+        self._rt = None
+
+    def rt_full(self):
+        if self._rt is None:
+            f = bfs(self.nb, [self.beacon])
+            b = bfs(self.nb_rev, [self.beacon])
+            self._rt = [f[i] and b[i] for i in range(self.n)]
+        return self._rt
+
+    def cross(self, m):
+        """Every non-walk edge whose horizontal segment passes within 0.9 u of tile m's centre.
+        A jump is at most 6 cells long, so its source tile is within Chebyshev 9 of m."""
+        v = self._cross.get(m)
+        if v is not None:
+            return v
+        mx = self.tiles[m][0]
+        mz = self.tiles[m][1]
+        out = []
+        for ox in range(-9, 10):
+            for oz in range(-9, 10):
+                lst = self.cell.get((mx + ox, mz + oz))
+                if lst is None:
+                    continue
+                for i in lst:
+                    for j in self.out_edges[i]:
+                        if seg_hits_mine(self.tiles[i][0], self.tiles[i][1],
+                                         self.tiles[j][0], self.tiles[j][1], mx, mz):
+                            out.append((i, j))
+        self._cross[m] = out
+        return out
+
+    def _bfs(self, nb, blocked, blk):
+        seen = bytearray(self.n)
+        seen[self.beacon] = 1
+        q = [self.beacon]
+        h = 0
+        while h < len(q):
+            c = q[h]
+            h += 1
+            d = blk.get(c)
+            for j in nb[c]:
+                if seen[j] or blocked[j]:
+                    continue
+                if d is not None and j in d:
+                    continue
+                seen[j] = 1
+                q.append(j)
+        return seen
+
+    def keeps_rt(self, mines):
+        rt = self.rt_full()
+        blocked = bytearray(self.n)
+        blk_f = {}
+        blk_b = {}
+        for m in mines:
+            mx = self.tiles[m][0]
+            mz = self.tiles[m][1]
+            for ox in (-1, 0, 1):
+                for oz in (-1, 0, 1):
+                    lst = self.cell.get((mx + ox, mz + oz))
+                    if lst is None:
+                        continue
+                    for t in lst:
+                        dx = MINE_SCALE * (self.tiles[t][0] - mx)
+                        dz = MINE_SCALE * (self.tiles[t][1] - mz)
+                        if dx * dx + dz * dz <= MINE_R2:
+                            blocked[t] = 1
+            for (i, j) in self.cross(m):
+                d = blk_f.get(i)
+                if d is None:
+                    blk_f[i] = {j: 1}
+                else:
+                    d[j] = 1
+                d = blk_b.get(j)
+                if d is None:
+                    blk_b[j] = {i: 1}
+                else:
+                    d[i] = 1
+        # the beacon and every real gift slot must survive the cylinder: a gift inside it is
+        # uncollectable, so a mine may never create one
+        if blocked[self.beacon]:
+            return False
+        ms = {}
+        for m in mines:
+            ms[m] = 1
+        for t in self.slot_tiles:
+            if t not in ms and blocked[t]:
+                return False
+        need = sum(1 for i in range(self.n) if rt[i] and not blocked[i])
+        f = self._bfs(self.nb, blocked, blk_f)
+        cnt = 0
+        for i in range(self.n):
+            if rt[i] and not blocked[i] and f[i]:
+                cnt += 1
+        if cnt != need:
+            return False
+        b = self._bfs(self.nb_rev, blocked, blk_b)
+        cnt = 0
+        for i in range(self.n):
+            if rt[i] and not blocked[i] and b[i]:
+                cnt += 1
+        return cnt == need
+
+    def eligible(self, m):
+        v = self._elig.get(m)
+        if v is None:
+            v = self.keeps_rt([m])
+            self._elig[m] = v
+        return v
+
+
+def slot_tiles_of(L, base):
+    """Tile index of every gift slot, in slot-id order (-1 when the slot is not on a tile)."""
+    return [find_tile(base, g["x"], g["z"], g["y"]) for g in L["gifts"]]
 
 
 # ---------------------------------------------------------------------------
@@ -1000,6 +1186,37 @@ def check_level(L):
         fail(msg)
     N = shape_m["N"]
 
+    # ---- H23: no tripmine without a walkable bypass (spec 6.8) ----
+    mine_slots = [gi for gi, g in enumerate(gifts) if g["occ"]]
+    eligible_slots = 0
+    if S:
+        judge = MineJudge(base, adj, [t for t in gtile if t >= 0])
+        mine_tiles = []
+        bad23 = []
+        for gi in mine_slots:
+            t = gtile[gi]
+            if t < 0:
+                bad23.append((gi, "mine slot is not on an existing tile"))
+                continue
+            mine_tiles.append(t)
+            if not judge.eligible(t):
+                bad23.append((gi, "no walkable bypass: removing the mine's trigger cylinder (its "
+                                  "tile, every tile in its column, and every edge that crosses it) "
+                                  "disconnects a round-trip tile or swallows another gift"))
+        if mine_tiles and not bad23:
+            if not judge.keeps_rt(mine_tiles):
+                bad23.append((-1, "joint rule: the level's mine set seals off a round-trip tile"))
+        if bad23:
+            gi, why = bad23[0]
+            where = ("slot id=%d at (%d,%d,%d)" % (gi, gifts[gi]["x"], gifts[gi]["z"], gifts[gi]["y"])
+                     if gi >= 0 else "mine set")
+            fail("H23: %d bad mines (first %s: %s)" % (len(bad23), where, why))
+        # D1 denominator: the number of slots that can hold a mine at all
+        for gi in range(S):
+            t = gtile[gi]
+            if t >= 0 and judge.eligible(t):
+                eligible_slots += 1
+
     # ---- metrics ----
     chokepoints = 0
     pg = {}
@@ -1053,6 +1270,8 @@ def check_level(L):
     metrics["V"] = round(V, 4)
     metrics["K"] = round(K, 4)
     metrics["gift_density"] = round(gift_density, 4)
+    metrics["eligible_slots"] = eligible_slots
+    metrics["mines"] = mines
     metrics["first_gift"] = first_gift
     metrics["starve_p95"] = starve_p95
     metrics["starve_max"] = starve_max
@@ -1276,6 +1495,142 @@ def _defect_flush_junctions(L):
             tiles[i][2] = y
 
 
+def _defect_mine_no_bypass(L):
+    """H23: flip occ to 1 on a slot whose tile has no walkable bypass (a 1-wide walkway tile)."""
+    base = walk_layer(L)
+    adj = build_adj(L, base, VALIDATOR_GAP)
+    judge = MineJudge(base, adj, [t for t in slot_tiles_of(L, base) if t >= 0])
+    S = len(L["gifts"])
+    cap = S // 5
+    target = -1
+    for gi, g in enumerate(L["gifts"]):
+        t = find_tile(base, g["x"], g["z"], g["y"])
+        if t >= 0 and not judge.eligible(t):
+            target = gi
+            break
+    if target < 0:
+        raise RuntimeError("selftest defect: no ineligible slot in the level")
+    mines = sum(1 for g in L["gifts"] if g["occ"])
+    i = S - 1
+    while mines >= cap and i >= 0:
+        if L["gifts"][i]["occ"] and i != target:
+            L["gifts"][i]["occ"] = 0
+            mines -= 1
+        i -= 1
+    L["gifts"][target]["occ"] = 1
+
+
+def _defect_mine_cylinder_swallows_gift(L):
+    """H23 (cylinder rule): a mine whose trigger cylinder swallows another gift slot. Another tile in
+    the mine's column becomes a slot, so the gift there is uncollectable; the mine tile alone has a
+    fine bypass, so only the cylinder rule catches this."""
+    base = walk_layer(L)
+    adj = build_adj(L, base, VALIDATOR_GAP)
+    st = slot_tiles_of(L, base)
+    judge = MineJudge(base, adj, [t for t in st if t >= 0])
+    tiles = base["tiles"]
+    S = len(L["gifts"])
+    cap = S // 5
+    col = {}
+    for i in range(base["n"]):
+        col.setdefault((tiles[i][0], tiles[i][1]), []).append(i)
+    target = -1
+    above = -1
+    for gi in range(S):
+        t = st[gi]
+        if t < 0 or not judge.eligible(t):
+            continue
+        for u in col[(tiles[t][0], tiles[t][1])]:
+            if u != t:
+                target = gi
+                above = u
+                break
+        if target >= 0:
+            break
+    if target < 0:
+        raise RuntimeError("selftest defect: no eligible slot with another tile in its column")
+    mover = S - 1
+    while mover == target:
+        mover -= 1
+    L["gifts"][mover]["x"] = tiles[above][0]
+    L["gifts"][mover]["z"] = tiles[above][1]
+    L["gifts"][mover]["y"] = tiles[above][2]
+    mines = sum(1 for g in L["gifts"] if g["occ"])
+    i = S - 1
+    while mines >= cap and i >= 0:
+        if L["gifts"][i]["occ"] and i != target and i != mover:
+            L["gifts"][i]["occ"] = 0
+            mines -= 1
+        i -= 1
+    L["gifts"][target]["occ"] = 1
+    L["gifts"][mover]["occ"] = 1
+
+
+def _defect_two_mines_seal(L):
+    """H23 (joint rule): two mines side by side seal a 2-wide walkway. Each is eligible alone.
+    Gift slots are never 4-adjacent (placement keeps them 2 apart), so the defect moves the
+    highest-id slot onto the tile beside another slot before flipping both to occ = 1."""
+    base = walk_layer(L)
+    adj = build_adj(L, base, VALIDATOR_GAP)
+    judge = MineJudge(base, adj, [t for t in slot_tiles_of(L, base) if t >= 0])
+    tiles = base["tiles"]
+    S = len(L["gifts"])
+    cap = S // 5
+    rt = judge.rt_full()
+    slot_cols = set((g["x"], g["z"]) for g in L["gifts"])
+    padset = set((p[0], p[1], p[2]) for p in L["pads"])
+    prop_at = set((p[0], p[1], p[2]) for p in L["props"])
+    hub = -1
+    for p in L["pieces"]:
+        if p["role"] == 0:
+            hub = p["id"]
+            break
+    pair = None
+    for gi, g in enumerate(L["gifts"]):
+        t = find_tile(base, g["x"], g["z"], g["y"])
+        if t < 0 or not judge.eligible(t):
+            continue
+        for d in range(4):
+            u = find_tile(base, tiles[t][0] + DX[d], tiles[t][1] + DZ[d], tiles[t][2])
+            if u < 0 or not rt[u] or not base["walkable"][u]:
+                continue
+            tu = tiles[u]
+            if tu[3] != 0 or (tu[0], tu[1]) in slot_cols:
+                continue
+            if (tu[0], tu[1], tu[2]) in padset or (tu[0], tu[1], tu[2]) in prop_at:
+                continue
+            if tu[4] == hub and tu[2] == 1:
+                continue
+            if not judge.eligible(u):
+                continue
+            if not judge.keeps_rt([t, u]):
+                pair = (gi, u)
+                break
+        if pair is not None:
+            break
+    if pair is None:
+        raise RuntimeError("selftest defect: no adjacent slot pair breaks the joint rule")
+    gi, u = pair
+    # move the highest-id slot that is not `gi` onto tile u, then flip both to occ = 1
+    mover = S - 1
+    while mover == gi:
+        mover -= 1
+    tu = tiles[u]
+    L["gifts"][mover]["x"] = tu[0]
+    L["gifts"][mover]["z"] = tu[1]
+    L["gifts"][mover]["y"] = tu[2]
+    L["gifts"][mover]["piece"] = tu[4]
+    mines = sum(1 for g in L["gifts"] if g["occ"])
+    i = S - 1
+    while mines >= cap and i >= 0:
+        if L["gifts"][i]["occ"] and i not in (gi, mover):
+            L["gifts"][i]["occ"] = 0
+            mines -= 1
+        i -= 1
+    L["gifts"][gi]["occ"] = 1
+    L["gifts"][mover]["occ"] = 1
+
+
 def run_selftest():
     L = generate(5, 12)
     defects = (
@@ -1291,6 +1646,9 @@ def run_selftest():
         ("every path flattened", _defect_flat_paths, "H20"),
         ("every non-hub tile at one height", _defect_flat_level, "H21"),
         ("every platform flush with its path", _defect_flush_junctions, "H22"),
+        ("mine on a tile with no walkable bypass", _defect_mine_no_bypass, "H23"),
+        ("two mines sealing a 2-wide walkway", _defect_two_mines_seal, "H23"),
+        ("mine whose cylinder swallows another gift", _defect_mine_cylinder_swallows_gift, "H23"),
     )
     ok = 0
     for name, fn, hid in defects:
@@ -1398,6 +1756,7 @@ def _seed_worker(s):
             "fails": r["fails"], "metrics": r["metrics"],
             "slots": len(L["gifts"]),
             "mines": sum(1 for g in L["gifts"] if g["occ"]),
+            "eligible": r["metrics"]["eligible_slots"],
             "fp": footprints8(L),
             "recipe": recipe_key(L),
             "d6_share": d6_share}
@@ -1408,7 +1767,15 @@ def _d2_worker(args):
     L = generate(seed, level, 1, 999)
     S = len(L["gifts"])
     mines = sum(1 for g in L["gifts"] if g["occ"])
-    return {"seed": seed, "level": level, "slots": S, "mines": mines}
+    base = walk_layer(L)
+    adj = build_adj(L, base, VALIDATOR_GAP)
+    judge = MineJudge(base, adj, [t for t in slot_tiles_of(L, base) if t >= 0])
+    elig = 0
+    for g in L["gifts"]:
+        t = find_tile(base, g["x"], g["z"], g["y"])
+        if t >= 0 and judge.eligible(t):
+            elig += 1
+    return {"seed": seed, "level": level, "slots": S, "mines": mines, "eligible": elig}
 
 
 def _fmt(v):
@@ -1505,22 +1872,28 @@ def run_harness(a, b, jobs, out_path):
     # ---- D checks ----
     dist_records = []
 
-    # D1: mine curve
+    # D1: mine curve. GEN_VERSION 3 (D-026): the per-slot chance applies only to ELIGIBLE slots, so
+    # the denominator is the number of slots that can hold a mine (recomputed here by brute force).
     per_level = {}
     for r in results:
-        d = per_level.setdefault(r["level"], [0, 0])
+        d = per_level.setdefault(r["level"], [0, 0, 0])
         d[0] += r["mines"]
-        d[1] += r["slots"]
+        d[1] += r["eligible"]
+        d[2] += r["slots"]
     d1_bad = []
     d1_dev = 0.0
+    d1_rows = []
     for lvl in sorted(per_level):
         if lvl < 5:
             continue
-        m, s = per_level[lvl]
-        obs = (m / s) if s else 0.0
+        m, e, sl = per_level[lvl]
+        obs = (m / e) if e else 0.0
         exp = (15 + min(lvl, 25)) / 400.0
         dev = abs(obs - exp)
         d1_dev = max(d1_dev, dev)
+        d1_rows.append({"level": lvl, "mines": m, "eligible": e, "slots": sl,
+                        "obs": round(obs, 5), "exp": round(exp, 5),
+                        "obs_all_slots": round((m / sl) if sl else 0.0, 5)})
         if dev > 0.01:
             d1_bad.append((lvl, obs, exp))
     table_ok = (mine_chance_num(4) == 0 and mine_chance_num(5) == 20 and
@@ -1528,7 +1901,8 @@ def run_harness(a, b, jobs, out_path):
                 mine_chance_num(26) == 40 and mine_chance_num(99) == 40)
     rec = {"id": "D1", "passed": not d1_bad and table_ok,
            "measured": round(d1_dev, 5), "threshold": 0.01,
-           "detail": "max |obs-exp| over levels >= 5", "levels": []}
+           "detail": "max |mines/eligible - curve| over levels >= 5", "levels": [],
+           "rows": d1_rows}
     for lvl, obs, exp in d1_bad:
         rec["levels"].append({"level": lvl, "observed": round(obs, 5),
                               "expected": round(exp, 5)})
@@ -1536,7 +1910,8 @@ def run_harness(a, b, jobs, out_path):
     rec["table_ok"] = table_ok
     dist_records.append(rec)
 
-    # D2: mine cap under the curse
+    # D2: mine cap under the curse. GEN_VERSION 3 (D-026): the target is min(S // 5, eligible slots),
+    # because a slot with no walkable bypass can never hold a mine.
     d2_args = [(seed, lvl) for lvl in (5, 15, 30) for seed in range(1000, 1100)]
     d2_res = []
     if jobs > 1:
@@ -1545,12 +1920,15 @@ def run_harness(a, b, jobs, out_path):
             d2_res = pool.map(_d2_worker, d2_args, chunksize=max(1, len(d2_args) // (jobs * 4)))
     else:
         d2_res = [_d2_worker(x) for x in d2_args]
-    d2_bad = [r for r in d2_res if r["mines"] != r["slots"] // 5]
+    d2_bad = [r for r in d2_res
+              if r["mines"] != min(r["slots"] // 5, r["eligible"])]
     dist_records.append({"id": "D2", "passed": not d2_bad,
-                         "measured": "%d/%d at cap" % (len(d2_res) - len(d2_bad), len(d2_res)),
-                         "threshold": "all == S//5",
+                         "measured": "%d/%d at min(S//5, eligible)"
+                                     % (len(d2_res) - len(d2_bad), len(d2_res)),
+                         "threshold": "all == min(S//5, eligible)",
                          "seeds": [{"seed": r["seed"], "level": r["level"],
-                                    "mines": r["mines"], "cap": r["slots"] // 5}
+                                    "mines": r["mines"], "cap": r["slots"] // 5,
+                                    "eligible": r["eligible"]}
                                    for r in d2_bad[:20]]})
 
     # D3: distinct hashes

@@ -263,6 +263,128 @@ accepted as implemented:
 (c) The H22 boundary rule requires the height step at the junction itself, applied at both ends of
     every walkway. WHY: a step near the boundary is unmeasurable and illegible; the junction step is
     what makes entering a sub-area felt.
+### D-026 — FINAL — No tripmine without a walkable bypass (GEN_VERSION 3); anchor kind hop retired.
+
+DECISION (owner ruling 2026-11-16, preflight item 4, plus the TERRAIN_SPEC half of item 1; the
+cylinder addition is the lead's second ruling of the same day). A tripmine may only occupy a gift slot
+that has a walkable bypass, and a bypass is a WALKABLE route that also STAYS OUTSIDE the mine's 0.9 u
+trigger cylinder — not merely an alternative route. The rule is written into TERRAIN_SPEC
+§6.8.1–§6.8.5 and enforced by the new validator check H23:
+
+1. CONTACT. A mine's position is its slot's tile centre `(x + 0.5, z + 0.5)`. Contact = the player's
+   centre within **0.9 u horizontally** of that point, **at any height**. Jumping over a mine does not
+   avoid it. The mine's **trigger cylinder** is the vertical cylinder of radius 0.9 u around that
+   centre, unbounded in height.
+2. THE BYPASS GRAPH `B(M)`. The movement graph of TERRAIN_SPEC §5 (validator envelope) with (a) every
+   tile whose centre lies inside any mine's trigger cylinder removed — the mine tile itself **and
+   every other tile in the same column**, since a tile at a different `(x, z)` has its centre at least
+   1.0 u away — and (b) every edge removed whose straight horizontal segment from the source tile
+   centre to the target tile centre passes within 0.9 u of any mine centre. (b) applies to **every**
+   edge kind: walk, jump, drop and pad. A walk edge between two 4-adjacent tile centres is 1.0 u long
+   and its closest approach to a mine centre is 1.0 u unless an endpoint is in the mine's column, so
+   in practice the walk-edge test removes nothing that (a) has not already removed — it is still
+   computed, never assumed. Integer-only: coordinates ×10, `0.9² = 81`, `100·d² ≤ 81·len²` for an
+   interior foot, `d² ≤ 81` at an endpoint, and `dx² + dz² ≤ 81` for the tile test.
+3. ELIGIBLE SLOT. With `rt` = the round-trip set of the full graph and `C(M)` = the tiles rule 2(a)
+   removes, a slot tile `m` is eligible iff in `B({m})` every tile of `rt` not in `C({m})` is still
+   round-trip reachable, **and** `C({m})` contains no other slot tile and not the beacon tile — a gift
+   or the beacon inside the cylinder is uncollectable, so a mine may never create one.
+4. JOINT RULE. For the level's final mine set `M`, in `B(M)` every real gift slot (`occ = 0`) and the
+   beacon tile must still be round-trip reachable, and every round-trip tile not in `C(M)` must still
+   be round-trip reachable. Two mines may not seal a 2-wide walkway between them.
+5. ORDER OF OPERATIONS. One `range(400)` per slot in slot-id order (the stream never shifts, D-017); a
+   slot becomes a mine only if the roll passes AND the slot is eligible AND adding it keeps the joint
+   rule for the mines accepted so far. Then the cap `S // 5`, un-set from the highest slot id. Then
+   `extra_mines`: one draw per extra mine, indexing the ascending list of eligible, unbanned, non-mine
+   slots; a slot the joint rule rejects is banned for the rest of the phase. Then a final joint-rule
+   verification (safety net; it never fires). If `extra_mines` cannot be fully placed, fewer are placed
+   — the rule is never violated.
+6. HOP RETIRED. The anchor kind `hop` (`AN_HOP = 3`) is never emitted. The other ids are unchanged
+   (0 perch, 1 open, 2 lane, 4 nook); **3 is retired and reserved** and is not reused. The arm trait
+   `hop` is untouched — it is a different thing and it feeds the RNG. The dead `AN_HOP` constant is
+   removed from `voidgen.py` and `voidgen.gd`; it was never emitted, so no output changes.
+7. The output format is unchanged: no new field, no `elig` flag. The canonical text and every hash
+   change because GEN_VERSION is 3 and mine positions change.
+8. THE 0.1 u MARGIN (modelling assumption, binding for the controller ticket). The player's centre is
+   treated as travelling along the straight segment between two tile centres. Under that assumption a
+   player passing a mine on the **adjacent lane of a 2-wide walkway** keeps its centre exactly **1.0 u**
+   from the mine centre — a **0.1 u margin** outside the 0.9 u cylinder. That margin is the whole
+   reason a 2-wide walkway still has a bypass. A 1-wide walkway has no such lane: its only bypass is a
+   route that leaves the walkway, which is why the rule removes the mines that used to sit on them.
+
+WHY: walkways are now 1–2 cells wide (D-025) and a mine kills on contact within 0.9 u at any height,
+so a jump does not clear it. A mine on a 1-wide walkway is therefore a lethal wall across the only
+route — not a fake gift the player chooses not to touch. Measured on GEN_VERSION 2: 1.3 mines per
+level sat on 1-wide walkways at level 10 and 5.8 at level 30.
+
+METRIC DEFINITION CHANGES (D-033: rare, on record, may only tighten).
+D1 — mine curve. Before: observed `mines / slots` within ±1.0 pp of `(15 + min(L,25))/400`. After:
+observed `mines / ELIGIBLE slots`, same curve, same ±1.0 pp, with the validator recomputing
+eligibility by brute force. **This is a definition change that only tightens placement fairness**: the
+canon rule is a per-slot chance that must never exceed 1/10, and the chance now applies only to
+eligible slots, so measuring over all slots would under-report by the ineligible share (6.3% of slots
+at level 5, 13.6% at levels 26–30) and would hide an over-rate on the slots that can actually hold
+a mine. The eligible set is a subset of the slots, so the check is strictly tighter. Numbers on the
+5,000-seed sample: under the old denominator the new generator reads max deviation **1.78 pp at level
+26 (FAIL)**; under the new denominator **0.58 pp at level 26 (PASS)**. The old generator read 0.40 pp
+under the old denominator.
+D2 — curse cap. Before: `extra_mines = 999` gives `mines == S // 5` exactly. After: `mines ==
+min(S // 5, E)` where `E` is the number of eligible slots, both recomputed independently by the
+validator. `S // 5` is now unreachable when fewer than `S // 5` slots can hold a mine; the cap is
+still the binding limit whenever `E ≥ S // 5`, which is every level in the sample (`E` is 86–94% of
+`S`, `S // 5` is 20% of `S`). Measured 300/300.
+
+MEASURED (official harness, 5,000 seeds, levels 1–30, exit 0, after the last generator edit):
+H23 0/5000 (every mine eligible, joint rule holds on every level) · H1–H22 all 0/5000 · D1 max
+deviation 0.58 pp (limit 1.0) · D2 300/300 at `min(S//5, E)` · D3 5,000 distinct hashes · D4 p99
+0.394, 0 pairs ≥ 0.60 · D5 0 identical recipes · D6 1.79% (limit 10%) · D7 bucket means 80.5 < 151.6 <
+183.6 < 195.5 < 209.2 < 215.6 · D8 level-1 J mean 10.4 (limit 50), max 75.0 (limit 80) · D9 55 ms
+mean, 191 ms max (limit 250 / 2000). Gallery 16/16; selftest 15/15; GDScript parity 56/56 at 142 ms
+per level.
+
+MINE COUNT BAND THE PLAYER EXPERIENCES, GEN_VERSION 2 → 3 (5,000 seeds, mean/min/max mines per level
+per bucket; GEN_VERSION is part of the base hash, so every level is a different level, not a patched
+one — this is a distribution comparison):
+  bucket    v2 mean/min/max    v3 mean/min/max    change
+  1–5       0.55 / 0 / 8       0.52 / 0 / 8       −4.2%
+  6–10      3.93 / 0 / 13      3.51 / 0 / 10     −10.7%
+  11–15     6.10 / 0 / 14      5.36 / 0 / 14     −12.1%
+  16–20     9.09 / 2 / 19      7.71 / 1 / 16     −15.2%
+  21–25    12.12 / 3 / 26     10.34 / 2 / 21     −14.7%
+  26–30    15.06 / 3 / 31     12.61 / 2 / 27     −16.2%
+FLAG: no bucket's mean drops by more than 20% (worst −16.2% at 26–30) and no bucket's mean falls below
+1 mine at levels ≥ 5 (lowest is 3.51 at 6–10), so neither flag threshold is tripped. The per-level
+minimum does fall to 1 at 16–20 and 2 at 21–30, i.e. a late level can now carry only two mines; the
+maximum falls from 31 to 27. As a share of all slots the replacement fraction is 1.09% (1–5) → 8.52%
+(26–30), down from 1.14% → 10.17%.
+
+[CONTESTABLE] The 0.1 u margin. The owner's rule is implemented exactly as stated: the bypass lane of
+a 2-wide walkway keeps the player's centre 1.0 u from the mine centre, 0.1 u outside the 0.9 u
+cylinder. 0.1 u is thin — it is 10% of the contact radius and about 11 ms of running at RUN_SPEED 9 —
+and it depends on the controller keeping the player's centre on the tile-centre line. The alternative
+the lead named (require the bypass lane's centre to be ≥ 1.4 u away, i.e. radius 1.4 u) was measured
+on the same 5,000 seeds: it would remove a further 19–31% of the mines — 1–5 0.52 → 0.36 (−30.8%) ·
+6–10 3.51 → 2.63 (−25.1%) · 11–15 5.36 → 4.15 (−22.6%) · 16–20 7.71 → 6.12 (−20.6%) · 21–25 10.34 →
+8.40 (−18.8%) · 26–30 12.61 → 10.27 (−18.6%) — and it would bar mines from 2-wide walkways entirely,
+leaving some levels at 16–20 with zero mines. Not adopted: the rule is the owner's, and the thin margin
+is a controller constraint, not a terrain one.
+[CONTESTABLE] The joint rule is tested while mines are placed (step 5) instead of only at the end. The
+owner's wording was "then check the JOINT RULE; if it fails, un-set mines from the highest slot id
+downward until it holds". Implemented literally that collapses the count: a random roll-passing set
+can violate the rule in several independent places at once, and during GEN_VERSION 3 development a
+22-mine set at level 30 fell to 6 and a 19-mine set at level 15 fell to 2, which would fail D1 by a
+wide margin. Testing each addition keeps the count at the per-slot chance and the final set still
+satisfies the rule by construction; the literal repair survives as the safety net in step 5 and never
+fires. It is a tightening (it can only remove mines), but it is a judgment call the docs did not cover.
+[CONTESTABLE] The `extra_mines` ban list. A slot the joint rule rejects is banned for the rest of the
+phase rather than retried. This can only place fewer extra mines, never an invalid one, and D2 is
+300/300, so it costs nothing in the sample; a retry could in principle succeed if the tile that the
+rejection cut off later became a mine itself.
+[CONTESTABLE] The generator's eligibility test is exact but not the brute force: it caches one BFS
+pair per slot and finds crossing edges through a cell index (segments sampled at 2× resolution), while
+the validator recomputes everything by brute force over a 19×19 neighbourhood. The two agree on every
+level of the 5,000-seed sample (H23 0/5000), and the validator is the judge.
+
 ---
 
 ## B2. Game design (Stage 2)
@@ -483,6 +605,126 @@ document wins.
 WHY: a successor reading "the levelgen algorithm is the most valuable code in the repo" in the
 retrospective must not conclude it should be ported — this remake deliberately replaced it (D-010).
 
+### D-056 — FINAL — Enemy spawn anchors: a fixed fallback order, and `hop` is retired.
+DECISION (owner ruling, 2026-11-16): DESIGN.md §5's common spawn rule is a three-step fallback,
+evaluated on the simulation state at the spawn tick:
+(a) the anchor of the enemy's preferred kind; (b) if the level has no anchor of that kind, a `lane`
+anchor; (c) if no anchor qualifies, any round-trip-reachable tile at least 25 u from the spawn point.
+The existing constraints stay: 6.0 s after level start, never within 25 u of the player, and among the
+candidates that pass, the farthest-but-within 60 u of the player. The within-60 u preference is dropped
+at step (c). Tie-break: farthest from the player, then the lowest anchor index (a, b) or the lowest
+tile index (c). The choice reads only simulation state, so it is deterministic.
+Preferred kinds (DESIGN.md §5 table): kiwi cat `nook`; coil `lane`; thicc ben none (its initial
+position is fallback (c)); Isagi `perch`; nuke none (a launcher, no body); YOU?! `open`; gift Larper
+none (it lives in gift slots); toucher `lane`; seal `lane`; address me none (it appears in front of the
+player); Claude `open`; gin ichimaru `perch` (his strike appearances keep his own 15–25 u rule).
+`hop` is retired: the anchor kinds are `perch`, `open`, `lane`, `nook`. FLEET_PACK T-027's spawn
+summary now points at the fallback order instead of "anchor".
+WHY: measured on 100 seeds per level, `hop` is absent in 100% of levels (the shape contract removed the
+archetype that emitted it), `nook` is absent in 74% of level-1 layouts, `perch` in 72% and `open` in
+51%; only `lane` always exists. Without a fallback most enemies have no legal spawn tile, and a ticket
+that implements "the anchor of their preferred kind" would either crash or invent a rule. The order
+keeps the flavour (a cat in a dead end, a seal on a straight run) while guaranteeing a tile, and (c)
+is the only step that can always succeed because every level has round-trip tiles.
+
+### D-057 — FINAL — Last Light is owned by T-012, and kill tests run with Last Light spent.
+DECISION (owner ruling, 2026-11-16): T-012 owns Last Light and `tests/test_last_light.gd`. The save:
+once per run, only while the player holds at least 1 void charge, a kill by an enemy, a tripmine or the
+nuke teleports the player to the beacon dais with the charges held and 2.0 s of invulnerability; it
+does not spend a charge; it never triggers at 0 charges; it never triggers on a void fall. Test cases:
+saves once at 2 charges and once at 1 charge; does nothing at 0 charges (the death is real); a void
+fall at 0 charges is `D-VOID` even with Last Light unspent; the second lethal hit after it is spent
+kills; HUD icon lit while armed, dim at 0 charges, grey once spent.
+T-027's `test_kill_api.gd`, A7, T-021's mine tests and the Wave 3 enemy ticket block state that kill
+tests run with Last Light already spent.
+WHY: DESIGN.md §3.1 gives Last Light a save that fires on any enemy, tripmine or nuke kill while a
+charge is held, but no ticket owned it and every kill assertion in the pack ("a body contact kills")
+would pass or fail depending on an unstated Last Light state — a test that cannot fail is not a test.
+One owner (T-012, the ticket that already owns charges, respawn and the safe tile) keeps the save and
+the charge rule in one place.
+
+### D-058 — FINAL — The tripmine ladder is four steps everywhere; contact is within 0.9 u of the box at any height.
+DECISION (owner ruling, 2026-11-16): DESIGN.md §3.3, FLEET_PACK A6 and T-053 carry the same four
+numbered steps verbatim — 1. defuse roll, 2. Subspacial Barrier shield, 3. Last Light, 4. otherwise
+killed `D-MINE` — plus the sentence "The order is fixed: defuse roll, then Subspacial Barrier shield,
+then Last Light (D-053)." Contact = the player's centre within 0.9 u (horizontal distance) of the
+tripmine box at ANY height; jumping over a mine does NOT avoid contact. A tripmine is a wall on its
+tile: the walkable bypass is the only way past it, and a bypass is a walkable route that stays outside
+the mine's 0.9 u trigger cylinder. T-021 and A6 mirror the contact sentence. DESIGN.md §3.3 also
+states that the generator guarantees no mine sits on a tile without a walkable bypass (TERRAIN_SPEC
+§6.8, validator check; the terrain decision for the tripmine bypass rule is D-026), so a mine can
+always be walked around; the generator rule and its validator check are the terrain worker's.
+WHY: T-053 and A6 still described a three-step ladder (defuse, shield, death) while DESIGN.md §3.3 and
+T-021 had four, so a worker reading A6 would have built a game where Last Light never saves a mine. The
+contact volume said "within 0.9 u" with no axis and no height, so "jump over it" was a legal reading —
+and a 0.9 u trigger on a 1 u wide walkway is a lethal wall unless the generator keeps a bypass.
+
+### D-059 — FINAL — The safe tile is also at least 6 u from every enemy body and projectile.
+DECISION (owner ruling, 2026-11-16): DESIGN.md §3.1's safe-tile definition and T-012's
+`test_charges.gd` add "at least 6 u from every enemy body and projectile". Test cases: an enemy parked
+on the newest ring tile → respawn uses the next valid ring entry; all 8 invalid → the dais spawn tile.
+WHY: the safe tile listed hazard footprints only. Enemy bodies are not footprints, and kiwi cat,
+toucher and YOU?! float straight at the player and converge on the spot they fell from, so a respawn on
+the newest ring tile could be a respawn into a body — an instant second death that the 1.0 s
+invulnerability only postpones. 6 u is roughly one second of travel for the fastest floating body
+(6.75 u/s) and inside the 8 u Crowded Dais radius, so it is a distance the player can see and the sim
+can check.
+
+### D-060 — FINAL — Acceptance criterion A3 is pinned.
+DECISION (owner ruling, 2026-11-16): A3 = kiwi cat present, the bot runs with `--dodge` on, Last Light
+available, 2 charges held, and the bot completes level 1 (all real black gifts → beacon) in at least 95
+of 100 seeds, median ≤ 120 s sim time. Measured by `bot_run.gd --seeds 0:100 --dodge --enemy
+kiwi_cat`. T-026's bot CLI gains `--seeds A:B`, `--dodge` and `--enemy <id>`, and every bot run starts
+with Last Light unspent and 2 charges held.
+WHY: A3 said "with the starter enemy present" while the starter pool holds four enemies, three of which
+kill on contact, and T-026 made `--dodge` optional — so the same criterion could be measured four ways
+with four different results. Pinning the enemy, the dodge flag, Last Light and the charges makes the
+number mean one thing. The threshold is unchanged.
+
+### D-061 — FINAL — Isagi's balls fly in 3D from 1.0 u above his tile to the player's centre at release; a jump or a 2 HU step clears them; he prefers `perch`.
+DECISION (owner ruling, 2026-11-16): DESIGN.md §5.4: each ball leaves 1.0 u above Isagi's tile and
+flies straight in 3D to the player's centre at release (centre = feet + 0.9 u); the line is fixed at
+release and never homes; hit test = the ball's centre within 0.5 u of the player's centre. A jump
+(centre rises up to 2.25 u) or a 2 HU step (1.0 u) clears the line; a 1 HU step (0.5 u) does not. He
+prefers `perch` anchors and falls back per the spawn rule. Every existing number is unchanged: wind-up
+1.2 s, 3 balls 0.15 s apart, 22 u/s, radius 0.5 u, life 3.0 s, cooldown 2.5 s, relocation every 12 s.
+The "props everywhere" claim is gone.
+WHY: the paragraph said "straight at the player's position at release" with no height, so an
+implementer could fire at the feet, at the centre or at the camera, and nothing said whether a jump
+dodges. The cover premise was also false: measured 3.3 props per level at level 1, 6.9 at level 12,
+minimum 0, all on platforms — so height and corners, not props, are the reliable cover, and `perch` is
+where he belongs.
+
+### D-062 — Cold Start's Athletic penalty is coyote time −0.05 s [CONTESTABLE]
+DECISION (owner ruling, 2026-11-16): DESIGN.md §7.2 `cold_start` reads "class ability starts each level
+on cooldown and recharges 25% slower (Athletic: coyote time −0.05 s instead)". Base coyote time is
+0.10 s (DESIGN.md §4), so 0.05 s remains and the value never goes negative. The jump-envelope proof in
+TERRAIN_SPEC §5 does not rely on coyote time: it is derived from gravity 32, jump velocity 12, run
+speed 9, half-width 0.4, player height 1.8 and auto step-up 0.5, and coyote time appears nowhere in
+it. The penalty touches no collect verb: pickup radius, gift yield and the magnet are unchanged.
+Run-speed sum check: the only curse that reduces run speed is Weighed Down (−10%, gold phase); Cold
+Start no longer touches run speed, so the total is 10% for every class, inside the §7 safety rule's
+≤ 10%. T-050's Done-when needs no change.
+WHY: T-050 asserts "total run-speed reduction ≤ 10%" and Cold Start's −5% stacked with Weighed Down's
+−10% to −15% for Athletic. Athletic has no active ability, so the ability-cooldown penalty has nothing
+to bite; the substitute must be a real cost that is not run speed, jump velocity or gravity. Coyote
+time is the forgiveness window at a ledge, which is exactly what a cold start should cost a class whose
+identity is speed and air-jump height: it still moves at full pace, it just gets less grace at the
+edge. It is a data value in `data/player.json` (coyote 0.10) and the §12 stat list is open-ended
+("…"), so it needs no new mechanic. [CONTESTABLE] because the owner may still flip it; the lead's
+ruling is coyote time −0.05 s.
+
+### D-063 — FINAL — Void charges carry over between levels; there is no reset at a level boundary.
+DECISION (owner ruling, 2026-11-16): DESIGN.md §3.1 states: a new run starts with 2 void charges;
+charges carry over between levels; there is no reset at a level boundary; the beacon restores exactly 1
+on entry, capped at 2 (cap 1 under Hungry Void); nothing else restores a charge. The three documents
+never state a charge grant at a level boundary or a reset there — the ruling is described without that
+phrasing anywhere in DESIGN.md, DECISIONS.md or FLEET_PACK.md.
+WHY: the owner's ruling confirms D-050. The charge is the second axis of the leave-or-linger decision —
+a refill at every level boundary would make leaving at 0 charges free and delete the decision. The
+phrasing was the source of the preflight review's item 23, so it is banned from the three documents
+rather than corrected once.
+
 ---
 
 ## C. Process
@@ -603,3 +845,43 @@ argument) and D-025 (b) (recipe key made finer).
   as defuse roll → Subspacial Barrier → Last Light → death (DESIGN.md §3.3, FLEET_PACK T-021).
   D-033 added: metric definitions may only tighten. D-054 and D-055 confirmed. NO open owner items.
   NEXT: FLEET_PACK.md from T-001. No commit yet.
+- 2026-11-16 DeepSeek V4.1 (T-PREFLIGHT-DOCS): preflight items 1, 2, 3, 5, 6, 7 and 24 resolved as
+  D-056…D-063. DESIGN.md: §5 spawn fallback order + per-enemy preferred-kind table, `hop` retired
+  (§5.2 coil now `lane`), §3.1 charges carry over between levels + safe tile 6 u from bodies and
+  projectiles, §3.3 contact = within 0.9 u of the box at any height (a jump does not clear it; the
+  bypass is the only way past) + the generator bypass guarantee (terrain decision D-026), §5.4 Isagi
+  ball flight line and `perch` preference, §7.2 Cold Start's Athletic penalty is coyote time −0.05 s
+  [CONTESTABLE]. FLEET_PACK: T-012 owns Last Light (`test_last_light.gd`) and the 6 u safe tile,
+  T-027/A7/T-021/Wave 3 say kill tests run with Last Light spent, A6 and T-053 carry the four-step
+  tripmine ladder verbatim, A3 pinned (kiwi cat, `--dodge`, Last Light, 2 charges, ≥ 95/100) with
+  T-026's CLI flags. LEFT: the terrain worker's item 4 (mine bypass rule + validator check, version
+  bump) and the TERRAIN_SPEC part of item 1 (`hop` in §6.5). No commit.
+- 2026-11-16 DeepSeek V4.1 (T-PREFLIGHT-TERRAIN): preflight item 4 and the TERRAIN_SPEC half of item 1
+  resolved as D-026. GEN_VERSION 3. Tripmines now need a walkable bypass, and a bypass must stay
+  outside the mine's 0.9 u trigger cylinder: contact = within 0.9 u of the box at any height, the
+  bypass graph removes every tile whose centre is inside the cylinder (the mine tile and its whole
+  column) and every walk/jump/drop/pad edge whose segment passes within 0.9 u of a mine centre, a slot
+  is eligible only if removing it disconnects nothing and its cylinder holds no other gift or the
+  beacon, and the joint rule forbids the level's mine set from sealing a region (TERRAIN_SPEC
+  §6.8.1–§6.8.5, new hard check H23). Modelling assumption recorded: the player's centre runs along
+  tile-centre segments, so the adjacent lane of a 2-wide walkway keeps 1.0 u — a 0.1 u margin, flagged
+  [CONTESTABLE] with the 1.4 u alternative measured (it would remove a further 19–31% of mines).
+  Anchor kind `hop` (id 3) retired and reserved; ids 0/1/2/4 unchanged; the arm trait `hop` untouched.
+  D1 now measures mines / eligible slots (old denominator read 1.78 pp, new 0.58 pp) and D2 is
+  min(S//5, eligible); both recorded with numbers per D-033. Mine count band 5,000 seeds, v2 → v3
+  mean/min/max: 1–5 0.55/0/8 → 0.52/0/8 · 6–10 3.93/0/13 → 3.51/0/10 · 11–15 6.10/0/14 → 5.36/0/14 ·
+  16–20 9.09/2/19 → 7.71/1/16 · 21–25 12.12/3/26 → 10.34/2/21 · 26–30 15.06/3/31 → 12.61/2/27 (worst
+  mean drop −16.2%, no flag tripped). Ported to `voidgen.gd` line by line. Final gate, all exit 0:
+  `test_validate.py` TESTS OK (selftest 15/15) · `validate.py --selftest` 15/15 · `gallery.py --check`
+  16/16 · `validate.py --seeds 0:5000` H1–H23 all 0/5000, D1 0.58 pp, D2 300/300, D3 5,000 hashes,
+  D4 p99 0.394, D5 0, D6 1.79%, D7 strictly increasing, D8 10.4/75.0, D9 55 ms mean / 191 ms max ·
+  Godot parity `PARITY 56/56 OK` at 142 ms per level. No commit.
+- 2026-11-16 Fable 5.2 (checkpoint 8): PREFLIGHT GATE GREEN. All 8 [BLOCKS-FLEET] items of
+  research/fable-preflight.md are resolved (D-026, D-056..D-063) and marked. The lead re-ran the gate
+  independently on the final code: harness 5,000 seeds 32/32 checks PASS (H1-H23, D1-D9), gallery
+  16/16, parity 56/56, tests OK (selftest 15/15). Generator is GEN_VERSION 3. The 17 [POST-RUN] items
+  are untouched. KNOWN RISK (not a blocker, pre-existing since version 2): 45% of levels need at least
+  one re-roll and the worst attempt seen is 11-12 against the H15 limit of 12; on 3,000 fresh seeds the
+  tail is geometric (ratio about 0.45), so H15 will fail roughly once per 30,000 levels. Fix after the
+  run in the generator (cheaper acceptance of elevation/path-share), never by raising the limit.
+  NEXT: owner go-ahead, commit, then FLEET_PACK.md from T-001. Nothing committed since ab471d8.

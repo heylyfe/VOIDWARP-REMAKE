@@ -7,7 +7,7 @@ extends RefCounted
 
 const VoidRngScript := preload("res://terrain/void_rng.gd")
 
-const GEN_VERSION := 2
+const GEN_VERSION := 3
 const M32 := 0xFFFFFFFF
 
 # ---- units ---------------------------------------------------------------
@@ -55,7 +55,7 @@ const PROP_PILLAR := 3
 const AN_PERCH := 0
 const AN_OPEN := 1
 const AN_LANE := 2
-const AN_HOP := 3
+# 3 is retired and reserved (the `hop` anchor kind is never emitted, TERRAIN_SPEC 6.5)
 const AN_NOOK := 4
 
 # trait multipliers, quarter units (4 = x1)
@@ -1211,10 +1211,275 @@ static func place_gifts(W: World, rng, tn: Dictionary, rt: Array) -> Variant:
 	return slots
 
 
+# ---- tripmine eligibility (TERRAIN_SPEC section 6.8) ---------------------------
+# Contact = the player's centre within 0.9 u horizontally of the mine's tile centre, at ANY height
+# (jumping over a mine does not avoid it). Coordinates are scaled by 10 so the whole test is
+# integer-only: 0.9 -> 9, 0.9^2 -> 81.
+const MINE_SCALE := 10
+const MINE_R2 := 81
+
+
+static func seg_hits_mine(ax: int, az: int, bx: int, bz: int, mx: int, mz: int) -> bool:
+	# True iff the segment between tile centres (ax,az)-(bx,bz) passes within 0.9 u of (mx,mz).
+	var px: int = MINE_SCALE * ax + 5
+	var pz: int = MINE_SCALE * az + 5
+	var qx: int = MINE_SCALE * bx + 5
+	var qz: int = MINE_SCALE * bz + 5
+	var tx: int = MINE_SCALE * mx + 5
+	var tz: int = MINE_SCALE * mz + 5
+	var vx: int = qx - px
+	var vz: int = qz - pz
+	var wx: int = tx - px
+	var wz: int = tz - pz
+	var len2: int = vx * vx + vz * vz
+	var dot: int = wx * vx + wz * vz
+	if dot <= 0:
+		return wx * wx + wz * wz <= MINE_R2
+	if dot >= len2:
+		var ux: int = tx - qx
+		var uz: int = tz - qz
+		return ux * ux + uz * uz <= MINE_R2
+	return (wx * wx + wz * wz) * len2 - dot * dot <= MINE_R2 * len2
+
+
+static func bfs_bypass(nb: Array, start: int, blocked: Array, blk: Dictionary) -> Array:
+	# BFS from `start` skipping every tile flagged in `blocked` and every edge listed in `blk`
+	# (source tile -> Dictionary of blocked targets).
+	var n: int = nb.size()
+	var seen: Array = []
+	seen.resize(n)
+	for i in range(n):
+		seen[i] = false
+	seen[start] = true
+	var q: Array = [start]
+	var h: int = 0
+	while h < q.size():
+		var c: int = q[h]
+		h += 1
+		var b: Variant = blk.get(c)
+		if b == null:
+			for j in nb[c]:
+				if not seen[j] and not blocked[j]:
+					seen[j] = true
+					q.append(j)
+		else:
+			for j in nb[c]:
+				if not seen[j] and not blocked[j] and not b.has(j):
+					seen[j] = true
+					q.append(j)
+	return seen
+
+
+static func mine_ctx(W, adj: Array, rt: Array, slots: Array) -> Dictionary:
+	# The tripmine eligibility rule of TERRAIN_SPEC section 6.8, computed once per level.
+	var T: Array = W.tiles
+	var n: int = T.size()
+	var ctx: Dictionary = {}
+	ctx["T"] = T
+	ctx["n"] = n
+	ctx["rt"] = rt
+	var rt_count := 0
+	for i in range(n):
+		if rt[i]:
+			rt_count += 1
+	ctx["rt_count"] = rt_count
+	ctx["beacon"] = find_tile(W, 0, 0, 1)
+	ctx["nb"] = adj
+	var nb_rev: Array = []
+	nb_rev.resize(n)
+	for i in range(n):
+		nb_rev[i] = []
+	for i in range(n):
+		for j in adj[i]:
+			nb_rev[j].append(i)
+	ctx["nb_rev"] = nb_rev
+	var slot_tiles: Array = []
+	for s in slots:
+		slot_tiles.append(s[0])
+	ctx["slot_tiles"] = slot_tiles
+	# column index: (x, z) -> tile indices. The trigger cylinder is unbounded in height, so a mine
+	# also removes every other tile in its own column.
+	var col: Dictionary = {}
+	for i in range(n):
+		var ckey := Vector2i(T[i][0], T[i][1])
+		var clst: Variant = col.get(ckey)
+		if clst == null:
+			col[ckey] = [i]
+		else:
+			clst.append(i)
+	ctx["col"] = col
+	# every edge, walk included: the cylinder test is applied to all of them, never assumed
+	var edges: Array = []
+	for i in range(n):
+		for j in adj[i]:
+			edges.append([i, j])
+	ctx["edges"] = edges
+	# cell -> edge ids whose segment passes through that cell
+	var idx: Dictionary = {}
+	for eid in range(edges.size()):
+		var i3: int = edges[eid][0]
+		var j3: int = edges[eid][1]
+		var ax: int = T[i3][0]
+		var az: int = T[i3][1]
+		var dx3: int = T[j3][0] - ax
+		var dz3: int = T[j3][1] - az
+		var adx: int = dx3 if dx3 >= 0 else -dx3
+		var adz: int = dz3 if dz3 >= 0 else -dz3
+		var steps: int = adx if adx > adz else adz
+		var den: int = 2 * steps if steps > 0 else 1
+		var px: int = -1073741824
+		var pz: int = -1073741824
+		for s in range(0, 2 * steps + 1):
+			var cx: int = ax + rdiv(dx3 * s, den)
+			var cz: int = az + rdiv(dz3 * s, den)
+			if cx == px and cz == pz:
+				continue
+			px = cx
+			pz = cz
+			var key := Vector2i(cx, cz)
+			var lst: Variant = idx.get(key)
+			if lst == null:
+				idx[key] = [eid]
+			else:
+				lst.append(eid)
+	ctx["idx"] = idx
+	ctx["cross"] = {}
+	ctx["elig"] = {}
+	return ctx
+
+
+static func mine_cross_edges(ctx: Dictionary, si: int) -> Array:
+	var cache: Dictionary = ctx["cross"]
+	var got: Variant = cache.get(si)
+	if got != null:
+		return got
+	var T: Array = ctx["T"]
+	var edges: Array = ctx["edges"]
+	var idx: Dictionary = ctx["idx"]
+	var slot_tiles: Array = ctx["slot_tiles"]
+	var m: int = slot_tiles[si]
+	var mx: int = T[m][0]
+	var mz: int = T[m][1]
+	var seen: Dictionary = {}
+	var out: Array = []
+	for ox in [-1, 0, 1]:
+		for oz in [-1, 0, 1]:
+			var cell: Variant = idx.get(Vector2i(mx + ox, mz + oz))
+			if cell == null:
+				continue
+			for eid in cell:
+				if seen.has(eid):
+					continue
+				seen[eid] = true
+				var i: int = edges[eid][0]
+				var j: int = edges[eid][1]
+				if seg_hits_mine(T[i][0], T[i][1], T[j][0], T[j][1], mx, mz):
+					out.append(eid)
+	cache[si] = out
+	return out
+
+
+static func mine_block(ctx: Dictionary, mines: Array) -> Array:
+	# [blocked, forward blocked-edge map, reverse blocked-edge map] for a mine set. A tile is blocked
+	# when its centre lies inside any mine's trigger cylinder.
+	var n: int = ctx["n"]
+	var T: Array = ctx["T"]
+	var slot_tiles: Array = ctx["slot_tiles"]
+	var edges: Array = ctx["edges"]
+	var col: Dictionary = ctx["col"]
+	var blocked: Array = []
+	blocked.resize(n)
+	for i in range(n):
+		blocked[i] = false
+	var blk_f: Dictionary = {}
+	var blk_b: Dictionary = {}
+	for si in mines:
+		var m: int = slot_tiles[si]
+		var mx: int = T[m][0]
+		var mz: int = T[m][1]
+		for ox in [-1, 0, 1]:
+			for oz in [-1, 0, 1]:
+				var clst: Variant = col.get(Vector2i(mx + ox, mz + oz))
+				if clst == null:
+					continue
+				for t in clst:
+					var ddx: int = MINE_SCALE * (T[t][0] - mx)
+					var ddz: int = MINE_SCALE * (T[t][1] - mz)
+					if ddx * ddx + ddz * ddz <= MINE_R2:
+						blocked[t] = true
+		for eid in mine_cross_edges(ctx, si):
+			var i: int = edges[eid][0]
+			var j: int = edges[eid][1]
+			var d: Variant = blk_f.get(i)
+			if d == null:
+				blk_f[i] = {j: true}
+			else:
+				d[j] = true
+			var d2: Variant = blk_b.get(j)
+			if d2 == null:
+				blk_b[j] = {i: true}
+			else:
+				d2[i] = true
+	return [blocked, blk_f, blk_b]
+
+
+static func mine_keeps_rt(ctx: Dictionary, mines: Array) -> bool:
+	var blk: Array = mine_block(ctx, mines)
+	var blocked: Array = blk[0]
+	var blk_f: Dictionary = blk[1]
+	var blk_b: Dictionary = blk[2]
+	var rt: Array = ctx["rt"]
+	var n: int = ctx["n"]
+	var slot_tiles: Array = ctx["slot_tiles"]
+	# the beacon and every real gift slot must survive the cylinder: a gift inside it is
+	# uncollectable, so a mine may never create one
+	if blocked[ctx["beacon"]]:
+		return false
+	var mine_set: Dictionary = {}
+	for si in mines:
+		mine_set[si] = true
+	for si in range(slot_tiles.size()):
+		if not mine_set.has(si) and blocked[slot_tiles[si]]:
+			return false
+	var need := 0
+	for t in range(n):
+		if rt[t] and not blocked[t]:
+			need += 1
+	var fwd: Array = bfs_bypass(ctx["nb"], ctx["beacon"], blocked, blk_f)
+	var cnt := 0
+	for t in range(n):
+		if rt[t] and not blocked[t] and fwd[t]:
+			cnt += 1
+	if cnt != need:
+		return false
+	var back: Array = bfs_bypass(ctx["nb_rev"], ctx["beacon"], blocked, blk_b)
+	cnt = 0
+	for t in range(n):
+		if rt[t] and not blocked[t] and back[t]:
+			cnt += 1
+	return cnt == need
+
+
+static func mine_eligible(ctx: Dictionary, si: int) -> bool:
+	var cache: Dictionary = ctx["elig"]
+	var got: Variant = cache.get(si)
+	if got != null:
+		return bool(got)
+	var v: bool = mine_keeps_rt(ctx, [si])
+	cache[si] = v
+	return v
+
+
+static func mine_joint_ok(ctx: Dictionary, mines: Array) -> bool:
+	return mine_keeps_rt(ctx, mines)
+
+
 @warning_ignore("integer_division")
-static func roll_mines(rng, level: int, n: int, extra: int) -> Array:
-	# returns occ list (0 gift, 1 tripmine). Per-slot chance (15+min(L,25))/400 from level 5.
-	# Total mines hard-capped at n // 5. Extra (curse) mines are flat adds under the same cap.
+static func roll_mines(rng, level: int, n: int, extra: int, W, adj: Array, rt: Array,
+		slots: Array) -> Array:
+	# returns occ list (0 gift, 1 tripmine). Per-slot chance (15+min(L,25))/400 from level 5,
+	# applied only to slots with a walkable bypass (TERRAIN_SPEC section 6.8.5). Total mines
+	# hard-capped at n // 5. Extra (curse) mines are flat adds under the same cap.
 	var occ: Array = []
 	occ.resize(n)
 	for i in range(n):
@@ -1222,26 +1487,56 @@ static func roll_mines(rng, level: int, n: int, extra: int) -> Array:
 	var num: int = mine_chance_num(level)
 	var cap: int = n / 5
 	var count := 0
+	var ctx: Dictionary = {}
+	var have_ctx := false
+	var mines: Array = []
 	for i in range(n):
 		var r: int = rng.urange(400)  # always drawn, so the stream does not depend on level
 		if r < num:
-			occ[i] = 1
-			count += 1
-	var i2: int = n - 1
-	while count > cap and i2 >= 0:
-		if occ[i2] == 1:
-			occ[i2] = 0
-			count -= 1
-		i2 -= 1
+			if not have_ctx:
+				ctx = mine_ctx(W, adj, rt, slots)
+				have_ctx = true
+			if mine_eligible(ctx, i) and mine_joint_ok(ctx, mines + [i]):
+				occ[i] = 1
+				mines.append(i)
+				count += 1
+	# cap: un-set from the highest slot id
+	while count > cap:
+		var i2: int = mines.pop_back()
+		occ[i2] = 0
+		count -= 1
+	# extra (curse) mines: one draw per extra mine, indexing the ascending list of eligible free
+	# slots. A slot that breaks the joint rule is banned for the rest of the phase: banning can only
+	# place fewer mines, never an invalid one.
 	var e := 0
+	var banned: Dictionary = {}
 	while e < extra and count < cap:
+		if not have_ctx:
+			ctx = mine_ctx(W, adj, rt, slots)
+			have_ctx = true
 		var free: Array = []
 		for i in range(n):
-			if occ[i] == 0:
+			if occ[i] == 0 and not banned.has(i) and mine_eligible(ctx, i):
 				free.append(i)
-		occ[free[rng.urange(free.size())]] = 1
-		count += 1
+		if free.is_empty():
+			break  # no eligible slot left: place fewer, never break the rule
+		var k: int = free[rng.urange(free.size())]
+		if mine_joint_ok(ctx, mines + [k]):
+			occ[k] = 1
+			mines.append(k)
+			count += 1
+		else:
+			banned[k] = true
 		e += 1
+	# safety net: the joint rule must hold for the final set
+	while count > 0 and not mine_joint_ok(ctx, mines):
+		var mx: int = -1
+		for i in mines:
+			if i > mx:
+				mx = i
+		mines.erase(mx)
+		occ[mx] = 0
+		count -= 1
 	return occ
 
 
@@ -1446,7 +1741,7 @@ static func build(seed: int, level: int, players: int, extra_mines: int, attempt
 	var slots: Variant = place_gifts(W, rgift, tn, rt)
 	if slots == null:
 		return null
-	var occ: Array = roll_mines(VoidRngScript.new(VoidRngScript.mix(base, ST_MINE)), level, slots.size(), extra_mines)
+	var occ: Array = roll_mines(VoidRngScript.new(VoidRngScript.mix(base, ST_MINE)), level, slots.size(), extra_mines, W, adj, rt, slots)
 	return [W, slots, occ, boundary, arms, counts]
 
 

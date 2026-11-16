@@ -1,4 +1,4 @@
-# TERRAIN_SPEC.md — VOIDWRAP RUN terrain generator (GEN_VERSION 2)
+# TERRAIN_SPEC.md — VOIDWRAP RUN terrain generator (GEN_VERSION 3)
 
 The terrain IS the level. This document specifies a pure, deterministic, seeded generator and the
 headless validator that judges it. The working reference implementation is `terrain_ref/voidgen.py`
@@ -91,7 +91,9 @@ before measurement (D-030); a failing check is fixed in the generator, never by 
    (§6.8); the beacon anchor (§6.1); purity — output is a function of (seed, level, players,
    extra_mines) only (§1); every gift is round-trip reachable with the base kit (§5.4, H3, H13);
    zero soft-lock tiles (H6); the footprint similarity metric (4-cell blocks, anchored to the spawn
-   root, D-022 FINAL, §10.3).
+   root, D-022 FINAL, §10.3). **Added in GEN_VERSION 3:** a tripmine may only occupy a slot with a
+   walkable bypass (§6.8.2–§6.8.5, H23) — the hazard still inherits a gift slot and still never gets
+   its own placement logic, but the slot set it may inherit from is now filtered.
 
 ### 1A.3 How the generator meets it
 
@@ -381,9 +383,11 @@ same height, never within Chebyshev 2 of a socket tile, never within Chebyshev 3
 A lone 1-cell prop on an interior tile can always be walked around → props never cut a platform.
 
 **Anchors** `[kind, x, z, y, piece]` — hints for the enemy spawner (DESIGN.md §enemies):
-0 perch (high ground, long sightlines), 1 open (wide floor), 2 lane (long straight), 3 hop (pads),
-4 nook (enclosed/isolated). Also: any `step` or `flat` walkway consuming ≥ 8 rows emits a `lane`
-anchor.
+0 perch (high ground, long sightlines), 1 open (wide floor), 2 lane (long straight),
+4 nook (enclosed/isolated). **Kind 3 is retired and reserved**: the `hop` anchor kind is never
+emitted (GEN_VERSION 3) because the shape contract removed the only archetype that produced it; the
+id is not reused, so old and new data can never be confused. Also: any `step` or `flat` walkway
+consuming ≥ 8 rows emits a `lane` anchor.
 
 ### 6.6 Shortcuts (stream LOOP)
 Collect every unused socket (spare hub sockets, failed sockets, sockets still open), shuffle, and for
@@ -443,6 +447,80 @@ pieces at spacing 2, then spacing 1. If S still cannot be met the attempt is rej
 - Real gifts = `S − mines ≥ S − S//5`. The game's remaining-gift counter, the beacon-open condition
   and the straggler beam (last 20% of REAL gifts) count only `occ = 0` slots.
 
+#### 6.8.1 Contact volume and the trigger cylinder (the reason for the rule below)
+A tripmine's **position** is its slot's tile centre `(x + 0.5, z + 0.5)`. **Contact** = the player's
+centre is within **0.9 u horizontally** of that point, **at any height**. Height never saves the
+player: **jumping over a mine does not avoid it.** The mine's **trigger cylinder** is the vertical
+cylinder of radius 0.9 u around that centre, unbounded in height.
+
+**Modelling assumption (binding for the controller ticket).** The player's centre is treated as
+travelling along the straight segment between two tile centres when it moves from one tile to the
+next. Under that assumption a player passing a mine on the **adjacent lane of a 2-wide walkway** keeps
+its centre exactly **1.0 u** from the mine centre — a **0.1 u margin** outside the 0.9 u cylinder.
+That margin is the whole reason a 2-wide walkway still has a bypass, so it is stated here as a number
+the controller ticket depends on. A 1-wide walkway has no such lane: its only bypass is a route that
+leaves the walkway.
+
+#### 6.8.2 The bypass graph (definition)
+For a set `M` of mine tiles, the **bypass graph** `B(M)` is the movement graph of §5 (validator
+envelope) with
+1. every tile whose centre lies **inside** any mine's trigger cylinder removed. That is the mine tile
+   itself **and every other tile in the same column** — a tile at a different `(x, z)` has its centre
+   at least 1.0 u away, so the cylinder can only ever reach the mine's own column. The implementation
+   still tests each candidate tile's centre with the integer distance test rather than assuming it;
+2. every edge removed whose straight horizontal segment, from the source tile centre to the target
+   tile centre, passes **within 0.9 u** of any mine centre. This applies to **every** edge kind —
+   walk, jump, drop and pad — not only to jumps. A walk edge between two 4-adjacent tile centres is
+   1.0 u long and its closest approach to a mine centre is 1.0 u unless one of its endpoints is in the
+   mine's column, so in practice the walk-edge test removes nothing that rule 1 has not already
+   removed; it is still computed, never assumed.
+
+The test is integer-only: coordinates are scaled by 10 (`0.9 → 9`, `0.9² → 81`), the projection
+parameter is clamped with integer dot products, and the comparison is `100·d² ≤ 81·len²` for an
+interior foot, `d² ≤ 81` for a foot at either endpoint. The tile test is `dx² + dz² ≤ 81` in the same
+scaled coordinates.
+
+#### 6.8.3 Eligibility (the "walkable bypass")
+Let `rt` be the round-trip set of the full graph (§5.4) and let `C(M)` be the set of tiles that rule 1
+of §6.8.2 removes. A slot tile `m` is **eligible** iff
+1. in `B({m})` every tile of `rt` that is **not** in `C({m})` is still round-trip reachable, and
+2. `C({m})` contains no other slot tile and not the beacon tile — a gift or the beacon inside the
+   cylinder is uncollectable, so a mine may never create one.
+
+In words: a mine may never sit on a tile with no walkable bypass — removing its cylinder must
+disconnect nothing that was reachable, and must not swallow another gift.
+
+#### 6.8.4 The joint rule
+For the final mine set `M` of a level, in `B(M)` every **real gift slot** (`occ = 0`) and the
+**beacon tile** must still be round-trip reachable, and every round-trip tile not in `C(M)` must still
+be round-trip reachable. Two mines side by side may not seal a 2-wide walkway.
+
+#### 6.8.5 Order of operations (exact; mirror `roll_mines` in `voidgen.py`)
+1. One `range(400)` is drawn per slot, in slot-id order, at every level. A slot becomes a mine only
+   if its roll passes **and** the slot is eligible **and** adding it keeps the joint rule (§6.8.4) for
+   the mines accepted so far. An ineligible slot is never a mine. The joint test draws no RNG.
+2. Enforce the cap `S // 5`: un-set mines from the highest slot id downward.
+3. `extra_mines`: while `e < extra` and `mines < cap`, build the **eligible free list** = the slot ids
+   with `occ = 0`, not banned by step 3, and an eligible tile, in ascending id order; if it is empty,
+   stop (place fewer — never violate the rule); otherwise draw one `range(len(free))` and try
+   `free[k]`. If the joint rule rejects it, the slot is **banned** for the rest of the phase and the
+   next iteration draws again. Exactly one draw per extra mine attempted. Banning can only reduce the
+   number of extra mines, never break the rule.
+4. Verify the joint rule for the final set; if it fails, un-set the mine with the highest slot id and
+   re-check, until it holds. Deterministic; no RNG is drawn in this step. With steps 1 and 3 in force
+   this never fires — it is the safety net.
+5. `extra_mines` is never re-applied after step 4, so a level may end below the cap.
+
+Why the joint rule is tested while mines are placed rather than only at the end: a random set of
+roll-passing mines can violate the rule in several independent places at once, and un-setting one
+mine at a time from the top then collapses the count (measured on GEN_VERSION 3 development: a
+22-mine set at level 30 fell to 6, a 19-mine set at level 15 to 2). Testing each addition keeps the
+count at the per-slot chance while the final set still satisfies §6.8.4 by construction.
+
+Eligibility is a property of the level geometry, not of the roll, so an implementation may compute it
+lazily and cache it per slot; the result must equal §6.8.3 exactly (the validator re-derives it by
+brute force, H23).
+
 ## 7. How terrain serves the core loop
 
 | loop moment | what the terrain data provides |
@@ -451,7 +529,7 @@ pieces at spacing 2, then spacing 1. If S still cannot be met the attempt is rej
 | collect all black gifts | S slots, all round-trip reachable with run + jump; breadcrumb lines on walkways teach the route outward; depth-weighted density pulls the player to the edges; every tread is a small decision (step up, drop, jump) |
 | beacon opens: leave or linger | every real slot becomes a gold slot → "how many of these do I dare re-run?"; dead ends hold the most gold AND have one entrance |
 | return to the beacon | tree walkways are two-way; drops and pads are faster ways home → knowing them is skill |
-| enemies | props = line-of-sight cover; anchors mark perches, lanes, open floors, pads, nooks |
+| enemies | props = line-of-sight cover; anchors mark perches, lanes, open floors, nooks (kind 3 `hop` is retired, §6.5) |
 | tripmines | occupy slots, so a mine is always somewhere a gift would plausibly be |
 
 ## 8. Output
@@ -552,6 +630,7 @@ fails, fix the generator. Changing a threshold requires a new DECISIONS.md entry
 | H20 | flat-share ≤ 0.35 and ramp-share ≤ 0.10 of path rows | flat runs and ramps are the exception (§1A rule 3) |
 | H21 | elevation variance σ over non-hub tiles ≥ `3 + 3·(min(level,10)−1)//9` HU | paths gain and lose height (§1A rule 3) |
 | H22 | at least 50% of sub-area boundaries have |Δy| ≥ 1 HU | a sub-area is entered by a step, not a walk (§1A rule 3) |
+| H23 | **no tripmine without a walkable bypass**: for every level, every mine slot is eligible by the brute-force definition of §6.8.3 (remove every tile inside the mine's trigger cylinder — the mine tile and every tile in its column — and every edge, walk included, whose segment passes within 0.9 u of the mine centre, then recompute the round-trip set) **and** the joint rule of §6.8.4 holds for the level's mine set | with 1–2 cell walkways and a 0.9 u contact radius that a jump does not clear, a mine on a path with no way around is a lethal wall, not a fake gift the player chooses not to touch |
 
 Path distance = Dijkstra over the movement graph; walk edge cost 1, jump/drop/pad cost
 `max(|dx|,|dz|)`. For H11 run one multi-source Dijkstra from all real-gift tiles on the REVERSED graph.
@@ -564,8 +643,8 @@ delta is derived from `tiles` (never from generator internals).
 
 | id | check | reason |
 |---|---|---|
-| D1 | mine curve: for each level L ≥ 5 in the sample, observed mines / slots is within ±1.0 percentage point of `(15 + min(L,25))/400`; exact table check `mine_chance_num`: L4→0, L5→20, L15→30, L25→40, L26→40, L99→40 | canon 1/20 → 1/10, capped |
-| D2 | with `extra_mines = 999` (100 seeds at levels 5, 15, 30): mines == S // 5 exactly | the curse can never beat the 20% cap |
+| D1 | mine curve: for each level L ≥ 5 in the sample, observed **mines / eligible slots** is within ±1.0 percentage point of `(15 + min(L,25))/400`; exact table check `mine_chance_num`: L4→0, L5→20, L15→30, L25→40, L26→40, L99→40. The validator recomputes eligibility itself (§6.8.3) to get the denominator. **Definition change (GEN_VERSION 3, D-026):** the denominator was `slots`; the per-slot chance now applies only to eligible slots, so measuring over all slots would under-report and hide an over-rate on the slots that can actually hold a mine. This tightens the check (the eligible set is a subset of the slots). | canon 1/20 → 1/10, capped |
+| D2 | with `extra_mines = 999` (100 seeds at levels 5, 15, 30): `mines == min(S // 5, E)` where `E` = the number of eligible slots, both computed independently by the validator. **Definition change (GEN_VERSION 3, D-026):** the old form was `mines == S // 5` exactly, which is now impossible when fewer than `S // 5` slots can hold a mine; the cap is still the binding limit whenever `E ≥ S // 5`. If the joint rule (§6.8.4) forces the generator below that number, the level is reported as a D2 failure with its seed — the check is not relaxed. | the curse can never beat the 20% cap |
 | D3 | all hashes distinct across the sample | never the same level twice |
 | D4 | footprint similarity (§10.3) over 4,000 random same-level pairs: p99 ≤ 0.50 and share of pairs ≥ 0.60 is ≤ 0.1% | two levels "feel the same" when > 60% of their coarse footprint coincides under any rotation/mirror |
 | D5 | recipe repetition: share of same-level pairs with identical (sorted arm traits, sorted platform-archetype multiset, sorted walkway-archetype multiset) ≤ 0.1% | same ingredients = same feel |
@@ -623,8 +702,11 @@ pass. `--jobs N` uses multiprocessing. `--selftest` plants defects into a genera
 moved onto a prop; a slot moved to a tile cut off from the hub; a tile inserted 4 HU above another;
 occ flipped to exceed the cap; a ledge tile group reachable only by a drop with no return; a second
 area as large as the hub; a walkway widened to 3 cells; a platform grown past 7×7; every walkway
-relabelled as a platform; every walkway flattened; every non-hub tile set to y=0) and asserts the
-matching H-check FAILS for each — a validator that cannot fail is not a validator. 11 defects.
+relabelled as a platform; every walkway flattened; every non-hub tile set to y=0; every platform
+flush with its path; a mine flipped onto a 1-wide walkway tile with no bypass; two mines placed side
+by side sealing a 2-wide walkway; a mine whose trigger cylinder swallows another gift slot) and
+asserts the matching H-check FAILS for each — a validator that cannot fail is not a validator.
+15 defects.
 
 ## 11. Pinned gallery (`terrain_ref/gallery.json`)
 

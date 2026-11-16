@@ -2,47 +2,29 @@
  {
   "seed": 1,
   "level": 1,
-  "hash": "dc39af142bea717a8cb57456754a1bccb9a4fd16f69d3e874e0cc38b795b7141",
+  "hash": "e9b73461c0e7b53845ab93d9482f0563363e60afbcf9d32d753b7ba8f7952825",
   "attempt": 0,
   "platforms": 4,
-  "tiles": 472,
-  "slots": 40,
-  "mines": 0,
-  "loops": 1,
-  "drops": 1,
-  "pads": 0,
-  "arms": [
-   "descent",
-   "grand"
-  ],
-  "dead_ends": 2
- },
- {
-  "seed": 2,
-  "level": 1,
-  "hash": "482c6bc269b5ddab1739fdd8cb2b4553017abfa95a63432b78ced86b19cecbee",
-  "attempt": 2,
-  "platforms": 4,
-  "tiles": 526,
+  "tiles": 501,
   "slots": 40,
   "mines": 0,
   "loops": 0,
-  "drops": 1,
-  "pads": 1,
+  "drops": 2,
+  "pads": 0,
   "arms": [
-   "thin",
-   "hop",
-   "grand"
+   "ascent",
+   "maze",
+   "thin"
   ],
   "dead_ends": 3
  },
  {
-  "seed": 3,
+  "seed": 2,
   "level": 1,
-  "hash": "11eaa0e87315dc3ad44b8ec82037081d18cb26c4b5111f6a7524016ac1a516f5",
+  "hash": "58e83a9f117af81e5d1d41ab8d196e22272474a068162ee6ed823fedc7cd09d3",
   "attempt": 1,
-  "platforms": 4,
-  "tiles": 614,
+  "platforms": 3,
+  "tiles": 455,
   "slots": 40,
   "mines": 0,
   "loops": 1,
@@ -50,129 +32,114 @@
   "pads": 0,
   "arms": [
    "grand",
-   "descent"
+   "ascent",
+   "maze"
+  ],
+  "dead_ends": 2
+ },
+ {
+  "seed": 3,
+  "level": 1,
+  "hash": "e1cc8a9b2f917c3ecefd675e2576f0bb806afb925731344c4b8981250a395083",
+  "attempt": 1,
+  "platforms": 4,
+  "tiles": 588,
+  "slots": 40,
+  "mines": 0,
+  "loops": 2,
+  "drops": 0,
+  "pads": 0,
+  "arms": [
+   "grand",
+   "ascent",
+   "maze"
   ],
   "dead_ends": 3
  },
  {
   "seed": 1001,
   "level": 2,
-  "hash": "3a30caacb8f2ab75a48e194061743106af5d9d0acf482df360282486398d54b6",
-  "attempt": 0,
+  "hash": "cf0918e1c4f57789899bdabee65d4894b08e821bb37d7b248bf67b9738b3f2fd",
+  "attempt": 4,
   "platforms": 3,
-  "tiles": 530,
+  "tiles": 460,
   "slots": 44,
   "mines": 0,
-  "loops": 2,
-  "drops": 0,
+  "loops": 1,
+  "drops": 1,
   "pads": 0,
   "arms": [
-   "ascent",
    "grand",
-   "maze"
+   "grand",
+   "descent"
   ],
-  "dead_ends": 2
+  "dead_ends": 3
  },
  {
   "seed": 1002,
   "level": 3,
-  "hash": "d4582d5606706311b56a0499186dc3f474cc183db773ae6bc9ffe889262abe1a",
-  "attempt": 0,
+  "hash": "9e5f851f10d65c31febecb0859d5c3f26fd08cd5c5e9bafb7148adac07a84aa3",
+  "attempt": 1,
   "platforms": 4,
-  "tiles": 485,
+  "tiles": 449,
   "slots": 48,
   "mines": 0,
   "loops": 0,
-  "drops": 2,
-  "pads": 0,
+  "drops": 1,
+  "pads": 1,
   "arms": [
    "maze",
-   "hop"
+   "descent",
+   "ascent"
   ],
-  "dead_ends": 2
+  "dead_ends": 3
  },
  {
   "seed": 1003,
   "level": 4,
-  "hash": "4519ab45eda8d19d013aea4a2c58703dc8a10a575ad222035014492033515e29",
+  "hash": "7a34f8853137557541b6e141c0ec4f96a7c8a648436fc484060cac136874b5c3",
   "attempt": 2,
   "platforms": 4,
-  "tiles": 472,
+  "tiles": 522,
   "slots": 52,
   "mines": 0,
   "loops": 1,
   "drops": 1,
   "pads": 0,
   "arms": [
-   "thin",
-   "descent"
+   "grand",
+   "ascent"
   ],
-  "dead_ends": 3
+  "dead_ends": 2
  },
  {
   "seed": 1004,
   "level": 5,
-  "hash": "01c3d52f7668286e6562d6002a4748fc1f662cfaf05e17cfe829d38882687ab8",
+  "hash": "7deb757b5db44e9e9d8308b47f3ef406ef856e1f71b5514d99a8bad02fca9292",
   "attempt": 1,
   "platforms": 4,
-  "tiles": 503,
+  "tiles": 577,
   "slots": 56,
-  "mines": 1,
+  "mines": 2,
   "loops": 1,
-  "drops": 1,
+  "drops": 0,
   "pads": 0,
   "arms": [
    "descent",
-   "thin"
+   "ascent",
+   "ascent",
+   "grand"
   ],
-  "dead_ends": 2
+  "dead_ends": 4
  },
  {
   "seed": 1005,
   "level": 8,
-  "hash": "15176cd76f2235ec716d0f6ba5b1df0f22140742c118070c199b0ed5b71a4b73",
-  "attempt": 0,
+  "hash": "9e6939320759ba1400bfc8e5052754b6cd0c1e2b7346c57c6c9609e0b6aa6186",
+  "attempt": 2,
   "platforms": 6,
-  "tiles": 590,
+  "tiles": 573,
   "slots": 68,
-  "mines": 7,
-  "loops": 1,
-  "drops": 0,
-  "pads": 0,
-  "arms": [
-   "descent",
-   "grand",
-   "thin",
-   "hop"
-  ],
-  "dead_ends": 3
- },
- {
-  "seed": 1006,
-  "level": 10,
-  "hash": "2920985e848c3bce6680cc2081a708d8c403ce454342d8026e4b8fd7fd2b351d",
-  "attempt": 1,
-  "platforms": 7,
-  "tiles": 626,
-  "slots": 76,
-  "mines": 7,
-  "loops": 3,
-  "drops": 0,
-  "pads": 0,
-  "arms": [
-   "maze",
-   "grand"
-  ],
-  "dead_ends": 2
- },
- {
-  "seed": 1007,
-  "level": 12,
-  "hash": "cdfa8bd63b9acc5e158e875441a1705ed1ab3e2c1c3cd7c7295693296654eb65",
-  "attempt": 4,
-  "platforms": 7,
-  "tiles": 614,
-  "slots": 84,
   "mines": 3,
   "loops": 1,
   "drops": 1,
@@ -180,123 +147,165 @@
   "arms": [
    "hop",
    "thin",
+   "ascent"
+  ],
+  "dead_ends": 3
+ },
+ {
+  "seed": 1006,
+  "level": 10,
+  "hash": "6f7d28cc9b9a37b19b802c69acc34db5efa94e8cf35c8a99ec90328ec38c22fb",
+  "attempt": 0,
+  "platforms": 6,
+  "tiles": 628,
+  "slots": 76,
+  "mines": 3,
+  "loops": 3,
+  "drops": 2,
+  "pads": 0,
+  "arms": [
+   "thin",
+   "ascent",
+   "thin",
+   "descent"
+  ],
+  "dead_ends": 4
+ },
+ {
+  "seed": 1007,
+  "level": 12,
+  "hash": "9965805c2920ae3a6119a0edc5a3d48be5ac7b8222ee39db8e2d7e6b86df6087",
+  "attempt": 0,
+  "platforms": 8,
+  "tiles": 646,
+  "slots": 84,
+  "mines": 7,
+  "loops": 1,
+  "drops": 0,
+  "pads": 0,
+  "arms": [
    "descent",
-   "maze"
+   "maze",
+   "grand"
   ],
   "dead_ends": 4
  },
  {
   "seed": 7,
   "level": 12,
-  "hash": "c760b25d529badad5d41349d577e45f85392102269178c0fcea0dc8ccadad76a",
-  "attempt": 0,
-  "platforms": 8,
-  "tiles": 649,
+  "hash": "b8b1f49f09ba35abb0379ea24f526d4669546e4350b24fc5a28d54e7345fc798",
+  "attempt": 1,
+  "platforms": 7,
+  "tiles": 725,
   "slots": 84,
-  "mines": 8,
-  "loops": 0,
-  "drops": 3,
+  "mines": 6,
+  "loops": 1,
+  "drops": 1,
   "pads": 0,
   "arms": [
-   "thin",
-   "maze"
+   "grand",
+   "maze",
+   "thin"
   ],
   "dead_ends": 3
  },
  {
   "seed": 1008,
   "level": 16,
-  "hash": "89f91eb6db5a7f4f7eb01f0bc3593c99c5d90f5c03805105e4b74a5dd0fa9c47",
-  "attempt": 2,
-  "platforms": 8,
-  "tiles": 684,
+  "hash": "f17d772c6378929590be41cd8ac6c1bae0d045d31cfc422e1d9bb37cea084990",
+  "attempt": 3,
+  "platforms": 9,
+  "tiles": 868,
   "slots": 100,
-  "mines": 16,
-  "loops": 3,
-  "drops": 2,
+  "mines": 5,
+  "loops": 2,
+  "drops": 1,
   "pads": 0,
   "arms": [
-   "maze",
-   "descent",
+   "ascent",
    "hop",
-   "grand"
+   "maze",
+   "maze"
   ],
-  "dead_ends": 5
+  "dead_ends": 4
  },
  {
   "seed": 1009,
   "level": 20,
-  "hash": "9a1a5d95d21656aa62310851f51adcbc96e3b2ae4f0b60ead6dd314e8b78a972",
+  "hash": "e8b7f8208812fb15a8ed44692b288ec02d4f6fde6d2c516424a65f90d53cfb31",
   "attempt": 0,
-  "platforms": 10,
-  "tiles": 697,
+  "platforms": 9,
+  "tiles": 805,
   "slots": 116,
-  "mines": 9,
-  "loops": 2,
-  "drops": 2,
-  "pads": 1,
+  "mines": 8,
+  "loops": 3,
+  "drops": 3,
+  "pads": 0,
   "arms": [
-   "descent",
+   "grand",
    "maze",
-   "hop",
-   "descent"
+   "thin"
   ],
   "dead_ends": 5
  },
  {
   "seed": 1010,
   "level": 25,
-  "hash": "fe2a678ab94814d4758f5c87d1fc934de980a4cc8969391277654fe9f567cfa7",
-  "attempt": 2,
-  "platforms": 12,
-  "tiles": 884,
+  "hash": "f95f7250554be22248d975ee1ab130be058f0e752d2cbcfc738130ab93e24c5e",
+  "attempt": 0,
+  "platforms": 11,
+  "tiles": 823,
   "slots": 136,
-  "mines": 17,
+  "mines": 11,
   "loops": 3,
-  "drops": 2,
-  "pads": 1,
+  "drops": 1,
+  "pads": 0,
   "arms": [
-   "hop",
-   "maze"
+   "descent",
+   "maze",
+   "descent",
+   "thin"
   ],
-  "dead_ends": 5
+  "dead_ends": 4
  },
  {
   "seed": 7,
   "level": 30,
-  "hash": "ce3a651768284cb17e166892b3615c60c252b1bf786c077cbd3d37e5cd0c685e",
-  "attempt": 1,
-  "platforms": 12,
-  "tiles": 907,
+  "hash": "2c67cc08155e92da1a856eec87da32edd1966670766ed4bd5c752904510a0fd0",
+  "attempt": 0,
+  "platforms": 11,
+  "tiles": 807,
   "slots": 156,
   "mines": 17,
-  "loops": 1,
+  "loops": 0,
   "drops": 1,
   "pads": 0,
   "arms": [
-   "ascent",
+   "grand",
    "maze",
-   "hop",
-   "grand"
+   "maze",
+   "ascent"
   ],
-  "dead_ends": 6
+  "dead_ends": 5
  },
  {
   "seed": 1011,
   "level": 40,
-  "hash": "c3ad1b8fb8052ad7280c20133b69aa2ddc6744275468602bd3f1c96bfabc3524",
-  "attempt": 1,
+  "hash": "94df9d3c5ff9f8d80ad4062eecc5ada3c4e5375b2a3393caf1f6bcd47e0f675c",
+  "attempt": 4,
   "platforms": 11,
-  "tiles": 778,
+  "tiles": 868,
   "slots": 160,
-  "mines": 13,
+  "mines": 4,
   "loops": 4,
-  "drops": 2,
-  "pads": 2,
+  "drops": 0,
+  "pads": 0,
   "arms": [
-   "maze",
-   "ascent"
+   "ascent",
+   "grand",
+   "hop",
+   "hop"
   ],
-  "dead_ends": 4
+  "dead_ends": 6
  }
 ]

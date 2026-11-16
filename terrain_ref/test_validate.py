@@ -29,7 +29,29 @@ def main():
     assert slot_target(99, 1) == 160
 
     # planted-defect selftest
-    assert validate.run_selftest(), "selftest did not reach 12/12"
+    assert validate.run_selftest(), "selftest did not reach 15/15"
+
+    # tripmine bypass (TERRAIN_SPEC 6.8): the contact test is integer-only and symmetric
+    assert validate.seg_hits_mine(0, 0, 2, 0, 1, 0), "a mine on the segment is not detected"
+    assert not validate.seg_hits_mine(0, 0, 2, 0, 1, 1), "a mine 1.0 u off the segment is detected"
+    assert validate.seg_hits_mine(0, 0, 2, 0, 0, 0), "a mine on an endpoint is not detected"
+    assert not validate.seg_hits_mine(0, 0, 2, 0, 3, 0), "a mine 1.0 u past the endpoint is detected"
+    # every mine of every generated level has a walkable bypass, and the joint rule holds
+    for s in range(1, 21):
+        L = generate(s, 1 + (s % 30))
+        base = validate.walk_layer(L)
+        adj = validate.build_adj(L, base, validate.VALIDATOR_GAP)
+        judge = validate.MineJudge(base, adj)
+        mines = []
+        for g in L["gifts"]:
+            t = validate.find_tile(base, g["x"], g["z"], g["y"])
+            if g["occ"]:
+                assert t >= 0 and judge.eligible(t), \
+                    "seed %d level %d: mine slot %d has no walkable bypass" % (s, L["level"], g["id"])
+                mines.append(t)
+        if mines:
+            assert judge.keeps_rt(mines), \
+                "seed %d level %d: the mine set breaks the joint rule" % (s, L["level"])
 
     # footprint similarity (TERRAIN_SPEC 10.3): anchored to the spawn root, 8 symmetries
     import copy

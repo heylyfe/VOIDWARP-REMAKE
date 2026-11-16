@@ -13,7 +13,7 @@ import hashlib
 import json
 import sys
 
-GEN_VERSION = 2
+GEN_VERSION = 3
 M32 = 0xFFFFFFFF
 
 # ---- units ---------------------------------------------------------------
@@ -201,7 +201,10 @@ def offs_for(w):
 #   props   [lx, lz, dy, h, kind]  blocking 1-cell boxes standing on the tile at (lx,lz,dy)
 #   anchors [kind, lx, lz, dy]
 PROP_BLOCK, PROP_WALL, PROP_CRATE, PROP_PILLAR = 0, 1, 2, 3
-AN_PERCH, AN_OPEN, AN_LANE, AN_HOP, AN_NOOK = 0, 1, 2, 3, 4
+# anchor kinds (TERRAIN_SPEC section 6.5). 3 is RETIRED and reserved: the `hop` anchor kind is never
+# emitted since GEN_VERSION 3 (the shape contract removed the only archetype that produced it). The
+# id is not reused, so old and new data can never be confused.
+AN_PERCH, AN_OPEN, AN_LANE, AN_NOOK = 0, 1, 2, 4
 
 
 def scatter(rng, tiles, socks, count, props):
@@ -1162,30 +1165,292 @@ def place_gifts(W, rng, tn, rt):
     return slots
 
 
-def roll_mines(rng, level, n, extra):
-    """returns occ list (0 gift, 1 tripmine). Per-slot chance (15+min(L,25))/400 from level 5.
-    Total mines hard-capped at n // 5. Extra (curse) mines are flat adds under the same cap."""
+# ---- tripmine eligibility (TERRAIN_SPEC section 6.8) ---------------------------
+# Contact = the player's centre within 0.9 u horizontally of the mine's tile centre, at ANY height
+# (jumping over a mine does not avoid it). Coordinates are scaled by 10 so the whole test is
+# integer-only: 0.9 -> 9, 0.9^2 -> 81.
+MINE_SCALE = 10
+MINE_R2 = 81        # 0.9 u squared, in coordinates scaled by MINE_SCALE
+
+
+def seg_hits_mine(ax, az, bx, bz, mx, mz):
+    """True iff the segment between tile centres (ax,az)-(bx,bz) passes within 0.9 u of (mx,mz).
+    Integer-only: clamp the projection parameter with dot products, then compare 100*d^2 to 81*len^2
+    (interior foot) or d^2 to 81 (foot at an endpoint)."""
+    px = MINE_SCALE * ax + 5
+    pz = MINE_SCALE * az + 5
+    qx = MINE_SCALE * bx + 5
+    qz = MINE_SCALE * bz + 5
+    tx = MINE_SCALE * mx + 5
+    tz = MINE_SCALE * mz + 5
+    vx = qx - px
+    vz = qz - pz
+    wx = tx - px
+    wz = tz - pz
+    len2 = vx * vx + vz * vz
+    dot = wx * vx + wz * vz
+    if dot <= 0:
+        return wx * wx + wz * wz <= MINE_R2
+    if dot >= len2:
+        ux = tx - qx
+        uz = tz - qz
+        return ux * ux + uz * uz <= MINE_R2
+    return (wx * wx + wz * wz) * len2 - dot * dot <= MINE_R2 * len2
+
+
+def bfs_bypass(nb, start, blocked, blk):
+    """BFS from `start` skipping every tile flagged in `blocked` (bytearray) and every edge listed
+    in `blk` (dict: source tile -> dict of blocked targets)."""
+    n = len(nb)
+    seen = bytearray(n)
+    seen[start] = 1
+    q = [start]
+    h = 0
+    while h < len(q):
+        c = q[h]
+        h += 1
+        b = blk.get(c)
+        if b is None:
+            for j in nb[c]:
+                if not seen[j] and not blocked[j]:
+                    seen[j] = 1
+                    q.append(j)
+        else:
+            for j in nb[c]:
+                if not seen[j] and not blocked[j] and j not in b:
+                    seen[j] = 1
+                    q.append(j)
+    return seen
+
+
+class MineCtx:
+    """The tripmine eligibility rule of TERRAIN_SPEC section 6.8, computed once per level.
+
+    The bypass graph B(M) is the movement graph with the mine tiles removed and every jump/drop/pad
+    edge removed whose horizontal segment passes within 0.9 u of a mine centre. A slot is eligible
+    iff B({m}) keeps every round-trip tile except m itself round-trip reachable; the joint rule is
+    the same statement for the level's whole mine set.
+    """
+
+    def __init__(self, W, adj, rt, slots):
+        T = W.tiles
+        n = len(T)
+        self.T = T
+        self.n = n
+        self.rt = rt
+        self.rt_count = 0
+        for i in range(n):
+            if rt[i]:
+                self.rt_count += 1
+        self.beacon = find_tile(W, 0, 0, 1)
+        self.nb = adj
+        self.nb_rev = [[] for _ in range(n)]
+        for i in range(n):
+            for j in adj[i]:
+                self.nb_rev[j].append(i)
+        self.slot_tiles = [s[0] for s in slots]
+        # column index: (x, z) -> tile indices. The trigger cylinder is unbounded in height, so a
+        # mine also removes every other tile in its own column.
+        self.col = {}
+        for i in range(n):
+            key = (T[i][0], T[i][1])
+            lst = self.col.get(key)
+            if lst is None:
+                self.col[key] = [i]
+            else:
+                lst.append(i)
+        # every edge, walk included: the cylinder test is applied to all of them, never assumed
+        self.edges = []
+        for i in range(n):
+            for j in adj[i]:
+                self.edges.append((i, j))
+        # cell -> edge ids whose segment passes through that cell. A segment that comes within 0.9 u
+        # of a tile centre always passes through that tile's 3x3 cell block, so the per-slot query
+        # only has to look at 9 cells.
+        self.idx = {}
+        for eid in range(len(self.edges)):
+            i, j = self.edges[eid]
+            ax = T[i][0]
+            az = T[i][1]
+            dx = T[j][0] - ax
+            dz = T[j][1] - az
+            adx = dx if dx >= 0 else -dx
+            adz = dz if dz >= 0 else -dz
+            steps = adx if adx > adz else adz
+            den = 2 * steps if steps > 0 else 1
+            px = -1 << 30
+            pz = -1 << 30
+            for s in range(0, 2 * steps + 1):
+                cx = ax + rdiv(dx * s, den)
+                cz = az + rdiv(dz * s, den)
+                if cx == px and cz == pz:
+                    continue
+                px = cx
+                pz = cz
+                key = (cx, cz)
+                lst = self.idx.get(key)
+                if lst is None:
+                    self.idx[key] = [eid]
+                else:
+                    lst.append(eid)
+        self.cross = {}     # slot index -> list of edge ids crossing that slot's trigger cylinder
+        self.elig = {}      # slot index -> bool
+
+    def cross_edges(self, si):
+        lst = self.cross.get(si)
+        if lst is not None:
+            return lst
+        T = self.T
+        m = self.slot_tiles[si]
+        mx = T[m][0]
+        mz = T[m][1]
+        seen = {}
+        out = []
+        for ox in (-1, 0, 1):
+            for oz in (-1, 0, 1):
+                cell = self.idx.get((mx + ox, mz + oz))
+                if cell is None:
+                    continue
+                for eid in cell:
+                    if eid in seen:
+                        continue
+                    seen[eid] = 1
+                    i, j = self.edges[eid]
+                    if seg_hits_mine(T[i][0], T[i][1], T[j][0], T[j][1], mx, mz):
+                        out.append(eid)
+        self.cross[si] = out
+        return out
+
+    def _block(self, mines):
+        """(blocked bytearray, forward blocked-edge map, reverse blocked-edge map) for a mine set.
+        A tile is blocked when its centre lies inside any mine's trigger cylinder."""
+        blocked = bytearray(self.n)
+        blk_f = {}
+        blk_b = {}
+        T = self.T
+        for si in mines:
+            m = self.slot_tiles[si]
+            mx = T[m][0]
+            mz = T[m][1]
+            for ox in (-1, 0, 1):
+                for oz in (-1, 0, 1):
+                    lst = self.col.get((mx + ox, mz + oz))
+                    if lst is None:
+                        continue
+                    for t in lst:
+                        dx = MINE_SCALE * (T[t][0] - mx)
+                        dz = MINE_SCALE * (T[t][1] - mz)
+                        if dx * dx + dz * dz <= MINE_R2:
+                            blocked[t] = 1
+            for eid in self.cross_edges(si):
+                i, j = self.edges[eid]
+                d = blk_f.get(i)
+                if d is None:
+                    blk_f[i] = {j: 1}
+                else:
+                    d[j] = 1
+                d = blk_b.get(j)
+                if d is None:
+                    blk_b[j] = {i: 1}
+                else:
+                    d[i] = 1
+        return blocked, blk_f, blk_b
+
+    def _keeps_rt(self, mines):
+        blocked, blk_f, blk_b = self._block(mines)
+        rt = self.rt
+        # the beacon and every real gift slot must survive the cylinder: a gift inside it is
+        # uncollectable, so a mine may never create one
+        if blocked[self.beacon]:
+            return False
+        mine_set = {}
+        for si in mines:
+            mine_set[si] = 1
+        for si in range(len(self.slot_tiles)):
+            if si not in mine_set and blocked[self.slot_tiles[si]]:
+                return False
+        need = 0
+        for t in range(self.n):
+            if rt[t] and not blocked[t]:
+                need += 1
+        fwd = bfs_bypass(self.nb, self.beacon, blocked, blk_f)
+        cnt = 0
+        for t in range(self.n):
+            if rt[t] and not blocked[t] and fwd[t]:
+                cnt += 1
+        if cnt != need:
+            return False
+        back = bfs_bypass(self.nb_rev, self.beacon, blocked, blk_b)
+        cnt = 0
+        for t in range(self.n):
+            if rt[t] and not blocked[t] and back[t]:
+                cnt += 1
+        return cnt == need
+
+    def eligible(self, si):
+        v = self.elig.get(si)
+        if v is None:
+            v = self._keeps_rt([si])
+            self.elig[si] = v
+        return v
+
+    def joint_ok(self, mines):
+        return self._keeps_rt(mines)
+
+
+def roll_mines(rng, level, n, extra, W, adj, rt, slots):
+    """returns occ list (0 gift, 1 tripmine). Per-slot chance (15+min(L,25))/400 from level 5,
+    applied only to slots with a walkable bypass (TERRAIN_SPEC section 6.8.5). Total mines
+    hard-capped at n // 5. Extra (curse) mines are flat adds under the same cap."""
     occ = [0] * n
     num = mine_chance_num(level)
     cap = n // 5
     count = 0
+    ctx = None
+    mines = []               # accepted mine slot ids, ascending
     for i in range(n):
         r = rng.range(400)   # always drawn, so the stream does not depend on level
         if r < num:
-            occ[i] = 1
-            count += 1
-    i = n - 1
-    while count > cap and i >= 0:
-        if occ[i]:
-            occ[i] = 0
-            count -= 1
-        i -= 1
+            if ctx is None:
+                ctx = MineCtx(W, adj, rt, slots)
+            if ctx.eligible(i) and ctx.joint_ok(mines + [i]):
+                occ[i] = 1
+                mines.append(i)
+                count += 1
+    # cap: un-set from the highest slot id
+    while count > cap:
+        i = mines.pop()
+        occ[i] = 0
+        count -= 1
+    # extra (curse) mines: one draw per extra mine, indexing the ascending list of eligible free
+    # slots. A slot that breaks the joint rule is banned for the rest of the phase: banning can only
+    # place fewer mines, never an invalid one.
     e = 0
+    banned = {}
     while e < extra and count < cap:
-        free = [i for i in range(n) if occ[i] == 0]
-        occ[free[rng.range(len(free))]] = 1
-        count += 1
+        if ctx is None:
+            ctx = MineCtx(W, adj, rt, slots)
+        free = []
+        for i in range(n):
+            if occ[i] == 0 and i not in banned and ctx.eligible(i):
+                free.append(i)
+        if not free:
+            break            # no eligible slot left: place fewer, never break the rule
+        k = free[rng.range(len(free))]
+        if ctx.joint_ok(mines + [k]):
+            occ[k] = 1
+            mines.append(k)
+            count += 1
+        else:
+            banned[k] = 1
         e += 1
+    # safety net: the joint rule must hold for the final set. Removing a mine can in principle
+    # re-open a tile that the remaining mines still cut off, so verify and repair from the top.
+    while count > 0 and not ctx.joint_ok(mines):
+        i = max(mines)
+        mines.remove(i)
+        occ[i] = 0
+        count -= 1
     return occ
 
 
@@ -1361,7 +1626,7 @@ def build(seed, level, players, extra_mines, attempt):
     slots = place_gifts(W, rgift, tn, rt)
     if slots is None:
         return None
-    occ = roll_mines(Rng(mix(base, ST_MINE)), level, len(slots), extra_mines)
+    occ = roll_mines(Rng(mix(base, ST_MINE)), level, len(slots), extra_mines, W, adj, rt, slots)
     return W, slots, occ, boundary, arms, counts
 
 
