@@ -725,6 +725,56 @@ a refill at every level boundary would make leaving at 0 charges free and delete
 phrasing was the source of the preflight review's item 23, so it is banned from the three documents
 rather than corrected once.
 
+### D-064 — FINAL — The owner approved all 14 enemy-system rules as proposed, plus the Isagi and nuke rulings.
+DECISION (owner ruling, 2026-11-16, given to the orchestrator before the overnight run): the 14
+enemy-system rules of `research/fable-enemies.md` are approved **as proposed in that document** and are
+FINAL, not [CONTESTABLE]. They are the 15 numbered items of T-070 (`research/fable-tickets.md` §5),
+minus the two the owner ruled separately:
+1. Floater altitude — feet ease toward the target's feet at 2.0 u/s (F1).
+2. Body-size table for all 12 enemies (F2).
+3. Coil — landing target is the player's last grounded tile; shove 8 u/s decaying linearly to 0 over 0.5 s.
+4. Copies of one enemy — cycle offset k/n; chaser copies spawn ≥ 30 u apart (F7).
+5. Scheduling — address me appears only when no enemy body is within 12 u, no ring or patch is on the
+   player, the player is grounded and not on glitched floor; gin does not mark during address me's
+   countdown (F8).
+6. Pursuit ceilings — kiwi cat 0.80, kitten 0.70, YOU?! 0.55, toucher 0.75, seal 0.60, Claude 0.55 of
+   base run speed; bursts ≤ 1.00 for ≤ 3.0 s; overflow converted to tempo with a 60% floor (§5.1).
+7. Seal — the dash is a fixed 3D line; telegraph only from 4–12 u; cleared by a jump on the bark, a
+   3 HU step, or a 0.7 u sidestep; Pup Pack text "jump each bark" (§5.2).
+8. Ability lock per class, including the Athletic stride lock (§5.3).
+9. Claude's wind shot — 7.0 u/s, 90°/s, life 4.0 s, dies on any tile slab or step riser.
+10. gin stands on platform tiles only (farthest hub tile as fallback).
+11. Last Light's arrival pushes enemy bodies within 8 u of the dais out to 8 u (no kill).
+12. First-shown levels, vote caps, chaser ceiling 6, and the NEW / REPEAT / FREE altar rule (§1, §3).
+13. Wet Floor keeps "slippery" and loses its extra slow.
+14. The counter-play map of `research/fable-enemies.md` §4 is the answerability standard: every rule
+    must leave every enemy answerable in it, and DESIGN.md §5 and §7.1 are rewritten to those answers.
+
+Two rules the owner ruled in the same breath, both FINAL and both implemented in full:
+- **Isagi** — D-056 stays FINAL (he may still fall back to a `lane` anchor). He is made answerable
+  there even under Egoist by **both** halves, not one: (a) volley gap — a burst fires in volleys of at
+  most 3 balls 0.15 s apart, and consecutive volleys of one burst are separated by 0.75 s (45 ticks =
+  one full jump), so each volley is cleared by its own jump; (b) dwell limit — on a `lane` anchor he
+  stays at most 4.0 s (240 ticks) before relocating. The owner wrote "volley gap or ~4 s dwell limit";
+  the ruling recorded here is that **both** are implemented, because (a) answers Egoist and (b) removes
+  the parked body from the path. This supersedes the "does not wind up along a flat in-line walkway"
+  proposal of `research/fable-enemies.md` §4 item 3.
+- **Nuke** — one salvo (tracking, including restarts after a broken lock, plus descent) lasts at most
+  6.0 s (360 ticks) from its first tracking tick; if it has not detonated by then it expires harmlessly
+  and the 5.0 s pause starts. The line-of-sight ray and the descending missile are blocked by any prop,
+  any `spire` pad, any `bastion` tower and any tile slab; a missile that meets one detonates there.
+  Counter-play text names both answers: leave the sphere, or get under or behind one of those.
+
+WHY: the owner read `research/fable-enemies.md` and approved it as written, which closes the gap the
+ticket-completeness pass flagged — T-070 said "as ruled by the owner" while DECISIONS.md held no ruling
+on the 14 proposals, so every item but Isagi and the nuke would have been logged [CONTESTABLE] and left
+open. Marking them FINAL is what lets T-070 apply them instead of parking them, and it is what makes the
+counter-play map of §4 a standard rather than a suggestion. The Isagi and nuke rulings are recorded with
+their arithmetic because both were written by the owner as a choice ("or", "≤ 6 s") and the run needs one
+reading: both Isagi halves are implemented, and the nuke's limit is measured from the first tracking tick
+of a salvo rather than from launch, so a lock broken and re-acquired cannot extend a salvo past 6 s.
+Nothing here changes ENEMIES.md, the 12-enemy roster, D-025 or any earlier FINAL decision.
+
 ---
 
 ## C. Process
