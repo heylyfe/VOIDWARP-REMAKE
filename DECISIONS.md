@@ -775,6 +775,133 @@ reading: both Isagi halves are implemented, and the nuke's limit is measured fro
 of a salvo rather than from launch, so a lock broken and re-acquired cannot extend a salvo past 6 s.
 Nothing here changes ENEMIES.md, the 12-enemy roster, D-025 or any earlier FINAL decision.
 
+### D-065 — FINAL — Floater altitude, body sizes, and copy offsets (SR-1..SR-3).
+DECISION (2026-11-16, T-070): a floating enemy's feet height eases toward its target's feet height at a
+maximum of **2.0 u/s** (a 4 HU climb = 2.0 u buys 1.0 s of vertical separation) and its horizontal speed
+is the speed stated in its section — the vertical easing is never multiplied by any speed multiplier.
+Body height / hit-cylinder diameter per enemy: kiwi cat 1.0 / 0.9; coil 1.0 squashed / 2.0 extended at
+0.9; thicc ben 4.0 / 1.2, not hurdle-able — touching him is the way past (§5.3); Isagi 1.8 / 0.7,
+not hurdle-able; YOU?! 1.8 / 0.7, outwalked, not jumped; toucher 1.4 / 0.8; seal 0.6 / 0.6; address me
+2.5 with no body contact; Claude 2.0 / 1.6, keeps its distance; gin ichimaru 1.8 / 0.7. Copy k of n of
+the same enemy starts its cycle offset by **k/n of the cycle length** and is otherwise identical; copies
+of one **chaser** spawn at least **30 u apart**, each taking the next candidate in the D-056 fallback
+order, so they arrive from different sides instead of as one blob.
+WHY: 2.0 u/s keeps a floater's climb slower than a 0.375 s jump, so height always answers it; the fixed
+body sizes decide hurdle-ability per enemy (1.0 u clears under a 2.25 u apex, 4.0 u never does), and the
+k/n offset with the 30 u chaser separation turns copies into a rhythm the player can learn rather than
+a simultaneous wave.
+
+### D-066 — FINAL — Coil's landing shockwave is survivable by geometry.
+DECISION (2026-11-16, T-070): coil lands on the player's last grounded tile (D-064 item 3) and its
+landing shockwave has radius 6 u, pushing players outward at **8 u/s decaying linearly to 0 over
+0.5 s** — 2.0 u of travel, enough to clear a 1-wide path from its centre — survivable on a platform
+≥ 5 wide, and it **does not kill**; the shove off a ledge is the only danger.
+WHY: a linear decay with exactly 2.0 u of total travel always leaves room to walk clear of a shove on
+any platform ≥ 5 wide, so coil's pressure is forced movement and ledge discipline, never direct slam
+damage — the knockback is what kills, nothing else.
+
+### D-067 — FINAL — The scheduling arbiter (SR-4).
+DECISION (2026-11-16, T-070): address me **appears** only when, on that tick, (a) no enemy body is
+within 12 u of the player, (b) no ring or patch is on the player — a ring or patch being a nuke ground
+ring, a gin marked patch, or a coil landing ring — and (c) the player is grounded and not standing on
+glitched floor. If any condition fails, address me waits and appears on the first tick all three hold.
+While its countdown runs, **gin does not mark a patch** (his cooldown keeps ticking; the strike is
+deferred until the countdown ends).
+WHY: the only enemy that demands stillness must never overlap with an enemy that demands movement; the
+three gates and the gin deferral guarantee a stop is always answerable — no chaser in reach, no ring on
+the player, feet on solid floor, and no patch cutting the route while you hold still.
+
+### D-068 — FINAL — Pursuit ceilings for every floating body (SR-5).
+DECISION (2026-11-16, T-070): every floating body's horizontal speed after ALL multipliers (overtime,
+curses, Hunger) is clamped to a fraction of **base** run speed (9 u/s — base, not the player's current
+speed, so speed upgrades always gain ground and no curse can invert the race): kiwi cat 0.80 → 7.2 u/s;
+kitten (The Litter) 0.70 → 6.3; YOU?! 0.55 → 4.95; toucher 0.75 → 6.75; seal 0.60 → 5.4; Claude 0.55 →
+4.95. **Bursts are exempt but bounded**: a telegraphed sprint may reach 1.00 × base run speed for at
+most 3.0 s, then back under its ceiling. **Overflow becomes tempo**: whatever part of a speed
+multiplier the ceiling removes is applied to that enemy's cycle instead — idle/cooldown time divided by
+the unused factor, floored at 60% of the base cycle; for the toucher (no cooldown) it shortens the
+glitch interval (2.0 s → at most 1.2 s).
+WHY: ceilings keyed to base run speed mean every speed upgrade still gains ground and no curse or
+overtime stack can make a body unbeatable; bounded bursts and the 60% tempo floor keep accelerated
+enemies pressing through faster cycles instead of simply getting faster mid-chase.
+
+### D-069 — FINAL — The seal's dash is a fixed 3D line, started only from 4–12 u.
+DECISION (2026-11-16, T-070): at **telegraph start** the dash line is fixed as the straight 3D segment
+from the seal's body centre through the player's centre (0.9 u above the player's feet), extended to
+20 u; it **does not re-aim** during the 0.75 s telegraph or the 1.0 s dash, and the dashed telegraph is
+drawn along that 3D line, not flattened onto the ground. Telegraph only from **4–12 u** — closer than
+4 u it keeps flapping (a chaser problem with a chaser answer: hurdle it, SR-2). Contact at any time =
+**kill**. Pup Pack text is "**jump each bark**"; its second seal runs its own fixed line 0.5 s later
+(seals capped at 3 with stagger, SR-3), so the barks never coincide.
+WHY: a fixed line makes repositioning after telegraph start genuinely safe — the jump clears the bark
+and a sidestep clears a re-aim that never comes; the 4–12 u start window keeps the line readable
+(no point-blank snapping) while the hurdle remains the answer when it overcloses.
+
+### D-070 — FINAL — Ability lock answers per class (SR-6).
+DECISION (2026-11-16, T-070): while a lock holds (glitched floor, coil's shockwave lock, any future
+lock): **Dasher** cannot dash and its cooldown does not tick; **Glider** cannot start a glide and an
+active glide ends; **Athletic** gets the **stride lock** — its +15% run speed is suspended and its
+×1.5 speed-upgrade / ×1.3 air-jump-height multipliers become ×1.0 for the lock's duration (purchased
+upgrades themselves still work at normal strength; Athletic drops 10.35 → 9.0 u/s when locked, and to
+7.2 u/s on glitched floor — identical to the other two classes on the floor).
+WHY: a lock must degrade every class the same way or it becomes class-gated death; suspending
+multipliers (not deleting upgrades) keeps purchases worth their gold while the floor locks, and the
+10.35 → 9.0 u/s drop means Athletic is exactly as mobile as Dasher and Glider when any lock holds.
+
+### D-071 — FINAL — Claude's wind shot dies on terrain.
+DECISION (2026-11-16, T-070): on beats 1, 2 and 3 of the wind bar each homing shot flies at
+**7.0 u/s, turns 90°/s, has life 4.0 s**, and the shot **dies on touching ANY tile slab or step riser
+(≥ 1 HU), and on any prop**. Counter-play: run in a straight line (7.0 u/s vs 9.0 — you gain 2 u/s) or
+drop one tread because the shot dies on any slab or riser.
+WHY: 7.0 u/s under a 9.0 u/s base means a straight run always gains 2 u/s on it, and terrain — any slab
+or riser ≥ 1 HU, any prop — deletes the shot outright, so standing ground behind cover or dropping one
+tread is as valid an answer as kiting it in the open.
+
+### D-072 — FINAL — gin ichimaru stands on platform tiles only.
+DECISION (2026-11-16, T-070): gin stands 15–25 u away on **platform tiles only**; his fade-in tile is
+always a platform tile (never a walkway tile — his body must never block or cut the only route home);
+if no platform tile qualifies under his 15–25 u rule, he uses the **farthest tile of the spawn hub**.
+His body is never on the path, so only the patch threatens you. He never marks the beacon dais,
+and never marks while address me's countdown runs (SR-4); gifts over a void zone stay but cannot be
+reached until it closes.
+WHY: a 3-cell patch walked out in 0.33 s is the answerable threat; a body parked on the only walkway
+home would not be. Forcing platform tiles and the hub-farthest-tile fallback guarantees the route home
+is never severed by a fade-in, so the patch is the only thing you must answer.
+
+### D-073 — FINAL — Last Light's arrival pushes enemies radially out to exactly 8 u, no kill.
+DECISION (2026-11-16, T-070): a killing blow while the player holds at least 1 void charge teleports
+the player to the beacon dais, and that arrival **pushes every enemy body within 8 u of the dais
+radially out to exactly 8 u from the dais centre** — a one-time reposition, **no kill, no behavior
+change** — so the save cannot drop the player into a radial ambush around the beacon. At 0 charges
+Last Light does nothing: every death at 0 charges is real, and nothing resurrects at 0.
+WHY: a save that teleports the player into a pack of enemies at the dais would kill on arrival and
+make the charge worthless; the radial push to exactly 8 u gives the 2.0 s of invulnerability a real
+escape window with no kill and no behavior change on the displaced bodies.
+
+### D-074 — FINAL — The NEW / REPEAT / FREE enemy offer draw and chaser ceiling.
+DECISION (2026-11-16, T-070): the three E-altars of an E bay are **NEW / REPEAT / FREE (D-074)** — one
+**NEW** altar (an eligible enemy type with 0 votes; lowest first-shown level first, ties by seeded
+draw), one **REPEAT** altar (a type already in play, below its cap — never the type picked at the
+previous vote; in an E×2 bay the second draw treats the first draw's pick as that previous vote), and
+one **FREE** altar (seeded draw from everything eligible and not already shown). If a category is empty
+its altar becomes FREE. **Chaser ceiling (D-074): at most 6 floating lethal bodies in play at once**
+(kiwi cat, toucher, YOU?!, seal — The Litter's kittens count as half each); an altar that would exceed
+it is not drawn.
+WHY: every vote becomes the same legible question — a new problem, or more of one already handled —
+while the six-body cap keeps a stacked arena a readable sequence of hurdles rather than a wall.
+
+### D-075 — FINAL — Wet Floor / glitched floor slow (fixed at 20%).
+DECISION (2026-11-16, T-070): **Wet Floor** keeps "slippery" (glitched tiles get friction ×0.4) and
+**loses its extra slow** — **D-075 fixes the glitched floor's slow at 20%** for everyone; the slow is
+an enemy effect, not a curse, and does not count toward the §7 10% curse-safety rule because the
+terrain proof only needs the base kit's jump envelope (the floor slow never touches jump velocity or
+gravity). A glitched player at 7.2 u/s still gains 0.45 u/s on the toucher (SR-5); Wet Floor's
+counter-play stays "**jump across, don't walk**".
+WHY: the glitched floor must never cost more than its 20% slow or the terrain puzzle's answer breaks
+and the §7 10% budget loses its meaning; extra slowing stacked on top of the toucher's own 0.75
+ceiling (6.75 u/s) could erase the 0.45 u/s margin a glitched player needs, so the slow is pinned at
+20% and Wet Floor adds only slipperiness.
+
 ---
 
 ## C. Process
