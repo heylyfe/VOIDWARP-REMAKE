@@ -493,8 +493,19 @@ R14. DECISION NUMBERS UNDER PARALLEL WORK. Two workers that each take "the next 
      `D-T012-1`, `D-T012-2` (this replaces any "numbered from D-0NN upward" in a ticket). Entries are
      appended at the end of their section; when two branches append at the same place the orchestrator
      keeps both, as for `core/stats.gd` in section 7.
-R15. NEW FILES. If a file-creation tool call stalls or fails, create the file from the shell instead
-     (heredoc, one file per call). Briefs for code tickets carry this line.
+R15. NEW FILES - THE FILE-CREATION TOOL HANGS. On the Mistral Vibe provider (GLM 5.3 Flash and
+     DeepSeek V4.1) the write_file tool hangs for good when it creates a file that does not exist yet
+     (seen three times on 2026-11-16: RUNLOG.md, TBD.md + AUDIT.md, tickets/probe.tmp), and a long
+     shell heredoc is cut off mid-content. Editing a file that already exists works. Every brief to a
+     GLM or DeepSeek worker therefore carries these lines verbatim:
+     "NEVER call write_file to create a file; it hangs in this environment. To create a file: (1) run
+     printf 'PLACEHOLDER' > <path> in the shell (make the folder first with mkdir -p); (2) fill it with
+     the edit tool by replacing PLACEHOLDER with the content, at most about 150 lines per edit, and
+     append the rest with further edits. Do not paste more than about 40 lines into one shell heredoc.
+     Never run git add -A or git add . ; add the files you wrote by name."
+     Inkling workers (opencode provider) get the same lines; they are harmless there.
+     A worker that shows a file_change item in status running for more than 3 minutes is hung on this:
+     send it a restart with these lines and "continue from where you stopped" (not an R2 failure).
 R16. THE GATE EXISTS. `tools/gate.ps1` is in the repository (written ahead of T-001 so that R6 has a
      gate from the first merge). T-001 keeps it and still owes everything else in its Do list;
      `run_all.gd` must print `TESTS n passed m failed` (the gate reads that line) and must not try to
