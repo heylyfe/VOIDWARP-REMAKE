@@ -8,3 +8,6 @@ __pycache__/
 build/
 terrain_ref/out/
 out/
+
+# Godot 4 script/resource UID sidecars (regenerated on import)
+*.uid

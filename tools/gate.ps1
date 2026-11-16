@@ -192,6 +192,17 @@ $m = [regex]::Match($t, '(?m)^\s*PARITY (\d+)/(\d+) OK\s*$')
 if (-not $m.Success -or $m.Groups[1].Value -ne $m.Groups[2].Value -or $m.Groups[2].Value -eq '0') { Stop-Gate $step 'did not print PARITY n/n OK' }
 Pass-Step $step $m.Value.Trim()
 
+# ---- resource import (not a gate step) ---------------------------------------------------------
+# A fresh checkout or worktree has no game\.godot folder, so PNG / .glb resources are not imported
+# and load() fails in the tests. Import once before any step that loads resources. Incremental and
+# quick (a few seconds). A failed import is only a warning: the tests that need it will say so.
+$needsImport = (Test-Input 'game\tests\run_all.gd') -or (Test-Input 'game\tools\validate_sprites.gd') -or (Test-Input 'game\tools\fog_check.gd')
+if ($needsImport) {
+    Write-Host 'PREP resource import'
+    $imp = Invoke-Tool $Godot @('--headless', '--path', (Join-Path $Root 'game'), '--import')
+    if ($imp.TimedOut -or $imp.Code -ne 0) { Write-Host 'WARN resource import did not finish cleanly; continuing' }
+}
+
 # ---- 3. run_all.gd -----------------------------------------------------------------------------
 $step = 'run_all'
 Write-Host "STEP 3 $step"
