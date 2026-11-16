@@ -513,6 +513,22 @@ R16. THE GATE EXISTS. `tools/gate.ps1` is in the repository (written ahead of T-
 R17. STALE COUNT IN T-002. Its Done-when says "selftest 12/12"; the validator has had 15 planted
      defects since generator version 3. Dispatch T-002 with the addendum "selftest 15/15 (not 12/12)".
 
+R18. GODOT FACTS EVERY CODE BRIEF CARRIES (each one already cost a worker time on this project):
+     "(a) A global class_name does not resolve when a script is run with --headless --script: refer to
+     other scripts with preload("res://...") constants, never by a bare class name. (b) A fresh
+     checkout has no game/.godot folder, so PNG and .glb files are not imported and load() fails: run
+     <godot> --headless --path game --import once after adding or changing such a file (tools/gate.ps1
+     does this by itself). (c) Godot writes a .uid file next to every script; those are gitignored on
+     purpose (two worktrees would generate different ones and conflict) - never commit a .uid file and
+     never reference a script by uid://, only by res:// path. (d) Never commit game/.godot/."
+R19. TOOLS THAT ARE NOT IN GIT LIVE IN ONE PLACE. Anything a ticket installs that is gitignored
+     (portable Blender of T-015; the engine) is installed under the MAIN checkout,
+     C:\Users\Nathan\Documents\REMAKE VWR\VOIDWARP-REMAKE\tools\, never inside a worker's worktree,
+     where the next worker and the audit would not find it. T-015's brief says so, and its scripts
+     and tools/build_models.ps1 look for Blender at $env:BLENDER first, then tools\blender in their own
+     checkout, then that main-checkout path (the same order tools/gate.ps1 uses for Godot). The export
+     templates of T-056 go to the per-user Godot templates folder, which every checkout shares.
+
 ### 10.2 MANDATORY — in this order; each one MERGED-GREEN or PARKED with a written reason
 
 Within a step, tickets on one line may run in parallel (inside R2); merge in the order listed.
