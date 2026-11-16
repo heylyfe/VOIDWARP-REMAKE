@@ -479,7 +479,7 @@ R11. WORKTREES, AND PARALLEL STAYS PARALLEL. Every worker is dispatched with wor
      current `main` commit.
 R12. THE ENGINE IN A WORKTREE. `tools/godot/` is gitignored, so a worktree has no engine and the
      `tools\godot\godot.exe` of section 4 does not exist there. Every brief that runs Godot carries
-     the line: "Godot is NOT in your checkout. Use the absolute path <main checkout>	ools\godot\godot.exe
+     the line: "Godot is NOT in your checkout. Use the absolute path C:\Users\Nathan\Documents\REMAKE VWR\VOIDWARP-REMAKE\tools\godot\godot.exe
      (quote it, the path has a space) wherever a command says tools\godot\godot.exe. Never download or
      copy the engine. tools\gate.ps1 finds the engine by itself." That path is the only mention of the
      main checkout a brief may contain.
