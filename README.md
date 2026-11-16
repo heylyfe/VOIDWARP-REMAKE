@@ -32,4 +32,31 @@ python terrain_ref\validate.py --seeds 0:5000                  # all invariants,
 python terrain_ref\render.py --seed 7 --level 30 --out terrain_ref\out\l30.png
 ```
 
-Engine: Godot 4.7.2 (MIT). Language: GDScript. Ships as a native Windows executable.
+Engine: Godot 4.7.2 (MIT). Language: GDScript. Ships as a native Windows executable
+(standalone `.exe` export — no Electron, no browser wrapper).
+
+## Tests (headless, CLI-drivable)
+
+```powershell
+$G = "tools\godot\godot.exe"
+# every discovered test (game/tests/test_*.gd; each exposes func run() -> Array[String]):
+& $G --headless --path game --script res://tests/run_all.gd
+# terrain parity (GDScript vs Python goldens):
+& $G --headless --path game --script res://tests/test_terrain_parity.gd -- "$PWD\terrain_ref\gallery.json"
+# the merge gate (all checks except the 5,000-seed harness and the export):
+powershell -File tools\gate.ps1
+# the full 5,000-seed generation harness:
+powershell -File tools\harness.ps1
+```
+
+## Build
+
+```powershell
+& $G --headless --path game --export-release "Windows Desktop" ..\build\voidwrap_run.exe
+```
+
+(Export presets land with ticket T-056.)
+
+## Credits
+
+- enemy images: see content/enemies/*/SOURCES.md
