@@ -368,3 +368,211 @@ only for T-099).
 
 Real audio design; multiplayer transport; more modes via `content/modes/`; gimmick drop-ins
 (DESIGN.md §10); terrain archetype pack 2 (GEN_VERSION 2, Python oracle first).
+
+## 9A. Tickets added by the ticket-completeness pass (2026-11-16)
+
+Appended, not merged into §6: the tickets of §6 are unchanged. Full specs, the standing clause, the
+animation tables, VFX tables, sound briefs and the dispatch addenda are in research/fable-tickets.md.
+Enemy-system reasoning is in research/fable-enemies.md; fun signals in research/fable-funrisks.md.
+
+[CONTESTABLE] notes instead of edits (things in earlier sections this pass would change but did not):
+- §1 says a ticket that fails twice on Inkling is re-dispatched once to GLM. The owner's budget rule
+  for tonight (§10, rule R2) says an Inkling ticket never goes to GLM. §10 wins tonight.
+- §7 lists the merge order without the tickets below; §10 gives the complete order.
+- T-001 says "first commit on main". Two commits already exist (ab471d8, 14be164); T-001 commits on top.
+- §9 says "terrain archetype pack 2 (GEN_VERSION 2 …)". The generator is already at version 3.
+- §2's table says the selftest is 5/5 in places written before the terrain changes; it is 15/15.
+
+| ticket | title | assignment | spec |
+|---|---|---|---|
+| T-070 | Enemy systems fix (15 rules incl. the owner's Isagi and nuke rulings; answerability criterion) | spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash | fable-tickets.md §5 |
+| T-071 | Floater kinematics, pursuit ceilings, stagger, ranged limits | spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash | fable-enemies.md §6 + fable-tickets.md §5 |
+| T-072 | Scheduling arbiter and class ability lock | spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash | fable-enemies.md §6 |
+| T-073 | Enemy data pass | spawn model:opencode/opencode/inkling-2-small-free | fable-enemies.md §6 |
+| T-074 | Offer draw: NEW / REPEAT / FREE altars, caps, chaser ceiling | spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash | fable-enemies.md §6 |
+| T-075 | Answerability harness | spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash | fable-enemies.md §6 |
+| T-076 | Counter-play text: lobby panels and tips | spawn model:opencode/opencode/inkling-2-small-free | fable-enemies.md §6 |
+| T-080 | Telemetry event log | spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash | fable-tickets.md §5 |
+| T-081 | Fun-risk signals (eight; terrain-caused vs enemy-caused first) | spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash | fable-tickets.md §5 |
+| T-082 | Camera, key bindings, settings | spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash | fable-tickets.md §5 |
+| T-083 | Enemy animation data (two workers: enemies 1–6, 7–12) | 2× spawn model:opencode/opencode/inkling-2-small-free | fable-tickets.md §1, §5 |
+| T-084 | Animation player and telegraph sync | spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash | fable-tickets.md §1.0, §5 |
+| T-085 | VFX pack: tripmine, glitched floor, beacon, respawn | spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash | fable-tickets.md §2, §5 |
+| T-086 | HUD: charge pips, Last Light icon, death attribution screen | spawn model:opencode/opencode/inkling-2-small-free | fable-tickets.md §2.4, §5 |
+| T-087 | Audio cues | spawn model:opencode/opencode/inkling-2-small-free | fable-tickets.md §3, §5 |
+| T-090 | Backlog: cross-ticket bug review | spawn model:acpRegistry_mistral_vibe/deepseek-v4 | fable-tickets.md §5 |
+| T-091 | Backlog: dead vocabulary sweep | spawn model:opencode/opencode/inkling-2-small-free | fable-tickets.md §5 |
+| T-092 | Backlog: validator selftest expansion | spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash | fable-tickets.md §5 |
+| T-093 | Backlog: determinism fuzz | spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash | fable-tickets.md §5 |
+| T-094 | Backlog: loading tip pool | spawn model:opencode/opencode/inkling-2-small-free | fable-tickets.md §5 |
+| T-095 | Backlog: README and HOW-TO-PLAY | spawn model:opencode/opencode/inkling-2-small-free | fable-tickets.md §5 |
+| T-096 | Backlog: death attribution edge cases | spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash | fable-tickets.md §5 |
+
+## 10. OVERNIGHT RUN PLAN — the orchestrator executes this section literally
+
+You are the orchestrator: DeepSeek V4.1 (model:acpRegistry_mistral_vibe/deepseek-v4). You dispatch,
+read responses, merge, run gates and keep the log. You do not implement. This plan was written by the
+design lead and has not been executed by anyone. Start only after the owner has committed this pass.
+
+### 10.1 Rules
+
+R1. NO SILENT SKIPS. Every ticket ends in exactly one of two states, written in RUNLOG.md with the
+    time: MERGED-GREEN (gate exit 0 after merge) or PARKED (a written reason: what failed, the output,
+    what was tried). A ticket is never dropped, never marked done on a worker's word, never left
+    without a line.
+R2. BUDGET (owner-set). At most 10 parallel Inkling 2 Small, at most 3 GLM 5.3 Flash, at most 3
+    DeepSeek V4.1 INCLUDING YOURSELF. Opus 5.5 only if absolutely necessary. Drain cheap models first:
+    an Inkling ticket never goes to GLM; a GLM ticket never goes to DeepSeek unless GLM is fully
+    saturated (3 GLM workers running and the ticket has waited more than 30 minutes). A ticket that
+    fails twice on its model is split into two smaller tickets for the SAME model, or PARKED.
+R3. DISPATCH EXACTLY AS WRITTEN. The brief of a ticket = its full text from §6 (or from
+    research/fable-tickets.md §5 / research/fable-enemies.md §6 for the tickets of §9A) + the standing
+    clause of research/fable-tickets.md §5 + rule R4's addenda + the repository path + "do not commit
+    to main; commit on branch t/<ticket id>". Do not summarise, shorten or reinterpret a ticket.
+R4. DISPATCH ADDENDA. research/fable-tickets.md §4 has a table of missing lines. When you dispatch a
+    ticket named in that table, append each of its lines verbatim to the brief under the heading
+    ADDENDA (numbers supplied by the design lead; build them as written).
+R5. FROZEN. ENEMIES.md behavior sentences, the 12-enemy roster, D-025 and every FINAL decision. A
+    worker that finds a contradiction parks it in PARKED.md; you do not resolve it either.
+R6. GATE AFTER EVERY MERGE: rebase the ticket branch on main, run tools\gate.ps1, merge only on exit 0.
+    A red gate goes back to the same worker with the failing output (counts as one failure, R2).
+R7. TBD FALLBACK for any stalling name or asset (ENEMIES.md hard rule). The 17 enemy images may be
+    missing from assets_src/enemies/: every missing one becomes a TBD placeholder; the run continues.
+R8. Never push. Never commit tools/godot/ or .godot/. Never move a threshold. Never edit
+    terrain_ref/voidgen.py or game/terrain/voidgen.gd tonight (no ticket in this plan needs to).
+R9. RUNLOG.md: one line per event — time, ticket, model, event (DISPATCHED / RESPONSE / GATE exit code
+    / MERGED-GREEN / PARKED + reason). Write the line before you act on the event.
+R10. If you are interrupted, the next orchestrator resumes from the first ticket in §10.2 that has no
+     MERGED-GREEN or PARKED line in RUNLOG.md.
+
+### 10.2 MANDATORY — in this order; each one MERGED-GREEN or PARKED with a written reason
+
+Within a step, tickets on one line may run in parallel (inside R2); merge in the order listed.
+A step starts when every ticket of the previous step is MERGED-GREEN or PARKED.
+
+STEP a — enemy systems fix (before any enemy code exists)
+T-070 — spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash
+Standing criterion (owner): every rule must leave every enemy answerable in the counter-play map of
+research/fable-enemies.md §4; a rule that fails is parked in PARKED.md with a written reason, not
+applied. Check the response for one answerability line per rule before merging.
+
+STEP b — every remaining FLEET_PACK ticket, in the merge order of §7 with the §9A tickets slotted in.
+Existing tickets keep the model assignments written in §6.
+b1  T-001 — spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash
+    T-002 — spawn model:opencode/opencode/inkling-2-small-free
+    (main must be green before b2)
+b2  Wave 1, merge order: T-013, T-010, T-012, T-082, T-011, T-014a, T-014b, T-014c, T-016, T-015
+    T-013 — spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash
+    T-010 — spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash
+    T-012 — spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash
+    T-082 — spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash
+    T-011 — spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash
+    T-014a — spawn model:opencode/opencode/inkling-2-small-free
+    T-014b — spawn model:opencode/opencode/inkling-2-small-free
+    T-014c — spawn model:opencode/opencode/inkling-2-small-free
+    T-016 — spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash
+    T-015 (install and export runs) — spawn model:opencode/opencode/inkling-2-small-free
+    T-015 (scripts) — spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash
+b3  Wave 2, merge order: T-027, T-071, T-072, T-020, T-021, T-022, T-023, T-074, T-026, T-024, T-025, T-086
+    T-027 — spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash
+    T-071 — spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash
+    T-072 — spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash
+    T-020 — spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash
+    T-021 — spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash
+    T-022 — spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash
+    T-023 — spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash
+    T-074 — spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash
+    T-026 — spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash
+    T-024 — spawn model:opencode/opencode/inkling-2-small-free
+    T-025 — spawn model:opencode/opencode/inkling-2-small-free
+    T-086 — spawn model:opencode/opencode/inkling-2-small-free
+b4  Wave 3, merge order: T-083, T-084, then T-030 to T-041 in numeric order
+    T-083 (enemies 1 to 6) — spawn model:opencode/opencode/inkling-2-small-free
+    T-083 (enemies 7 to 12) — spawn model:opencode/opencode/inkling-2-small-free
+    T-084 — spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash
+    T-030 — spawn model:opencode/opencode/inkling-2-small-free
+    T-031 — spawn model:opencode/opencode/inkling-2-small-free
+    T-032 — spawn model:opencode/opencode/inkling-2-small-free
+    T-033 — spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash
+    T-034 — spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash
+    T-035 — spawn model:opencode/opencode/inkling-2-small-free
+    T-036 — spawn model:opencode/opencode/inkling-2-small-free
+    T-037 — spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash
+    T-038 — spawn model:opencode/opencode/inkling-2-small-free
+    T-039 — spawn model:opencode/opencode/inkling-2-small-free
+    T-040 — spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash
+    T-041 — spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash
+    (If T-070 was PARKED in whole: dispatch the enemy tickets anyway with research/fable-enemies.md
+    F1 and F2 as ADDENDA, and write that in RUNLOG.md.)
+b5  Wave 4, merge order: T-073, T-050, T-052, T-051, T-053, T-054, T-055, T-087, T-085, T-076, T-056
+    T-073 — spawn model:opencode/opencode/inkling-2-small-free
+    T-050 (two halves) — spawn model:opencode/opencode/inkling-2-small-free
+    T-052 (two halves) — spawn model:opencode/opencode/inkling-2-small-free
+    T-051 (enemy-linked) — spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash
+    T-051 (general) — spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash
+    T-053 — spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash
+    T-054 — spawn model:opencode/opencode/inkling-2-small-free
+    T-055 — spawn model:opencode/opencode/inkling-2-small-free
+    T-087 — spawn model:opencode/opencode/inkling-2-small-free
+    T-085 — spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash
+    T-076 — spawn model:opencode/opencode/inkling-2-small-free
+    T-056 — spawn model:opencode/opencode/inkling-2-small-free
+b6  Wave 5 without the audit, merge order: T-075, T-061, T-060
+    T-075 — spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash
+    T-061 — spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash
+    T-060 — spawn model:opencode/opencode/inkling-2-small-free
+
+STEP c — telemetry event log
+T-080 — spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash
+Logs every death with killer, every void fall, every charge spent and restored, every bypass passed
+within 0.5 u of a mine, per-level clear time (full record list: research/fable-tickets.md §5).
+
+STEP d — fun-risk signals
+T-081 — spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash
+Wires the eight cheap signals of research/fable-funrisks.md; the first block of the report is
+terrain-caused vs enemy-caused charges and deaths. The report is information, not a gate.
+
+STEP e — full gate re-run, by the orchestrator itself, on main, before the audit. Every command must
+exit 0; paste each final line into RUNLOG.md. If one fails: file one fix ticket to the model that
+owns the failing area, merge it under R6, and run step e again from the top.
+    python terrain_ref\test_validate.py
+    python terrain_ref\validate.py --selftest
+    python terrain_ref\gallery.py --check
+    python terrain_ref\validate.py --seeds 0:5000
+    tools\godot\godot.exe --headless --path game --script res://tests/test_terrain_parity.gd -- "<repo>\terrain_ref\gallery.json"
+    powershell -File tools\gate.ps1
+Expected final lines: TESTS OK · SELFTEST 15/15 · GALLERY 16/16 OK · 32 PASS lines and exit 0 ·
+PARITY 56/56 OK · gate exit 0.
+
+STEP f — final audit (the last mandatory ticket; it is part of step b's list and runs here)
+T-099 — spawn model:acpRegistry_mistral_vibe/deepseek-v4 (fresh thread, read-only except AUDIT.md)
+Give it RUNLOG.md, PARKED.md, TBD.md and T-081's report. The alpha tag is created only if A1 to A16
+all pass. A failing audit is a correct outcome; a softened one is not.
+
+### 10.3 [OPTIONAL-BACKLOG]
+
+Claimable ONLY after every mandatory item of §10.2 (steps a to f) is MERGED-GREEN or PARKED with a
+written reason. ONE AT A TIME, in this order. After each merge run the full gate of step e again.
+Write the findings in RUNLOG.md even if they are empty ("T-09x: no findings").
+
+T-090 Cross-ticket bug review — spawn model:acpRegistry_mistral_vibe/deepseek-v4
+    Re-read all merged diffs; hunt contradictions between tickets and specs.
+T-091 Dead vocabulary sweep — spawn model:opencode/opencode/inkling-2-small-free
+    Zero hits for "damage", "HP", "rooms", "hop", "2 per level" across all docs and code (allowed
+    exceptions listed in the ticket).
+T-092 Validator selftest expansion — spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash
+    15 to 25+ planted defects, each provoking exactly one metric.
+T-093 Determinism fuzz — spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash
+    10 fresh seeds generated 3 times each, byte-identical output; plus a slow 20,000-seed validator pass.
+T-094 Loading tip pool — spawn model:opencode/opencode/inkling-2-small-free
+    30 tips, one per death attribution screen, each true in the current build.
+T-095 README and HOW-TO-PLAY — spawn model:opencode/opencode/inkling-2-small-free
+    Rewritten to match charges, instakill, beacon restore.
+T-096 Death attribution edge cases — spawn model:acpRegistry_mistral_vibe/zai-glm-5-3-flash
+    Every killer name renders, no orphan death codes.
+
+### 10.4 What the owner should find in the morning
+
+RUNLOG.md (every ticket with a final state), PARKED.md (every contradiction and every parked rule),
+TBD.md (every placeholder), AUDIT.md (A1 to A16 with evidence, T-081's report appended), and
+build\voidwrap_run.exe if A1 passed. If the night ended early: RUNLOG.md shows the last ticket reached.
