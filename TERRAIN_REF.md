@@ -25,7 +25,7 @@ construction. Two implementations from one spec that agree on 5,000 levels is ev
 
 ```powershell
 python terrain_ref\test_validate.py                 # unit tests -> "TESTS OK"
-python terrain_ref\validate.py --selftest           # 12 planted defects must each be caught -> "SELFTEST 12/12"
+python terrain_ref\validate.py --selftest           # 15 planted defects must each be caught -> "SELFTEST 15/15"
 python terrain_ref\gallery.py --check               # -> "GALLERY 16/16 OK"
 python terrain_ref\validate.py --seeds 0:5000       # all H and D checks over 5,000 seeds, ~3 min
 tools\godot\godot.exe --headless --path game --script res://tests/test_terrain_parity.gd -- "$PWD\terrain_ref\gallery.json"   # -> "PARITY 56/56 OK"

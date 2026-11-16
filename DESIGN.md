@@ -75,7 +75,10 @@ A level is complete **only** by entering the open beacon. No timer ends a level.
   makes one fall per level free.
 - **Last Light**: once per run, and ONLY while the player holds at least 1 void charge, a killing blow
   from an enemy, a tripmine or the nuke instead teleports the player to the beacon dais with the
-  charges they had and 2.0 s of invulnerability. At 0 charges Last Light does nothing: every death at
+  charges they had and 2.0 s of invulnerability. **The arrival also pushes every enemy body within
+  8 u of the dais radially out to exactly 8 u from the dais centre — a one-time reposition, no kill,
+  no behavior change (D-073)** — so the save cannot drop the player into a radial ambush around the
+  beacon. At 0 charges Last Light does nothing: every death at
   0 charges is real, and a void fall at 0 charges is always a real death (`D-VOID`). Nothing
   resurrects at 0. HUD icon: lit while armed (unspent and charges ≥ 1), dim at 0 charges, grey once spent.
 - Every death records its **killer** and a **death code**, shown on the run-over screen:
@@ -139,7 +142,9 @@ the stipend + Paycheck.
   so every client computes the same outcome and a mine's fate is fixed for the whole level. `mix` is
   the terrain generator's mix function (TERRAIN_SPEC §3). Buying a stack re-rolls the level's mines
   deterministically; that is intended — the upgrade visibly turns some mines into duds.
-- **Nothing blocks the nuke** (§5.5). The Subspacial Barrier applies to tripmines only.
+- **Nothing absorbs the nuke** (§5.5) — the Subspacial Barrier applies to tripmines only — but the
+  missile's line-of-sight ray and its descent are blocked by any prop, any `spire` pad, any `bastion`
+  tower and any tile slab (D-064); a missile that meets one detonates there.
 - Mines are never highlighted, never counted in "gifts remaining", never needed to open the beacon.
 - **Straggler beam**: when ≤ 20% of REAL black gifts remain, each remaining one emits a vertical beam
   (`#7CFFF4`, to Y +40 u). Same rule for gold gifts in the gold phase.
@@ -156,6 +161,13 @@ variable jump cut (release = vertical speed × 0.5), auto step-up 0.5 u, air con
 | **Athletic** | +15% run speed from the start (10.35 u/s) [CANON]. Speed upgrades are ×1.5 as strong; double-jump upgrades give ×1.3 height [CANON]. No active ability. |
 
 Class is chosen at a class altar in the pre-run lobby. No class is ever required by terrain (D-013).
+
+**Ability lock (D-070, SR-6):** while a lock holds (the toucher's glitched floor, coil's landing
+shockwave, any future lock) Dasher cannot dash and its cooldown does not tick; Glider cannot start a
+glide and an active glide ends; Athletic gets the **stride lock** — its +15% run speed is suspended
+and its ×1.5 speed-upgrade / ×1.3 air-jump-height multipliers become ×1.0 for the lock's duration
+(purchased upgrades still work at normal strength; the airborne drop is 10.35 → 9.0 u/s, and 7.2 u/s
+on glitched floor — the same as every class).
 
 ## 5. Enemies — the fixed 12 (ENEMIES.md is the roster; this section is the numbers)
 
@@ -218,38 +230,116 @@ Preferred anchor kind per enemy (this table is the spec; a paragraph that names 
 fallback (c); the nuke has no body on the map; gift Larper lives in gift slots; address me appears in
 front of the player.
 
+### 5.0 System rules that apply to every enemy (FINAL via D-064…D-075)
+
+**SR-1 — Floater altitude (D-065).** A floating enemy's feet height eases toward its target's feet
+height at a maximum of **2.0 u/s** (a 4 HU climb = 2.0 u buys 1.0 s of vertical separation); its
+horizontal speed is the speed stated in its section. The vertical easing is **never multiplied** by
+any speed multiplier (overtime, curses, Hunger, bursts — D-068).
+
+**SR-2 — Body sizes (D-065).** Body height / hit-cylinder diameter in u (the hit cylinder is 0.8 ×
+body width per the HITBOXES hard rule, height = body height):
+
+| enemy | height (u) | diameter (u) | consequence |
+|---|---|---|---|
+| kiwi cat | 1.0 | 0.9 | hurdle-able (apex 2.25 u) |
+| coil | 1.0 squashed / 2.0 extended | 0.9 | hurdle-able while idle |
+| thicc ben | 4.0 | 1.2 | not hurdle-able; touching him is the way past (the eject is the answer, §5.3) |
+| Isagi | 1.8 | 0.7 | not hurdle-able; on a `lane` anchor he never stays past the dwell limit (§5.4) |
+| YOU?! | 1.8 | 0.7 | not hurdle-able; slow (ceiling 0.55), so it is outwalked, not jumped |
+| toucher | 1.4 | 0.8 | hurdle-able only with a clean jump (0.85 u margin at apex) |
+| seal | 0.6 | 0.6 | easily hurdle-able; its dash is the threat (§5.9) |
+| address me | 2.5 | — | no body contact; it is a countdown, not an obstacle |
+| Claude | 2.0 | 1.6 | not hurdle-able; keeps its distance (within 20 u) |
+| gin ichimaru | 1.8 | 0.7 | stands 15–25 u away on platform tiles only (D-072); contact is not his threat |
+
+The nuke has no body; gift Larper occupies gift slots as the tripmine (§3.3) — the roster's other
+rows carry no world size.
+
+**SR-3 — Copies of one enemy (D-065).** Copy k of n of the same enemy starts its cycle offset by
+**k/n of the cycle length**. The copy's behaviour is otherwise identical. Copies of one **chaser**
+spawn at least **30 u apart** — each copy beyond the first takes the next candidate in the D-056
+fallback order that satisfies the 30 u separation — so they arrive from different sides instead of as
+one blob. Attacks then arrive as a rhythm the player can learn.
+
+**SR-4 — Scheduling arbiter (D-067).** address me **appears** only when, on that tick, (a) no enemy
+body is within 12 u of the player, (b) no ring or patch is on the player — a ring or patch is a nuke
+ground ring, a gin marked patch, or a coil landing ring — and (c) the player is grounded and not
+standing on glitched floor. If any condition fails, address me waits and appears on the first tick
+all three hold. While address me's countdown runs, **gin does not mark a patch** (his cooldown keeps
+ticking; the strike is deferred until the countdown ends). Neither enemy gains or loses any other
+behavior: this only schedules them, so a "stop" and a "move" demand never overlap.
+
+**SR-5 — Pursuit ceilings (D-068).** Every floating body has a pursuit ceiling: its horizontal speed
+after ALL multipliers (overtime, curses, Hunger) is clamped to a fraction of **base** run speed
+(9 u/s — base, not the player's current speed, so speed upgrades always gain ground and no curse can
+invert the race):
+
+| body | base speed (u/s) | ceiling | ceiling in u/s |
+|---|---|---|---|
+| kiwi cat | 5.6 | 0.80 | 7.2 |
+| kitten (The Litter) | 4.5 | 0.70 | 6.3 |
+| YOU?! | 3.4 | 0.55 | 4.95 |
+| toucher | 6.75 | 0.75 | 6.75 |
+| seal (flapping; the dash is an attack, not pursuit) | 4.0 | 0.60 | 5.4 |
+| Claude | 4.0 | 0.55 | 4.95 |
+
+**Bursts are exempt but bounded**: a telegraphed sprint (Zoomies) may reach 1.00 × base run speed for
+at most 3.0 s. **Overflow becomes tempo**: whatever part of a speed multiplier the ceiling removes is
+applied to that enemy's cycle instead — idle/cooldown time is divided by the unused factor, floored
+at 60% of the base cycle; for the toucher (no cooldown) it shortens the glitch interval (2.0 s → at
+most 1.2 s). So overtime, Rush Hour and Hunger keep biting at every tier; they can never make a body
+unbeatable.
+
+**SR-6 — Ability lock per class (D-070).** While a lock holds (glitched floor, coil's shockwave lock,
+any future lock): **Dasher** cannot dash and its cooldown does not tick; **Glider** cannot start a
+glide and an active glide ends; **Athletic** gets the **stride lock** — its +15% run speed is
+suspended and its ×1.5 speed-upgrade multiplier and ×1.3 air-jump-height multiplier become ×1.0
+(purchased upgrades themselves still work at their normal strength; Athletic drops 10.35 → 9.0 u/s
+when locked, and to 7.2 u/s on glitched floor — identical to the other two classes on the floor).
+
 | # | name (Nullscape) | min level | max votes | each vote adds |
 |---|---|---|---|---|
-| 1 | kiwi cat (Mart) | 1 | 6 | +1 cat |
-| 2 | coil (Springer) | 1 | 4 | +1 coil |
+| 1 | kiwi cat (Mart) | 1 | 4 | +1 cat |
+| 2 | coil (Springer) | 1 | 3 | +1 coil |
 | 3 | thicc ben (Bell) | 1 | 2 | +1 ben |
-| 4 | Isagi (Guardian) | 8 | 4 | +1 Isagi |
-| 5 | nuke (ICBM) | 3 | 3 | +1 launcher |
-| 6 | YOU?! (Husk) | 3 | 3 | +1 YOU?! |
+| 4 | Isagi (Guardian) | 11 | 2 | +1 Isagi |
+| 5 | nuke (ICBM) | 5 | 2 | +1 launcher |
+| 6 | YOU?! (Husk) | 3 | 2 | +1 YOU?! |
 | 7 | gift Larper (Tripmine) | 5 | 5 | +3 flat extra mines (`extra_mines += 3`), under the 20% cap |
-| 8 | toucher (Flesh) | 5 | 3 | +1 toucher |
-| 9 | seal (Baby) | 1 | 4 | +1 seal |
-| 10 | address me (Operator) | 5 | 3 | only one exists; each extra vote −5 s on its return interval |
+| 8 | toucher (Flesh) | 7 | 2 | +1 toucher |
+| 9 | seal (Baby) | 3 | 3 | +1 seal |
+| 10 | address me (Operator) | 9 | 3 | only one exists; each extra vote −5 s on its return interval |
 | 11 | Claude (Cadence) | 15 | 1 | the one Claude |
-| 12 | gin ichimaru (Voidbreaker) | 15 | 3 | −3 s on his strike cooldown |
+| 12 | gin ichimaru (Voidbreaker) | 17 | 3 | −3 s on his strike cooldown |
 
 Starter pool (pre-run and level-1 votes): kiwi cat, coil, thicc ben, seal.
 
 ### 5.1 kiwi cat — Image 1 = "kiwicat.png"
-Floats toward the nearest player at **5.6 u/s** (62% of run speed). Contact = **kill**. Meows every 3 s
-while within 14 u. 1 PNG.
+Floats toward the nearest player at **5.6 u/s** (62% of run speed; pursuit ceiling 0.80 → never above
+7.2 u/s after multipliers, SR-5). Contact = **kill**. Meows every 3 s while within 14 u. Feet ease
+toward the target's feet at 2.0 u/s (SR-1). 1 PNG.
 *Pressure on the loop:* a slow clock that never stops; lingering in the gold phase lets it arrive.
 *Where terrain makes it shine:* it cuts straight across the void while you must follow the walkways —
 dead ends (`nook` platforms) and long detours turn a slow cat into a trap. Spawns at `nook`.
+*Answer:* open ground — walk away. Thin path or dead end — **hurdle it** as it arrives: a jump
+exceeds its 1.5 u reach from 0.16 s to 0.59 s of the jump, a 0.43 s window over a 0.12 s overlap
+(closing speed 14.6 u/s, SR-2).
 
 ### 5.2 coil — Image 2 = "springer.png"
 Cycle: idle 3.0 s → pre-jump cue 0.6 s ("boing", squash frames, a ring of radius 3 u drawn at the
-landing zone = the player's position at cue start, NOT predicted) → arc flight 2.75 s → landing.
-Landing on a player (within 1.2 u) = **kill**. Landing shockwave: radius 6 u, pushes players outward at
-8 u/s, **does not kill**, locks class abilities for 2.0 s. A jump timed so the player is airborne at
-landing avoids the shockwave. 5-frame squash→extend cycle.
+landing zone) → arc flight 2.75 s → landing. **The landing zone is the player's last grounded tile**
+(the tile the player most recently stood on when the cue started — never a mid-air position over the
+void, never a predicted position). Landing on a player (within 1.2 u) = **kill**. Landing shockwave:
+radius 6 u, pushes players outward at **8 u/s decaying linearly to 0 over 0.5 s** (2.0 u of travel —
+enough to clear a 1-wide path from its centre, survivable on a platform ≥ 5 wide, D-066), **does not
+kill**, locks class abilities for 2.0 s (SR-6). A jump timed so the player is airborne at landing
+avoids the shockwave. 5-frame squash→extend cycle.
 *Pressure:* forces movement; the knockback is what kills (off ledges).
 *Terrain:* stepped walkways, ledges and stair runs (`lane` anchors) — anywhere a shove means the void.
+*Answer:* leave the ring (1.2 u) and be airborne or > 6 u from the last grounded tile when it lands —
+3.35 s of cue covers 6 u at a walk. An idle coil parked on the path is **hurdle-able** (1.0 u
+squashed, SR-2).
 
 ### 5.3 thicc ben — Image 3 = "thiccben.png"
 Every 13.35 s teleports to the closest player. Telegraph: black smoke at the destination for 1.25 s,
@@ -263,38 +353,62 @@ into the void or into another enemy. 1 PNG; teleport is VFX.
 launch slams you into the slab above.
 
 ### 5.4 Isagi — Image 4 = "isagi_idle.jpeg", Image 5 = "ISAGI_SHOOT.webp", Image 6 = "blueballprojectile.webp"
-Prefers `perch` anchors (spawn rule §5); every 12 s he relocates to the `perch` anchor nearest the
-player with line of sight, and falls back to `lane` only when no perch qualifies. With line of sight:
-wind-up 1.2 s (idle sprite flashes + voice cue) → burst of **3 balls** 0.15 s apart, 22 u/s, radius
-0.5 u, life 3.0 s, stopped by any tile or prop → cooldown 2.5 s. Ball hit = **kill**.
-**Ball flight:** each ball leaves from **1.0 u above Isagi's tile** and flies **straight in 3D** to the
-player's **centre at release** (centre = feet + 0.9 u); the line is fixed at release and never homes.
-Hit test: the ball's centre within **0.5 u** of the player's centre. A **jump** (centre rises up to
-2.25 u) or a **2 HU step** (1.0 u) therefore clears the line — the ball passes under the player; a
-1 HU step (0.5 u) does not.
+Prefers `perch` anchors (spawn rule §5, D-056 stays FINAL — he may fall back to a `lane` anchor);
+every 12 s he relocates to the `perch` anchor nearest the player with line of sight, and falls back
+to `lane` only when no perch qualifies. **Dwell limit: on a `lane` anchor he stays at most 4.0 s
+(240 ticks) before relocating** — the parked body is removed from the path quickly.
+**Volley gap (D-064):** a burst is fired in **volleys of at most 3 balls, 0.15 s apart, and
+consecutive volleys of one burst are separated by 0.75 s (45 ticks — one full jump)**, so each volley
+is cleared by its own jump. With Egoist (+1 ball per stack → 4, 5 or 7 balls) the burst arrives as
+3 + 1, 3 + 2 or 3 + 3 + 1 across volleys 0.75 s apart, never as one longer unbroken volley.
+With line of sight from any anchor: wind-up 1.2 s (idle sprite flashes + voice cue) → the volleying
+burst, 22 u/s, radius 0.5 u, life 3.0 s, stopped by any tile or prop → cooldown 2.5 s. Ball hit =
+**kill**.
+**Ball flight:** each ball leaves from **1.0 u above Isagi's tile** and flies **straight in 3D** to
+the player's **centre at release** (centre = feet + 0.9 u); the line is fixed at release and never
+homes. Hit test: the ball's centre within **0.5 u** of the player's centre. A **jump** (centre rises
+up to 2.25 u) or a **2 HU step** (1.0 u) therefore clears the line — the ball passes under the
+player; a 1 HU step (0.5 u) does not.
 *Pressure:* denies open ground; turns the gold-phase sprint into cover-to-cover movement.
-*Terrain:* bastion platforms and spire tops (perches) are his ground; nooks and `ell` corners break his
-line. Props are sparse (0–7 per level, all on platforms), so height and corners are the cover you can
-count on and a prop is a bonus.
+*Terrain:* bastion platforms and spire tops (perches) are his ground; nooks and `ell` corners break
+his line. Props are sparse (0–7 per level, all on platforms), so height and corners are the cover you
+can count on and a prop is a bonus.
+*Answer:* get a 2 HU step between you and him, or jump after the release flash (the jump stays above
+1.5 u for 0.43 s — longer than a volley's 0.30 s spread), or sidestep ≥ 0.9 u where the path allows;
+on a `lane` anchor a jump per volley (0.75 s apart) clears Egoist bursts too, and he is gone within
+4.0 s.
 
 ### 5.5 nuke — Image 7 = "NUKE.jpeg"
 Loop: lock a player (ground ring follows them) and track 2.5 s with a beep rising 2 → 8 Hz → the ring
 stops → missile descends 1.5 s (4-frame looping sprite) → explosion: sphere radius 5 u, **kills** →
 5.0 s pause → repeat. Line of sight is traced from a point 12 u above and 20 u away (direction fixed
 per salvo); if terrain or a prop blocks it for 0.5 s continuous during tracking, the lock breaks and
-tracking restarts after 2.0 s.
+tracking restarts after 2.0 s. **Salvo life limit (D-064): one salvo — tracking, including every
+restart after a broken lock, plus the descent — lasts at most 6.0 s (360 ticks) from its first
+tracking tick; if it has not detonated by then it expires harmlessly and the 5.0 s pause starts.**
+**Blocking (D-064): the line-of-sight ray and the descending missile are blocked by any prop, any
+`spire` pad and any `bastion` tower — and by any tile slab or step riser standing between the ray
+(or the missile) and the ring centre; a missile that meets one detonates there.**
 *Pressure:* a metronome that forbids staying in one place.
-*Terrain:* overlapping pieces — passing under a bridge or a higher platform breaks the lock; walls and
-pillars do too. Wide platforms and the spawn hub (`open` anchors) are where it is deadliest.
+*Terrain:* overlapping pieces — passing under a bridge or a higher platform breaks the lock; walls,
+pillars and props do too. Wide platforms and the spawn hub (`open` anchors) are where it is deadliest.
+*Answer:* **leave the 5 u sphere within 1.5 s** (13.5 u of running at full speed; ≤ 11 u even from the
+back of a 6-wide `nook`), or **put a prop, a `spire` pad, a `bastion` wall or a tile slab between you
+and the sky** — both answers are named because either works on its own.
 
 ### 5.6 YOU?! — Image 8 = "character to be corrupted.png"
-Floats toward the nearest player at 3.4 u/s. Within 10 u: corrupted rumble 1.5 s → shockwave ring
-from its position: expands 9 u/s to radius 14 u, 1.0 u tall, 0.6 u thick, travels in the horizontal
-plane of its feet ± 1.5 u; hit = **kill**. Jumpable. Ring cooldown 4.0 s. Touch = **kill**. 5-frame
-corrupted run cycle.
+Floats toward the nearest player at 3.4 u/s (pursuit ceiling 0.55 → never above 4.95 u/s, SR-5);
+feet ease at 2.0 u/s (SR-1). Within 10 u: corrupted rumble 1.5 s → shockwave ring from its position:
+expands 9 u/s to radius 14 u, 1.0 u tall, 0.6 u thick, travels in the horizontal plane of its feet
+± 1.5 u, drawn as a 1.0 u **tall translucent red band, not a ground decal** (its plane must be
+readable); hit = **kill**. Jumpable. Ring cooldown 4.0 s. Touch = **kill**. 5-frame corrupted run
+cycle.
 *Pressure:* rhythm tax — you must jump on its beat while doing everything else.
 *Terrain:* open platforms and the spawn hub (nowhere to break the plane); terraces and stair runs are the answer — one
 step up of ≥ 1.5 u and the ring passes below.
+*Answer:* jump as the ring reaches you (jump height > 1.0 u from 0.10 s to 0.65 s — a 0.56 s window
+for a 0.16 s crossing), or stand ≥ 1.5 u above or below its feet. Under Echo Ring: jump 0.25–0.65 s
+before the first ring and jump again on landing — hard but learnable.
 
 ### 5.7 gift Larper — Image 9 = "tripine.png"
 The tripmine (§3.3). Stationary, sits in gift slots. 5-frame rotation cycle. Each vote = +3 flat mines.
@@ -302,30 +416,59 @@ The tripmine (§3.3). Stationary, sits in gift slots. 5-frame rotation cycle. Ea
 *Terrain:* dead-end jackpots (dense slots = dense mines) and breadcrumb lines on walkways.
 
 ### 5.8 toucher — Image 10 = "toucher.jpeg", Image 11 = "glitchedground.jpeg"
-Floats toward the nearest player at 6.75 u/s. Touch = **kill**. Every 2.0 s it infects all tiles within
-3 u below it (squelch cue when new tiles appear). Glitched tile: lasts 12 s (18 s from level 14).
-Standing on it **does not kill**: it slows the player **−20% run speed** and **disables class
-abilities** for as long as they stand on it. Max 60 glitched tiles per toucher. thicc ben's ring
-cleanses glitched tiles within 8 u. Finger: 3 flicker frames; floor: 5 frames.
+Floats toward the nearest player at 6.75 u/s (pursuit ceiling 0.75 — its own base speed, so it never
+speeds up under any multiplier: a glitched player at 7.2 u/s still gains 0.45 u/s, SR-5); feet ease
+at 2.0 u/s (SR-1). Touch = **kill**. Every 2.0 s (at most 1.2 s once tempo conversion binds, SR-5) it
+infects all tiles within 3 u below it (squelch cue when new tiles appear). Glitched tile:
+lasts 12 s (18 s from level 14). Standing on it **does not kill**: it slows the player **−20% run
+speed** and **disables class abilities** for as long as they stand on it (SR-6). Max 60 glitched
+tiles per toucher. thicc ben's ring cleanses glitched tiles within 8 u. Finger: 3 flicker frames;
+floor: 5 frames.
 *Pressure:* closes routes; it herds you.
 *Terrain:* chokepoints (narrow bridge walkways) and 1-wide walkways — a glitched 2-wide walkway is a wall, so
 shortcuts and drops become the way home.
+*Answer:* keep off its floor, keep height between you (it rises 2.0 u/s at most; you jump 2.25 u in
+0.375 s), and **hurdle it on a path** — its 1.4 u body meets a clean jump with 0.85 u to spare at
+apex (SR-2). Its glitched tiles invalidate the newest safe-tile ring entries, so a void dive near it
+respawns you farther back — a real cost, and the tip text says so.
 
 ### 5.9 seal — Image 12 = "babehseal.webp"
-Flaps toward the nearest player at 4 u/s. Attack: telegraph 0.75 s (dashed line on the ground,
-mouth-open frame) → bark + dash 20 u in 1.0 s along the line → idle 0.75 s. Contact at any time =
-**kill**. Small hitbox.
+**The dash is a fixed 3D line, started only from a readable distance, and a jump is the answer
+(D-069).** Flaps toward the nearest player at 4 u/s (pursuit ceiling 0.60 → never above 5.4 u/s while
+flapping, SR-5). At **telegraph start** the dash line is fixed as the straight 3D segment from the
+seal's body centre through the player's centre (0.9 u above the player's feet), extended to 20 u; it
+does **not re-aim** during the 0.75 s telegraph or the 1.0 s dash, and the dashed telegraph is drawn
+along that 3D line, not flattened onto the ground. The seal starts a telegraph only when it is
+**between 4 u and 12 u** from its target — closer than 4 u it keeps flapping (a chaser problem with a
+chaser answer: hurdle it, SR-2). Attack: telegraph 0.75 s (dashed 3D line, mouth-open frame) →
+**bark** on tick 0 of the dash + dash 20 u in 1.0 s along the fixed line → idle 0.75 s. Contact at any
+time = **kill**. Small hitbox (0.6 u diameter, 0.3 u radius, SR-2).
+*What clears it:* the player is missed if their feet sit more than 1.2 u above the height they had at
+telegraph start, or their head is below the line. **Jump on the bark** — jump height exceeds 1.2 u
+from 0.12 s to 0.63 s after take-off, a 0.51 s window for the 0.07 s body crossing, correct at every
+legal telegraph distance. A **3 HU step** (1.5 u, up or down) also clears it (2 HU = 1.0 u is not
+enough). A **sidestep ≥ 0.7 u** works wherever the path is 2 wide or the player is on a platform.
 *Pressure:* burst threat that punishes straight-line running — exactly what a breadcrumb trail invites.
 *Terrain:* long straight walkways (`lane` anchors). Height breaks the line: steps,
 terraces, ledges.
+*Answer:* jump on the bark, or stand a 3 HU step above/below the line, or sidestep ≥ 0.7 u on a
+2-wide path or platform. Pup Pack's counter-play text is "**jump each bark**" — its second seal runs
+its own fixed line 0.5 s later, and seals capped at 3 with stagger (SR-3) keep the barks from
+coinciding.
 
 ### 5.10 address me — Image 13 = "address me elephant.png", Image 14 = "explosionsffect.jpg"
-One at a time. Appears 6 u in front of the player with an elephant trumpet; a 5.0 s rumble counts
+One at a time. Appears 6 u in front of the player with an elephant trumpet — but ONLY under the
+scheduling gate of SR-4 (D-067): it waits until no enemy body is within 12 u of the player, no ring
+or patch is on the player, and the player is grounded and not on glitched floor, then appears on the
+first tick all three hold. A 5.0 s rumble counts
 down. The player must become **still**: no movement/jump/ability input and speed < 0.5 u/s on all
 axes, held for 1.5 continuous seconds. Achieved → it leaves. 5.0 s expire first → explode frame, boom,
 **kill**. Returns every 30–45 s (−5 s per extra vote, min 15–30 s); never in the first 10 s of a level.
+While its countdown runs, gin does not mark (SR-4).
 *Pressure:* the only enemy that makes you STOP — while everything else says move.
 *Terrain:* being caught mid-walkway, mid-glide or mid-jump is the danger; `nook`s are the answer.
+*Answer:* **stop at once** — do nothing for 1.5 s, 3.5 s of slack. SR-4 guarantees it never arrives
+while a chaser, a nuke ring, a gin patch or a coil ring makes stillness lethal.
 
 ### 5.11 Claude — Image 15 = "claudelogo.png" (+ clawd Crab plushie sprite, 3 idle frames, source in ENEMIES.md)
 One only. Floats at 4 u/s keeping within 20 u of the player. Music loop at 100 BPM (beat 0.6 s, bar =
@@ -334,24 +477,36 @@ One only. Floats at 4 u/s keeping within 20 u of the player. Music loop at 100 B
   tall, **kills**. Jump on the beat.
 - **Strings** (keystroke ticks): telegraph line for 1 beat, then a beam 24 u long × 1.5 u wide sweeps
   120° over 4 beats at 0.5–1.5 u height, **kills**. Blocked by tiles and props. Jumpable.
-- **Wind** (notification pings): beats 1, 2, 3 each launch a homing shot — 10 u/s, turn 90°/s, life
-  5.0 s, **kills**, destroyed by geometry.
+- **Wind** (notification pings): beats 1, 2, 3 each launch a homing shot — **7.0 u/s, turn 90°/s,
+  life 4.0 s (D-071), kills; the shot dies on touching ANY tile slab or step riser (≥ 1 HU), and on
+  any prop**.
 **Agitation** 0–100 rises 2/s. Tempo = 100 + 0.6 × agitation BPM. At 100 ("Deadline"): all three
 attacks every bar. A clawd Crab plushie spawns every 25 s on a round-trip tile 10–25 u from the
 player (max 3 present); picking one up (squeak-pop) = −35 agitation.
 *Pressure:* a second collectible that competes with gifts for your route.
 *Terrain:* open platforms are bad, props and height are good — it makes you re-value every platform.
+*Answer:* its floats keep its body at ceiling 0.55 (4.95 u/s — outwalkable, SR-5); **drums**: jump on
+the beat; **strings**: keep ≥ 6 u from Claude and put a height step or a prop between you and the
+telegraph line; **wind**: run in a straight line (7.0 u/s vs 9.0 — you gain 2 u/s) or drop one tread
+—a shot dies on any slab or riser (D-071).
 
 ### 5.12 gin ichimaru — Image 16 = "gin idle.png", Image 17 = "ginsword.png"
-Fades in on a tile 15–25 u from the player. Strike: the 5×5 tile patch centred on the player's tile
+Fades in on a tile 15–25 u from the player. **He stands on platform tiles only (D-072):** his
+fade-in tile is always a platform tile (never a walkway tile — his body must never block or cut the
+only route home); if no platform tile qualifies under his 15–25 u rule, he uses the **farthest tile of
+the spawn hub** (farthest from the player). Strike: the 5×5 tile patch centred on the player's tile
 is marked (red outline `#FF2A2A`, deep cracking rumble) for 2.0 s → launch pose, sword-spears streak
 to the patch in 0.3 s (view-layer VFX only) → the patch is a **void zone** for 10 s: its tiles are
 non-solid and anything that enters its column is **killed** → tiles fade back over 0.5 s (a player
 inside is lifted onto the surface). Cooldown 14 s (−3 s per extra vote, min 5 s). Never marks the
-beacon dais. Gifts over a void zone stay but cannot be reached until it closes.
+beacon dais, and never marks while address me's countdown runs (SR-4). Gifts over a void zone stay
+but cannot be reached until it closes.
 *Pressure:* rewrites the puzzle live.
 *Terrain:* walkways — cutting a 2-wide causeway severs an arm for 10 s; loops, drops and pads become
 survival tools.
+*Answer:* walk out of the patch — 3 cells, 0.33 s of running inside a 2.0 s mark — and change
+direction during a Twin Fangs double mark; his body is never on the path (D-072), so only the patch
+threatens you.
 
 ## 6. Intermissions and the OFFERING SCHEDULE
 
@@ -408,6 +563,17 @@ Logic:
 - **Breathing room** is guaranteed at levels 5, 11, 17, 23, 29: discounted shop, no vote, no curse.
 - The level after a finale is the hardest step of each act; the player just had a REST two levels
   earlier and carries the purse from two shop-less levels into the E+U that follows.
+- **Enemy offer draw — NEW / REPEAT / FREE (D-074).** The three E-altars of an E bay are no longer
+  "3 distinct enemies from the eligible pool"; each vote shows: one **NEW** altar (an eligible enemy
+  type with 0 votes; lowest first-shown level first, ties by seeded draw), one **REPEAT** altar
+  (a type already in play, below its cap — never the type picked at the previous vote; in an E×2 bay
+  the second draw treats the first draw's pick as that previous vote), and one **FREE** altar
+  (seeded draw from everything eligible and not already shown). If a category is empty its altar
+  becomes FREE. Every vote is then the same legible question: a new problem, or more of one already
+  handled — while a stacked-type vote stays possible.
+- **Chaser ceiling (D-074): at most 6 floating lethal bodies in play at once** (kiwi cat, toucher,
+  YOU?!, seal — The Litter's kittens count as half each). An altar that would exceed it is not drawn.
+  Six is a sequence of hurdles a player can read; ten is a wall.
 - If an enemy pool is exhausted (all at max votes), an E bay offers "Hunger" instead: +5% speed for
   all enemies, repeatable.
 
@@ -428,7 +594,9 @@ System (inspired by the Nullscape pattern, not copied — DECISIONS D-041):
   base kit. No curse may remove real gifts or raise the per-slot mine chance. **The glitched floor's
   −20% is an enemy effect, not a curse, and does not count toward the 10%:** the terrain proof only
   needs the base kit's jump envelope, and the floor slow never touches jump velocity or gravity.
-  Wet Floor raises that enemy slow to 40% — still an enemy effect, still outside the curse budget.
+  Wet Floor does NOT raise that enemy slow: D-075 fixes the glitched floor's slow at 20% for
+  everyone and Wet Floor adds only slipperiness (friction ×0.4) — still an enemy effect, still
+  outside the curse budget.
 
 Severity: M = Mild, H = Harsh, B = Brutal. "st" = max stacks.
 
@@ -436,13 +604,13 @@ Severity: M = Mild, H = Harsh, B = Brutal. "st" = max stacks.
 
 | id | name | needs | min lvl | sev | st | rule | counter-play |
 |---|---|---|---|---|---|---|---|
-| zoomies | Zoomies | kiwi cat | 3 | M | 2 | every 12 s each cat sprints at +60% speed for 3 s after a double meow | break line by height; it still cannot turn fast |
-| litter | The Litter | kiwi cat | 8 | H | 1 | each cat is followed by a kitten (60% size, 4.5 u/s, kills on contact) 6 u behind | kite them into a line, then cross |
-| overwound | Overwound | coil | 2 | M | 2 | coil idle time 3.0 → 2.0 s (then 1.5 s) | keep jumping at landings |
+| zoomies | Zoomies | kiwi cat | 3 | M | 2 | every 12 s each cat sprints at +60% speed for 3 s after a double meow | a burst is bounded: ≤ 1.00 × base run (9.0 u/s) for ≤ 3.0 s, then back under its 0.80 ceiling (SR-5) — gain height (it rises 2.0 u/s, SR-1) or hurdle it as it arrives |
+| litter | The Litter | kiwi cat | 8 | H | 1 | each cat is followed by a kitten (60% size, 4.5 u/s, kills on contact) 6 u behind | a kitten's ceiling is 0.70 (6.3 u/s, SR-5) — it always trails its cat: hurdle cat then kitten in one rhythm, or kite them into a line and cross |
+| overwound | Overwound | coil | 2 | M | 2 | coil idle time 3.0 → 2.0 s (then 1.5 s) | leave the ring and be airborne or > 6 u away at landing (§5.2); the shove decays over 0.5 s and never kills |
 | aftershock | Aftershock | coil | 9 | H | 1 | landing sends a second shockwave 0.5 s later, radius 9 u | double jump |
 | quarter_chimes | Quarter Chimes | thicc ben | 4 | M | 1 | ben's teleport interval 13.35 → 9 s | keep moving |
 | long_toll | The Long Toll | thicc ben | 10 | H | 1 | every ben teleport tolls twice: a second ben arrives at the same locked point 1.5 s after the first | air control is 100% — steer ≥ 4 u sideways during the launch |
-| egoist | Egoist | Isagi | 8 | H | 2 | +1 ball per burst per stack | longer cover runs — one ball kills |
+| egoist | Egoist | Isagi | 8 | H | 2 | +1 ball per burst per stack | the volley gap (D-064): a burst arrives as volleys of ≤ 3 balls, 0.75 s (45 ticks — one full jump) apart, so each volley is cleared by its own jump (§5.4) |
 | direct_shot | Direct Shot | Isagi | 14 | B | 1 | balls ricochet once off tiles/props | break sightline entirely — a ricochet kills too, so don't hug cover |
 | second_strike | Second Strike | nuke | 6 | H | 1 | a second missile lands 1.0 s after the first on your new position | keep running after the first — the second kills too |
 | bunker_buster | Bunker Buster | nuke | 12 | B | 1 | explosions delete props within the blast for the rest of the level | fight in the open on purpose, save cover |
@@ -452,8 +620,8 @@ Severity: M = Mild, H = Harsh, B = Brutal. "st" = max stacks.
 | understudies | Understudies | gift Larper | 5 | M | 3 | +4 flat extra mines per stack (20% cap still holds) | Defuse Kit |
 | wide_blast | Stage Presence | gift Larper | 9 | H | 1 | mine blast radius 3 → 4.5 u and the blast chain-detonates mines inside it | never stand near a second mine |
 | spreading_rot | Spreading Rot | toucher | 7 | H | 1 | each glitched tile infects one adjacent tile after 6 s (max 2 generations) | leave early, use ben's ring |
-| wet_floor | Wet Floor | toucher | 5 | M | 1 | glitched tiles slow by 40% instead of 20% and are slippery (friction ×0.4) | jump across, don't walk |
-| pup_pack | Pup Pack | seal | 4 | H | 1 | every seal has a second seal that dashes 0.5 s after it | sidestep twice |
+| wet_floor | Wet Floor | toucher | 5 | M | 1 | glitched tiles are slippery (friction ×0.4); the toucher's slow stays −20% — no extra slow (D-075) | jump across, don't walk; the slow stays 20%, so a glitched player at 7.2 u/s still gains 0.45 u/s on the toucher (SR-5) |
+| pup_pack | Pup Pack | seal | 4 | H | 1 | every seal has a second seal that dashes 0.5 s after it | **jump each bark** — each seal's line is fixed at its own telegraph start and the barks never coincide (caps + stagger, D-069/SR-3) |
 | slipstream_trail | Wet Trail | seal | 2 | M | 1 | a dash leaves a slippery trail (friction ×0.4) for 3 s | don't cross the line |
 | longer_speech | Filibuster | address me | 7 | H | 1 | you must hold still 2.5 s instead of 1.5 s | stop sooner |
 | unannounced | Unannounced | address me | 10 | B | 1 | no trumpet — only the sprite and the rumble | keep it on screen; Radar Module: Threats |
@@ -544,7 +712,7 @@ Level-1 pool [CANON]: Paycheck, More, Yearn for Speed.
 | radar_threats | Radar Module: Threats | T2 | 160 | 1 | screen-edge markers for enemies within 30 u |
 | straggler_scope | Straggler Scope | T2 | 140 | 1 | straggler beams start at the last 35% instead of 20% |
 | early_warning | Early Warning | T2 | 180 | 2 | enemy telegraphs last 15% longer per stack |
-| subspacial_barrier | Subspacial Barrier | T3 | 350 | 1 | 1 shield per level, restored on beacon entry: absorbs exactly one tripmine (checked after the defuse roll), consumed; tripmines only — nothing blocks the nuke [CANON] |
+| subspacial_barrier | Subspacial Barrier | T3 | 350 | 1 | 1 shield per level, restored on beacon entry: absorbs exactly one tripmine (checked after the defuse roll), consumed; tripmines only — nothing absorbs the nuke [CANON] |
 | radar_mines | Radar Module: Mines | T3 | 300 | 1 | disguised tripmines within 14 u get a pink outline through fog [CANON] |
 | high_ceiling | High Ceiling | T3 | 320 | 1 | chain cap ×2.00 → ×2.50 |
 | last_call | Last Call | T3 | 300 | 1 | the final 20% of gold gifts in a level are worth double |
@@ -558,9 +726,10 @@ Level-1 pool [CANON]: Paycheck, More, Yearn for Speed.
 | pocket_beacon | Pocket Beacon | T5 | 1,200 | 1 | once per level: 3.0 s channel (must stand still) to teleport to the beacon dais |
 
 Counter-play map [CANON]: tripmines ← Defuse Kit (20%/stack defuse, deterministic), Subspacial Barrier
-(1 shield), Radar Module: Mines · the nuke ← nothing blocks it; break line of sight · glitched floor ←
-Insulation · fog/information curses ← radar family · economy curses ← Bargain, More, Hot Streak ·
-overtime ← Cold Blood.
+(1 shield), Radar Module: Mines · the nuke ← leave the 5 u sphere, or put a prop, a `spire` pad, a
+`bastion` wall or a tile slab between you and the sky — nothing ABSORBS its blast (D-064) · glitched
+floor ← Insulation · fog/information curses ← radar family · economy curses ← Bargain, More, Hot
+Streak · overtime ← Cold Blood.
 
 ## 9. Progression and difficulty curve
 

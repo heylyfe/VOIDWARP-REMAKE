@@ -306,6 +306,22 @@ Done-when: its test green; sprite validator green for its frames; lobby exhibit 
 | T-040 | Claude — Image 15 = "claudelogo.png" + clawd Crab plushie | §5.11 | spawn (model:acpRegistry_mistral_vibe/zai-glm-5-3-flash) |
 | T-041 | gin ichimaru — Image 16 = "gin idle.png", Image 17 = "ginsword.png" (spears = view-layer VFX only; void zone = sim) | §5.12 | spawn (model:acpRegistry_mistral_vibe/zai-glm-5-3-flash) |
 
+Answer windows to assert (T-070; the numbers and arithmetic are research/fable-enemies.md §4, applied
+as FINAL by D-064..D-075):
+
+- T-030 kiwi cat — Answer window to assert: the hurdle — the jump holds the player above the cat's 1.5 u reach (1.0 u body + 0.5 u of its rise) from 0.16 s to 0.59 s of the jump = a 0.43 s window over a 0.12 s body overlap (closing 14.6 u/s); the cat never exceeds 7.2 u/s (ceiling 0.80).
+- T-031 coil — Answer window to assert: leave the 3 u landing ring (drawn on the player's last grounded tile) within the 0.6 s cue + 2.75 s flight, and be airborne or > 6 u away at landing; the shove is 8 u/s decaying linearly to 0 over 0.5 s and never kills; an idle coil (1.0 u squashed) is hurdle-able.
+- T-032 thicc ben — Answer window to assert: be ≥ 4 u from the smoke when it clears (1.25 s telegraph, chime in the last 0.5 s) — running straight breaks the lock (6.75 u away at arrival); or touch him on purpose and steer the 18 u/s launch with 100% air control.
+- T-033 Isagi — Answer window to assert: a jump (above 1.5 u for 0.43 s) clears each volley of ≤ 3 balls spread over 0.30 s; consecutive volleys of one burst are 0.75 s (45 ticks) apart, so an Egoist burst (up to 7 balls) is 3+3+1 with a jump per volley; a 2 HU step breaks the fixed 3D ball line; on a `lane` anchor he relocates within 4.0 s (240 ticks).
+- T-034 nuke — Answer window to assert: leave the 5 u sphere within 1.5 s (13.5 u of running; ≤ 11 u even from the back of a 6-wide `nook`), or put a prop / `spire` pad / `bastion` wall / tile slab between you and the sky (a missile or LOS ray that meets one detonates there); a salvo expires harmlessly at 6.0 s (360 ticks) from its first tracking tick.
+- T-035 YOU?! — Answer window to assert: jump as the ring reaches you — jump height > 1.0 u from 0.10 s to 0.65 s = a 0.56 s window for a 0.16 s crossing (ring 9 u/s, drawn as a 1.0 u tall band); or stand ≥ 1.5 u above/below its feet; under Echo Ring, jump again 0.6 s later (height retained ≥ 0.85 s in). Body ceiling 0.55 = 4.95 u/s — outwalkable.
+- T-036 gift Larper — Answer window to assert: look and walk around it — at run speed 12 u = 1.3 s of the star/particle tell inside the 12 u ramp (0.67 s under Method Acting); D-026 guarantees a walkable bypass around every mine (contact 0.9 u cylinder at any height — never jump it, never walk over it).
+- T-037 toucher — Answer window to assert: hurdle the 1.4 u body with a clean jump (0.85 u margin at apex 2.25 u; its rise is capped at 2.0 u/s) or outgain it — 7.2 u/s glitched player vs its hard 6.75 u/s ceiling (0.45 u/s margin, SR-5), keeping off and out of the visible glitched floor.
+- T-038 seal — Answer window to assert: jump on the bark — feet > 1.2 u above telegraph-start height from 0.12 s to 0.63 s = a 0.51 s window for the 0.07 s crossing; the dash line is fixed 3D from 4–12 u (a 3 HU step or a ≥ 0.7 u sidestep also clears); Pup Pack = one jump per bark 0.5 s apart.
+- T-039 address me — Answer window to assert: stop at once, hold still 1.5 s of the 5.0 s rumble (3.5 s of slack); SR-4's gate guarantees it never appears when a body within 12 u, a nuke ring / gin patch / coil ring on the player, or airborne/glitched floor would make stillness lethal.
+- T-040 Claude — Answer window to assert: drums and rings — jump on the beat (ring 12 u/s, 0.12 s crossing); strings — be ≥ 6 u (beam crosses a body in 0.26 s, inside the jump window) behind a height step or a prop; wind — run straight (7.0 u/s vs 9.0 = +2 u/s) or drop one tread: the shot dies on any slab or riser within its 4.0 s life.
+- T-041 gin ichimaru — Answer window to assert: walk out of the 5×5 patch — 3 cells = 0.33 s of running inside the 2.0 s mark; his body stands on platform tiles only, never on a walkway tile (D-072), and never marks during address me's countdown (SR-4).
+
 ### WAVE 4 — content breadth (parallel)
 
 **T-050 — Curses, declarative batch** · THE OWNER'S SPEC: "Curses: gated by minimum level; some only appear if their associated enemy is present in the run; picking a curse removes it from the pool; some stack." · Assignment: 2× spawn (model:opencode/opencode/inkling-2-small-free) (split the list in half) · Do: every curse JSON with `"script": false` works through modifiers only; `tests/test_curses_decl.gd` applies each and asserts the stat delta from its table row · Done-when: test green; DESIGN.md §7 safety rule asserted (no curse changes jump velocity/gravity; total run-speed reduction ≤ 10%; the glitched floor's −20% is an enemy effect and is excluded from that budget, asserted explicitly); no curse touches `void_charges_max` except Hungry Void (cap 1).
@@ -444,6 +460,58 @@ R9. RUNLOG.md: one line per event — time, ticket, model, event (DISPATCHED / R
     / MERGED-GREEN / PARKED + reason). Write the line before you act on the event.
 R10. If you are interrupted, the next orchestrator resumes from the first ticket in §10.2 that has no
      MERGED-GREEN or PARKED line in RUNLOG.md.
+
+### 10.1A Operational amendments (owner-authorised 2026-11-16, after the T-070 dispatch)
+
+These fix defects of this plan that the first ticket exposed. Where one contradicts R1 to R10, it wins.
+
+R11. WORKTREES, AND PARALLEL STAYS PARALLEL. Every worker is dispatched with worktree isolation and
+     works ONLY in its own working directory. This replaces "+ the repository path" in R3: a brief
+     never names the main checkout as the place to work (T-070's brief did, so the worker left its
+     worktree idle and edited the main checkout). Every brief says instead, verbatim: "Your current
+     working directory is your own checkout of the repository. Work only there. Do not cd to any other
+     copy of the repository. Commit there, on the branch you are already on; do not create or switch
+     branches." The orchestrator merges whatever branch that worktree is on (it need not be named
+     t/<ticket id>) and writes the branch name in RUNLOG.md. Tickets that section 10.2 allows in
+     parallel run in parallel; they are not queued one by one into the main checkout. Between
+     dispatches the main checkout stays on `main` with no uncommitted tracked changes, and after each
+     dispatch the orchestrator confirms with `git worktree list` that the new worktree starts at the
+     current `main` commit.
+R12. THE ENGINE IN A WORKTREE. `tools/godot/` is gitignored, so a worktree has no engine and the
+     `tools\godot\godot.exe` of section 4 does not exist there. Every brief that runs Godot carries
+     the line: "Godot is NOT in your checkout. Use the absolute path C:\Users\Nathan\Documents\REMAKE VWR\VOIDWARP-REMAKE\tools\godot\godot.exe
+     (quote it, the path has a space) wherever a command says tools\godot\godot.exe. Never download or
+     copy the engine. tools\gate.ps1 finds the engine by itself." That path is the only mention of the
+     main checkout a brief may contain.
+R13. A CUT-OFF TURN IS NOT A FAILURE. A worker turn that ends without a verdict (no response file, a
+     last message such as "retrying") was cut off, not failed. Send "Continue from where you stopped;
+     finish the remaining deliverables" to the SAME worker thread, up to 3 times, as long as each turn
+     adds to the diff. A failure under R2 is counted only when the worker says it is done and a check or
+     the gate is red, or when a continue adds nothing.
+R14. DECISION NUMBERS UNDER PARALLEL WORK. Two workers that each take "the next free D-number" produce
+     the same number twice. A worker therefore numbers a new DECISIONS.md entry with its ticket id:
+     `D-T012-1`, `D-T012-2` (this replaces any "numbered from D-0NN upward" in a ticket). Entries are
+     appended at the end of their section; when two branches append at the same place the orchestrator
+     keeps both, as for `core/stats.gd` in section 7.
+R15. NEW FILES - THE FILE-CREATION TOOL HANGS. On the Mistral Vibe provider (GLM 5.3 Flash and
+     DeepSeek V4.1) the write_file tool hangs for good when it creates a file that does not exist yet
+     (seen three times on 2026-11-16: RUNLOG.md, TBD.md + AUDIT.md, tickets/probe.tmp), and a long
+     shell heredoc is cut off mid-content. Editing a file that already exists works. Every brief to a
+     GLM or DeepSeek worker therefore carries these lines verbatim:
+     "NEVER call write_file to create a file; it hangs in this environment. To create a file: (1) run
+     printf 'PLACEHOLDER' > <path> in the shell (make the folder first with mkdir -p); (2) fill it with
+     the edit tool by replacing PLACEHOLDER with the content, at most about 150 lines per edit, and
+     append the rest with further edits. Do not paste more than about 40 lines into one shell heredoc.
+     Never run git add -A or git add . ; add the files you wrote by name."
+     Inkling workers (opencode provider) get the same lines; they are harmless there.
+     A worker that shows a file_change item in status running for more than 3 minutes is hung on this:
+     send it a restart with these lines and "continue from where you stopped" (not an R2 failure).
+R16. THE GATE EXISTS. `tools/gate.ps1` is in the repository (written ahead of T-001 so that R6 has a
+     gate from the first merge). T-001 keeps it and still owes everything else in its Do list;
+     `run_all.gd` must print `TESTS n passed m failed` (the gate reads that line) and must not try to
+     load `test_terrain_parity.gd`, which is a standalone script the gate runs as its own step.
+R17. STALE COUNT IN T-002. Its Done-when says "selftest 12/12"; the validator has had 15 planted
+     defects since generator version 3. Dispatch T-002 with the addendum "selftest 15/15 (not 12/12)".
 
 ### 10.2 MANDATORY — in this order; each one MERGED-GREEN or PARKED with a written reason
 
