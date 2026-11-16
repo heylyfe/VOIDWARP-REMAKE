@@ -927,6 +927,27 @@ WHY: thresholds already cannot move to fit data; without this rule a failing che
 redefining what it measures. On record so far: D-022 (similarity block size, with its noise-floor
 argument) and D-025 (b) (recipe key made finer).
 
+### D-T001-1 — Test-runner contract for game/tests/run_all.gd.
+DECISION (T-001): `run_all.gd` discovers `res://tests/test_*.gd`, deliberately excluding
+`test_terrain_parity.gd` (a standalone SceneTree script with no run() function; the gate runs it as
+its own step 2 — orchestrator addendum R16). Each discovered test extends RefCounted and exposes
+`func run() -> Array[String]` (empty array = pass). The runner prints `TESTS n passed m failed`
+(n / m = discovered test files passed / failed) and exits 1 when m > 0, else 0. Discovered tests and
+all headless scripts refer to other scripts with preload("res://...") / load("res://..."), never a
+bare class_name or a uid:// reference.
+WHY: the gate reads the exact `TESTS n passed m failed` line and must not trust Godot's exit code
+alone (Godot can exit 0 after failing to load a script). Global class_name does not resolve under
+`--headless --script` (addenda R18a), so preload-by-path is the only reliable reference. The parity
+script is excluded from discovery so it is not run twice and not parsed as a run()-style test.
+
+### D-T001-2 — Empty directories of the FLEET_PACK section 3 tree are committed with a .gitkeep placeholder.
+DECISION (T-001): every otherwise-empty directory of the section 3 tree (game/sim, game/core/schemas,
+game/view/*, game/app, game/content/*, game/assets/*, game/tests/fixtures/dropin, assets_src/blender)
+carries a one-line `.gitkeep` placeholder until real files land.
+WHY: git cannot track an empty directory, but the tree is the fleet's shared map (every ticket writes
+into pre-named paths) and the boundary scan needs the layer directories to exist. A one-line comment
+in the placeholder states why it exists; remove it when the directory gains real files.
+
 ---
 
 ## Handover log
