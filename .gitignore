@@ -11,3 +11,6 @@ out/
 
 # Godot 4 script/resource UID sidecars (regenerated on import)
 *.uid
+
+# portable Blender (FLEET_PACK section 3: gitignored, installed under the main checkout per R19)
+tools/blender/
