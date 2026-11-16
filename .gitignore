@@ -13,4 +13,5 @@ out/
 *.uid
 
 # portable Blender (FLEET_PACK section 3: gitignored, installed under the main checkout per R19)
-tools/blender/
+tools/blender/*
+!tools/blender/VERSION.txt
