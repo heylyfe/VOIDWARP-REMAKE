@@ -5178,6 +5178,66 @@ start that close to the origin - so the sword is fitted to 500 px (6 px margin, 
 [6,6,499,500]). No test file was edited; the validator's 2 px floor is untouched (the margin is
 larger, never smaller); only the art changed. Same class of choice as D-ART-GIN-2 (an art parameter,
 not a threshold).
+
+### D-ART-gift_larper-1 - The gift Larper's frames are real art derived from tripine.png (game/tools/art/gift_larper.gd)
+`assets_src/enemies/tripine.png` (800x800 RGBA, the owner's photo of the Roblox tripmine,
+ENEMIES.md section 1.7 image 9) could not ship as-is: its four corners are already alpha 0
+(measured (0,0,0,0) at all four; zero non-zero-alpha pixels on the four edges; 71.5% of px
+alpha 0; 8946 partial-alpha px with mean rgb (54,0,49), the same hue family as the body mean
+(33.2, 2.7, 52.5) - matted on black, no foreign-colour halo, and the fog #021416 is near-black,
+so the dark fringe is invisible by construction and the defringe pass is the alpha key itself),
+but the near-black body is WCAG-vs-fog luminance ~0.019 - fog contrast ~1.0 at 40 u against
+#021416, far under the ENEMIES.md hard rule (mean opaque colour vs fog >= 3.0 at 40 u) and under
+every biome fog. The module (headless SceneTree, deterministic; the shared pipeline SKIPS this
+enemy) does: border flood fill from every border cell over pixels with alpha == 0, the filled
+region becomes transparent black, only the largest connected opaque component survives, crop
+tight to alpha > 16 (bbox (58,72) 739x688), a GRADE pass (screen blend against
+(175,76,192)/255, see D-ART-gift_larper-2), fit on a 512x512 POT canvas bottom-anchored with
+MARGIN 8 px on every edge (module asserts no frame touches the canvas edge; validate_sprites.gd
+passes 220 checks), and writes the 6 frames the T-083 block can name: `cycle_00..04.png` (idle
+spec larper_00..04 - cycle_00 identity, cycle_01 rotate +5.0 deg about the feet pivot sy 0.94 /
+sx 1/sqrt(0.94) yoff -21, cycle_02 horizontal mirror + pulse 1.14 yoff -4, cycle_03 rotate -5.0 deg
+sy 1.06 / sx 1/sqrt(1.06) yoff -19, cycle_04 horizontal mirror; the rotated frames lift by the
+downward swing of the rotated bottom corners) and `defused_00.png` (the defused pose: 70%
+desaturated toward each pixel's own linear-luminance gray, sy 0.78 - deflated; grey_out/drop_u
+stay view-side). The spawn state keeps cycle_00 (larper_00; present from level start, no fade);
+telegraph and attack_detonation keep ZERO frames - the section 1.7 table genuinely lists none
+(the tell is the 12 u look; the detonation is the 18-tick white flash + pink->black burst,
+shader-side); defused now names the real defused pose in the block (one entry, matching its one
+spec frame larper_00). animations[] lists the cycle entry (unchanged names, loop, fps 10) plus
+an appended "defused" entry; animations[] was NOT reordered. The anim block's tick ranges, loop
+flags, fps and effect parameters are untouched; world_height stays pinned 1.0 with
+body_height 1.0 / hit_diameter 0.8 (D-T073-2, test_enemy_gift_larper.gd). No frame_map was added:
+the spec frame larper_00 legitimately backs spawn + idle[0] + defused, so a spec->file map would
+misrepresent one of the three (the nuke's pattern does not transfer); the view drives frames
+itself (gift_larper_view.gd), and enemy_anim.gd leaves the frame path unresolved exactly as it
+found it (frame_path() falls back to the spec name, which does not exist on disk - the same
+status quo as before this art pass; the HITBOXES body-rect probe row is vacuous for this enemy,
+as it was on the TBD art). Fog contrast (validate_sprites.gd, palette fog #021416, d = 40 u):
+cycle_00/04 3.17, cycle_01 3.50, cycle_02 3.87, cycle_03 3.51, defused_00 3.05 - all >= 3.0, the
+ART was lifted, never the threshold. Per-biome fog_check (direct WCAG ratio, enemy rows): 4.5-6.0
+at violet_hour / pale_abyss; FOGCHECK OK (260 checks over 5 biomes). validate_sprites.gd:
+SPRITES OK 220 checks over 12 sprites.json. check_anim_data.gd -- gift_larper: PASS (5 states).
+The defused view path now shows the defused pose during the 24-tick grey-out (gift_larper_view.gd
+set_animation("defused") in on_defused(); the idle 240-tick frame advance is suspended while
+_def_left > 0; on_spawn restores "cycle"). tbd = false only after every frame became real art.
+
+### D-ART-gift_larper-2 - The art-derivation numbers are judgment, owner may re-tone [CONTESTABLE]
+No document states the screen-blend grade colour (175,76,192), the squash/stretch factors, the
++/-5.0 deg rotations, the yoff lifts, the 1.07/1.14 light pulse, the defused 70% desaturation or
+the defused sy 0.78 - they are art judgment applied over the owner's source to satisfy the
+binding checks (fog contrast >= 3.0 at 40 u - roughly three and a half times the source's own
+luminance -, >= 15% transparent, tight body_rect, distinct visible frames for the five-slot
+turning/pulsing cycle) without moving a tick, a loop flag, an effect parameter or a body_rect
+semantic beyond the printed bboxes. Gameplay reason: the 400-tick rotation cycle is the mine's
+only idle motion read at 1.0 u world height; 0.94/1.06 sy reads as a turn without breaking the
+tripmine's rigid-body feel, the mirror flip is the cheapest legible yaw at this size, the pulse
+1.00->1.07->1.14 is the "light pulsing" the section 1.7 table names, and the deflated grey defused
+pose sells "defused, no blast" before the sprite hides at tick 24. The owner may re-tune the grade
+in game/tools/art/gift_larper.gd (re-run it, then re-paste the printed body_rect lines into
+sprites.json and re-check both thresholds). The cycle names, frame count, the anim block's tick
+ranges, the pinned world_height 1.0 / body_height 1.0 / hit_diameter 0.8 and every FINAL marker
+stay untouched.
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
@@ -5451,3 +5511,7 @@ not a threshold).
   SPRITES OK 255 checks, FOGCHECK OK (295), TESTS 54 passed 0 failed, zero SCRIPT ERROR lines
   (after the gate's --import prep on the fresh worktree). TBD.md rows 8/10/11/23 updated. No
   ENEMIES.md, threshold, sim, or other enemy touched.
+
+- 2026-11-17 gift_larper art (this session): the gift Larper TBD magenta frames are gone - game/tools/art/gift_larper.gd cuts tripine.png (alpha-key flood fill, largest-component keep, tight crop, screen-blend grade (175,76,192) for the fog rule) and emits 6 real frames (5 distinct idle cycle frames larper_00..04 -> cycle_00..04.png plus the defused pose defused_00.png); sprites.json tbd=false, animations[] gained an appended defused entry (nothing reordered), anim block tick ranges/loops/fps/effects untouched; telegraph and attack_detonation stay empty by the binding table; gift_larper_view.gd shows the defused pose during the 24-tick grey-out. validate SPRITES OK 220 checks; FOGCHECK OK 260 checks over 5 biomes; fog contrast 3.05-3.87 at 40 u (validate formula) / 4.3+ per biome. D-ART-gift_larper-1/2. Gate at handback: see the run line
+
+- 2026-11-17 gift_larper art (this session): the gift Larper TBD magenta frames are gone - game/tools/art/gift_larper.gd cuts tripine.png (alpha-key flood fill, largest-component keep, tight crop, screen-blend grade (175,76,192) for the fog rule) and emits 6 real frames (5 distinct idle cycle frames larper_00..04 -> cycle_00..04.png plus the defused pose defused_00.png); sprites.json tbd=false, animations[] gained an appended defused entry (nothing reordered), anim block tick ranges/loops/fps/effects untouched; telegraph and attack_detonation stay empty by the binding table; gift_larper_view.gd shows the defused pose during the 24-tick grey-out. validate SPRITES OK 220 checks; FOGCHECK OK 260 checks over 5 biomes; fog contrast 3.05-3.87 at 40 u (validate formula) / 4.3+ per biome. D-ART-gift_larper-1/2. Gate: GATE OK (9 ran, 0 skipped, 179 s), TESTS 55 passed 0 failed. No PARKED rows. No push.

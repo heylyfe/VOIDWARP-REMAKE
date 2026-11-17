@@ -103,6 +103,7 @@ func on_spawn() -> void:
 		billboard.visible = true
 		billboard.modulate = Color(1.0, 1.0, 1.0, 1.0)
 		billboard.position.y = _base_y
+		billboard.set_animation("cycle")
 	if _burst != null:
 		_burst.visible = false
 
@@ -117,9 +118,12 @@ func on_detonation() -> void:
 
 
 ## The defuse begins when the ladder's step 1 passes (a defused or shielded mine): 24 TOTAL
-## ticks of grey-out + 0.5 u drop + fade + the 'pff' puff. NO blast.
+## ticks of grey-out + 0.5 u drop + fade + the 'pff' puff. NO blast. Shows the defused pose
+## (sprites/defused_00.png - deflated + desaturated), not the idle frame.
 func on_defused() -> void:
 	_def_left = _defused_ticks
+	if billboard != null:
+		billboard.set_animation("defused")
 	GiftLarperAudioScript.play(self, GiftLarperAudioScript.CUE_PFF)
 
 
@@ -129,11 +133,13 @@ func step(dt_ticks: int = 1) -> void:
 	if billboard == null:
 		return
 	_anim_ticks += dt_ticks
-	# idle: 48 ticks per frame, looping the 5 frames (one revolution per 240 ticks)
-	var idx := int(float(_anim_ticks) / float(maxi(_frame_ticks, 1))) % maxi(_frames, 1)
-	if idx != billboard.frame_i:
-		billboard.frame_i = idx
-		billboard._apply_frame(idx)
+	# idle: 48 ticks per frame, looping the 5 frames (one revolution per 240 ticks);
+	# while defused the defused pose holds (the grey-out plays over it)
+	if _def_left == 0:
+		var idx := int(float(_anim_ticks) / float(maxi(_frame_ticks, 1))) % maxi(_frames, 1)
+		if idx != billboard.frame_i:
+			billboard.frame_i = idx
+			billboard._apply_frame(idx)
 	# attack_detonation: 18 TOTAL ticks - white flash (first ~4), burst sphere 0 -> radius
 	if _det_left > 0:
 		_det_left = maxi(_det_left - dt_ticks, 0)
