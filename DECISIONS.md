@@ -6096,6 +6096,20 @@ level-1 kills, the 4 D-VOID, the 4 stuck and the 1 timeout are the kept evidence
 the level-1 failure list with the current build is: seeds 10, 22, 31, 35, 44, 49,
 51, 53, 55, 63, 64, 68, 69, 74, 82, 87, 88, 92.
 
+### D-T099R-1 - audit judgment: A12 is judged against D-LOAD-5 FINAL for restarts [CONTESTABLE]
+T-099 RE-RUN (AUDIT.md section 2, A12). FLEET_PACK.md A12 reads "loading screen >= 5.0 s and
+<= 8 s", from DESIGN.md section 2 [CANON] ("loading screen on initial load and on run start").
+The owner's newer FINAL ruling D-LOAD-5 sets the first launch at 5.0 s and every restart at
+exactly 2.0 s; PARKED.md #22 records the contradiction and asks the owner to update the CANON
+rows and the A12 text. Measured on 64e3332: feel_probe first launch 5.000 s / restart 2.000 s;
+the real app (scratchpad wall-clock probe) 5,000 and 5,004 ms first launch, 2,006 and 2,004 ms
+restart. DECISION (the auditor's, not the owner's): A12 is graded PASS, taking the FINAL ruling
+as amending the criterion for restarts, the same reading the first audit applied to D-065 FINAL
+over A7's "every body contact kills". Nothing was loosened: the first-launch rows are unchanged
+and the restart rows were added. Read literally, the restart rows miss A12's ">= 5.0 s".
+If the owner does not accept that D-LOAD-5 amends A12, A12 is PARTIAL and the verdict line
+in AUDIT.md section 11 changes accordingly. Neither FLEET_PACK.md nor DESIGN.md was edited.
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
