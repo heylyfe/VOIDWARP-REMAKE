@@ -5,7 +5,7 @@ wired in full, the entry is marked `"tbd": true` in its JSON, and the row appear
 
 | # | ticket | what is TBD | why | owner action |
 |---|---|---|---|---|
-| 1 | T-016 | kiwi cat sprites - all frames TBD | Image 1 `assets_src/enemies/kiwicat.png` absent | drop the PNG in with the exact filename, rebuild the sprite pipeline |
+| 1 | T-016 | kiwi cat sprites - REAL (T-ART-KIWI_CAT); `tools/art/kiwi_cat.gd` owns them | Image 1 `assets_src/enemies/kiwicat.png` present since the art wave | nothing - drop the module's rebuild output (`--script res://tools/art/kiwi_cat.gd`) if the source changes |
 | 2 | T-016 | coil sprites - REAL ART (tools/art/coil.gd, 2026-11-17) | Image 2 `springer.png` present; opaque near-white checkerboard corners needed a per-enemy background removal (the shared 24/255 corner fill empties it) | done; rebuild = rerun `tools/godot/godot.exe --headless --path game --script res://tools/art/coil.gd` |
 | 3 | T-016 | thicc ben sprites - REAL ART since 2026-11-17 | Image 3 `thiccben.png` present; cut out and graded by `game/tools/art/thicc_ben.gd` (art module owns the frames); distinct frame per T-083 anim-block state | none - done; rebuild via the art module, not the pipeline |
 | 4 | T-016 | Isagi sprites - all frames TBD | Images 4/5/6 (`isagi_idle.jpeg`, `ISAGI_SHOOT.webp`, `blueballprojectile.webp`) absent | drop all three PNGs in, rebuild |
@@ -26,7 +26,7 @@ wired in full, the entry is marked `"tbd": true` in its JSON, and the row appear
 | 2 | T-033 | isagi: `isagi_shoot_sae_math_final_shot` - the shoot line per release (ENEMIES.md Isagi "New sound": Isagi shoot sae math final shot gun-shot sound) | no audio files exist yet | drop the hook file in, view wires it |
 | 3 | T-033 | isagi: `isagi_gunshot` - per ball release, layered under the shoot line | no audio files exist yet | drop the hook file in, view wires it |
 
-## 1. The 17 enemy images - 14 MISSING (coil and thicc ben are real art since 2026-11-17)
+## 1. The 17 enemy images - 13 MISSING (coil, thicc ben and kiwi cat are real art since 2026-11-17)
 
 Enemy sprites are normally produced by `game/tools/sprite_pipeline.gd` (T-016): missing, unreadable, or
 validation-failing sources become `game/tools/make_tbd_png.gd` placeholder frames, `"tbd": true`
@@ -36,11 +36,11 @@ change. Every frame is validated by `game/tools/validate_sprites.gd` (fog contra
 body_rect). coil is the exception: its source is present but opaque, so `game/tools/art/coil.gd`
 owns its frames (the pipeline skips enemies with an art module) - all 5 cycle frames are real art
 (squash -> extend, 512x512 bottom-anchored, `"tbd": false`), the anim block and tick ranges are
-unchanged, and fog contrast is ~8.4 at 40 u. thicc ben is the second (real art since 2026-11-17, row 3).
+unchanged, and fog contrast is ~8.4 at 40 u. thicc ben (row 3) and kiwi cat (row 1, T-ART-KIWI_CAT) are the others.
 
 | # | enemy | expected filename | state |
 |---|---|---|---|
-| 1 | kiwi cat | `kiwicat.png` | MISSING -> TBD |
+| 1 | kiwi cat | `kiwicat.png` | PRESENT -> real art (T-ART-KIWI_CAT; frames `cycle_00`, `spawn_00`, `idle_chase_00`, `telegraph_00`; `tbd: false`) |
 | 2 | coil | `springer.png` | REAL ART (2026-11-17, `game/tools/art/coil.gd`) |
 | 3 | thicc ben | `thiccben.png` | REAL ART - `game/tools/art/thicc_ben.gd` (2026-11-17); `cycle/spawn/attack_arrival/attack_ring/recover_00.png`; `tbd: false`; validate: SPRITES OK |
 | 4 | Isagi | `isagi_idle.jpeg` | MISSING -> TBD |

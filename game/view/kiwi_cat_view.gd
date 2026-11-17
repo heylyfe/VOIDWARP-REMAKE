@@ -6,12 +6,13 @@ extends Node3D
 # the caller passes to step(), never by a wall clock.
 #
 # Wired to the anim block (sprites.json -> anim):
-#   spawn       30-tick fade: alpha 0 -> 1, scale 0.8 -> 1.0, first idle frame
-#   idle_chase  bob +-0.08 u at 1.0 Hz (the sheet's single frame loops)
+#   spawn       30-tick fade: alpha 0 -> 1, scale 0.8 -> 1.0, spawn frame (materialize lift)
+#   idle_chase  bob +-0.08 u at 1.0 Hz (the breathing idle_chase frame loops)
 #   telegraph   "meow": scale pulse 1.0 -> 1.12 -> 1.0 across the 12-tick cue
+#               (the danger-red telegraph frame shows for the cue's duration)
 #   attack      none - contact kills on the tick the cylinders overlap; no wind-up exists
-# The frame set is the T-016 TBD placeholder for the real kiwicat.png (TBD.md row 1);
-# dropping the real art in changes nothing here.
+# The frames are the real kiwicat.png art (T-ART-KIWI_CAT, tools/art/kiwi_cat.gd);
+# the effects themselves (fade, bob, pulse) are unchanged.
 
 const BillboardScript := preload("res://view/billboard.gd")
 
@@ -47,12 +48,25 @@ func setup(folder_dir: String = "res://content/enemies/kiwi_cat") -> void:
 	add_child(billboard)
 	billboard.setup_from_sheet(doc, folder_dir)
 	billboard.world_height = world_height
+	# The per-state art (T-ART-KIWI_CAT): the idle/chase frame is the default; on_spawn()
+	# and on_telegraph() swap to the spawn / meow-telegraph frames, step() swaps back.
+	_set_anim("idle_chase")
+
+
+## Swap the displayed frame set and re-capture the base scale from the new frame's
+## body_rect (each per-state frame carries its own rect; the step() scale math multiplies
+## this base).
+func _set_anim(anim_name: String) -> void:
+	if billboard == null:
+		return
+	billboard.set_animation(anim_name)
 	_base_scale = billboard.scale
 
 
 ## The spawn fade restarts (the sim's enemy_spawn event for this enemy).
 func on_spawn() -> void:
 	_spawn_left = _spawn_total
+	_set_anim("spawn")
 
 
 ## A sim telegraph event for this enemy (kind "meow") starts the 12-tick scale pulse.
@@ -60,6 +74,7 @@ func on_telegraph(kind: String, ticks: int = -1) -> void:
 	if kind != "meow":
 		return
 	_meow_left = ticks if ticks > 0 else _meow_total
+	_set_anim("telegraph")
 
 
 ## One sim tick of view state: spawn fade, bob and the meow pulse. dt_ticks is the sim
@@ -91,4 +106,9 @@ func step(dt_ticks: int = 1) -> void:
 		pulse = 1.0 + (peak - 1.0) * sin(progress * PI)
 	billboard.modulate = Color(1.0, 1.0, 1.0, fade)
 	billboard.scale = _base_scale * (scale_mul * pulse)
+	# leave the per-state frames once their cue ends (back to idle / chase)
+	if billboard.anim_name == "spawn" and _spawn_left == 0:
+		_set_anim("idle_chase")
+	elif billboard.anim_name == "telegraph" and _meow_left == 0:
+		_set_anim("idle_chase")
 
