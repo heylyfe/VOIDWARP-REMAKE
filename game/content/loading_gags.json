@@ -1,0 +1,27 @@
+{
+  "_doc": "Loading-gag cast and sprite sheets (ticket FIX-APP-BOUNDARY). The app layer may not name content ids, so the gag roster lives here: gag id -> the enemy sprites the gag draws, in [enemy_id, sprite_name] pairs. The first appearance order fixes each gag's cast (the timeline code reads cast slots in this order). The gag ids themselves are app-side vocabulary, not content ids.",
+  "toucher_slip": [
+    ["toucher", "cycle_00"],
+    ["toucher", "cycle_01"],
+    ["toucher", "cycle_02"],
+    ["toucher", "floor_00"],
+    ["toucher", "floor_01"],
+    ["toucher", "floor_02"],
+    ["toucher", "floor_03"],
+    ["toucher", "floor_04"]
+  ],
+  "seal_giftbox": [
+    ["seal", "idle_00"],
+    ["seal", "idle_01"]
+  ],
+  "coil_launch": [
+    ["coil", "cycle_00"]
+  ],
+  "kiwi_larper": [
+    ["kiwi_cat", "cycle_00"],
+    ["gift_larper", "cycle_00"]
+  ],
+  "ben_bonk": [
+    ["thicc_ben", "cycle_00"]
+  ]
+}

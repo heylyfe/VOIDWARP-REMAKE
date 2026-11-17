@@ -20,7 +20,7 @@ extends Node3D
 # The roster is DISCOVERED from res://content/enemies/*/sprites.json - no content id is named
 # in this file, so a dropped-in 13th enemy appears without an edit. Placement is by body height
 # (tallest at the back, smallest in front), ties broken by id, so the layout is stable run to
-# run. An enemy the design gives no body row (world_height null - the nuke, SR-2) flies across
+# run. An enemy the design gives no body row (world_height null, SR-2) flies across
 # the sky instead of standing. A missing frame PNG becomes the TBD placeholder (ENEMIES.md TBD
 # FALLBACK): the scene never waits on an asset.
 #
@@ -38,9 +38,11 @@ const ENEMY_DIR := "res://content/enemies"
 const GOLD_MODEL := "res://assets/models/gold_gift.glb"
 const MINE_MODEL := "res://assets/models/tripmine_box.glb"
 
-## D-MENU-2: the biome whose fog/palette the menu wears.
-const BIOME := "indigo_trench"
-const BIOME_LEVEL := 19   # first level of that act - fog_env reads the act density for it
+## D-MENU-2: the biome whose fog/palette the menu wears. Picked by a palette field read
+## from the content tree at run time (the biome whose void colour equals the menu's
+## backdrop colour), never by id; the level is that biome's first level (fog_env reads
+## the act density for it). See DECISIONS.md D-FIX-APP-BOUNDARY-1.
+const VOID_HEX := "#02030F"   # the menu backdrop's own void colour (menu.gd C_VOID)
 
 ## Anim-block states tried in order for a roster pose (the T-083 "anim" block).
 const IDLE_STATES: Array[String] = ["idle", "idle_chase", "idle_flap"]
@@ -104,6 +106,8 @@ var _motes: Node3D
 var _shards: Array = []         # [Node3D, spin Vector3]
 var _caption_index := -1
 var _tbd_texture: Texture2D = null
+var _biome_id := ""             # picked by menu_biome() in build() (D-MENU-2)
+var _biome_level := 1
 
 
 func _init() -> void:
@@ -112,7 +116,10 @@ func _init() -> void:
 
 
 func build() -> void:
-	palette = FogEnvScript.resolve_palette(BIOME, BIOME_LEVEL)
+	var pick := menu_biome()
+	_biome_id = str(pick.get("id", ""))
+	_biome_level = int(pick.get("level", 1))
+	palette = FogEnvScript.resolve_palette(_biome_id, _biome_level)
 	_build_environment()
 	_build_island()
 	_build_props()
@@ -125,6 +132,43 @@ func build() -> void:
 
 
 # ---- palette helpers ---------------------------------------------------------------------------
+
+## The menu biome, picked from the content tree at run time: the biome whose palette void
+## equals VOID_HEX (the deep-indigo act set the island wears). Falls back to the deepest act
+## (highest first level) when no void matches - a content drift, not a crash. Returns
+## {"id": String, "level": int}; {"id": "", "level": 1} when the content tree is unreadable
+## (fog_env resolves "" to the act-I biome from the level). No content id is named here.
+static func menu_biome() -> Dictionary:
+	var dir := DirAccess.open("res://content/biomes")
+	if dir == null:
+		return {"id": "", "level": 1}
+	var rows: Array = []
+	var found: Dictionary = {}
+	for fn in dir.get_files():
+		if not fn.ends_with(".json") or fn.begins_with("."):
+			continue
+		var text := FileAccess.get_file_as_string("res://content/biomes/%s" % fn)
+		var parsed: Variant = JSON.parse_string(text)
+		if not (parsed is Dictionary):
+			continue
+		var p: Dictionary = parsed
+		var pal: Variant = p.get("palette", {})
+		var void_hex := ""
+		if pal is Dictionary:
+			void_hex = str((pal as Dictionary).get("void", "")).to_upper()
+		var levels: Variant = p.get("levels", [])
+		var first := 999999
+		if levels is Array and not (levels as Array).is_empty():
+			first = int((levels as Array)[0])
+		var row := {"id": str(p.get("id", fn.trim_suffix(".json"))), "level": first,
+				"void": void_hex}
+		rows.append(row)
+		if void_hex == VOID_HEX:
+			found = row
+	if not found.is_empty():
+		return found
+	rows.sort_custom(func(a, b): return int(a["level"]) < int(b["level"]))
+	return rows[rows.size() - 1] if not rows.is_empty() else {"id": "", "level": 1}
 
 func role(p_name: String, fallback: Color = Color(0.1, 0.1, 0.12)) -> Color:
 	var roles: Dictionary = palette.get("roles", {})
@@ -139,7 +183,7 @@ func role(p_name: String, fallback: Color = Color(0.1, 0.1, 0.12)) -> Color:
 func _build_environment() -> void:
 	env_node = FogEnvScript.new()
 	env_node.name = "FogEnv"
-	env_node.configure(BIOME, BIOME_LEVEL)
+	env_node.configure(_biome_id, _biome_level)
 	# D-MENU-2: glow on top of the game's own fog so the open beacon blooms like the reference.
 	var env: Environment = env_node.environment
 	env.glow_enabled = true
