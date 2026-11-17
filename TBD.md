@@ -114,3 +114,34 @@ class of placeholder is the same; the rows are split per enemy for owner action.
 | # | ticket | what is TBD | why | owner action |
 |---|---|---|---|---|
 | 33 | T-037 | toucher: placeholder audio cue hook `toucher_squelch` (the ENEMIES.md New sound line: corrupted squelch - wet glitch gurgle and digital distortion - fired only on ticks where new glitched tiles appear). Named in `enemy.json` (`stats.audio_cues`); no .wav exists yet | T-055 (placeholder audio synth) runs the whole roster and has not landed; the file stem is the hook name | run T-055 (file names = cue names); keep the hook name stable |
+
+## 8. T-055 placeholder audio - ALL ENEMY AUDIO IS PLACEHOLDER
+
+EVERY enemy audio cue currently in the build is placeholder synthesis from
+`tools/synth_audio.py` (stdlib `wave` + `math`; deterministic LCG noise;
+peak-normalised; 44.1 kHz mono 16-bit). Nothing is downloaded, recorded or
+copied from any existing work - that includes the three sounds ENEMIES.md
+names as existing recordings (thicc ben's chime, Isagi's voice/gunshot, gift
+Larper's tripmine blast), which are synthesized stand-ins, never the real
+things. Each file lives at
+`game/assets/audio/enemies/<id>/<cue>.wav` (the path the `game/view/audio/*_audio.gd`
+hooks load) and every cue referenced in `content/enemies/*/enemy.json` resolves
+to one. Cue timings are driven by sim telegraph events, never by audio length.
+The hooks above that said "T-055 has not landed" are superseded by this section.
+
+| # | ticket | what is TBD | why | owner action |
+|---|---|---|---|---|
+| 34 | T-055 | kiwi cat: `meow`, `meow_double` - synthesized placeholder meows (sine glide + vibrato, `meow_double` pitched up a fourth) | brand-new audio, no recording ships | replace with real cat-meow art, keep the cue names stable |
+| 35 | T-055 | coil: `coil_boing`, `coil_landing_twang` - synthesized spring boing / inharmonic-sine twang | brand-new audio | replace with real spring samples, keep the cue names stable |
+| 36 | T-055 | thicc ben: `thicc_ben_chime`, `thicc_ben_bell` - synthesized bell stand-in (Westminster-flavoured four-note figure compressed to 0.5 s; never the real recording) | ENEMIES.md names the real Big Ben chime - cannot ship | replace with licensed/real bell art, keep the cue names stable |
+| 37 | T-055 | Isagi: `isagi_voice_direct_shot`, `isagi_shoot_sae_math_final_shot`, `isagi_gunshot` - synthesized rising whoosh / formant yell / noise-burst gunshot | ENEMIES.md names Isagi voice lines and a gunshot - no recordings ship; Isagi's `enemy.json` lists NO `audio_cues` yet, so these are named per the T-033 rows, not wired by any enemy.json | wire the cue list in T-087; replace the stand-ins with real (or owner-approved) art |
+| 38 | T-055 | nuke: `lock_on_beep`, `rocket_booster_roar`, `impact_boom` - synthesized 1200 Hz square blip / falling-cutoff noise roar / 45 Hz sine boom | brand-new audio; nuke's `enemy.json` lists NO `audio_cues` yet; these are named per the TBD audio hooks in `nuke/sprites.json` | wire the cue list in T-087; replace with real art |
+| 39 | T-055 | gift Larper: `explosion`, `pff` - synthesized click+noise blast / falling-pff puff | ENEMIES.md names the Roblox tripmine explosion - cannot ship | replace with real art, keep the cue names stable |
+| 40 | T-055 | YOU?!: `you_corrupted_rumble` - synthesized gated-noise rumble + reversed-envelope tone | brand-new audio | replace with real art, keep the cue name stable |
+| 41 | T-055 | seal: `bark`, `flipper_flap` - synthesized sawtooth yelps / filtered noise slaps | brand-new audio | replace with real seal art, keep the cue names stable |
+| 42 | T-055 | address me: `spawn_trumpet`, `rumble_build`, `explode_boom` - synthesized sawtooth trumpet / 40 Hz build-up rumble / 41 Hz boom | brand-new audio | replace with real art, keep the cue names stable |
+| 43 | T-055 | Claude: `ui_chime`, `keystroke_tick`, `notification_ping`, `squeak_pop` - synthesized UI chimes, ticks, ping, squeak-pop | brand-new audio | replace with real art, keep the cue names stable |
+| 44 | T-055 | gin ichimaru: `crack_rumble`, `shing`, `whoosh`, `zone_open`, `zone_close` - synthesized crackle / metallic sweep / noise whoosh / hollow drop and reverse | brand-new audio | replace with real art, keep the cue names stable |
+| 45 | T-055 | toucher: `toucher_squelch` - synthesized wobbling-band noise with bit-crush | brand-new audio | replace with real art, keep the cue name stable |
+| 46 | T-055 | ALL cue recipes and lengths in `tools/synth_audio.py` are `[CONTESTABLE]` placeholders (research/fable-tickets.md section 3); cue names, formats (44.1 kHz mono 16-bit) and the file-name = cue-name contract are the stable part | the section 3 recipes are stand-ins pending a real sound pass | the real sound pass rewrites recipes only, never cue names
+
