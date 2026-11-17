@@ -3337,6 +3337,64 @@ content/enemies/nuke/enemy.json flatted one level (the production loader that do
 pending elsewhere; the behavior reads only `row["cfg"]`, so the wiring side can slot in unchanged).
 The T-034 test builds its cfg from the REAL enemy.json file (JSON.parse_string of stats), never
 from a test-local copy: the timings and numbers asserted are the deliverable data's own.
+### D-T084-1 - The frame rule: tick_ranges first, then ticks_per_frame; frame-less states hold the last shown frame (T-084).
+
+DECISION (T-084): enemy_anim.gd implements the section 1.0 rule `frame = table[state][
+(ticks_in_state x fps) / 60 ]` as: a state's `tick_ranges` win when present (the range whose
+[start, end] contains ticks_in_state, inclusive; past the last range a one-shot holds its last
+range's frame), otherwise index = floor(ticks_in_state / ticks_per_frame), wrapping on loop
+states and clamping on one-shots. tpf = null means "the state shows its first spec frame for as
+long as the sim keeps it" (a single-frame state, e.g. ben's smoke). A state with NO frames of its
+own (kiwi's contact-kill attack, the nuke's explosion, the larper's detonation) HOLDS the last
+frame actually shown - a billboard never blanks out - and the hit shape follows that held frame.
+WHY: the sim owns time; the view is a pure function of (state, ticks_in_state), so an attack
+frame lands on its event tick with 0 ticks of error and a bleached-out sprite is impossible.
+
+### D-T084-2 - A finished looping state's wrap frame never becomes the held frame (T-084).
+
+DECISION (T-084): when a looping state has a total_ticks and the counter reaches it, the frame
+computed for that tick (the wrap) is not recorded as "last shown", because the sim switches state
+on that exact tick and the frame was never displayed. One-shot states keep recording past their
+total: their clamped hold frame IS legitimately shown if the sim lingers. [CONTESTABLE] modeling
+choice; the test drives every state for exactly its binding tick count, where both readings agree
+except at the switch tick itself. WHY: the nuke's 90-tick descent otherwise ends with the held
+frame one step past the explosion's entry frame.
+
+### D-T084-3 - Spawn-fade contact block: 30 ticks default, the block's own number when it states one (T-084).
+
+DECISION (T-084): a spawn state blocks contact while `ticks_in_state < spawn length`, the length
+taken from the state's fade params (`spawn_blocks_contact_ticks`, then `duration_ticks`,
+then `ticks`), defaulting to 30 (SPAWN_FADE_TICKS, section 1.0 common fade). Eleven enemies use
+the 30 default; address me uses its own [CONTESTABLE] 12-tick `fade_fast` (12), because its
+table row is the more specific number and T-083 already encoded it. Only a fade-type spawn
+(common_fade/fade/fade_fast) blocks: the nuke has no sprite (nothing to block) and gift Larper
+is a slot occupant with no fade (D-T083-11). WHY: the deliverable's "30 ticks" is the common
+rule; the one deviating enemy is data-driven and explicitly marked contestable in the spec.
+
+### D-T084-4 - Billboard effects are five shader parameters, computed from the same sim tick (T-084).
+
+DECISION (T-084): effect_params() returns the uniform contract {flash: Color (additive white),
+tint: Color, scale_pulse: float, shake: Vector2 in u, alpha: float} for the current state and
+tick; none of them ever change frame_index() or body_rect(). Effect math kept minimal and
+spec-stated: common_fade/fade/fade_fast lerp alpha and scale over their ticks; scale_pulse is
+triangular from -> peak -> to across the state's ticks (peak from `peak`/`scale_to`, duration
+from `ticks` or the state's total - kiwi 1.0 -> 1.12 -> 1.0 over 12, toucher 1.0 -> 1.15 over
+18); white_flash is a full-white add decaying over its 6 ticks (ben's arrival); dim is a flat
+brightness tint (isagi's 0.7 recover); rumble is a 0.05 u alternating shake (YOU?!). The
+parameters are data consumed by the billboard shader; wiring them into billboard.gd's material
+is a later view ticket - the contract and the values are proven by test_anim_sync.gd here.
+
+### D-T084-5 - The attack event lands on the state-switch tick; extra volleys are event ticks too (T-084).
+
+DECISION (T-084): the player exposes attack_event(sim_tick) for the gameplay layer; it records
+the sim tick and the frame shown on that very tick (0 ticks of error - the state switch and the
+frame pick are the same tick, never one late). The scripted sim in test_anim_sync.gd fires the
+event on the entry tick of each enemy's attack state (the cue's end), and for isagi also on
+attack-local ticks 9 and 18 (the global 81 and 90 of the 0.15 s-apart volley), asserting the
+shoot frame holds through all three. The binding telegraph counts the test asserts against the
+anim blocks are its own transcription of DESIGN.md sections 5.1-5.12 (kiwi 12, coil 36, ben 75,
+isagi 72, nuke 150+90, YOU 90, larper none, toucher 18, seal 45, address me 300, Claude
+strings 36, gin 120) - the blocks were re-proven, not trusted.
 
 ## Handover log
 
