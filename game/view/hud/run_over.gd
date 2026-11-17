@@ -27,6 +27,8 @@ extends Control
 const DANGER_RED := Color(1.0, 0.1647, 0.1647)   # #FF2A2A
 const VOID_COLOR := Color(0.35, 0.2, 0.5, 1.0)   # void swatch (no documented hex - D-T025-1)
 const SPRITE := 256.0
+const CURSE_ICON := 96.0
+const CURSE_ICON_Script := preload("res://view/hud/icon_placeholder.gd")
 
 ## death code -> roster display name (DESIGN.md sections 3.1 / 5).
 const CODE_NAMES := {
@@ -72,6 +74,7 @@ var charges_held := 0
 
 var _sprite: TextureRect
 var _tbd_box: Label
+var _curse_icon: Control
 var _name_label: Label
 var _code_label: Label
 var _level_label: Label
@@ -108,6 +111,12 @@ func _init() -> void:
 	_tbd_box.text = "?"
 	_tbd_box.visible = false
 	col.add_child(_tbd_box)
+	# curse deaths show the curse icon instead of a killer sprite (section 2.4);
+	# placeholder art until real curse icons exist (D-T025-4, D-T086-8)
+	_curse_icon = CURSE_ICON_Script.new()
+	_curse_icon.custom_minimum_size = Vector2(CURSE_ICON, CURSE_ICON)
+	_curse_icon.visible = false
+	col.add_child(_curse_icon)
 	_name_label = Label.new()
 	_name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_name_label.add_theme_font_size_override("font_size", 40)
@@ -170,6 +179,13 @@ static func is_void_death(p_code: String) -> bool:
 	return p_code == "D-VOID"
 
 
+## The curse id shown as the curse icon, or "" when this is not a curse death.
+func curse_icon_id() -> String:
+	if is_curse_death(code) and _curse_icon != null and _curse_icon.visible:
+		return str(_curse_icon.icon_id)
+	return ""
+
+
 ## Fill the screen from a death snapshot:
 ##   code (String) - the death code, e.g. "D-MINE" / "D-CURSE:cold_start"
 ##   killer (String) - the sim-provided killer string ("" when unknown)
@@ -190,16 +206,26 @@ func show_run_over(info: Dictionary) -> void:
 	if is_void_death(code):
 		_sprite.visible = false
 		_tbd_box.visible = false
+		_curse_icon.visible = false
 		_name_label.add_theme_color_override("font_color", VOID_COLOR)
+	elif is_curse_death(code):
+		# the curse icon (placeholder art) and D-CURSE:<id>; no killer sprite
+		_sprite.visible = false
+		_tbd_box.visible = false
+		_curse_icon.setup(code.substr(8), CURSE_ICON)
+		_curse_icon.visible = true
+		_name_label.add_theme_color_override("font_color", DANGER_RED)
 	elif info.get("sprite") is Texture2D:
 		_sprite.visible = true
 		_tbd_box.visible = false
+		_curse_icon.visible = false
 		_sprite.texture = info["sprite"]
 		_name_label.add_theme_color_override("font_color", DANGER_RED)
 	else:
 		# no sprite supplied (sprites are TBD placeholders): a 256 px TBD stand-in
 		_sprite.visible = false
 		_tbd_box.visible = true
+		_curse_icon.visible = false
 		_name_label.add_theme_color_override("font_color", DANGER_RED)
 	visible = true
 	if is_inside_tree():

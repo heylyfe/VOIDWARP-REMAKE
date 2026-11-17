@@ -2014,6 +2014,102 @@ ceiling is a candidate-pool filter and lands inside `enemy_candidates()`. Tests 
 test_schedule (no change expected), test_lobby `_hunger` (the exhaustion path must survive the
 cap checks) and a NEW/REPEAT/FREE triplet test.
 
+### D-T086-1 - [CONTESTABLE] The HUD animation clock is ticks at 60 per second; advance() takes ticks (T-086).
+DECISION (T-086): all new stepped HUD animations (spend / restore / free-fall / pulse /
+glint / shatter / void flash / white bloom / black-out) are driven by an injected
+advance(ticks: float) step, modelled on T-024's loading screen (D-T024-1) but in TICKS,
+not seconds, because fable-tickets.md section 2.4 states every duration in ticks. The tick
+rate 60/s is derived, not printed anywhere: DESIGN.md section 3.1 binds 48 ticks = 0.8 s
+(void-fall respawn delay, D-050) and 1.0 s = 60 ticks follows. Each animated element owns a
+_process(delta) that feeds advance(delta * 60.0); tests call advance() directly and never
+sleep real time. advance() in void_pips.gd and screen_fx.gd therefore has a different unit
+from loading_screen.gd's advance(seconds) - deliberate, and documented in both files.
+WHY: the spec table's durations are tick counts; converting to seconds would invent a
+second set of numbers and lose the 18/24/60/12-tick exactness.
+
+### D-T086-2 - [CONTESTABLE] The spend's void edge flash is a 12-tick single flash, 48 px edge band, alpha 0.55 -> 0 (T-086).
+DECISION (T-086): section 2.4 binds "the screen edge flashes void colour once" with no
+duration, band width or peak alpha. Implemented as one flash of the void swatch (D-T025-1's
+Color(0.35, 0.2, 0.5) - no document states the void-colour hex for screen effects) on a
+48 px border band (the centre stays clear), alpha starting at 0.55 and fading linearly to 0
+over 12 ticks, triggered exactly once per spend (pip_spend()). 12 ticks chosen to match the
+Last Light bloom's 12 ticks; nothing else pins it.
+WHY: the owner's sentence is absolute about ONE flash; the shape/duration is invented here
+and overrulable freely.
+
+### D-T086-3 - [CONTESTABLE] Already-full restore = one whole-row glow pulse over 12 ticks (T-086).
+DECISION (T-086): section 2.4 binds "if already full, the pips pulse once" with no duration
+or shape. Implemented as a single sinusoidal glow bump over the filled pips across 12 ticks
+(peak at mid-pulse); the pip fill state never changes and no sound is implied. pulse_active()
+reports the window so tests can step it.
+WHY: "pulse once" is the whole spec; the 12-tick length reused from D-T086-2 keeps one
+invented constant in play.
+
+### D-T086-4 - [CONTESTABLE] Field Dressing pip: stays filled, white flash for the first 12 of 60 FREE ticks (T-086).
+DECISION (T-086): section 2.4 binds (a) the pip flashes white and stays filled and (b) a
+small "FREE" tick appears for 60 ticks. The 60 ticks / white flash / stays-filled parts are
+the spec; the flash LENGTH is not stated, so the pip renders white for the first 12 ticks of
+the 60-tick FREE window, then the normal held colour. The "FREE" text is drawn small
+(11 px) centred under the animating pip. Which pip: the last held one (index held-1) - the
+pip a spent charge would have drained; nothing is spent, so no state changes.
+NOTE: the animation is view-side only for now (D-T086-8).
+WHY: both spec sentences are honoured verbatim; only the flash length is invented.
+
+### D-T086-5 - [CONTESTABLE] The restore glint is a white surface line plus a 6-tick glow tail (T-086).
+DECISION (T-086): section 2.4 binds "fills upward over 24 ticks with a white glint" with no
+glint form. Implemented: the fill rises from the bottom over 24 ticks (binding); a 3 px
+bright-white bar rides the rising surface; when the fill lands, a 6-tick white glow lingers
+above the pip then clears. The fill direction (bottom-up) follows "fills upward" literally;
+the pip being animated is the one at index held at call time (the first hollow pip - after
+the caller syncs the increment, the same pip reads as the last filled one). Call
+pip_restore() on the beacon_enter event BEFORE the next sync (documented in the file);
+pip_restore() self-corrects to the pulse case (D-T086-3) when no hollow pip exists at call
+time, so one call site handles both spec branches.
+WHY: "white glint" has to look like something and be testable; a surface line is the
+simplest reading of a glint on a rising fill.
+
+### D-T086-6 - [CONTESTABLE] Last Light shatter = 12 ticks, six wedge shards, concurrent with the 12-tick bloom (T-086).
+DECISION (T-086): section 2.4 binds (a) a full-screen white bloom for 12 ticks (binding) and
+(b) "the icon shatters" with no geometry or duration. Implemented: white_bloom() draws a
+full-screen white rect with a 2-tick ramp in and a 10-tick fade out (12 ticks total,
+binding), and last_light_trigger() starts a 12-tick shatter on the pip element's Last Light
+icon - the icon splits into 6 wedge shards flying radially outward, rotating, alpha fading
+to 0. After the shatter completes the normal state-driven icon draws (the caller will have
+synced "grey" by then via controller.hud_last_light()). "The player appears on the dais" is
+sim-side and already built (controller.try_kill teleports to the dais, D-053/D-073) - not a
+HUD concern.
+WHY: the shard count and motion are invented; locking the shatter to the bloom's 12 ticks
+means the icon is gone exactly when the white clears - one invented clock, not two.
+
+### D-T086-7 - The death black-out is a linear 18-tick fade on the topmost HUD layer; run-over shows on blackout_finished (T-086).
+DECISION (T-086): section 2.4 binds "black-out over 18 ticks -> the run-over screen" within
+2.0 s of death (binding). screen_fx.black_out() fades a full-screen rect to opaque black
+LINEARLY over 18 ticks (0.3 s at 60 tps - comfortably inside the 2.0 s binding) and emits
+blackout_finished once; the screen STAYS black until hide_blackout() is called (the run-over
+screen is itself opaque black, so the swap is seamless). screen_fx.gd is the single overlay
+for all three screen-wide effects (D-T086-2 flash, D-T086-6 bloom, this black-out) and draws
+topmost (added last in hud.gd). The void colour reuses D-T025-1's swatch. WIRING: like T-025
+left run_over.show_run_over() uncalled (the app-layer death wiring is not built), hud.gd
+exposes hud.screen_fx and re-emits blackout_finished; the caller shows run_over on that
+signal. 18 ticks of black + one show_run_over() call lands the whole attribution sequence
+far inside the 2.0 s binding.
+WHY: one overlay node for all full-screen effects keeps hud.gd a layout root, not an
+animation suite.
+
+### D-T086-8 - Field Dressing is NOT sim-wired; the free-fall animation is built view-side and parked (T-086).
+DECISION (T-086): game/content/upgrades/field_dressing.json declares the on_void_fall hook
+and core/hooks.gd lists it, but NO sim code path calls it - controller._void_fall() always
+spends a charge when charges >= 1. The HUD therefore exposes pip_free_fall() (D-T086-4) and
+it is fully tested headlessly, but nothing calls it yet: the wiring waits for the sim's
+Field Dressing implementation (PARKED.md row 3). Same for the killer attack-frame sprite at
+256 px: no enemy has an attack frame (gift_larper ships only a "cycle" animation, all
+"tbd": true); run_over.gd keeps the TBD "?" box (D-T025-6, TBD.md rows 1-17). The curse-death
+icon lands as an icon_placeholder.gd synthesized stand-in (D-T025-4, TBD.md row 21 extended
+in spirit) - the spec's "curse icon" is honoured with the same fallback art the rest of the
+HUD uses. The Last Light dais teleport and the 2.0 s death budget are NOT gaps (sim-built,
+see D-T086-6/D-T086-7).
+WHY: do not fake what does not exist; build what is buildable and park the rest in writing.
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)

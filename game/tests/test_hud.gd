@@ -29,6 +29,7 @@ const IconRowsScript := preload("res://view/hud/icon_rows.gd")
 const EnemyRosterScript := preload("res://view/hud/enemy_roster.gd")
 const RunOverScript := preload("res://view/hud/run_over.gd")
 const DangerTextScript := preload("res://view/hud/danger_text.gd")
+const ScreenFxScript := preload("res://view/hud/screen_fx.gd")
 
 const SEED := 42
 const LEVEL := 25
@@ -39,6 +40,7 @@ func run() -> Array[String]:
 	_test_counter_level_25_seed(f)
 	_test_void_pips(f)
 	_test_element_set(f)
+	_test_t086_animations(f)
 	return f
 
 
@@ -280,4 +282,164 @@ func _test_element_set(f: Array[String]) -> void:
 	ro.hide_run_over()
 	if ro.visible:
 		f.append("run-over screen still visible after hide_run_over")
+	ro.free()
+
+
+# ---- T-086: the section 2.4 stepped animations (spend/restore/free/bloom/black-out) ---
+
+const SPEND_TICKS := 18.0
+const RESTORE_TICKS := 24.0
+const FREE_TICKS := 60.0
+const PULSE_TICKS := 12.0
+const BLOOM_TICKS := 12.0
+const BLACKOUT_TICKS := 18.0
+const SHATTER_TICKS := 12.0
+
+
+func _test_t086_animations(f: Array[String]) -> void:
+	# spend: the pip that just went hollow cracks and drains downward over 18 ticks
+	var pips = VoidPipsScript.new()
+	pips.set_charges(2, 2)
+	pips.set_charges(1, 2)   # post-spend count: pip index 1 is the draining one
+	pips.pip_spend()
+	if not pips.spend_active():
+		f.append("pip_spend did not start the spend animation")
+	if pips.anim_progress() != 0.0:
+		f.append("spend animation progress at t=0: %f, want 0.0" % pips.anim_progress())
+	pips.advance(SPEND_TICKS * 0.5)
+	if not pips.spend_active() or absf(pips.anim_progress() - 0.5) > 0.01:
+		f.append("spend animation at mid: active=%s progress=%f, want active 0.5"
+				% [pips.spend_active(), pips.anim_progress()])
+	pips.advance(SPEND_TICKS * 0.5)
+	if pips.spend_active():
+		f.append("spend animation still active after %d ticks" % int(SPEND_TICKS))
+	pips.advance(1.0)   # drained pip reads as spent (Hollow), no crash, stays spent
+	if pips.filled_count() != 1 or pips.hollow_count() != 1:
+		f.append("pip counts after spend animation: %d filled %d hollow, want 1/1"
+				% [pips.filled_count(), pips.hollow_count()])
+	# spend with nothing to spend is a no-op
+	pips.set_charges(2, 2)
+	pips.pip_spend()
+	if pips.spend_active():
+		f.append("pip_spend animated with no hollow pip")
+	# restore: the first hollow pip fills upward over 24 ticks, glint included
+	pips.set_charges(1, 2)
+	pips.pip_restore()
+	if not pips.restore_active():
+		f.append("pip_restore did not start the restore animation")
+	if absf(pips.filling_fraction() - 0.0) > 0.01:
+		f.append("restore fill at t=0: %f, want 0.0" % pips.filling_fraction())
+	pips.advance(RESTORE_TICKS * 0.5)
+	if absf(pips.filling_fraction() - 0.5) > 0.01:
+		f.append("restore fill at mid: %f, want ~0.5" % pips.filling_fraction())
+	pips.advance(RESTORE_TICKS * 0.5)
+	if pips.restore_active():
+		f.append("restore animation still active after %d ticks" % int(RESTORE_TICKS))
+	if not pips.glint_active():
+		f.append("restore landed but the white glint tail is missing")
+	pips.advance(6.0)   # glint tail is 6 ticks (D-T086-5)
+	if pips.glint_active():
+		f.append("glint tail still active after 6 ticks")
+	# already-full restore: no fill, one pulse (2.4)
+	pips.set_charges(2, 2)
+	pips.pip_restore()
+	if pips.restore_active():
+		f.append("restore animation started with no hollow pip")
+	if not pips.pulse_active():
+		f.append("already-full restore did not pulse the pips")
+	pips.advance(PULSE_TICKS + 1.0)
+	if pips.pulse_active():
+		f.append("pip pulse still active after %d ticks (must pulse ONCE)" % int(PULSE_TICKS))
+	pips.pip_already_full()
+	if not pips.pulse_active():
+		f.append("pip_already_full did not pulse")
+	pips.advance(PULSE_TICKS + 1.0)
+	# free fall (Field Dressing): pip flashes white, stays filled, FREE tick 60 ticks
+	pips.set_charges(2, 2)
+	pips.pip_free_fall()
+	if not pips.free_tick_active():
+		f.append("pip_free_fall did not raise the FREE tick")
+	if not pips.free_flash_active():
+		f.append("pip_free_fall did not flash the pip white at the window start")
+	pips.advance(FREE_TICKS * 0.5)
+	if pips.free_flash_active():
+		f.append("free fall still flashing white past its 12-tick flash (D-T086-4)")
+	pips.advance(FREE_TICKS * 0.5 + 1.0)
+	if pips.free_tick_active():
+		f.append("FREE tick still active after %d ticks" % int(FREE_TICKS))
+	if pips.filled_count() != 2:
+		f.append("free fall changed the pip count: %d filled, want 2 (stays filled)" % pips.filled_count())
+	# Last Light trigger: the icon shatters over 12 ticks
+	pips.last_light_trigger()
+	if not pips.shatter_active():
+		f.append("last_light_trigger did not start the icon shatter")
+	pips.advance(SHATTER_TICKS * 0.5)
+	if absf(pips.shatter_progress() - 0.5) > 0.01:
+		f.append("shatter progress at mid: %f, want ~0.5" % pips.shatter_progress())
+	pips.advance(SHATTER_TICKS * 0.5)
+	if pips.shatter_active():
+		f.append("shatter still active after %d ticks" % int(SHATTER_TICKS))
+	pips.free()
+	# screen_fx: the void edge flash, the 12-tick white bloom, the 18-tick black-out
+	var fx = ScreenFxScript.new()
+	fx.void_flash()
+	if not fx.flash_active():
+		f.append("void_flash did not activate the edge flash")
+	fx.advance(12.0)
+	if fx.flash_active():
+		f.append("void edge flash still active after 12 ticks")
+	fx.white_bloom()
+	if not fx.bloom_active():
+		f.append("white_bloom did not activate the bloom")
+	fx.advance(BLOOM_TICKS * 0.5)
+	if fx.bloom_alpha() <= 0.0:
+		f.append("bloom alpha at mid: %f, want > 0" % fx.bloom_alpha())
+	fx.advance(BLOOM_TICKS * 0.5)
+	if fx.bloom_active():
+		f.append("white bloom still active after %d ticks" % int(BLOOM_TICKS))
+	var got := [0]
+	fx.blackout_finished.connect(func() -> void: got[0] += 1)
+	fx.black_out()
+	if fx.blackout_alpha() != 0.0:
+		f.append("black-out alpha at t=0: %f, want 0.0" % fx.blackout_alpha())
+	fx.advance(BLACKOUT_TICKS * 0.5)
+	if absf(fx.blackout_alpha() - 0.5) > 0.01:
+		f.append("black-out alpha at mid: %f, want ~0.5" % fx.blackout_alpha())
+	fx.advance(BLACKOUT_TICKS * 0.5)
+	if got[0] != 1:
+		f.append("blackout_finished emitted %d times, want exactly 1 (18 ticks, binding)" % got[0])
+	if fx.blackout_alpha() != 1.0:
+		f.append("black-out alpha at 18 ticks: %f, want 1.0 (fully black)" % fx.blackout_alpha())
+	if not fx.blackout_active():
+		f.append("black-out cleared itself; it must hold black until hide_blackout()")
+	fx.hide_blackout()
+	if fx.blackout_active() or fx.blackout_alpha() != 0.0:
+		f.append("hide_blackout did not clear the black-out")
+	fx.free()
+	# through the root HUD: screen_fx is drawn topmost and re-emits blackout_finished
+	var hud = HudScript.new()
+	if hud.screen_fx == null:
+		f.append("root HUD has no screen_fx overlay")
+	else:
+		var hud_got := [0]
+		hud.blackout_finished.connect(func() -> void: hud_got[0] += 1)
+		hud.death_blackout()
+		hud.screen_fx.advance(BLACKOUT_TICKS)
+		if hud_got[0] != 1:
+			f.append("root HUD blackout_finished re-emitted %d times, want 1" % hud_got[0])
+	hud.free()
+	# run-over: curse deaths show the curse icon (D-CURSE:<id>), void/mine do not
+	var ro = RunOverScript.new()
+	ro.show_run_over({"code": "D-CURSE:cold_start", "killer": "", "level": 12,
+			"purse_centi": 7300, "charges": 1})
+	if ro.curse_icon_id() != "cold_start":
+		f.append("curse-death icon id: '%s', want 'cold_start'" % ro.curse_icon_id())
+	ro.show_run_over({"code": "D-VOID", "killer": "", "level": 12,
+			"purse_centi": 7300, "charges": 0})
+	if ro.curse_icon_id() != "":
+		f.append("void death shows a curse icon: '%s', want none" % ro.curse_icon_id())
+	ro.show_run_over({"code": "D-MINE", "killer": "gift_larper", "level": 12,
+			"purse_centi": 7300, "charges": 1})
+	if ro.curse_icon_id() != "":
+		f.append("tripmine death shows a curse icon: '%s', want none" % ro.curse_icon_id())
 	ro.free()
