@@ -4896,6 +4896,12 @@ the squashed coil_00 reads as "compressed on landing" at 1.0 u and the extended 
 as the apex pose at 2.0 u; nothing here moves a tick, a loop flag, an effect parameter
 or the hitbox rule (body_rect = tight bbox of alpha > 16 per frame).
 
+### D-ART-THICC_BEN-1 - thicc ben has an art module; the photo is cut out by a white flood fill + defringe, then graded gilt to clear A8's fog contrast
+The owner image (`assets_src/enemies/thiccben.png`, 767x599) is a PHOTO: pure white background at the top/sides, the building's dark base running off the bottom of the frame, no single background colour - so the shared corner flood fill in `sprite_pipeline.gd` (tol 24) cannot cut it out, and this enemy is skipped by the pipeline in favour of its module, `game/tools/art/thicc_ben.gd` (headless, deterministic; run as `--script res://tools/art/thicc_ben.gd`). Pipeline: flood fill from the border against near-white (tol 45), then an iterated defringe pass (clears foreground pixels adjacent to background closer than 128 to white, the anti-aliased halo; 1717 px); crop tight to alpha > 16; fit onto a 512x512 canvas bottom-anchored (the tower stands on the ground) with a 6 px transparent margin. The raw photo's mean opaque colour scores fog contrast 1.56 against the #021416 fog - A8 requires >= 3.0 at 40 u, so the ART was adjusted (never the threshold): the body is graded toward warm gilt (`c*1.7 + (22,18,14)`, sRGB), landing at 3.29 (attack_arrival's white-blend pose: 9.37). `body_rect` values are the tight alpha > 16 bboxes the tool prints; the anim block's ticks, loops and effect params are untouched; `telegraph` lists zero frames and stays empty.
+
+### D-ART-THICC_BEN-2 - The derived-pose parameters [CONTESTABLE, art direction]
+One distinct frame per anim-block state, derived procedurally from the base body (deterministic, no randomness): `cycle_00` = the base body (idle, `thiccben_00`); `spawn_00` = squash anticipation (sx 1.14 / sy 0.78, bottom-anchored; the block's common_fade stays a view-side shader effect and is not baked); `attack_arrival_00` = 78% blend toward white (the block's white_flash, baked as the pose); `attack_ring_00` = +8 deg rotation about the feet pivot (== the block's `rock_deg` 8.0, mid-swing of the +/-8 deg twice rock); `recover_00` = 1.07 vertical stretch with x 0.95 and 40% luminance-preserving desaturation. A recover pose DARKENED to read as "spent" was rejected: any multiplicative dim below ~x0.8 drops the mean opaque colour under the 3.0 fog-contrast floor, so recover keeps luminance and changes pose/saturation instead (measured 3.18). Transforms render onto a 2x-padded intermediate and are cropped back to their alpha bbox and bottom-anchored, so every pose keeps the >= 2 px transparent margin and the tight `body_rect` by construction. These numbers are art direction, not gameplay; the owner may retune them. No threshold, tick, loop flag or effect param changed; ENEMIES.md untouched; no PARKED rows.
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
@@ -5133,3 +5139,13 @@ or the hitbox rule (body_rect = tight bbox of alpha > 16 per frame).
   idiom, levels 1-2, real lobbies; D-T080-9); bot_run.gd KEEPS the p_log wiring; the units
   and the replay-hash comparison unchanged; the log itself untouched. Gate: GATE OK (10 ran,
   0 skipped), TESTS 50 passed 0 failed. No PARKED rows. No push.
+- 2026-11-17 T-ART thicc ben (this session): thicc ben's TBD magenta frames are now REAL ART on
+  t3/thicc-ben-sprite-art. game/tools/art/thicc_ben.gd owns the enemy (pipeline skips it): photo
+  cutout (white flood fill + iterated defringe), warm-gilt grade to clear A8 fog contrast
+  (1.56 -> 3.29), 512x512 bottom-anchored canvases, a distinct pose per anim-block state
+  (cycle/spawn/attack_arrival/attack_ring/recover; telegraph stays frameless per the block);
+  sprites.json points the anim block + animations[] at the new files, body_rect = tight alpha > 16
+  bbox, tbd: false (aa82feb, D-ART-THICC_BEN-1/2). SPRITES OK 235 checks; FOGCHECK OK 275 checks;
+  test_enemy_thicc_ben PASS; run_all 49 passed / 5 failed - the 5 (claude, coil, toucher, you,
+  vfx) fail identically on the pristine base: this checkout has no game/.godot import cache, so
+  ResourceLoader.load of any PNG fails; not this ticket's to fix. No PARKED rows. No push.
