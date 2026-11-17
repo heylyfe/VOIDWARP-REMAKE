@@ -644,19 +644,11 @@ func _make_billboard(entry: Dictionary, show_h: float) -> Sprite3D:
 	if sprite.texture == null:
 		sprite.texture = _tbd()
 	sprite.shaded = false
-	# the stage drives the frame, the feet fix and the facing in one place (advance()), so
-	# the billboard's own _process is switched off - see _plant() and D-MENU-8
+	# the stage drives the frame and the facing in one place (advance()), so the billboard's
+	# own _process is switched off. The feet offset is billboard.gd's job and is correct as of
+	# FIX-BILLBOARD (D-FIX-BILLBOARD-1), so the menu no longer compensates for it.
 	sprite.process_mode = Node.PROCESS_MODE_DISABLED
-	_plant(sprite)
 	return sprite
-
-
-## D-MENU-8 / PARKED.md: billboard.gd sets Sprite3D.offset.y = h/2 - (body bottom), which moves
-## the sprite DOWN (Sprite3D offset +y is up), so the body hangs 2 x |body_feet_shift| below the
-## node instead of standing on it. view/ is not this ticket's to edit; the menu lifts each sprite
-## by exactly that amount so the body bottom sits on the platform, frame by frame.
-static func _plant(sprite: Sprite3D) -> void:
-	sprite.position.y = -2.0 * float(sprite.body_feet_shift)
 
 
 ## World-space y of the visible body's bottom edge relative to the sprite's holder (tests: ~0).
@@ -900,7 +892,6 @@ func advance(delta: float) -> void:
 			var x: float = fposmod(22.0 - clock * 1.6 + base.x, span) - span * 0.5
 			holder.position = Vector3(x, base.y + 0.35 * sin(clock * 0.9), base.z)
 		sprite.advance_animation(delta)
-		_plant(sprite)
 		if sprite.is_inside_tree():
 			sprite.face_camera(cam_pos)
 		else:
