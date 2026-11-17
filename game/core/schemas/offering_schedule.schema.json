@@ -6,6 +6,19 @@
   "properties": {
     "_doc": {"type": "string"},
     "mode": {"type": "string"},
+    "starter_pool": {"type": "array", "items": {"type": "string"}},
+    "enemies": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["min_level", "max_votes"],
+        "properties": {
+          "min_level": {"type": "integer", "minimum": 1},
+          "max_votes": {"type": "integer", "minimum": 1}
+        }
+      }
+    },
     "repeat_from": {"type": "integer", "minimum": 1},
     "repeat_to": {"type": "integer", "minimum": 1},
     "levels": {

@@ -3,6 +3,21 @@
   "mode": "standard",
   "repeat_from": 25,
   "repeat_to": 30,
+  "starter_pool": ["kiwi_cat", "coil", "thicc_ben", "seal"],
+  "enemies": {
+    "kiwi_cat":   { "min_level": 1, "max_votes": 4 },
+    "coil":       { "min_level": 1, "max_votes": 3 },
+    "thicc_ben":  { "min_level": 1, "max_votes": 2 },
+    "isagi":      { "min_level": 11, "max_votes": 2 },
+    "nuke":       { "min_level": 5, "max_votes": 2 },
+    "you":        { "min_level": 3, "max_votes": 2 },
+    "gift_larper":{ "min_level": 5, "max_votes": 5 },
+    "toucher":    { "min_level": 7, "max_votes": 2 },
+    "seal":       { "min_level": 3, "max_votes": 3 },
+    "address_me": { "min_level": 9, "max_votes": 3 },
+    "claude":     { "min_level": 15, "max_votes": 1 },
+    "gin":        { "min_level": 17, "max_votes": 3 }
+  },
   "levels": {
     "0":  [{"bay": "CLASS"}, {"bay": "E", "count": 1, "pool": "starter"}],
     "1":  [{"bay": "E", "count": 1, "pool": "starter"}, {"bay": "U"}],

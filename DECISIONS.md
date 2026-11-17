@@ -1951,6 +1951,68 @@ gift (emission x1.5, TERRAIN_SPEC 12.2) and the emitter is off; inside 12 u the
 particles and star show. Boundary read as inclusive (<= 12 u shows the tell).
 [CONTESTABLE] no document states whether "1 rev / 4 s" or the sprites.json fps
 10 wins for the 5-frame cycle; the view picks DESIGN.md section 3.3 (CANON).
+### D-T023-1 - The enemy gate numbers live in the schedule file until enemy.json (T-023).
+
+DECISION (T-023): `sim/offers.gd enemy_gate()` reads min_level / max_votes from
+`content/enemies/<id>/enemy.json` when the file exists (DESIGN.md section 12 extensions contract),
+and falls back per id to a table inside `data/offering_schedule.json` ("enemies": the DESIGN.md
+section 5 CANON numbers, no number invented) for the 11 enemy folders that have no enemy.json yet
+(T-030..T-041 own those files; the registry already skips them with a warning). The starter pool
+(kiwi cat, coil, thicc ben, seal - DESIGN.md section 5, verbatim) is the schedule file's
+"starter_pool" key. No content id is named anywhere in sim/ or core/ (test_boundaries).
+
+### D-T023-2 - [CONTESTABLE] the E draw gates on the NEXT level (T-023).
+
+DECISION (T-023): an E bay's candidates read min_level against `level_completed + 1`, not the
+level just completed. WHY: min_level is the level the voted enemy will APPEAR in (the pre-run
+lobby votes for level 1; the pre-run E bay must offer the starter pool, and all starters have
+min_level 1). Under the "level just completed" reading the pre-run pool is empty and every pre-run
+lobby falls into Hunger - obviously not the owner's intent. CONTESTABLE: no document states which
+level the gate reads; a stricter reading (vote only when the enemy could spawn in the level just
+played) is possible but only changes Isagi/nuke/toucher/Claude/gin availability by exactly one
+intermission. test_lobby covers the pre-run starter draw.
+
+### D-T023-3 - [CONTESTABLE] the CLASS bay is mandatory in the pre-run lobby (T-023).
+
+DECISION (T-023): `gate_open()` requires `class_chosen != ""`. WHY: no run can start without a
+class (T-026's bot passes `--class`; the HUD and kit hooks read the class), and the pre-run lobby
+is the only CLASS bay - if the gate opened with CLASS unresolved the player could start a run with
+no class at all. CONTESTABLE: DESIGN.md section 11 says only "Scheduled bays are lit"; "mandatory"
+is stated for E ("mandatory, pick 1 of 3") and C in section 6, not for CLASS. The gameplay reason:
+un-gated CLASS is unreachable state - an empty kit code path nothing else guards.
+
+### D-T023-4 - [CONTESTABLE] curse gating and bounty use the level just completed (T-023).
+
+DECISION (T-023): `draw_curse_bay` gates eligible_curses and prices the bounty at
+`level_completed` (the level JUST finished; the schedule key is exactly that level). WHY: the
+schedule file keys rows by the level completed, so "after level 2 -> C" reads the gates at the
+same number the schedule used to light the bay; the first C (after level 2) then sees min_level<=2
+curses. CONTESTABLE: the bounty scale "x (1 + level/20)" is written per the pick moment and the
+constructive reading "next level" differs by at most 24 -> 26 gold on Harsh; no acceptance
+criterion pins either.
+
+### D-T023-5 - [CONTESTABLE] the REST bay carries a paid reroll plinth (T-023).
+
+DECISION (T-023): REST bays receive the same paid reroll plinth as U bays (15 g + 15 g per use
+that visit, economy.json). WHY: a REST bay IS a shop ("shop at -20%, no vote, no curse"); the
+reroll plinth is priced off the same economy keys in both. CONTESTABLE: DESIGN.md section 11 lists
+"reroll plinth (C: free once; U: 15 g rising)" and does not name REST; omitting it would make the
+-20% shop strictly worse than the U shop in a way no document demands. The altars, prices and the
+discount are unaffected either way.
+
+### D-T023-6 - T-074's attachment point in this code (T-023).
+
+NOT BUILT here, by the T-023 ticket's own instruction: DESIGN.md section 6's D-074 rule (one NEW /
+one REPEAT / one FREE altar per E bay, per-enemy caps, the chaser ceiling of 6 floating bodies).
+T-023 builds the simple draw the D-074 text explicitly supersedes ("3 distinct enemies from the
+eligible pool") and leaves the hook clean: T-074 replaces ONLY
+`sim/offers.gd enemy_candidates()` + `draw_enemy_bay()` (the pool read and the altar shapes live
+there; `sim/intermission.gd _redraw_enemy()` already re-calls it per vote of an E x2 bay, and the
+view rebuilds on every stamp bump - a NEW/REPEAT/FREE altar only needs new "kind" entries in the
+returned altars, and intermission's `_select_enemy` needs a branch per new kind). The chaser
+ceiling is a candidate-pool filter and lands inside `enemy_candidates()`. Tests to extend:
+test_schedule (no change expected), test_lobby `_hunger` (the exhaustion path must survive the
+cap checks) and a NEW/REPEAT/FREE triplet test.
 
 ## Handover log
 
@@ -1963,6 +2025,12 @@ particles and star show. Boundary read as inclusive (<= 12 u shows the tell).
   GATE OK (9 ran, 0 skipped, 43 s). PARKED row 2 (DESIGN.md section 14 vs ENEMIES.md disclaimer
   wording). DECISIONS D-T024-1..6. Boot-scene wiring (set_load_progress from the real loader,
   play_requested consumer) is unassigned.
+- 2026-11-17 T-023 (spawn, GLM): the Antechamber + the offering schedule. view/lobby/antechamber.gd
+  (script-built hall), sim/intermission.gd (bay state machine, Select sim inputs, gate), offers.gd
+  extended (enemy + curse draws), PlayerInput.select, schedule file gains starter_pool + the enemy
+  gate table. Tests: test_lobby (A9) + test_schedule (0-40, 25-30 repeat, data-edit proof). Gate:
+  GATE OK (9 ran, 0 skipped, 42 s), TESTS 19 passed 0 failed. NEXT: T-074 attaches at
+  offers.gd enemy_candidates/draw_enemy_bay (D-T023-6).
 - 2026-11-17 T-011 (spawn, GLM): view/level_mesher.gd, view/fog_env.gd, tools/shot.gd, tools/fog_check.gd,
   tests/test_mesh.gd, 12 screenshots in game/shots/. run_all green (TESTS 4 passed 0 failed; 7@30 =
   3,662 tris, 11 ms mesh). Gate: 5 OK, 1 RED at fog readability - the reference Deepwater palette
