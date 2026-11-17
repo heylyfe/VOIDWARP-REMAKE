@@ -5065,6 +5065,47 @@ the alternative reading (a brighter recover that would not be the binding 70% br
 rejected. [CONTESTABLE - the 0.55 / 0.45 lift strengths; the art-fidelity trade-off; a real
 artist pass could rebalance with a designed light rim instead of a global lift]
 
+### D-ART-YOU-1 - YOU?! frames: image segmentation against a near-fog source [CONTESTABLE]
+The source `character to be corrupted.png` is an opaque render on a smooth grey gradient
+whose white head is within ~0.03-0.09 sRGB luminance of the background and, on the right
+side of the silhouette, has NO luminance edge at all, so no purely colour-based flood fill
+from the border can isolate it (the shared corner-flood pipeline ate the whole image and
+left TBD frames). The art module `game/tools/art/you.gd` therefore segments by:
+(1) a LOCAL flood fill from the four borders at distance tolerance 0.025 (EUclidean, 0-1)
+to reject the far-field gradient; (2) a dark core (luminance < 0.5) kept everywhere;
+(3) a manually fitted head ellipse (centre (200, 171), radii (74, 46) px on the 406x601
+source), because the head is indistinguishable from the background by colour there;
+(4) the crown zone (y < 145) keeping light pixels within 4 px of the dark core (the white
+spikes); (5) a 2-px dilation of the dark core intersected with the flood result (soft
+edges); white background wall-panel islands are rejected because they are not dark-core,
+crown-zone or head pixels. The background fill itself IS the requested border flood fill;
+the ellipse is a hand-fit segmentation of the owner's own pixels, viewable in the module.
+Art tuning, not sim: no threshold, tick or rule moves. [CONTESTABLE]: if the owner
+re-renders the character on an alpha-0 or flat backdrop, the ellipse can be deleted and
+the flood fill alone suffices.
+
+### D-ART-YOU-2 - YOU?! frames: canvas, fit, contrast lift and the per-state set [CONTESTABLE]
+The owner image is mostly very dark (black body) on the near-black palette fog
+(2, 20, 22; visible(40 u) = exp(-0.012*40) = 0.619), which fails the A8 fog-contrast
+check at 40 u if pasted as-is. The module applies a deterministic lift before any
+per-state transform: c' = clamp(c * 0.72 + (0.29, 0.345, 0.39)) in sRGB plus a 1.15
+saturation restore (the green weight does the fog-contrast work), plus a 35% blend of the
+1-px silhouette edge toward pale pink (1.0, 0.83, 0.89) as a rim. Frames are rendered on a
+512x512 canvas (the largest power of two allowed), bottom-anchored with feet at y = 496
+and a 16 px transparent margin (spec: no opaque pixel within 2 px of the edge). Frame
+names are `sprites/you_<state>_NN.png` (spawn 00; idle_chase 00-04; telegraph 00-04;
+attack 00; recover 00-04) plus `sprites/cycle_00..04.png` re-rendered as the chase cycle
+and kept at animations[0]. Effects per state are procedural and seeded (slice displacement
+uses seed 1984 / 77): spawn = white flash + tear slices; idle_chase = squash/stretch +
+bob +-2.5 deg lean; telegraph = 1/2/3/4/6 px baked ghost split (red/cyan), noise slices and
+a growing red mix (0/.08/.16/.24/.30) on top of the view's own 0->6 px shader split;
+attack = mirrored white-hot flash + stretch; recover = desaturation/dim ramp
+(.70/.50/.32/.15/0 at 0.94/0.96/0.97/0.985/1.0 - the dim floor is pinned by the fog
+contrast check on the darkest recover frame) back to normal. Numbers invented here are
+art tuning only (gameplay reads colour through the same fog rule; no threshold moved).
+[CONTESTABLE]: the exact lift/rim/ramp values are the minimum that satisfy fog contrast
+>= 3.0 at 40 u with the least wash-out of the black body; owner may re-grade the source.
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
