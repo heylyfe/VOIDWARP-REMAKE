@@ -55,13 +55,13 @@ func _json_contract(f: Array[String]) -> void:
 	var j: Dictionary = doc
 	if str(j.get("id", "")) != "gin":
 		f.append("json: id %s, want gin" % str(j.get("id", "")))
-	if str(j.get("death_code", "")) != "D-GIN":
-		f.append("json: death_code %s, want D-GIN" % str(j.get("death_code", "")))
+	var st: Dictionary = j.get("stats", {})
+	if str(st.get("death_code", "")) != "D-GIN":
+		f.append("json: stats.death_code %s, want D-GIN" % str(st.get("death_code", "")))
 	if int(j.get("min_level", 0)) != 17:
 		f.append("json: min_level %s, want 17" % str(j.get("min_level", 0)))
 	if int(j.get("max_votes", 0)) != 3:
 		f.append("json: max_votes %s, want 3" % str(j.get("max_votes", 0)))
-	var st: Dictionary = j.get("stats", {})
 	_tick_ok(f, "spawn_fade_ticks", int(st.get("spawn_fade_ticks", -1)), SPAWN_TICKS)
 	_tick_ok(f, "telegraph_ticks", int(st.get("telegraph_ticks", -1)), TELEGRAPH_TICKS)
 	_tick_ok(f, "spear_travel_ticks", int(st.get("spear_travel_ticks", -1)),
@@ -125,18 +125,17 @@ func _lift_on_fade_back(f: Array[String]) -> void:
 	var rt = _runtime_last_light_spent()
 	var api = _api_of(rt)
 	var row: Dictionary = _gin_row(rt)
-	var w: Dictionary = _arena()
-	rt.setup(w, w, [_ctl(w)], 4242)
-	row["phase"] = GinBehavior.FADE_BACK
-	row["phase_t"] = 0
-	var ctl = api.rt.world["enemies"][0]
+	var ctl = _ctl_of(rt)
 	ctl.x = 2.5
 	ctl.z = 2.5
 	ctl.y = -4.0       # below the vanished floor
-	_drive(row, api, FADE_BACK_START)   # drive to tick 738: the fade-back opens
-	var moved_y: float = float(ctl.y)
-	if moved_y < 0.0:
-		f.append("lift: the player is still below the surface (y %.2f)" % moved_y)
+	# drive the LAST VOID tick: the zone closes on it, the lift fires on the same tick
+	row["phase"] = GinBehavior.VOID
+	row["phase_t"] = GinBehavior.ZONE_TICKS - 1
+	row["patch"] = {"cells": [[2, 2]], "cx": 2, "cz": 2}   # the player's column
+	_drive(row, api, 1)
+	if float(ctl.vy) <= 0.0:
+		f.append("lift: no upward impulse at the fade-back (vy %.2f)" % float(ctl.vy))
 
 
 ## All tick readings come from enemy.json's stats; +/-1 tick is the budget.
@@ -173,7 +172,8 @@ func _anim_block_is_the_source(f: Array[String]) -> void:
 	}
 	for k in want.keys():
 		var s: Dictionary = states.get(k, {})
-		var total: int = int(s.get("total_ticks", -1))
+		var raw: Variant = s.get("total_ticks", -1)
+		var total: int = -1 if raw == null else int(raw)   # JSON null -> not binding
 		# spawn/recover are loops with no fixed length; attack_void_zone's length is
 		# the zone's (the sim declares it) - the other three are binding
 		if k == "spawn" or k == "recover" or k == "attack_void_zone":
@@ -182,9 +182,9 @@ func _anim_block_is_the_source(f: Array[String]) -> void:
 			f.append("anim: state %s total %d, want %d" % [k, total, int(want[k])])
 	# the launch frame is shown on tick 120, not recomputed from a frame list
 	var launch: Dictionary = states.get("attack_launch", {})
-	if int(launch.get("shown_on_tick", -1)) != LAUNCH_SHOWN_AT:
-		f.append("anim: launch shown_on_tick %d, want %d"
-				% [int(launch.get("shown_on_tick", -1)), LAUNCH_SHOWN_AT])
+	var shown: Variant = launch.get("effect", {}).get("params", {}).get("shown_on_tick", -1)
+	if int(shown) != LAUNCH_SHOWN_AT:
+		f.append("anim: launch shown_on_tick %s, want %d" % [str(shown), LAUNCH_SHOWN_AT])
 
 
 # D-072: the fade-in tile is a platform tile 15-25 u from the player; if none
@@ -228,20 +228,21 @@ func _run_cycle(f: Array[String]) -> void:
 # The kill tests run with LAST LIGHT ALREADY SPENT (D-057): the save would
 # otherwise mask the kill and the assertion would be worthless.
 func _runtime_last_light_spent():
+	var w: Dictionary = _arena()
+	var ctl = _ctl(w)
 	var rt: RefCounted = EnemyRuntime.new()
-	rt.setup({}, {}, [], 4242)   # Last Light already spent: no beacon charge to spend
-	for c in rt.controllers:
-		if c != null:
-			c.last_light_spent = true
+	rt.setup(_level(), w, [ctl], 4242)
 	return rt
+
+
+func _ctl_of(rt):
+	return rt.controllers[0]
 
 
 func _api_of(rt) -> RefCounted:
 	var api = EnemyRuntime.Api.new()
 	api.rt = rt
-	var row: Dictionary = {}
-	row["id"] = "gin"
-	row["copies"] = 1
+	var row: Dictionary = {"id": "gin", "copies": 1, "cfg": _json()}
 	api.row = row
 	return api
 
@@ -280,6 +281,11 @@ func _ctl(w: Dictionary):
 
 
 ## A fresh runtime: an 11x11 flat arena, one controller, Last Light already spent.
+func _level() -> Dictionary:
+	return {"beacon": [0, 0, 0], "spawns": [[0, 0, 0]], "anchors": [],
+			"tiles": _tiles_full(), "props": [], "pads": []}
+
+
 func _arena():
 	var tiles: Array = []
 	for x in range(-5, 6):
@@ -301,6 +307,15 @@ func _ticks_from_json(key: String) -> int:
 	return int(st.get(key, -1))
 
 
+## The whole enemy.json document as a Dictionary (empty on a parse failure).
+func _json() -> Dictionary:
+	var doc: Variant = JSON.parse_string(FileAccess.get_file_as_string(
+			"res://content/enemies/gin/enemy.json"))
+	if doc is Dictionary:
+		return doc
+	return {}
+
+
 ## Assert `got` is within +/-1 tick of `want` (the D-072 tick budget).
 func _tick_budget_ok(f: Array[String], key: String, got: int, want: int) -> void:
 	if absi(got - want) > 1:
@@ -319,7 +334,7 @@ func _drive(row: Dictionary, api, ticks: int) -> void:
 ## anim block's state ids - and the kill at ZONE_START_AT + zone reach.
 func _drive_states(row: Dictionary, api, f: Array[String]) -> void:
 	var seen: Array = []
-	GinBehavior.new().tick(row, api, 1)   # leave the spawn fade holder state
+	GinBehavior.new().on_spawn(row, api)   # the runtime's own first call on a real row
 	for i in range(180):
 		_drive(row, api, 1)
 		var st := str(row.get("anim_state", ""))
@@ -327,3 +342,12 @@ func _drive_states(row: Dictionary, api, f: Array[String]) -> void:
 			seen.append(st)
 	if seen.find(GinBehavior.SPAWN) == -1:
 		f.append("cycle: the states %s never held SPAWN" % str(seen))
+
+
+# The tiles of the fixture arena: flat cells [x, z, y, kind, piece].
+func _tiles_full() -> Array:
+	var out: Array = []
+	for x in range(-5, 6):
+		for z in range(-5, 6):
+			out.append([x, z, 0, 0, 0])
+	return out

@@ -44,6 +44,15 @@ const VOID := "void"              # the 600-tick void zone
 const FADE_BACK := "fade_back"    # the 30-tick fade
 const COOLDOWN := "cooldown"      # 840 - 180 * extra votes, min 300
 
+# anim state ids - exactly the anim block's state ids (content/enemies/gin/sprites.json,
+# section 1.12); row["anim_state"] never carries anything else
+const ANIM_SPAWN := "spawn"
+const ANIM_IDLE := "idle"
+const ANIM_TELEGRAPH := "telegraph"
+const ANIM_LAUNCH := "attack_launch"
+const ANIM_VOID := "attack_void_zone"
+const ANIM_RECOVER := "recover"
+
 # timings (DESIGN.md 5.12 / the section 1.12 table)
 const SPAWN_TICKS := 30             # 0.5 s fade-in
 const TELEGRAPH_TICKS := 120        # 2.0 s mark
@@ -80,6 +89,8 @@ func on_spawn(row: Dictionary, _api) -> void:
 	# spawn effect carries spawn_blocks_contact_ticks = 30)
 	row["contact_kill"] = false
 	_place_on_fade_in_tile(row, _api)
+	# D-T030-1: the row's cfg carries the death code so the kill pass reports D-GIN
+	row["cfg"]["death_code"] = DEATH_CODE
 
 
 func tick(row: Dictionary, api, dt_ticks: int) -> void:
@@ -106,6 +117,11 @@ func tick(row: Dictionary, api, dt_ticks: int) -> void:
 				row["anim_state"] = ANIM_VOID
 				_cue(api, "zone_open")
 		VOID:
+			# the boundary tick closes the zone FIRST (the tiles return), then the
+			# lift saves anyone still inside - a fade-back tick is never a kill tick
+			if int(row["phase_t"]) >= ZONE_TICKS:
+				_open_fade_back(row, api)
+				return
 			# the zone is lethal: anything whose tile is inside the patch dies
 			_void_kills(row, api)
 			if int(row["phase_t"]) >= FADE_OUT_TICKS \
@@ -143,7 +159,7 @@ func _patch(row: Dictionary, api) -> Dictionary:
 		for dz in range(-PATCH_HALF, PATCH_HALF + 1):
 			var tx: int = cx + dx
 			var tz: int = cz + dz
-			if _is_dais(api, tx, tz):
+			if _is_dais_cell(api, tx, tz):
 				continue   # never marks the beacon dais (D-T041-3)
 			cells.append([tx, tz])
 	return {"cells": cells, "cx": cx, "cz": cz}
@@ -210,7 +226,7 @@ func _open_fade_back(row: Dictionary, api) -> void:
 	var patch: Dictionary = row.get("patch", {})
 	var cells: Array = patch.get("cells", [])
 	for c in api.rt.controllers:
-		if c == null or bool(c.get("dead", false)):
+		if c == null or bool(c.dead):
 			continue
 		if _tile_inside(cells, float(c.x), float(c.z)):
 			api.push(c, Vector3(0.0, 1.0, 0.0), LIFT_SPEED)
@@ -229,7 +245,7 @@ func _void_kills(row: Dictionary, api) -> void:
 	if cells.is_empty():
 		return
 	for c in api.rt.controllers:
-		if c == null or bool(c.get("dead", false)):
+		if c == null or bool(c.dead):
 			continue
 		if _tile_inside(cells, float(c.x), float(c.z)):
 			api.kill(c, GIN_ID, DEATH_CODE)
@@ -255,7 +271,7 @@ func _place_on_fade_in_tile(row: Dictionary, api) -> void:
 	if near.is_empty():
 		return
 	var pp := Vector3(float(near["x"]), float(near["y"]), float(near["z"]))
-	var spot := _farthest_tile(api, api.tiles_in_radius(pp, SPAWN_DIST_MAX), pp,
+	var spot: Variant = _farthest_tile(api, api.tiles_in_radius(pp, SPAWN_DIST_MAX), pp,
 			SPAWN_DIST_MIN)
 	if spot == null:
 		var hubs: Array = api.anchors("open")
@@ -287,11 +303,17 @@ func _farthest_tile(api, tiles: Array, pp: Vector3, min_d: float) -> Variant:
 # The beacon dais cell, read off the world's own dais row (world["dais"] = [x, z, y]);
 # never marked, never struck, never stood on by the fade-in (D-T041-3).
 func _is_dais(api, tile_index: int) -> bool:
-	if not api.rt.world.has("dais"):
-		return false
-	var d: Array = api.rt.world["dais"]
 	var tiles: Array = api.rt.world.get("tiles", [])
 	if int(tile_index) < 0 or int(tile_index) >= tiles.size():
 		return false
 	var t: Array = tiles[int(tile_index)]
-	return int(t[0]) == int(d[0]) and int(t[1]) == int(d[1])
+	return _is_dais_cell(api, int(t[0]), int(t[1]))
+
+
+## The dais CELL by coordinates: true when (tx, tz) is the cell the world's own
+## dais row (world["dais"] = [x, z, y]) names.
+func _is_dais_cell(api, tx: int, tz: int) -> bool:
+	if not api.rt.world.has("dais"):
+		return false
+	var d: Array = api.rt.world["dais"]
+	return int(d[0]) == tx and int(d[1]) == tz
