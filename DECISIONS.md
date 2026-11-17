@@ -1800,6 +1800,92 @@ never reads the menu source with a regex, it calls the same function the panel u
 WHY: A15 (FLEET_PACK.md T-024) is "the disclaimer appears verbatim" - a pinned constant is the
 only reading that "must fail if either is edited away".
 
+### D-T025-1 - [CONTESTABLE] - HUD layout: positions, sizes, and the purse format (T-025).
+DECISION (T-025): DESIGN.md section 14 lists the HUD elements but gives no positions or
+pixel sizes; research/fable-tickets.md section 2.4 states only the pip row (bottom-left,
+24 px from each edge, 28 px diamonds) - that spec is followed verbatim. Everything else
+no document states, invented here and overrulable freely: the 24 px edge margin is used
+uniformly; the gift counter is bottom-centre (220x40, section 14's "bottom-centre"); the
+purse + chain is top-right (260x36, "top-right"); the icon rows are top-centre (40 px
+cells, 6 px gaps, collapsible with Tab); the enemy roster is top-left (40 px cells); the
+class ability cooldown sits bottom-left right of the Last Light icon (D-T025-3); the void
+pip row width is 2 * 40 + 16 + 28 px plus margins. The purse renders as
+"%d.%02d  %.2fx" on integer centi-gold (floor semantics, matching data/economy.json
+gold_arithmetic and section 3.2's worked example "149.00  1.50x"). The void swatch on the
+run-over screen is Color(0.35, 0.2, 0.5) - no document states the void colour for that
+screen.
+WHY: the ticket demands exactly the section-14 element set; placement has to come from
+somewhere and section 2.4 covers only the pips.
+
+### D-T025-2 - [CONTESTABLE] - The gift counter is phase-scoped; at beacon open it reads "0 / REAL total" (T-025).
+DECISION (T-025): the counter's collected = total_real - remaining() for the CURRENT
+phase, i.e. it reads the sim's phase-scoped remaining() (sim/gifts.gd) - gold gifts are
+counted separately from black gifts, and the denominator is always total_real (mines are
+never counted, section 3.3). At beacon open the counter therefore reads "0 / N" for the
+gold phase and rises back to "N / N" when every gold gift is collected. An alternative
+reading (black progress carries into the gold phase) is possible; nothing states it.
+WHY: the straggler rule and remaining() are both phase-scoped in the sim; scoping the
+counter the same way keeps one source of truth and no second bitset.
+
+### D-T025-3 - Class ability cooldown: sources and the Athletic's hidden element (T-025).
+DECISION (T-025): the ability element reads the controller directly. Dasher: dash_cd
+remaining over dash_regen (3.0 s, DESIGN.md section 4), "READY" at 0. Glider:
+glide_energy remaining over C["glide_energy"] (3.0 s, refilled on landing) shown as the
+same fraction + seconds read-out. Athletic has no active ability (section 4), so the
+element hides itself rather than show a dead widget. Position (bottom-left, right of the
+pip cluster) is unstated anywhere (D-T025-1).
+WHY: each class's "cooldown" is a different resource; inventing a unified "ability cooldown
+stat" would contradict the kits section.
+
+### D-T025-4 - HUD icons are synthesized in code until real art exists (T-025).
+DECISION (T-025): curse, upgrade and enemy-roster icons are icon_placeholder.gd - a
+deterministic hash-hue square with the item's id initials (and a stack-count badge over
+1). No curse/upgrade/enemy icon assets exist anywhere in the repo. Icon hue is stable
+per id (id.hash()), never index-dependent.
+WHY: the TBD fallback rule - a missing asset never stalls the build; the behavior (rows,
+bubbles, roster counts) is fully wired. TBD.md row added (section 3).
+
+### D-T025-5 - The Last Light icon is part of the HUD element set, in the pip element (T-025).
+DECISION (T-025): DESIGN.md section 3.1 binds a HUD icon for Last Light ("lit while armed
+(unspent and charges >= 1), dim at 0 charges, grey once spent") and research/
+fable-tickets.md section 2.4 places it right of the pips (28 px, same three states - the
+three binding states are implemented verbatim). Section 14's list does not name it, so the
+"exactly the elements listed in section 14" instruction is read with section 3.1's mandate
+included: the icon lives inside the pip element (void_pips.gd), not as a separate widget.
+The alternative reading (omit Last Light entirely, section 14 exhaustive) would void a
+binding section-3.1 sentence and is rejected. hud_last_light() on the controller feeds it.
+WHY: two sections of the same document cannot both be honoured except this way.
+
+### D-T025-6 - Death attribution reads the sim events; sim/death.gd is absent (T-021 in parallel) (T-025).
+DECISION (T-025): sim/death.gd does not exist on this branch (T-021 unmerged); the killer
+and the death code are read from the controller's death event ({"e":"death","code",
+"killer"}) and/or the controller's dead_code/dead_killer fields. enemy_runtime.kill()
+derives code from the killer id (D-T027-5). Killer-name resolution order: (1) the
+sim-provided killer string, normalised (lowercase, "?!"/"!" stripped, spaces ->
+underscores) and looked up in a raw-id -> roster-name table (e.g. "gift_larper" ->
+"gift Larper (Tripmine)"); (2) that string verbatim; (3) a death-code map (D-KIWI..D-VOID,
+D-CURSE:<id>); (4) the code itself. Curse deaths show "curse: <id>" as the name line and
+D-CURSE:<id> as the code; D-VOID shows "The Void" with no sprite (the void swatch hex is
+D-T025-1's invention). When sim/death.gd lands, swap the source to it; the resolution
+order stays.
+WHY: the owner's spec sentence is absolute - "every death shows its killer" - and the
+event carries exactly that.
+
+### D-T025-7 - The diegetic danger text is an in-world billboarded Label3D; the spawn-line table comes from research/fable-tickets.md (T-025).
+DECISION (T-025): section 14's line ("THE <ENEMY> SHALL <VERB>, #FF2A2A ... floats at each
+enemy's spawn point for 4 s when it appears") is implemented as danger_text.gd: a Node3D
+raising a billboarded, fog-exempt, no-depth-test Label3D 2.0 u above the spawn point,
+modulate #FF2A2A, alive 4.0 s, fed by the enemy_spawn event (sim/enemy_runtime.gd). The
+per-enemy line is the only table stated anywhere - research/fable-tickets.md's T-027
+spawn-line row ("THE KIWI CAT SHALL FOLLOW", "THE COIL SHALL SPRING", "THICC BEN SHALL
+TOLL", "ISAGI SHALL SHOOT", "THE NUKE SHALL SEEK", "YOU SHALL ECHO", "THE GIFT LARPER
+SHALL PRETEND", "THE TOUCHER SHALL TOUCH", "THE SEAL SHALL BARK", "THE ELEPHANT SHALL BE
+ADDRESSED", "CLAUDE SHALL COMPOSE", "GIN SHALL SEVER"); an unknown id shows TBD SHALL
+ARRIVE (the documented TBD line), never a guess. This element and billboard.gd's
+spawn_text (D-T027-7: the enemy's own display name, 1.5 s) both fire on the same
+enemy_spawn event - two in-world texts, two specs; deleting either is the owner's call.
+WHY: the owner's spec names the verb form and the red; the spawn-line row is the only
+stated per-enemy text. Both are carried over from the old build's look per section 14.
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)

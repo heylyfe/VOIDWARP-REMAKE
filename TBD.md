@@ -60,4 +60,6 @@ synthesized stand-in under the TBD rule, marked `"tbd_audio": true` (T-087).
 
 ## 3. Other placeholders
 
-(none yet)
+| # | ticket | what is TBD | why | owner action |
+|---|---|---|---|---|
+| 21 | T-025 | HUD curse/upgrade/enemy-roster icons - synthesized hash-hue squares with the item id's initials (game/view/hud/icon_placeholder.gd) | no curse, upgrade or enemy icon assets exist anywhere in the repo | commission 40 px icon art per curse/upgrade/enemy; swap icon_placeholder.gd for a texture loader |
