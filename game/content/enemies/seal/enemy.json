@@ -5,6 +5,7 @@
   "max_votes": 3,
   "vote_effect": "+1 seal",
   "anchor_kinds": ["lane"],
+  "preferred_kind": "lane",
   "stats": {
     "world_height": 0.6,
     "body_height": 0.6,

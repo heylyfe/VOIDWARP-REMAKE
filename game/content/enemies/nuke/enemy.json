@@ -5,9 +5,12 @@
   "max_votes": 2,
   "vote_effect": "+1 launcher",
   "anchor_kinds": [],
+  "preferred_kind": "none",
   "stats": {
     "world_height": 0.0,
     "hit_diameter": 0.0,
+    "pursuit_ceiling": 0.0,
+    "burst_ceiling": 0.0,
     "contact_kill": false,
     "death_code": "D-NUKE",
     "ring_radius": 5.0,
@@ -29,6 +32,8 @@
     "tell_line": "a warning cue that speeds up as the missile closes in: the ground ring follows the locked player for 2.5 s while the lock-on beep rises 2 -> 8 Hz, the ring then stops (1.5 s) and the missile descends 1.5 s",
     "counter_play": "leave the 5 u sphere within 1.5 s (13.5 u of running at full speed; <= 11 u even from the back of a 6-wide nook), or put a prop, a spire pad, a bastion wall or a tile slab between you and the sky. (ENEMIES.md words it 'break line of sight'; the D-025 terrain has almost nothing overhead, so the working answer is 'leave the sphere' - both readings are named here, neither canon sentence changed.)"
   },
+  "counter_play": "leave the 5 u sphere within 1.5 s (13.5 u of running at full speed; <= 11 u even from the back of a 6-wide nook), or put a prop, a spire pad, a bastion wall or a tile slab between you and the sky. (ENEMIES.md words it 'break line of sight'; the D-025 terrain has almost nothing overhead, so the working answer is 'leave the sphere' - both readings are named here, neither canon sentence changed.)",
+  "tell": "a warning cue that speeds up as the missile closes in: the ground ring follows the locked player for 2.5 s while the lock-on beep rises 2 -> 8 Hz, the ring then stops (1.5 s) and the missile descends 1.5 s",
   "sprites": "res://content/enemies/nuke/sprites.json",
   "script": true
 }

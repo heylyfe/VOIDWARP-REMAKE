@@ -5,10 +5,13 @@
   "max_votes": 2,
   "vote_effect": "+1 Isagi",
   "anchor_kinds": ["perch"],
+  "preferred_kind": "perch",
   "stats": {
     "world_height": 1.8,
     "hit_diameter": 0.7,
     "base_speed": 0.0,
+    "pursuit_ceiling": 0.0,
+    "burst_ceiling": 0.0,
     "preferred_kind": "perch",
     "relocate_s": 12.0,
     "lane_dwell_s": 4.0,
@@ -31,6 +34,8 @@
     "death_code": "D-ISAGI",
     "fps": 60
   },
+  "counter_play": "get a 2 HU step between you and him, or jump after the release flash, or sidestep >= 0.9 u; on a lane anchor a jump per volley (0.75 s apart) clears even Egoist bursts, and he is gone within 4.0 s",
+  "tell": "the idle pose flashes with an accelerating red rim, a thin red aim line snaps onto you, and the direct-shot voice cue plays 1.2 s before the balls",
   "sprites": "res://content/enemies/isagi/sprites.json",
   "script": true
 }
