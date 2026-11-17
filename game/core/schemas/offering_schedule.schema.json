@@ -7,6 +7,22 @@
     "_doc": {"type": "string"},
     "mode": {"type": "string"},
     "starter_pool": {"type": "array", "items": {"type": "string"}},
+    "chaser": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ceiling", "weights"],
+      "properties": {
+        "_doc": {"type": "string"},
+        "ceiling": {"type": "number", "exclusiveMinimum": 0},
+        "weights": {
+          "type": "object",
+          "additionalProperties": {"type": "number", "minimum": 0}
+        },
+        "kitten_host": {"type": "string"},
+        "kitten_curse": {"type": "string"},
+        "kitten_weight": {"type": "number", "minimum": 0}
+      }
+    },
     "enemies": {
       "type": "object",
       "additionalProperties": {

@@ -2109,10 +2109,82 @@ in spirit) - the spec's "curse icon" is honoured with the same fallback art the 
 HUD uses. The Last Light dais teleport and the 2.0 s death budget are NOT gaps (sim-built,
 see D-T086-6/D-T086-7).
 WHY: do not fake what does not exist; build what is buildable and park the rest in writing.
+### D-T074-1 - [CONTESTABLE] "first-shown level" = the gate table's min_level (T-074).
+
+DECISION (T-074): the NEW altar's "lowest first-shown level first" sorts on the enemy gate's
+`min_level` (enemy.json once T-073 lands it, else the schedule file's enemy table). No document
+defines a separate first-shown field, and research/fable-enemies.md section 1 says first-shown
+"= the level whose intermission should first be able to offer it" - which is exactly what the gate's
+min_level means under D-T023-2 (the draw gates on the NEXT level). CONTESTABLE: when T-073 writes
+enemy.json it could split "first shown" from "min spawn level"; if it does, the sort key in
+draw_enemy_bay must follow the new field.
+
+### D-T074-2 - [CONTESTABLE] the chaser-ceiling numbers live in the schedule file's "chaser" block (T-074).
+
+DECISION (T-074): `data/offering_schedule.json` gains a "chaser" block: `"ceiling": 6` (D-074, FINAL -
+not editable here), the per-id body weights (kiwi_cat / you / toucher / seal, each 1.0 - D-074 names
+exactly these four as "floating lethal bodies"), `"kitten_host": "kiwi_cat"`, `"kitten_curse":
+"litter"` and `"kitten_weight": 0.5` (D-074: "The Litter's kittens count as half each"). WHY: the
+sim may name no content id (test_boundaries), the schedule file is already the enemy-gate data home
+(D-T023-1), and the ceiling/weights are offer-draw numbers, i.e. intermission rhythm - the same one
+tunable file. CONTESTABLE: T-073 could move the weights into enemy.json (`chaser_weight` field);
+sim/offers.gd reads the schedule block and would follow a field-parity rule then.
+
+### D-T074-3 - [CONTESTABLE] kitten bodies at draw time (T-074).
+
+DECISION (T-074): with the kitten curse held, each host vote carried so far adds 0.5 bodies to the
+ceiling load, and voting one more host cat adds 1 + 0.5 (its own kitten is born the instant the vote
+is placed - The Litter's rule says "each cat is followed by a kitten", so a newly voted cat arrives
+with its kitten already in play). Headroom check per altar: current load + the pick's weight under
+the held curses <= ceiling. CONTESTABLE: one could instead count a kitten only once "revealed"
+mid-level, or treat lava kittens as spawning only on the NEXT level for the very last cat; no page
+says. The chosen reading is the conservative one (the kitten exists from spawn tick 0).
+
+### D-T074-4 - [CONTESTABLE] the FREE altar may re-show the type picked at the previous vote (T-074).
+
+DECISION (T-074): D-074 binds ONLY the REPEAT altar ("never the type picked at the previous vote");
+the FREE altar's pool is "everything eligible and not already shown" - "shown" = already on this
+bay's other altars. So the previous vote's type stays reachable through FREE whenever it is below
+its cap, which is exactly the path the canon stacking right ("select an enemy 5 times and there
+will be 5 enemies in play") needs after the very first pick of that type. Within one bay the three
+altars are still three DISTINCT types. CONTESTABLE: one could exclude the previous pick from FREE
+too; that would make stacking strictly slower and no sentence demands it.
+
+### D-T074-5 - [CONTESTABLE] altar slots NEW / REPEAT / FREE in that draw order; altars keep "kind": "enemy" (T-074).
+
+DECISION (T-074): every enemy altar dict gains `"slot": "new" | "repeat" | "free"` and the bay lists
+them in that order (the legible question reads left to right). "kind" stays "enemy" (or "hunger"),
+so intermission's `_select_enemy` keeps its single enemy/hunger branch - D-T023-6 anticipated a
+branch per new kind, but a plain field needs none, and the view keeps rendering by "kind". Also
+threaded: `Intermission.create` gains an optional `p_prev_vote` (the type of the previous vote of
+the RUN - cross-lobby state, carried by whoever mounts the run loop; E x2 bays need no special
+treatment because the first pick's Select already sets it before the in-bay redraw, exactly the
+E x2 clause of D-074). CONTESTABLE: display order is presentation, no page pins it.
+
+### D-T074-6 - [CONTESTABLE] the 1,000-run walker's vote policy (T-074).
+
+DECISION (T-074): the test walker that votes its way to level 30 picks the NEW altar whenever one
+is on the bay, else draws a seeded uniform pick among the remaining offers. WHY: a uniformly random
+voter keeps re-stacking repeats and can leave late-min-level types (Claude, gin) unoffered past the
+level-19 vote simply because earlier types keep hogging the NEW altar - a ballot-stall artifact,
+not a property of the offer system. The design's own legible question ("a new problem, or more of
+one I already handle?") is answered by an engaged player exactly this way, and research section 3.3
+front-loads learning on that player. CONTESTABLE: the measured uniform-random rate is reported in
+the response file; if the owner prefers that reading, the threshold number is the [CONTESTABLE]
+part, not the draw rule (D-074 FINAL).
 
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
+- 2026-11-17 T-074 (spawn, GLM): the D-074 offer draw is live. sim/offers.gd draw_enemy_bay
+  rebuilt (NEW / REPEAT / FREE slots + "slot" field on altars, per-enemy caps via enemy_gate,
+  chaser ceiling 6 with 0.5 kittens under The Litter - weights in offering_schedule.json's
+  "chaser" block, schema extended; intermission carries last_vote into the draw). Tests:
+  test_offers extended (1,000 seeded runs to 30: NEW present whenever an eligible unpicked type
+  exists 100%, caps/ceiling never exceeded, all 12 types offered by the level-19 vote 1000/1000
+  >= 990 bound, same-enemy stacking reaches exactly its cap and stops) - GATE OK (9 ran, 0
+  skipped, 45 s), TESTS 25 passed 0 failed; test_schedule/test_lobby untouched and green.
+  Uniform-random voter coverage measured 8.9% (informational, D-T074-6). NEXT: T-075 harness.
 - 2026-11-17 T-024 (spawn, inkling-2-small-free): app/loading_screen.gd (min 5.0 s hold, real
   progress beyond, tips from data/tips.json, hazard_tell x3 weighted seeded rotation every 5.0 s),
   app/menu.gd (Play/Settings/About/Quit; About = ENEMIES.md disclaimer verbatim; Settings bound to
