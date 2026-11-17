@@ -5679,6 +5679,137 @@ backs out. Entries take no keyboard focus, so Enter (ui_accept) does nothing - c
 binding. Mouse: hover selects, click activates. UI sizes scale with min(h / 720, w / 1280).
 WHY: the ticket's readability and input rules; everything else is taste, hence contestable.
 
+### D-LOAD-1 [CONTESTABLE] - The loading screen is a flat 2D stage, deliberately NOT the 3D void (TICKET LOADING)
+DECISION: `app/loading_screen.gd` now builds a 2D scene: a vertical indigo-to-black gradient backdrop
+(`#1A1238` -> `#05050F`), drifting cyan / pink / white confetti dots, a cyan-lipped floor slab with
+tile seams, and one enemy gag on it (D-LOAD-2). The palette is the game's own: `#7CFFF4` (gift rim / beam)
+for the floor lip, subtitle and gift boxes, `#FF4FD8` (the tripmine tell) for the bar fill and the
+"FIELD NOTE" header, `#FF2A2A` (danger text) for the "!" "?" "BONK" beats, white-on-ink speech bubbles.
+The wordmark and the line "the world is serious. the enemies are not." are kept from T-024 - that line
+is the whole brief in one sentence. Code: `app/loading_stage.gd` (drawing), `app/loading_gags.gd` (model).
+WHY: the owner asked for the same theme in a different register - serious 3D void in the world, silly
+flat 2D here. Flat shapes, big type, bubbles and squash-and-stretch read as a cartoon, which is the
+register; the 3D fog/biome look would read as a continuation of the game. Colours are re-used, not
+new, so the screen is still recognisably this game. [CONTESTABLE]: the exact gradient and confetti
+density are taste; a flat black backdrop would also satisfy the brief.
+
+### D-LOAD-2 [CONTESTABLE] - Five gags from the real sprites; seeded pick, never the previous load's (TICKET LOADING)
+DECISION: five gags, each starring real art from `game/content/enemies/<id>/sprites/*.png` and nothing
+generated: `toucher_slip` (the toucher steps on one of its own flickering glitched floor tiles, tumbles,
+lies flat, "i meant to do that.", gets up and leaves), `seal_giftbox` (a black gift drops on the seal's
+head, it staggers blind: "mfph!", then "10/10. keeping the box."), `coil_launch` (squash, "BOING", launched
+straight off the top of the screen, "ok. that went well.", falls back in elsewhere, "worth it."),
+`kiwi_larper` (the kiwi cat floats up to a gift, the lid pops, a gift Larper is inside, the cat bolts; "act
+natural."; the cat peeks back in: "...is it gone?") and `ben_bonk` (smoke at the destination, "BONG", thicc
+ben arrives, the arrival launch sends him through the top of the screen, "BONK", he falls back, the stage
+shakes, "ow.", he teleports out). `pick_gag(seed, previous)` is seeded and deterministic and never returns
+the previous load's gag (`loading_screen.gd` remembers it in a static var; display-only, the timing law never
+reads it). The jokes are about the enemy's own bad day, never about the game: the enemies are in on it.
+WHY: the five chosen are the ones whose real behaviour makes the gag true - the toucher really does own a
+glitched floor (DESIGN 5.8), the seal's threat is a head-on dash, the coil really does launch itself (apex
+4 u), the Larper really does pose as a gift, ben's launch really does send YOU skyward and the joke is that
+it sent him. Enemies whose sprites are the weak spot (the nuke strip 512x128, Claude's logo, gin, address
+me) were left out rather than posed badly. [CONTESTABLE]: which five, and the lines.
+
+### D-LOAD-3 [CONTESTABLE] - A gag is a 5.0 s timeline whose first 2.0 s already contain the joke (TICKET LOADING)
+DECISION: each gag is a 5.0 s loop (`loading_gags.CYCLE_SECONDS`). Beat A (0-2.0 s) is set-up and
+punchline; beat B (2.0-5.0 s) is a tag that only the first launch (5.0 s) sees; a load slower than 5.0 s loops
+the timeline (every gag starts and ends with its enemy off stage or at rest, no pop). The stage time IS the
+display time (`elapsed`), so a restart that holds exactly 2.0 s plays beat A and stops on the punchline
+frame; the test asserts every gag has a fully shown spoken/printed beat inside the first 2.0 s.
+WHY: the owner's ruling makes a restart exactly 2.0 s; a 5.0 s gag cut at 2.0 s would be cut mid-setup on
+every restart, which is the screen most players see most often. Designing the joke to fit 2.0 s and
+treating the other 3.0 s as a bonus is the only way both durations land.
+
+### D-LOAD-4 [CONTESTABLE] - Motion is procedural on the real PNGs; props are drawn shapes (TICKET LOADING)
+DECISION: no image-generation model exists here, so every motion is a pure function of time on the real
+sprite: position, rotation (one full tumble, lying flat), squash and stretch (`sx`/`sy`), alpha, frame swap
+(the toucher's own flicker frames `cycle_00..02` are the glitch look, its `floor_00..04` decals are the
+glitching tile), a soft floor shadow that shrinks as the sprite leaves the ground, and a shake of the
+whole stage on ben's landing. The only drawn props are the ones the game itself shows: the black gift
+with cyan rim (the game's gift look), speech bubbles, smoke puffs, a ground ring. Sprites are cropped to
+their opaque rectangle at load (`Image.get_used_rect`) because the 512x512 sheets carry large transparent
+margins. A missing PNG renders as a magenta TBD checker (FLEET_PACK R7), never an error; the test checks
+all gag sprites exist and that the fallback works.
+WHY: the brief says real art or a TBD placeholder, and procedural motion is the only motion available.
+Reusing the toucher's flicker frames costs nothing and keeps the glitch identity. [CONTESTABLE]: the
+easing choices and amplitudes are taste.
+
+### D-LOAD-5 - THE TWO-DURATION LAW (owner ruling, this ticket, FINAL): first launch 5.0 s, every restart exactly 2.0 s
+DECISION (the ruling is the owner's and is not contestable; the four implementation choices below are
+the contestable parts): `loading_screen.gd` holds FIRST_LAUNCH_SECONDS = 5.0 on the session's first
+launch and RESTART_SECONDS = 2.0 on every restart. The law is `static func hold_seconds_for(first_launch:
+bool) -> float` - a pure function of an explicit flag, never wall time or a global - and `start(seed,
+simulated_load_seconds = -1.0, p_first_launch = true)` binds it (`set_first_launch`, `is_first_launch`,
+`hold_seconds` expose it). The default is TRUE so T-024's callers and tests (the 5.0 s assertions) keep
+working unchanged; the app layer must pass `false` on every restart. `MIN_DISPLAY_SECONDS` stays, equal to
+the 5.0 s first-launch hold.
+Choices that interpret the ruling [CONTESTABLE]:
+ (a) "never less, never more" is read as a law about the HOLD: a load faster than the hold completes AT
+     the hold; the step that reaches the hold is clamped to land exactly on it (`shown_time() == 2.0`
+     for any step size, a 1/60 s frame or a 5 s step), so a coarse frame cannot overshoot;
+ (b) a load SLOWER than the hold completes at its own duration (a 3.5 s restart load shows 3.5 s): the
+     level has to exist before the screen can go, and "shows real progress if slower" is the T-024 /
+     DESIGN 14 text the ruling did not retract. The screen never adds waiting on top of a slow load;
+ (c) an instant load (`simulated_load_seconds = 0.0`) now reads fraction 1.0 (T-024 left it at 0.0 and
+     it never completed - a real bug for "never block a fast load");
+ (d) with no load source at all the screen does NOT complete (a screen with no load is not a loaded
+     level); the app layer must call `set_load_progress` or pass a simulated duration.
+The feel probe (`tools/feel_probe.gd`) is re-specified: `loading_screen_hold >= 5.0 s` and
+`loading_screen_total_l30 <= 8.0 s` stay exactly as they were, for the first launch; new rows
+`loading_restart_hold >= 2.0 s` and `loading_restart_total_l30 <= 2.0 s` pin the restart. No bound was
+loosened and no row deleted. DESIGN.md section 2 / 14 [CANON] still say ">= 5.0 s" for run start: that
+contradicts this ruling and is recorded in PARKED.md #20 for the owner to update, not silently resolved.
+WHY: the owner ruled it; the tests prove both branches with the clock injected, so neither duration can
+drift, and the clamp makes "exactly 2.0 s" literally true rather than "the first frame after".
+
+### D-LOAD-6 [CONTESTABLE] - The progress bar is the real load, with a status line in the screen's register (TICKET LOADING)
+DECISION: a single bar, cyan-outlined, `#FF4FD8` fill, driven only by `load_fraction()` - the real loader's
+`set_load_progress(p)` once it has reported, else the simulated estimate the tests use; never a fake
+easing. The status line is honest about the number and silly about the verb: first launch "setting up the
+void... 63%", restart "rebuilding the void, again... 63%" (`status_text()`). A fast load pins the bar at
+100% for the rest of the hold, as in T-024.
+WHY: the brief forbids fake bars; the words are the only place the register can show without lying. A
+restart says "again" because it is one - the second time through is the joke the enemies are in on.
+
+### D-LOAD-7 [CONTESTABLE] - Layout: wordmark top, stage middle, field note + bar bottom (TICKET LOADING)
+DECISION: the wordmark (56 px, ink outline) and the cyan subtitle on top; the gag stage uses the whole
+backdrop with its floor at 470/720; the bottom 190 px carry the "FIELD NOTE" header, the tip (20 px,
+820 px wide, centred), the 560 px bar and the status line. The stage scales uniformly to the window
+(1280x720 virtual) and is centred, so any aspect ratio keeps the gag undistorted.
+WHY: tips are the onboarding, so they stay big and readable under the joke rather than over it; the
+virtual-size stage keeps every gag's choreography identical at any resolution.
+
+### D-LOAD-8 - The tip pool is 30, every tip checked against the CODE; 9 written, 3 reworded (TICKET LOADING)
+DECISION: `data/tips.json` goes from 21 tips (11 hazard_tell) to 30 (15 hazard_tell; weighted pool 60).
+Each tip carries a `source` naming the file/constant it was checked against, and `test_loading.gd` pins the
+numbers the tips quote to the code (`sim/mines.gd` CONTACT_R / BLAST_RADIUS / DEFUSE_*, `sim/gifts.gd`
+STRAGGLER_DEN, `view/straggler_beam.gd` BEAM_TOP, `sim/controller.gd` DEFAULTS, every `enemy.json`
+`stats`, and the jump windows computed from jump 12 / gravity 32), so a tip that stops being true fails
+the gate. NINE tips are NEW and written by this ticket (the response says so): `tip_mine_blast`,
+`tip_last_light_once`, `tip_invuln_window`, `tip_you_rumble`, `tip_isagi_tell`, `tip_claude_plushie`,
+`tip_toucher_infect`, `tip_coil_shock`, `tip_beacon_restore`. THREE existing tips were found not fully
+true in this build and reworded: `tip_mine_range` said the star/particles show "inside 12 u" - the view
+ramps them 14 u -> 10 u (12 u is the sim's ring/telegraph distance), now says so; `tip_you_ring` said
+"translucent red band" - no YOU?! ring view exists in this build, only the sim ring (1.0 u tall, 1.5 u
+below-feet band), so the colour claim was dropped and the 0.10-0.65 s window is now computed;
+`tip_claude_drums` said "Claude plays at 100 BPM" - 100 is the BASE, `bpm_per_agitation` 0.6 speeds it up
+with agitation, now says so. The other 18 originals were checked and kept (only their `source` strings
+were added). Facts that were checked but NOT turned into tips because the build does not fully back them:
+any claim that the toucher's infection speeds up (`infect_interval_min_ticks` 72 is not used by the
+behavior), any colour of the YOU?! / nuke rings (no view), and the seal's "mouth-open frame" telegraph look.
+WHY: the owner's rule - a tip that is not true in the build is a bug - needs a check that runs, not a
+claim; the pins make the verification repeatable. [CONTESTABLE]: which nine facts were worth a tip.
+
+### D-LOAD-9 - Hand-off notes for the app layer (TICKET LOADING)
+Frozen API kept in full; additions: `start(.., p_first_launch := true)`, `set_first_launch`, `is_first_launch`,
+`hold_seconds`, `gag_id`, `status_text`, `static hold_seconds_for(first_launch)`, constants
+FIRST_LAUNCH_SECONDS / RESTART_SECONDS. APP-FLOW must pass `first_launch = false` on every restart (the
+default `true` would hold a restart for 5.0 s). DESIGN.md section 2 says "no loading screen between
+levels" (lobby gate -> next level <= 2.0 s) while the ticket says the screen appears "on every level load per
+the flow": the screen object supports any call site, the choice of call sites is the flow's, and the apparent
+conflict is parked (PARKED.md #21), not resolved here.
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
@@ -5960,3 +6091,11 @@ WHY: the ticket's readability and input rules; everything else is taste, hence c
 
 - 2026-11-17 (this session): Claude (Cadence) real art landed on t3/claude-logo-sprite-art - game/tools/art/claude.gd owns the enemy (source measured: 2000x2000 RGBA, all four corners alpha 0, ~10k px sub-16-alpha resize noise, one connected component, the source clips the starburst; border flood fill against the measured transparent background + alpha<=16 zeroing + largest-component keep + defringe, tight crop, 512x512 bottom-anchored, 8 px margin). TEN distinct frames, one per T-083 logo state (spawn_00, idle_00/idle_01/idle_02 metronome pair, telegraph_drums_00, attack_drums_00, telegraph_strings_00, attack_strings_00, attack_wind_00, deadline_00); plushie_00/01/02.png stay magenta TBD placeholders (clawd Crab source never fetched) - tbd=true stays; anim block counts/fps/loop/tick ranges/effect params and animations[] index 0 untouched; per-frame body_rect synced to the printed tight bboxes (D-ART-claude-1/2); claude_view swaps the per-state texture (seal_view pattern). validate_sprites SPRITES OK 265 checks over 12 sprites.json; fog contrast 5.5-8.9 at 40 u per claude frame per biome; check_anim_data claude PASS (9 states); TESTS 55 passed 0 failed. TBD.md rows 11/15/26 updated (plushie TBD recorded). SOURCES.md updated. No PARKED row (no doc conflict). No push.
 - 2026-11-17 FIX-A14 (boundary scan actually enforces): tests/test_boundaries.gd now discovers content ids from res://content/{enemies,curses,upgrades,biomes} at run time and scans .gd+.json recursively under terrain/ sim/ core/ (incl. core/schemas/) and app/, case-sensitive whole-word; the empty KNOWN_CONTENT_IDS is gone; red proof: one planted id in sim/gifts.gd made the test FAIL ("sim/gifts.gd names content id kiwi_cat"), reverted. The violations moved into content: enemy.json gained spawn_line + death_name (gift_larper only), core/roster.gd serves death codes / display names / spawn lines / biome act order; sim/death.gd reads it (CODES const deleted); role key cartographer -> footprint_map; D-T053-6 event updraft -> updraft_rise; twin_fangs requires_enemy gin_ichimaru -> gin; the curse schema's 12-id enum dropped - registry validates requires_enemy at load against scanned enemy ids (probe: boot refuses with "requires_enemy 'gin_ichimaru' is not a scanned enemy id"); new test_curse_requires.gd. View HUD (run_over/danger_text) and fog_env no longer hold roster/biome tables - everything reads core/roster.gd. D-FIX-A14-1..3. Gate: GATE OK (9 ran, 0 skipped, 143 s), TESTS 56 passed 0 failed. No PARKED rows (everything movable moved). No push.
+
+- 2026-11-17 TICKET LOADING (this session): loading screen rewritten to the owner's two-duration law
+  (first launch 5.0 s, every restart exactly 2.0 s, `hold_seconds_for(first_launch)`), a real 2D gag
+  scene from the enemy sprites (app/loading_gags.gd + loading_stage.gd, 5 gags), tips 21 -> 30 with a
+  code-pinned truth test, feel_probe re-specified (4 loading rows). DECISIONS D-LOAD-1..9; PARKED.md
+  #20 (DESIGN section 2/14 [CANON] >= 5.0 s vs the 2.0 s restart) and #21 (no loading screen between
+  levels vs "every level load"). NEXT: APP-FLOW must pass first_launch=false on restarts; the owner
+  updates DESIGN.md section 2/14.

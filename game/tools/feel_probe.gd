@@ -7,8 +7,10 @@ extends SceneTree
 # One PASS/FAIL row per A12 feel-budget item (DESIGN.md section 2), the measured number
 # next to the bound:
 #
-#   PASS loading_screen_hold       5.000 s  >= 5.0 s
-#   PASS loading_screen_total_l30  5.012 s  <= 8.0 s
+#   PASS loading_screen_hold       5.000 s  >= 5.0 s (first launch)
+#   PASS loading_screen_total_l30  5.000 s  <= 8.0 s (first launch)
+#   PASS loading_restart_hold      2.000 s  >= 2.0 s (restart, never less)
+#   PASS loading_restart_total_l30 2.000 s  <= 2.0 s (restart, never more)
 #   PASS gate_to_level             0.310 s  <= 2.0 s
 #   PASS death_to_run_over         0.000 s  <= 2.0 s
 #   PASS void_fall_to_respawn      0.800 s  <= 0.80 s
@@ -18,9 +20,11 @@ extends SceneTree
 # Measurement method per row (DECISIONS D-T061-2 - the app orchestrator that owns the real
 # screen-to-screen transitions does not exist yet, so each row measures the real shipped
 # code path that exists today):
-#   - loading_screen_hold / loading_screen_total_l30: the REAL app/loading_screen.gd law,
-#     driven with the measured level-30 build time as its load duration; the hold is the
-#     loading screen's shown time at completion.
+#   - loading_screen_hold / loading_screen_total_l30 (first launch, 5.0 s) and
+#     loading_restart_hold / loading_restart_total_l30 (every restart, exactly 2.0 s): the REAL
+#     app/loading_screen.gd two-duration law (owner ruling, D-LOAD-5), driven with the measured
+#     level-30 build time as its load duration; the hold is the loading screen's shown time at
+#     completion.
 #   - gate_to_level: the whole "make the next level controllable" pipeline for level 30,
 #     seed 7 - voidgen.generate + collision.make_world + level_mesher.build +
 #     LevelState.build. No loading screen sits between levels (DESIGN.md section 2).
@@ -74,19 +78,38 @@ func _init() -> void:
 # ---- rows -------------------------------------------------------------------------------------
 
 func _loading_rows(load_s: float, full_s: float) -> void:
-	# The real loading screen component, driven exactly as tests/test_loading.gd drives it.
+	# The real loading screen component, driven exactly as tests/test_loading.gd drives it, under the
+	# owner's two-duration law (D-LOAD-5): the session's FIRST launch holds 5.0 s, EVERY RESTART holds
+	# exactly 2.0 s (never less, never more). Four rows: the first-launch pair keeps its original
+	# bounds (>= 5.0 s hold, <= 8.0 s total at level 30); the restart pair is the new law's bounds.
+	var first := _loading_run(true, load_s)
+	if first < 0.0:
+		_row(false, "loading_screen_hold", "never", ">= 5.0 s (first launch)")
+		_row(false, "loading_screen_total_l30", "never", "<= 8.0 s (first launch)")
+	else:
+		_row(first >= 5.0, "loading_screen_hold", "%.3f s" % first, ">= 5.0 s (first launch)")
+		_row(first <= 8.0, "loading_screen_total_l30", "%.3f s" % first,
+				"<= 8.0 s (first launch: hold 5.0 + build %.3f s)" % full_s)
+	var restart := _loading_run(false, load_s)
+	if restart < 0.0:
+		_row(false, "loading_restart_hold", "never", ">= 2.0 s (restart)")
+		_row(false, "loading_restart_total_l30", "never", "<= 2.0 s (restart)")
+	else:
+		_row(restart >= 2.0 - 1e-6, "loading_restart_hold", "%.3f s" % restart, ">= 2.0 s (restart, never less)")
+		_row(restart <= 2.0 + 1e-6, "loading_restart_total_l30", "%.3f s" % restart,
+				"<= 2.0 s (restart, never more: a fast load never waits past it; build %.3f s)" % full_s)
+
+
+## Shown time at completion of one load of `load_s` seconds on the real loading screen, or -1.0 when it
+## never completes inside 60 s.
+func _loading_run(first_launch: bool, load_s: float) -> float:
 	var ls := LoadingScript.new()
-	ls.start(SEED, load_s)
+	ls.start(SEED, load_s, first_launch)
 	while not ls.is_complete() and ls.shown_time() < 60.0:
 		ls.advance(STEP)
 	if not ls.is_complete():
-		_row(false, "loading_screen_hold", "never", ">= 5.0 s")
-		_row(false, "loading_screen_total_l30", "never", "<= 8.0 s")
-		return
-	var total := ls.shown_time()
-	_row(total >= 5.0, "loading_screen_hold", "%.3f s" % total, ">= 5.0 s")
-	_row(total <= 8.0, "loading_screen_total_l30", "%.3f s" % total,
-			"<= 8.0 s (hold 5.0 + build %.3f s)" % full_s)
+		return -1.0
+	return ls.shown_time()
 
 
 func _gate_to_level_row(full_s: float) -> void:
