@@ -502,3 +502,17 @@ Done when Phase 1-4 are on disk. No commits; the owner commits after reading.
 - Verified earlier steer worked: orchestrator received the kiwi-cat ruling at ~20:39Z and was already dispatching the kiwi cat ticket to Inkling (run 106 shown cancelled = steered in).
 - git status on main at 20:45Z: only ` M game/app/app.gd` plus untracked GUARDIAN.md, RUNLOG.md, gate*.log (5 files). 324 commits already on main; PARKED.md/TBD.md/AUDIT.md are tracked.
 - ACTION: t3_thread_send(466457f6, auto) -> run 107 queued, then t3_queue(promote_to_steer run 107 -> active run 101). Instruction: Inkling worker (or itself) makes (1) a CHECKPOINT commit now: RUNLOG.md, GUARDIAN.md, and app.gd only if gate-green; never *.log, tools/godot, tools/blender binaries, .godot, *.uid, build/, out/; no push, no tag; (2) a FINAL commit at the end (RUNLOG, GUARDIAN, AUDIT, PARKED, TBD, MORNING_REPORT); tag v0.1.0-alpha.1 only if the re-run audit passes A1-A16; clean tree check and a RUNLOG line with each hash.
+
+## 2026-11-17 21:01Z check #45
+- Re-armed task f80e25e7 for 21:30Z (ok).
+- RUNLOG (last write 20:47:21): CHECKPOINT COMMIT 81cb28c "Checkpoint: overnight run state" (RUNLOG.md, GUARDIAN.md, .gitignore *.log, game/app/app.gd = the two loading/first-launch seam fixes, gated green: GATE OK 207 s TESTS 58/0). Not committed: gate*.log (now ignored), tools/godot binaries, .godot/, *.uid, build/, out/. Nothing pushed, no tag. LOADING-RECHECK MERGED-GREEN (seal gag re-staged for the belly-down pup). KIWI-SLOW dispatched as its own Inkling ticket (FINAL D-KIWI-SLOW-1 first; new base_speed ~2.5-3.0 u/s, proportionate ceiling and zoomies, kitten never faster than its cat; DESIGN 5.1, enemy.json/.gd, litter, zoomies, tip, tests, T-075 answer-lab row, hurdle arithmetic recomputed since closing speed = 9.0 + cat speed). Order: KIWI-SLOW merges, then FIX-A3 rebases and re-measures 100 seeds, then T-099 re-run, final report, final commit.
+- git status now: RUNLOG.md modified only (post-checkpoint log lines).
+- 466457f6 orchestrator: running (run 107), itemCount 4972 (was 4903), updatedAt 20:59:57, pending 0.
+- Workers (running, pending 0), itemCount / updatedAt: KIWI-SLOW bcc3f101 (Inkling) 195 / 21:00:09; FIX-A3 01410f37 (GLM) 414 (was 333) / 20:57:55.
+- Faults: none. Actions: none, nothing sent. POST-RUN PROMPT NOT sent (KIWI-SLOW, FIX-A3 re-measure, T-099 re-run, final report + final commit outstanding).
+- Expect 21:30Z: KIWI-SLOW merged; FIX-A3 rebased/re-measured (merged or parked); T-099 re-run starting.
+
+## 2026-11-17 21:05Z owner instruction: push to GitHub
+- Owner sees nothing on GitHub. Verified: origin = https://github.com/heylyfe/VOIDWARP-REMAKE (PUBLIC), local main 81cb28c is "ahead 322" of origin/main (386e631); gh logged in as heylyfe; no push ever done tonight (R8).
+- ACTION: t3_thread_send(466457f6, auto) -> run 108 queued, then t3_queue(promote_to_steer run 108 -> active run 101). Instruction (owner-authorised override of R8 for this purpose): clean tree, plain `git push origin main` (no force, no other branches), verify git ls-remote origin main == HEAD, RUNLOG line with hash; push tag v0.1.0-alpha.1 only if the T-099 re-run creates it; push again after the final commit; put URL + hash in MORNING_REPORT.md. On rejection: do not force, write the error, tell the guardian.
+- I did NOT push myself (guardian hard limit); verify at 21:30Z with `git ls-remote origin main`.
