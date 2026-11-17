@@ -1497,6 +1497,91 @@ is no door slab to animate; the open ramp is the 0 -> 4.0 emission + the rising 
 the part of that spec the shipped model can express. The closed-beacon progress ring (8 segments
 around the dais edge, one lit per 12.5% of real black gifts) uses #7CFFF4 for the lit segments -
 [CONTESTABLE], no document states the lit colour.
+---
+
+### D-T027-1 - The T-027 extension contract: behavior subclassing, and how the runtime is driven (T-027).
+`sim/enemy_runtime.gd` defines `EnemyBehavior` (inner class; extend it via
+`const RT := preload("res://sim/enemy_runtime.gd")` + `extends RT.EnemyBehavior` wrapped in the
+content script's own class, or `EnemyRuntime.EnemyBehavior` from any holder) and the `Api` inner
+class - exactly the section 12 surface (`nearest_player`, `los`, `anchors`, `tiles_in_radius`,
+`spawn_projectile`, `telegraph`, `kill`, `push`, `lock_abilities`, `rng`) plus three derived helpers
+behaviors need and DESIGN section 5 already specifies: `speed_mul()`/`cd_mul()` (overtime, D-068),
+`clamp_pursuit()` (SR-5 ceiling), `move_toward()` (SR-1 floater easing, vertical NEVER multiplied).
+Wave-3 behaviors touch ONLY their own row (a plain Dictionary) through the api.
+The runtime is an instance the engine caller owns and steps once per sim tick next to
+`controller.step` - `sim.gd` was NOT edited (T-010's replay determinism test stays green
+unchanged); `ticks` in `lock_abilities(player, ticks)` are 60 Hz ticks (60 = 1.0 s), so lock
+durations are exact integers like every other timing in the spec. Per-enemy rng streams derive
+from the enemy_ai stream seed (D-T010-3) mixed with the enemy's spawn order; vote per-id numbers
+(min level, max votes, strength) stay in `content/enemies/<id>/enemy.json` - nothing under `sim/`
+names a content id (the boundary scan stays clean).
+WHY (gameplay reason): lock arithmetic in seconds accumulates 1/60 fractions; ticks are what every
+DESIGN number is written in, so behavior code reads the spec's own numbers.
+
+### D-T027-2 - [CONTESTABLE] - api.los is a ray march at 0.25 u against tile slabs and prop boxes (T-027).
+DESIGN section 12 says `api.los(a, b)` is a "tile/prop ray" but no document defines the ray's
+semantics. Implemented: march the segment in equal steps of 0.25 u (first and last step = the
+segment's own length fraction); the ray is blocked when a sample point lies strictly inside a tile
+slab ([top-1, top]) or a prop box, reading the collision world (destroyed/removed tiles excluded,
+so gin's broken platforms open sightlines the same tick they break). Endpoints are callers'
+responsibility (body centres, never inside solids). No document states the step: 0.25 u costs at
+most 80 point-in-column tests for a 20 u sightline - cheap at 60 Hz, and it cannot tunnel a 0.5 u
+slab that a step of 0.5 u might straddle. CONTESTABLE - a swept analytic ray would be exact; the
+march is deterministic and consistent on every client, which is what the crossover requires.
+
+### D-T027-3 - The round-trip set is rebuilt from the level dict by the generator's own movement graph (T-027).
+Spawn step (c) needs "any round-trip-reachable tile >= 25 u from the spawn point" (D-056), but the
+level dict does not carry the round-trip set. `sim/enemy_runtime.gd` rebuilds the TERRAIN_SPEC
+movement graph (walk adjacency + the validator's jump envelope) with `terrain/voidgen.gd`'s own
+`movement()`/`bfs()` code from the level's tiles/props/pads, then BFS forward and backward from the
+beacon tile: tile is round-trip iff reachable both ways (the same definition the generator uses for
+gift placement, H7 guarantees both agree on real levels). Verified against a real packed level
+(seed 7, level 12: 721 of 725 tiles round-trip; the 4 misses are behind one-way edges the graph
+knows). WHY: re-implementing the graph in sim would drift from the generator; importing terrain is
+the dependency rule's own answer (sim may use terrain).
+
+### D-T027-4 - Spawn fulfilment: defer, never spawn inside 25 u (T-027).
+The plan spawns at tick 360 (Early Bird passes 120 via opts). IF no candidate tile passes the
+D-056 filters (only possible on synthetic levels: on real levels step (c) always succeeds), the
+spawn DEFERS: the whole plan entry re-tries on the first later tick a legal tile exists, in plan
+order, copies taking the next candidate >= 30 u (SR-3) apart. Spawn distances read 3D from the
+tile top centre to the player's feet - the tile-top convention every other distance in the player
+code uses. The within-60 u preference applies at steps (a)/(b) only; step (c) takes the
+farthest-from-player candidate outright (D-056 verbatim). WHY: better one deferred tick than a
+spawn the player can walk to in one jump - the 25 u floor is the rule that makes spawns readable.
+
+### D-T027-5 - Kill API semantics: kill/push/lock route into the T-012 controller, and there is no partial effect (T-027).
+`api.kill(player, killer_id)` resolves `player` (controller or index) and calls
+`controller.try_kill(code, killer_id, world, events)` with code = `"D-" + killer_id` uppercased,
+spaces to underscores - the death code NAMES the killer, never a damage number (KILL RULE: no
+numbers to subtract). Respawn invulnerability, Last Light invulnerability and the Last Light save
+stay the controller's call: api.kill returns whatever try_kill decides, and a suppressed kill is
+the controller's `kill_suppressed` event. `api.push` sets velocity = normalized(dir) * speed
+(+x ground break on an upward push only) - velocity only, no damage, no lock (thicc ben's eject is
+his own blur on top). `api.lock_abilities` calls `controller.apply_lock(ticks/60)` - the one lock
+SR-6/D-070 already defined. Every enemy body's contact kill is checked by the FRAMEWORK each tick
+(cylinder expanded by the player's 0.4 half-width + y-band overlap), not by each behavior, so "no
+partial effect" is enforced in one place; `contact_kill: false` is the only opt-out (thicc ben).
+WHY: two code paths answering "is the player killed?" would diverge on exactly the D-057 edge.
+
+### D-T027-6 - The hit cylinder is derived per frame from body_rect; the sprite is scaled so the BODY is world_height (T-027).
+`cylinder_from_sheet(world_height, frame_w, frame_h, body_rect)`: scale = world_height /
+body_rect.height_px (world u per px); body width = body_rect.width_px x scale; cylinder diameter =
+0.8 x body width; height = world_height. The PNG frame's own size never enters the shape
+(ENEMIES.md HITBOXES: the hitbox is the cat, not the file). The billboard (view/billboard.gd) uses
+the same convention: scale so the body_rect stands world_height u tall, body bottom on the node
+origin, alpha-scissor 0.5, nearest filter, frame animation from sprites.json per D-T016-1's schema.
+WHY: DESIGN section 5 SR-2 states per-enemy BODY heights; a scale keyed to the frame would make
+padding change where the body lands - the one reading that keeps the TBD placeholder frames
+(16 px margins) and real art interchangeable.
+
+### D-T027-7 - [CONTESTABLE] - Diegetic spawn text is the enemy's own display name, in-world, fading (T-027).
+Deliverable 4 says "diegetic spawn text" with neither content nor shape in any document.
+Implemented: the `enemy_spawn` event carries `"text"` = the enemy's display name (the TBD rule
+shows the literal placeholder name); the view renders it as an in-world (diegetic, not HUD)
+billboarded label 0.6 u above the spawn point, alive 1.5 s then faded over 1.0 s
+(view/billboard.gd.spawn_text). CONTESTABLE - the owner may want a flavour line or a localised
+string table instead; the swap is one event field.
 
 ## Handover log
 
