@@ -1317,9 +1317,80 @@ is recorded here so T-011 (fog readability for the palette roles) applies 12.3 o
 
 ---
 
+### D-T011-1 - [CONTESTABLE] - The fog-readability check runs in linear radiance, not on raw sRGB bytes (T-011, tools/fog_check.gd).
+DECISION (T-011): TERRAIN_SPEC section 12.3's "on-screen colour = lerp(fog, colour, visible(d))" is
+implemented as the engine actually composites: palette sRGB hex is decoded to linear radiance, the
+stated emission factors (checker light +0.35 x albedo, black gift rim x1.5, gold gift x2.0, beacon
+open x4.0, tripmine particles x2.0 from its runtime spec in research/fable-tickets.md section 1.x)
+multiply the surface radiance, the mix against the fog radiance happens in linear space, the result
+is clamped at 1.0 and re-encoded to sRGB - and the WCAG relative luminance contrast ratio
+((L1+0.05)/(L2+0.05), luminance from the sRGB-encoded values) is computed on those fogged display
+colours. visible(d) = exp(-density x d) is letter-exact. Adopted because it is what the render
+pipeline actually produces on screen; the raw-sRGB-bytes reading (T-014c's "naive") reproduces
+T-014c's own numbers from deeper inside failure territory (Deepwater platform light vs fog @60 =
+2.68-2.69 there, always below the 3.0 floor) while the linear reading keeps its margin positive.
+ALTERNATIVE READING (owner may flip): lerp in sRGB display space. It fails the same rows; flipping
+costs five lines in tools/fog_check.gd and moves no colour and no threshold.
+
+### D-T011-2 - The reference Deepwater palette genuinely fails section 12.3 row 1 for the walkway (T-011 report, NOT fixed here).
+Measured with D-T011-1's implementation: the ONLY failure in 35 required rows over the 5 biome
+files is deepwater walkway_light (#2A5BFF) vs fog (#021416) @60 u = 2.737 (threshold 3.0). All other
+34 rows pass (platform 5.375, checker reads 5.548 @40, rim 15.971, gold 15.679, mine 6.514, beacon
+18.847; verdigris 3.866, violet_hour 4.041, indigo_trench 7.476, pale_abyss 4.817 walkways). The
+naive-sRGB reading fails the same row harder (1.73). #2A5BFF is WCAG-luminance-poor (saturated
+blue); no reading of the spec's own formula rescues it - this is the defect T-014c predicted.
+Reported, NOT fixed here: colours and thresholds are owner property (T-054's Do: adjust ONLY the
+failing biome's light colours upward in lightness). For T-054: one candidate near the current hue
+and hue-preserving families measured passing: walkway_light #3A74FF -> 3.394, #4A84FF -> 3.925,
+#5A9AFF -> 4.776.
+
+### D-T011-3 - fog_check scope and its non-gate rows (T-011, tools/fog_check.gd).
+DECISION (T-011): with no arguments the check covers every biome file in content/biomes (the gate
+runs it bare), exit 1 on any BELOW-THRESHOLD required row. The DESIGN.md section 10 rule "tripmine
+particles vs platform light >= 3.0 contrast @40" prints as INFO only, never a gate row: it sits at
+1.06-2.03 in all five biomes and T-054 owns any colour response. The enemy-PNG row (ENEMIES.md hard
+rule, @40, >= 3.0) scans content/enemies/**.png for the mean colour of opaque texels; T-016 has not
+shipped sprites yet, so the row is vacuously green today and turns live when the first PNG lands.
+
+WHY: scope follows the files that exist; a check that hard-fails on data other tickets own would
+red the gate with nothing actionable for T-011.
+
+### D-T011-4 - Mesher decomposition and its geometry conventions (T-011, view/level_mesher.gd).
+DECISION (T-011): one ArrayMesh per material (platform_top / walkway_top / deadend_top / hub_top /
+slab_side / prop / prop_crate / spike / pad); checker light-dark per (x + z) & 1 == 0, the 8 px/u
+nearest texel grid and the +-6% grain (exact formula, hash = VoidRngScript.mix of the global texel
+indices; texels normalize into the unsigned 32-bit domain first so negative tiles wrap - the CPU
+reference grain_factor() and the shader do the same) are computed IN THE SHADER from world
+position, so coplanar same-material tiles greedy-merge into arbitrary rectangles with no UV seams.
+Tile tops merge greedily per HU layer; hidden vertical faces are dropped exactly when a neighbour
+column's boundary edge has the same HU height (all remaining interior faces are back-to-back
+opposite normals, so nothing z-fights); slab bottoms are drawn; ramps are wedges joining their
+piece's top material (checker continues down the slope) with slab_side walls whose trim band
+follows the surface; props are boxes standing on their tile with trim; pads are 0.125 u plates with
+emission pulsing 0.5..1.5 at 1 Hz in the shader. Dead-end light role gets no emission (section 12.2
+states emissions only for platform and walkway lights) and shares platform_dark as its dark square
+(palette.json defines no dead-end dark role).
+
+### D-T011-5 - Support spike profile and its skip rule (T-011, section 12.4 concretisation).
+DECISION (T-011): the inverted stepped spike is a fixed 3-step profile, [width fraction of the
+1x1 cell, height in u] from top to tip: [1.0, 2.0] / [0.5, 1.5] / [0.25, 0.5] (= 8 HU total).
+Section 12.4's "no RNG beyond mix(seed, piece id)" allowance stays unused - the dressing adds no
+randomness at all, so the spike shape is a constant of the engine. Spikes attach under role-1/2
+pieces (platform, dead-end platform) whose bbox is <= 7x7 cells, anchored at the world centre of
+the bbox; skipped entirely when any of the 9 columns around the bbox-centre cell holds a tile
+strictly below the platform's own minimum tile y ("contains a tile below the platform"). Never
+under the hub (role 0 is not in the role filter) and never under walkways.
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
+- 2026-11-17 T-011 (spawn, GLM): view/level_mesher.gd, view/fog_env.gd, tools/shot.gd, tools/fog_check.gd,
+  tests/test_mesh.gd, 12 screenshots in game/shots/. run_all green (TESTS 4 passed 0 failed; 7@30 =
+  3,662 tris, 11 ms mesh). Gate: 5 OK, 1 RED at fog readability - the reference Deepwater palette
+  fails section 12.3 row 1 for the walkway (2.737 < 3.0, D-T011-2); colours/thresholds untouched
+  (T-054 owns the fix). DONE-WHEN "fog_check green for Deepwater" therefore NOT met - see
+  tickets/T-011.response.md for full numbers.
+
 
 - 2026-11-16 Fable 5.2 (checkpoint 1): DECISIONS A/B/C written. `terrain_ref/voidgen.py` WORKS
   (0.02–0.06 s per level, deterministic, shortcut guaranteed). TERRAIN_SPEC.md complete (GEN_VERSION 1).
