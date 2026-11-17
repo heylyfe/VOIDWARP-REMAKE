@@ -3808,6 +3808,59 @@ JSON's 1-indexed spec convention ([1, 3], as DESIGN's "beats 1 and 3" reads and 
 Also: the JSON-to-cfg mirror comparison is numeric (JSON parses 4 as 4.0; the cfg holds int 4) -
 the JSON was never changed to satisfy a comparison.
 
+### D-T073-1 - [CONTESTABLE] 0.0 pursuit/burst ceiling marks "not a floating body / no burst"; counter_play and tell are canonical at top level (T-073).
+
+DECISION (T-073): DESIGN.md section 5 (SR-5) states pursuit ceilings only for the floating
+bodies (kiwi cat 0.80, kitten 0.70, YOU?! 0.55, toucher 0.75, seal 0.60, Claude 0.55) and bounds
+every telegraphed sprint (a burst) at 1.00 x base run speed for at most 3.0 s. coil, thicc ben,
+Isagi, nuke, gift Larper, address me and gin ichimaru are not floating bodies, so their
+enemy.json stats carry pursuit_ceiling 0.0 / burst_ceiling 0.0 - the pre-existing convention of
+the merged files (coil, thicc ben, gift Larper, address me already shipped it; T-073 adds the
+missing keys to isagi, nuke and gin). 0.0 there means "no pursuit", never a speed. The toucher
+keeps its merged burst_ceiling 0.75 (a hair under its 0.75 pursuit ceiling - it has no burst
+mechanic at all and no document states one for it); DESIGN.md's 1.00 bound is a maximum, not a
+floor, so 0.75 complies. CONTESTABLE: one could omit the keys entirely for non-floaters instead;
+0.0 was kept so tools/check_enemy_data.gd can assert presence and the 1.00 burst bound uniformly
+across all 12 rows. Top-level counter_play / tell (and preferred_kind where T-073 adds it) are
+canonical - view/lobby/antechamber.gd reads the top-level keys for the altar panel - while the
+nested copies (coil stats.counter_play_line / tell_line, isagi stats.counters / stats.tell, nuke
+stats.counter_play / tell_line, you stats.counter_play / stats.tell, and the nested
+stats.preferred_kind of isagi / you / claude / gin / address_me) are behaviour and test mirrors;
+they were kept verbatim, and the top-level copies added for coil, isagi, nuke and you carry the
+same text. No behaviour number moved.
+
+### D-T073-2 - [CONTESTABLE] gift Larper's merged tripmine model numbers (world_height 1.0 / body_height 1.0 / hit_diameter 0.8) kept under section 5's "carries no world size" prose (T-073).
+
+DECISION (T-073): section 5's SR-2 prose says "The nuke has no body; gift Larper occupies gift
+slots as the tripmine (section 3.3) - the roster's other rows carry no world size." gift_larper/
+enemy.json's world_height 1.0 / body_height 1.0 / hit_diameter 0.8 are NOT an SR-2 body row: they
+are the tripmine model box that the merged behaviour mirrors (content/enemies/gift_larper/
+enemy.gd cfg()), the mine's lethal geometry is section 3.3's 0.9 u contact cylinder at any height
+(contact_radius 0.9, contact_kill false), the view reads world_height from sprites.json (pinned
+1.0, D-T-036-1), and game/tests/test_enemy_gift_larper.gd pins all three stats numbers and the
+cfg<->stats mirror. DESIGN.md states no number for this row, so nothing was zeroed or deleted -
+removing keys would break merged green tests for zero gameplay gain. CONTESTABLE: the owner could
+still read "carries no world size" as "these keys must not exist"; if ruled so, zero the three
+stats keys and the three cfg() constants together, and test_enemy_gift_larper.gd moves with them.
+The nuke row complies with the prose as-is (world_height 0.0 / hit_diameter 0.0, no body).
+
+### D-T073-3 - [CONTESTABLE] T-073's check script treats section 5's em-dash diameter as "no hit_diameter key" and parses the burst bound from the SR-5 prose at run time (T-073).
+
+DECISION (T-073): tools/check_enemy_data.gd reads DESIGN.md itself (never a hardcoded number):
+the SR-2 body-size table, the SR-5 pursuit-ceiling table (skipping the "kitten (The Litter)"
+row - not one of the 12), the section 5 vote table (name / min level / max votes) and the
+preferred-anchor-kind table are parsed from their markdown rows at run time, and any drift in
+table shape (missing row, changed header, moved section) fails loudly. The burst-ceiling bound
+("a telegraphed sprint (Zoomies) may reach 1.00 x base run speed") is parsed from the SR-5 prose;
+absence of that sentence fails loudly too. address me's SR-2 diameter cell is an em dash, so the
+check asserts the absence of (or 0.0 in) stats.hit_diameter rather than a value - no document
+states a number for a body contact that does not exist for that row. The coil's SR-2 cell
+("1.0 squashed / 2.0 extended") is parsed into the squashed and extended keys; its world_height
+(the idle/squashed draw height, 1.0) is checked against the squashed row. CONTESTABLE: one could
+require a transcription file with a hash instead of parsing markdown; parsing the live table was
+picked so the check cannot silently pass against a stale copy - if the tables are restructured,
+the script goes red, never quietly green.
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)

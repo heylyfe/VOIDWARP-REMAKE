@@ -5,6 +5,7 @@
   "max_votes": 3,
   "vote_effect": "+1 coil",
   "anchor_kinds": ["lane"],
+  "preferred_kind": "lane",
   "stats": {
     "world_height": 1.0,
     "extended_height_u": 2.0,
@@ -36,6 +37,8 @@
       "landing": "coil_landing_twang"
     }
   },
+  "counter_play": "leave the 3 u landing ring and be airborne or > 6 u from your last grounded tile when it lands; the shove decays over 0.5 s and never kills; an idle coil (1.0 u squashed) is hurdle-able",
+  "tell": "the boing + squash frames and a red 3 u ring drawn at your last grounded tile, 0.6 s before it lands",
   "sprites": "res://content/enemies/coil/sprites.json",
   "script": true
 }

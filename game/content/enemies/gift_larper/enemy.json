@@ -5,6 +5,7 @@
   "max_votes": 5,
   "vote_effect": "extra_mines += 3",
   "anchor_kinds": [],
+  "preferred_kind": "none",
   "stats": {
     "world_height": 1.0,
     "body_height": 1.0,

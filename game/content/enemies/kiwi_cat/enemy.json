@@ -5,6 +5,7 @@
   "max_votes": 4,
   "vote_effect": "+1 cat",
   "anchor_kinds": ["nook"],
+  "preferred_kind": "nook",
   "stats": {
     "world_height": 1.0,
     "body_height": 1.0,

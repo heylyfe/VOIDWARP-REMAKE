@@ -7,8 +7,10 @@
 	"anchor_kinds": [
 		"open"
 	],
+	"preferred_kind": "open",
 	"stats": {
 		"world_height": 1.8,
+		"hit_diameter": 0.7,
 		"frame_w": 256,
 		"frame_h": 256,
 		"body_rect": [
@@ -41,6 +43,8 @@
 			"you_corrupted_rumble"
 		]
 	},
+	"counter_play": "Jump as the ring reaches you (jump height > 1.0 u from 0.10 s to 0.65 s), or stand >= 1.5 u above or below its feet.",
+	"tell": "A corrupted rumble ~1.5 s before every shockwave",
 	"sprites": "res://content/enemies/you/sprites.json",
 	"script": true
 }

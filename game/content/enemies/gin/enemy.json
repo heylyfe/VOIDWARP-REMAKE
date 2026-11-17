@@ -13,6 +13,8 @@
   "stats": {
     "world_height": 1.8,
     "hit_diameter": 0.7,
+    "pursuit_ceiling": 0.0,
+    "burst_ceiling": 0.0,
     "frame_w": 256,
     "frame_h": 256,
     "body_rect": [16, 16, 224, 224],
