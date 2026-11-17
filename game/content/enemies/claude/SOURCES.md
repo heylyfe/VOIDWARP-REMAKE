@@ -7,7 +7,23 @@ their sources documented here.
 
 | image | exact filename | path (repo-relative) | pipeline state |
 |---|---|---|---|
-| 15 | `claudelogo.png` | `assets_src/enemies/claudelogo.png` | MISSING -> TBD |
+| 15 | `claudelogo.png` | `assets_src/enemies/claudelogo.png` | real art - the logo owns its frames via `game/tools/art/claude.gd` (the pipeline skips enemies with an art module); one distinct frame per ANIM-BLOCK STATE derived about the feet pivot, 512x512 bottom-anchored. The clawd Crab plushie source was never fetched -> `plushie_00..02.png` stay TBD magenta placeholders (`tbd`: true, DECISIONS.md D-ART-claude-1/2) |
+
+Note (T-016 art wave): `claudelogo.png` is 2000x2000 RGBA with ALL FOUR corners already
+alpha 0 (measured) - it carries no opaque background; the body is a (217,119,87) #D97757
+starburst clipped by the source canvas edges, plus ~10k px of faint sub-16-alpha resize
+noise. Background removal in `game/tools/art/claude.gd`: border flood fill against the
+measured transparent background (alpha <= 16), global alpha <= 16 zeroing, largest
+connected opaque component kept, defringe (RGB of alpha == 0 pixels -> (0,0,0)), tight
+crop to alpha > 16. `sprites.json`: the eight logo states each reference their own distinct
+frame (`spawn_00`, `idle_00` (+ `idle_01`/`idle_02`, the +15 deg metronome step and the
+1.06x pulse step in the sheet's idle set), `telegraph_drums_00`, `attack_drums_00`,
+`telegraph_strings_00`, `attack_strings_00`, `attack_wind_00`, `deadline_00`); the anim
+block's timings and effect parameters are untouched. `plushie_idle` keeps the TBD
+placeholder fallback. The clawd Crab plushie is still unfetched (ENEMIES.md points at
+github.com/xyc/plushie) - fetching it and pointing `plushie_idle` at real `plushie_00..02.png`
+(replacing the three TBD placeholders) is the only remaining step; nothing else changes.
+See DECISIONS.md D-ART-claude-1/2 and TBD.md row 26.
 
 Pipeline (every source): RGBA convert, background removed by a flood fill from the four
 image corners (colour tolerance 24/255, skipped when the corners are already alpha 0),

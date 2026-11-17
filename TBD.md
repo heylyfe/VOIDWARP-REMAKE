@@ -57,6 +57,12 @@ unchanged, and fog contrast is ~8.4 at 40 u. gift Larper is the same kind of exc
 near-black body is 1.0 contrast vs fog as shipped - 6 real frames (5 distinct idle cycle frames
 + a defused pose), 512x512 bottom-anchored, `"tbd": false`, the anim block and tick ranges are
 unchanged, fog contrast 3.05-3.87 at 40 u (palette fog; per-biome 4.3+).
+body_rect). coil and Claude are the exceptions: their sources need their own background removal,
+so `game/tools/art/coil.gd` and `game/tools/art/claude.gd` own their frames respectively (the
+pipeline skips enemies with an art module) - coil's 5 cycle frames and Claude's 10 logo-derived
+frames are real art (squash -> extend; one distinct frame per anim-block state, 512x512
+bottom-anchored), the anim blocks and tick ranges are unchanged, and fog contrast is ~8.4 and
+~5.9-8.9 at 40 u. Claude stays `"tbd": true` (the plushie placeholders).
 
 | # | enemy | expected filename | state |
 |---|---|---|---|
