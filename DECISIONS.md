@@ -2173,6 +2173,62 @@ front-loads learning on that player. CONTESTABLE: the measured uniform-random ra
 the response file; if the owner prefers that reading, the threshold number is the [CONTESTABLE]
 part, not the draw rule (D-074 FINAL).
 
+### D-T072-1 - [CONTESTABLE] - "No enemy body within N u" reads as 3D distance (T-072).
+
+DECISION (T-072): SR-4 says only "no enemy body is within 12 u of the player" and states
+neither 3D nor XZ-only. The gate reads the 3D distance, body row origin to the player's
+feet point (the same measure valid_safe_tile uses against the live body mirror, so one
+distance convention backs both the spawn route and the scheduling route).
+WHY: an XZ-only reading would let an enemy body hover exactly 12 u above the player's
+feet and still pass the gate, opening the stop envoy straight into a chaser's lap - the
+case SR-4 exists to prevent. [CONTESTABLE]: XZ-only is a one-line change in
+meets_requirement if the owner rules it.
+
+### D-T072-2 - The lock's per-class effect list is data: player.json ability_lock.lock_effect (T-072).
+
+DECISION (T-072): the effect names (dash_disabled / glide_disabled /
+class_multipliers_off) live in data/player.json's ability_lock block and reach the
+controller through lock_effects(kit); the controller invents none of them. A missing or
+empty read falls back to LOCK_EFFECT_FALLBACK - the full SR-6 reading, per class - so a
+lock can never be a silent no-op, and a moved/renamed data file degrades to the spec's
+behavior, not to nothing. data/player.json gains only that lock_effect mapping; every
+existing key is untouched (the file stays T-014c's).
+WHY: the ticket names the effect ids as the data boundary; a hard-coded dispatch in the
+controller would let a data edit silently change which class ability a lock kills.
+
+### D-T072-3 - An active glide ends at the call, before the next engage tick (T-072).
+
+DECISION (T-072): lock_abilities (glide_disabled) sets glading=false inside the call -
+"an active glide ends" lands at once; the engage gates already read ability_locked()
+every tick, so nothing re-attaches while the window holds, and the D-070 sentence is
+honoured the same tick an enemy applies the lock. glide_energy is not refunded: an
+interrupted glide keeps what it burned.
+WHY: waiting for the next engage tick would leave the glide's fall cap active for up to
+one tick past the lock - the rider, already locked, would still sink at a capped fall
+for a frame.
+
+### D-T072-4 - Live countdowns read telegraph entries (ticks > 0) plus caller-side pending ids (T-072).
+
+DECISION (T-072): busy_sources collects one id per live countdown - telegraph entries
+whose ticks > 0 (one per source id), plus an optional `pending` id array the behavior
+keeps on its own row and passes through api.arbiter_gate (a rumble that is not a
+telegraph shape). The runtime never decrements a telegraph's ticks today, so entry
+lifetime is the caller's: a behavior MUST drop its entry when the strike lands, or its
+id stays busy forever. Recorded as the data pass's duty.
+WHY: deriving deferral from telegraph entries alone keeps the ids data-side and the
+arbiter stateless; the pending array covers every countdown source a future behavior
+invents without a runtime schema change.
+
+### D-T072-5 - [CONTESTABLE] - The gate evaluates the targeted player, index 0 today (T-072).
+
+DECISION (T-072): the runtime's arbiter_evaluate(cfg, player_index = 0) passes
+controllers[player_index] - in a single-player sim the only player there is. A row that
+cuts its own target (a multi-player targeting pass) sets target_player on the row and
+the Api forwards it; the gate stays stateless either way.
+WHY: the section 12 contract says the enemy api carries the target, not the gate; no
+document states a multi-player mapping. [CONTESTABLE] until the roster's targeting pass
+lands.
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
