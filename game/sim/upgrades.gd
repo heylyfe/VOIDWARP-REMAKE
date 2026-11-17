@@ -115,7 +115,7 @@ static func nearest_real_gift(lv: RefCounted, px: float, pz: float,
 	for i in g.slots.size():
 		if not g.is_real(i) or g.collected(i):
 			continue
-		var pos: Vector3 = g.slot_pos(i)
+		var pos: Vector3 = g.position_of(i)
 		var dx: float = px - pos.x
 		var dz: float = pz - pos.z
 		var d2: float = dx * dx + dz * dz
@@ -184,7 +184,7 @@ func revealed(lv: RefCounted, p_index: int, range_u: float = CARTOGRAPHER_RANGE)
 	var g: RefCounted = lv.gifts
 	if g != null:
 		for i in g.slots.size():
-			var pos: Vector3 = g.slot_pos(i)
+			var pos: Vector3 = g.position_of(i)
 			if not _near_any(tiles, pos.x, pos.z, r2):
 				continue
 			if g.is_real(i):

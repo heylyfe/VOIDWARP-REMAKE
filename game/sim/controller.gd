@@ -157,8 +157,9 @@ var bonus_dashes_max := 0
 var bonus_cd := 0.0
 # T-053 Updraft (D-T053-6): glider-only rise of 3.0 u
 # on a re-pressed jump while gliding; apex exactly 3.0 u under gravity 32, once per
-# glide engagement, 6 s cooldown frozen under ability lock like the dash.
-var updraft_ready := true
+# glide engagement, 6 s cooldown frozen under ability lock like the dash. Granted
+# (ready) ONLY by apply_updraft - the base glider has no updraft.
+var updraft_ready := false
 var updraft_cd := 0.0
 var updraft_used := false
 
@@ -382,7 +383,9 @@ func step(dt: float, a_in: Dictionary, w: Dictionary) -> Array:
 	# glide engagement, 6 s cooldown frozen under ability lock like the dash (D-070).
 	if gliding and jump_pressed and kit == "glider" and updraft_ready \
 			and not updraft_used and not ability_locked(w):
-		vy = UPDRAFT_VY
+		# + gravity x dt: gravity runs after this block, so the step's EXIT vy is
+		# the exact apex velocity and the rise is exactly 3.0 u (D-T053-6).
+		vy = UPDRAFT_VY + float(C["gravity"]) * dt
 		gliding = false
 		updraft_used = true
 		updraft_ready = false

@@ -89,6 +89,13 @@ func slot_pos(i: int) -> Vector3:
 	return Vector3(float(int(s["x"])) + 0.5, float(int(s["y"])) * 0.5 + 1.0, float(int(s["z"])) + 0.5)
 
 
+## The T-053 readers' name for the same mapping (the radar queries / the
+## cartographer read positions through this wrapper; the slot_pos confinement
+## scan keeps the section 6.7 formula in this file only).
+func position_of(i: int) -> Vector3:
+	return slot_pos(i)
+
+
 func is_real(i: int) -> bool:
 	return int(slots[i]["occ"]) == 0
 
