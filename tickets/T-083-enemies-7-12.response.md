@@ -53,7 +53,7 @@ by construction: every timing in the tables above is copied into `duration_ticks
 
 The checker, my six:
 
-    > "C:\Users\Nathan\Documents\REMAKE VWR\VOIDWARP-REMAKE\tools\godot\godot.exe" --headless --path game --script res://tools/check_anim_data.gd -- gift_larper toucher seal address_me claude gin
+    > "C:\Users\username\Documents\REMAKE VWR\VOIDWARP-REMAKE\tools\godot\godot.exe" --headless --path game --script res://tools/check_anim_data.gd -- gift_larper toucher seal address_me claude gin
     Godot Engine v4.7.2.stable.official.ed1daf0bf - https://godotengine.org
 
     PASS gift_larper (5 states)

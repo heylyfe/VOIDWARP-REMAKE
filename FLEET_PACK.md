@@ -479,7 +479,7 @@ R11. WORKTREES, AND PARALLEL STAYS PARALLEL. Every worker is dispatched with wor
      current `main` commit.
 R12. THE ENGINE IN A WORKTREE. `tools/godot/` is gitignored, so a worktree has no engine and the
      `tools\godot\godot.exe` of section 4 does not exist there. Every brief that runs Godot carries
-     the line: "Godot is NOT in your checkout. Use the absolute path C:\Users\Nathan\Documents\REMAKE VWR\VOIDWARP-REMAKE\tools\godot\godot.exe
+     the line: "Godot is NOT in your checkout. Use the absolute path C:\Users\username\Documents\REMAKE VWR\VOIDWARP-REMAKE\tools\godot\godot.exe
      (quote it, the path has a space) wherever a command says tools\godot\godot.exe. Never download or
      copy the engine. tools\gate.ps1 finds the engine by itself." That path is the only mention of the
      main checkout a brief may contain.
@@ -523,7 +523,7 @@ R18. GODOT FACTS EVERY CODE BRIEF CARRIES (each one already cost a worker time o
      never reference a script by uid://, only by res:// path. (d) Never commit game/.godot/."
 R19. TOOLS THAT ARE NOT IN GIT LIVE IN ONE PLACE. Anything a ticket installs that is gitignored
      (portable Blender of T-015; the engine) is installed under the MAIN checkout,
-     C:\Users\Nathan\Documents\REMAKE VWR\VOIDWARP-REMAKE\tools\, never inside a worker's worktree,
+     C:\Users\username\Documents\REMAKE VWR\VOIDWARP-REMAKE\tools\, never inside a worker's worktree,
      where the next worker and the audit would not find it. T-015's brief says so, and its scripts
      and tools/build_models.ps1 look for Blender at $env:BLENDER first, then tools\blender in their own
      checkout, then that main-checkout path (the same order tools/gate.ps1 uses for Godot). The export

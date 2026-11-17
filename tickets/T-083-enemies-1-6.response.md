@@ -59,7 +59,7 @@ DESIGN.md §5.1-5.6 and the D-064/D-066/D-070 FINAL rules; see D-T083-5).
 
 ## 3. DONE-WHEN — PROOF (real command output)
 
-Engine: `C:\Users\Nathan\Documents\REMAKE VWR\VOIDWARP-REMAKE\tools\godot\godot.exe`
+Engine: `C:\Users\username\Documents\REMAKE VWR\VOIDWARP-REMAKE\tools\godot\godot.exe`
 (Godot Engine v4.7.2.stable.official.ed1daf0bf), run from this checkout.
 
 ### 3.1 The checker, my six

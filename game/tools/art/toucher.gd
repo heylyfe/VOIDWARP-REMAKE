@@ -2,7 +2,7 @@
 # owner's source images into real frames; the shared pipeline cannot do this one).
 #
 #   tools\godot\godot.exe --headless --path game --script res://tools/art/toucher.gd
-#   (absolute engine path: C:\Users\Nathan\Documents\REMAKE VWR\VOIDWARP-REMAKE\tools\godot\godot.exe)
+#   (absolute engine path: C:\Users\username\Documents\REMAKE VWR\VOIDWARP-REMAKE\tools\godot\godot.exe)
 #
 # Sources: assets_src/enemies/toucher.jpeg        (180x180, opaque black corners - the finger)
 #          assets_src/enemies/glitchedground.jpeg (300x300, opaque white corners - the cube)

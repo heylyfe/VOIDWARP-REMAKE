@@ -15,7 +15,7 @@
 $ErrorActionPreference = 'Stop'
 
 $Root = Split-Path -Parent $PSScriptRoot
-$MainBlender = 'C:\Users\Nathan\Documents\REMAKE VWR\VOIDWARP-REMAKE\tools\blender\blender.exe'
+$MainBlender = "$env:USERPROFILE\Documents\REMAKE VWR\VOIDWARP-REMAKE\tools\blender\blender.exe"
 
 function Resolve-Blender {
     foreach ($cand in @($env:BLENDER,
