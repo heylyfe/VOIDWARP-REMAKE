@@ -5416,6 +5416,56 @@ sheet's [cycle_00, cycle_01] layout and index 1 pin live in shipped view code, a
 anim block's file names are its own contract - the duplication costs 266 KB and keeps both
 interfaces byte-stable. The four state frames are otherwise distinct art.
 
+### D-ART-ADDRESS_ME-5 - the address me sprite KEEPS the full office photo (owner ruling 2026-11-17); supersedes the elephant half of D-ART-ADDRESS_ME-3 and the lift constants of D-ART-ADDRESS_ME-2 [CONTESTABLE]
+Owner ruling, verbatim intent: "the address me should'nt have its background
+cut off or it looks weird keep it like this". The intended art is the FULL
+office-interior photo - a photorealistic elephant standing in an office with
+swivel chairs, desks, a tipped trash bin, scattered papers and shelves, the
+white handwritten "Address me" strike across the middle. The background is
+part of the joke; it is NOT removed. The source `assets_src/enemies/address me
+elephant.png` (1080x726) is edge-to-edge office - no hard border that is not
+part of the art - so nothing is cropped. What changed in
+game/tools/art/address_me.gd (ART-FIX-ADDRESS-ME):
+- the elephant border flood fill, sure-foreground polygon, letter band
+  detection, letter inpaint and defringe are ALL gone; the frame is the whole
+  photo, alpha 255 everywhere in the photo rect, fitted to the 448 px canvas
+  body (1080x726 -> 448x301), centred horizontally, bottom-anchored,
+  transparent margin elsewhere (the 512 canvas contract every enemy keeps so
+  the validator's corners-alpha-0 / no-opaque-border / >= 15% transparency
+  rules still hold). The white "Address me" strike is part of the photo and
+  stays, on the body and off it.
+- the explosion source (explosionsffect.jpg, the attack fireball) is NOT
+  covered by the ruling and keeps its cutout; attack_00/cycle_01 remain the
+  spec's composite - Image 14 over the elephant (now the ghosted FULL photo at
+  30% alpha) - byte-identical under the two names (D-ART-ADDRESS_ME-4).
+- per-state treatment unchanged: spawn = brightness 1.16, telegraph = desat
+  0.45 / dim 1.0, leaves = 1.18x / 0.78y squash, cycle_00 = the plain frame.
+  Frame counts, tick ranges, loop flags and effect parameters in the anim
+  block are untouched; recover stays frameless.
+- the fog-contrast lift is re-tuned for the full-photo mean: the raw photo
+  mean (#736F69) measures 2.72 at 40 u vs palette fog (#021416) - below the
+  3.0 bar - so the art is graded sRGB x1.15 + 10/255 pedestal (GRADE_SCALE /
+  GRADE_PED), taking the mean to #8C8881 (validate_sprites, palette fog:
+  cycle_00/leaves 3.72, telegraph 3.67, spawn 4.63, cycle_01/attack 5.90;
+  fog_check per-biome raw-mean rows, deepwater: cycle_00/leaves 5.34,
+  telegraph 5.27, spawn 6.81, cycle_01/attack 8.89). The old constants
+  (x1.22 + 14/255 on the cutout hide) would clip the photo's ceiling whites;
+  1.15/10 clears every biome with margin and is truer to the source. Thresholds
+  untouched (validate_sprites.gd, fog_check.gd). GRADE_SCALE/GRADE_PED and the
+  fit/squash/flash/desat numbers are [CONTESTABLE] - art judgment, not sim
+  numbers; the binding bar (mean opaque >= 3.0) passes.
+- body_rect re-synced to the regenerated frames (cycle_00/spawn/telegraph
+  [32,207,448,301]; leaves [32,309,448,199]; cycle_01/attack [32,73,448,435],
+  unchanged). world_height stays 2.5 (DESIGN.md section 5 table; the art is
+  the same photo content, just not cut out).
+Note on numbering: the ticket that carried this ruling asked for a
+"D-ART-ADDRESS_ME-2"; that id was already taken by the fog-lift entry above
+(which this entry supersedes in part), so the ruling is recorded as
+D-ART-ADDRESS_ME-5 per the next-free-id convention. D-ART-ADDRESS_ME-1 and
+D-ART-ADDRESS_ME-3 describe the cutout pipeline and are kept as history; the
+elephant half of D-ART-ADDRESS_ME-3 is superseded by this entry. The
+explosion half of D-ART-ADDRESS_ME-3 stands.
+
 ### D-FIX-A15-1 - the T-001 disclaimer punctuation is the em dash (U+2014), plaque wraps at render time [CONTESTABLE]
 FIX-A15 closes AUDIT.md section 6 / A15. FLEET_PACK.md line 163 (T-001's spec), README.md
 line 7 and AUDIT.md section 6 all write the dash in "non-commercial project — no money is
