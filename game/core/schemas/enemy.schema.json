@@ -20,13 +20,16 @@
     },
     "arbiter": {
       "type": "object",
-      "description": "T-072 / SR-4: the declarative scheduling gate. Ids only - the vocabulary lives in sim/enemy_arbiter.gd.",
+      "description": "T-072 / SR-4: the declarative scheduling gate. appear_requires entries are requirement objects from the vocabulary in sim/enemy_arbiter.gd (e.g. {\"no_enemy_body_within\": 12.0}); yields_to carries row ids (strings) only.",
       "additionalProperties": false,
       "properties": {
         "appear_requires": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": [
+              "object",
+              "string"
+            ]
           }
         },
         "yields_to": {
