@@ -4741,6 +4741,57 @@ params its only T-080 delta). Any record type the 2-level scripted drive cannot 
 (all the mine types - levels 1-2 roll zero mines) is covered by the direct units, exactly
 as before.
 
+### D-T081-1 - The jump/step-up counters are event counts in run_log, not sim state (T-081)
+The ticket's "T-080 adds two counters to level_clear (jumps, stepups)" were ABSENT on
+main (T-080's level_clear payload carries only black_ticks/gold_ticks/total_ticks).
+Added additively, app-layer first: the controller has emitted a "jump" event for every
+jump that leaves the ground since T-012 (ground, coyote, buffered-on-landing and air
+jumps - the event carries no sub-kind, so all four count [CONTESTABLE]); the new
+"step_up" event (sim/controller.gd) fires when a WALKED move gains >= 1 HU (0.5 u) of
+ground height with ground contact on BOTH sides of the move - a jump, a landing from
+the air, a ramp (0.5 u per 1 u horizontal = 0.075 u/tick at run speed) and a launch
+pad never reach 1 HU in one tick, so no extra guard is needed. run_log counts both
+per level and reports them in level_clear's "jumps"/"stepups". No movement number
+touched; the events reach the log through the existing per-tick feed.
+
+### D-T081-2 - The log's directory is a settable field (dir_base, default user://runs)
+The batch parks 100 logs in one place; user:// is outside the repo and the ticket
+prefers a gitignored repo folder. run_log.gd gains dir_base (default "user://runs" -
+byte-identical default behavior, path shape unchanged); the batch passes
+out/run_logs (".gitignore" already excludes out/).
+
+### D-T081-3 - bot_run gets --log / --log-dir (additive CLI, T-060's file touched minimally)
+run_probe gains two trailing params (default off - T-060's own call sites unchanged);
+the CLI accepts --log and --log-dir. run_start.class is "" in batch logs: the pre-run
+lobby picks the class AFTER run_started, and the picks carry it (the CLASS bay's
+altar id) [CONTESTABLE - the owner may prefer the class back-filled into run_start].
+
+### D-T081-4 - Restart time (signal 2) is NOT measurable from the T-080 records [CONTESTABLE]
+death.t lives in the dying run's clock; the next run's first controllable tick lives
+in another file's clock; no record carries wall-clock time; and the restart path's
+real cost (the 5.0 s loading-screen minimum [CANON], the lobby walk) consumes NO sim
+ticks by design. The report prints the death counts and the "not measurable from the
+current records" line - no invented number. The fix belongs to a ticket that adds a
+wall-clock stamp (or a recorded respawn-to-control tick) to the records.
+
+### D-T081-5 - Signal 7's approximations: the chain estimate and the width split
+The exact chain at a mine event cannot be reconstructed from the records (chain_reset
+events write NO record), so the report uses the last gold gift's recorded chain
+(+0.05, cap x2.00) while the 240-tick window holds, x1.00 otherwise - stated in the
+report's source. The walkway-width split (1 / 2 / platform) has NO data in the
+records (level_start carries counts, not per-slot widths): printed as "not
+measurable from the current records" with the fix named (level_start would need the
+mine slots' widths). Never invented, never dropped.
+
+### D-T081-6 - Report location and the bucket conventions
+The report lives in game/tools/run_report.gd, not tools/: a Godot headless script
+must live under the game project to preload res:// scripts (bot_run.gd's precedent);
+tools/ is outside the project. tools/run_batch.ps1 is the entry the ticket names and
+lives in tools/ as specified. Conventions: a lobby's bucket is the level it ARMS
+(level_completed + 1); the "overall" row is accumulated with the buckets (every
+record lands in its bucket AND the overall slot), never recomputed; empty buckets
+print zero counts - real counts, not blanks.
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
