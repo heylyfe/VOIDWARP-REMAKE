@@ -644,6 +644,11 @@ static func _process_enemy(enemy: Dictionary, src_dir: String, out_dir: String) 
 	for k in prev.keys():
 		if not json.has(k):
 			json[k] = prev[k]
+	# DESIGN.md section 5 gives gift Larper and the nuke no row of their own, so the roster
+	# carries null - but gift Larper's merged, test-pinned value is 1.0 (D-T073-2: it is the
+	# tripmine model box its behaviour mirrors). A rebuild must not null a pinned value.
+	if json["world_height"] == null and prev.get("world_height") != null:
+		json["world_height"] = prev["world_height"]
 	_write_text(JSON.stringify(json, "\t") + "\n", enemy_dir + "/sprites.json")
 	_write_text(_sources_md(enemy, src_rows), enemy_dir + "/SOURCES.md")
 	return {"pngs": n_png, "tbd": tbd}
