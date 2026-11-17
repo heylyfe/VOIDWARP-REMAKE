@@ -46,11 +46,12 @@ static func mirror_mode_for(kit: String) -> String:
 
 ## Pure helper (test target): the dash endpoint - DASH_U toward the target, capped
 ## DASH_STOP_SHORT short of the target's centre (never a body-kill transit).
-static func dash_point(row: Dictionary, target: Dictionary) -> Vector3:
+## The target is a T-012 controller (Object) or a plain dict (D-T051-20's read rule).
+static func dash_point(row: Dictionary, target) -> Vector3:
 	var rx := float(row.get("x", 0.0))
 	var rz := float(row.get("z", 0.0))
-	var tx := float(target.get("x", rx))
-	var tz := float(target.get("z", rz))
+	var tx: float = _num_or(target, "x", rx)
+	var tz: float = _num_or(target, "z", rz)
 	var dx := tx - rx
 	var dz := tz - rz
 	var d := sqrt(dx * dx + dz * dz)
@@ -58,6 +59,13 @@ static func dash_point(row: Dictionary, target: Dictionary) -> Vector3:
 		return Vector3(rx, float(row.get("y", 0.0)), rz)   # already at the shell: hold
 	var step := minf(DASH_U, d - DASH_STOP_SHORT)
 	return Vector3(rx + dx / d * step, float(row.get("y", 0.0)), rz + dz / d * step)
+
+
+## Read a numeric key off a controller (Object: .get takes ONE argument) or a dict
+## row; the fallback when absent.
+static func _num_or(p, key: String, fallback: float) -> float:
+	var v: Variant = p.get(key)
+	return float(v) if v != null else fallback
 
 
 ## on_tick: stamp the nearest player's kit onto every YOU?! row and run its clause.
@@ -74,8 +82,11 @@ static func on_tick(state: Dictionary, api) -> void:
 		var row = rt.enemies[i]
 		if str(row.get("id", "")) != YOU_ID:
 			continue
-		var target: Dictionary = _mirror_target(row, players, api)
-		var kit := str(target.get("kit", "dasher"))
+		var target = _mirror_target(row, players, api)
+		var kit: String = "dasher"
+		var kv: Variant = target.get("kit")
+		if kv != null:
+			kit = str(kv)
 		var seen_key := "%sseen_%d" % [ST_PREFIX, i]
 		if str(st.get(seen_key, "")) != kit:
 			st[seen_key] = kit
@@ -87,8 +98,9 @@ static func on_tick(state: Dictionary, api) -> void:
 				pass   # glide and speed are stamped, not per-tick
 
 
-## The row's mirror read: the nearest player (api when available, else player 0).
-static func _mirror_target(row: Dictionary, players: Array, api) -> Dictionary:
+## The row's mirror read: the nearest player (api when available, else player 0) -
+## a T-012 controller (Object) or a plain dict row.
+static func _mirror_target(row: Dictionary, players: Array, api):
 	if api.has_method("nearest_player") and not players.is_empty():
 		var near: Dictionary = api.nearest_player(Vector3(float(row["x"]), float(row["y"]), float(row["z"])))
 		if not near.is_empty():
@@ -112,13 +124,13 @@ static func _apply_kit(row: Dictionary, kit: String) -> void:
 
 
 ## The dasher clause: one 6 u dash every 300 ticks along the current line to target.
-static func _dash_cadence(row: Dictionary, target: Dictionary, st: Dictionary,
+static func _dash_cadence(row: Dictionary, target, st: Dictionary,
 		tick: int, i: int, api) -> void:
 	var key := "%sdash_%d" % [ST_PREFIX, i]
 	var next_tick := int(st.get(key, DASH_EVERY_TICKS))
 	if tick < next_tick:
 		return
-	if target.is_empty():
+	if target == null or (target is Dictionary and target.is_empty()):
 		st[key] = tick + DASH_EVERY_TICKS
 		return
 	var p := dash_point(row, target)

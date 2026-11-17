@@ -1,7 +1,7 @@
 extends RefCounted
 #
 # overwound.gd - script curse (ticket T-051; DESIGN.md section 7.1 row "overwound").
-# Rule sentence (spec, verbatim): "coil idle time 3.0 -> 2.0 s (then 1.5 s)".
+# Rule sentence (spec, verbatim): "coil idle time 3.0 → 2.0 s (then 1.5 s)".
 # Counter-play: "leave the ring and be airborne or > 6 u away at landing (5.2);
 # the shove decays over 0.5 s and never kills".
 #
