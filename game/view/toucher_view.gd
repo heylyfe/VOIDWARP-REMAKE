@@ -1,0 +1,289 @@
+extends Node3D
+#
+# toucher view (ticket T-037; ENEMIES.md "Flesh -> toucher", DESIGN.md section 5.8,
+# the T-083 anim block in sprites.json - read here, never re-declared).
+#
+# The finger sprite is driven THROUGH view/enemy_anim.gd (the T-084 shared player):
+# this node duck-types the player's caller contract (set_stage / set_stage_frame /
+# set_effect / set_texture) and the player pushes the frame + effect parameters of
+# the current sim state into it. Frame choice, spawn fade, pulse timing and the
+# attack_infect key are the anim block's own rows - nothing here re-declares a
+# tick count. The view READS the sim row ("anim_state", "anim_state_t", "glitched"
+# entries, "rt_tick") and never writes sim state.
+#
+# The corrupted floor is the anim block's attack_infect effect params: one decal
+# per live glitched tile (the sim row's "glitched" list), 5 frames cycling at 8 fps
+# with a (x + z) mod 5 per-tile offset, appearing alpha 0 -> 1 over 12 ticks under a
+# 6-tick danger-red (#FF2A2A) tear flash, and in the last 60 ticks of a tile's life
+# flickering at 10 Hz then fading alpha -> 0 over the final 12 ticks.
+#
+# BILLBOARDING / TRANSPARENCY: the finger always faces the camera (billboard.gd,
+# Y-rotation only, never rotated the other way - the anim block's face_player says
+# "mirror_horizontal_only, never_rotated"); the sprite renders with the texture's
+# alpha scissor so transparent padding never draws (billboard.gd's scissor rule).
+
+const EnemyAnimScript := preload("res://view/enemy_anim.gd")
+const BillboardScript := preload("res://view/billboard.gd")
+
+const SHEET_REL := "res://content/enemies/toucher/sprites.json"
+const FOLDER_REL := "res://content/enemies/toucher"
+
+# Decal fallbacks - every one is replaced by the anim block's attack_infect params
+# when they are present (they are: glitchfloor_fps 8, offset (x+z) mod 5, appear 12,
+# tear flash 6, flicker 10 Hz, fade 12).
+const DECAL_APPEAR_TICKS := 12
+const DECAL_FLASH_TICKS := 6
+const DECAL_FLICKER_TICKS := 60
+const DECAL_FADE_TICKS := 12
+const DECAL_FLICKER_HZ := 10.0
+const DECAL_SIZE_U := 1.0             # one decal covers exactly one tile (1 x 1 u)
+const DANGER_RED := Color(1.0, 0.1647, 0.1647, 1.0)   # #FF2A2A; replaced by the block
+
+var billboard = null                  # BillboardScript instance (the finger PNG)
+var anim: RefCounted = null           # the shared enemy_anim.gd player
+var _sprite_wrap: Node3D = null       # scale_pulse lives here
+var _decal_root: Node3D = null
+var _decals: Dictionary = {}          # tile key -> {"sprite": Sprite3D}
+var _decal_texts: Array = []         # the 5 Texture2Ds, in the block's frame order
+var _anim_block: Dictionary = {}
+var _doc: Dictionary = {}
+var _folder := FOLDER_REL
+var _appear := DECAL_APPEAR_TICKS
+var _flash := DECAL_FLASH_TICKS
+var _flicker := DECAL_FLICKER_TICKS
+var _fade := DECAL_FADE_TICKS
+var _flicker_hz := DECAL_FLICKER_HZ
+var _red := DANGER_RED
+var _last_state := ""
+var _pulse_scale := 1.0
+var _body_alpha := 1.0
+
+
+## The anim block's state ids, for callers/tests that prove the wiring.
+func anim_state_ids() -> Array:
+	return (_anim_block.get("states", {}) as Dictionary).keys()
+
+
+func setup(sheet_path: String = SHEET_REL, folder: String = FOLDER_REL) -> void:
+	for child in get_children():
+		child.free()
+	_folder = folder
+	if FileAccess.file_exists(sheet_path):
+		var parsed = JSON.parse_string(FileAccess.get_file_as_string(sheet_path))
+		if parsed is Dictionary:
+			_doc = parsed
+	_anim_block = _doc.get("anim", {})
+	_read_anim_block()
+	_sprite_wrap = Node3D.new()
+	_sprite_wrap.name = "SpriteWrap"
+	add_child(_sprite_wrap)
+	billboard = BillboardScript.new()
+	_sprite_wrap.add_child(billboard)
+	if not _doc.is_empty():
+		billboard.setup_from_sheet(_doc, folder)
+	anim = EnemyAnimScript.new()
+	anim.setup("toucher", _doc, folder)
+	anim.bind_view(self)
+	_build_decals()
+
+
+## Pull the numbers this view needs from the anim block; the stated values above
+## are only fallbacks (the block is the binding spec, nothing here re-declares it).
+func _read_anim_block() -> void:
+	var states: Dictionary = _anim_block.get("states", {})
+	var spawn: Dictionary = states.get("spawn", {})
+	var sp_params: Dictionary = (spawn.get("effect", {}) as Dictionary).get("params", {})
+	if sp_params.has("spawn_blocks_contact_ticks") and (sp_params["spawn_blocks_contact_ticks"] is int or sp_params["spawn_blocks_contact_ticks"] is float):
+		_appear = float(sp_params["spawn_blocks_contact_ticks"])
+	var infect: Dictionary = states.get("attack_infect", {})
+	var params: Dictionary = (infect.get("effect", {}) as Dictionary).get("params", {})
+	if params.has("decal_appear_ticks"):
+		_appear = float(params["decal_appear_ticks"])
+	if params.has("tear_flash_ticks"):
+		_flash = float(params["tear_flash_ticks"])
+	if params.has("expire_fade_ticks"):
+		_fade = float(params["expire_fade_ticks"])
+	if params.has("expire_flicker_hz"):
+		_flicker_hz = float(params["expire_flicker_hz"])
+	if params.has("tear_flash_color"):
+		_red = Color(str(params["tear_flash_color"]))
+	var pulse: Dictionary = (states.get("telegraph", {}) as Dictionary).get("effect", {}).get("params", {})
+	if pulse.has("scale_to"):
+		_pulse_scale = float(pulse["scale_to"])
+
+
+# ---- the enemy_anim.gd caller contract (duck-typed; never stores sim state) -------
+
+func set_stage(_state_id: String) -> void:
+	# the finger sheet has ONE body animation (the cycle); the player drives frames
+	pass
+
+
+func set_stage_frame(i: int) -> void:
+	if billboard == null or not billboard.anims.has("cycle"):
+		return
+	billboard.frame_i = i
+	billboard._apply_frame(i)
+
+
+func set_effect(k: String, v) -> void:
+	match k:
+		"scale_pulse":
+			if v is float or v is int:
+				_sprite_wrap.scale = Vector3(float(v), float(v), float(v))
+		"alpha":
+			if v is float or v is int:
+				if billboard != null:
+					_body_alpha = clampf(float(v), 0.0, 1.0)
+					billboard.modulate.a = _body_alpha
+		_:
+			pass
+
+
+func set_texture(tex) -> void:
+	if tex != null and billboard != null:
+		billboard.texture = tex
+
+
+# ---- one view frame -----------------------------------------------------------------
+
+## row is the sim row (read-only); dt is seconds elapsed. The caller places this
+## node at the enemy's feet. Frames advance through the shared player at the sim's
+## tick rate; decals read the row's glitched list against the row's rt_tick.
+func sync(row: Dictionary, dt: float, cam_pos: Vector3 = Vector3.ZERO) -> void:
+	if billguard_free():
+		return
+	var state := str(row.get("anim_state", "idle_chase"))
+	if state != _last_state:
+		_last_state = state
+		anim.on_state_changed(state)
+	var n := int(round(dt * 60.0))
+	for _i in range(maxi(n, 0)):
+		anim.sim_tick()
+	_sync_decals(row)
+	if cam_pos != Vector3.ZERO and billboard != null:
+		billboard.face_camera(cam_pos)
+
+
+# A freed/unset player means the view is dead; keep sync harmless.
+func billguard_free() -> bool:
+	return anim == null or billboard == null
+
+
+# ---- the corrupted floor decals ------------------------------------------------------
+
+func _build_decals() -> void:
+	_decal_root = Node3D.new()
+	_decal_root.name = "GlitchFloor"
+	add_child(_decal_root)
+	_decal_texts = []
+	var states: Dictionary = _anim_block.get("states", {})
+	var params: Dictionary = (states.get("attack_infect", {}) as Dictionary).get("effect", {}).get("params", {})
+	var frames: Array = params.get("glitchfloor_frames", [])
+	var doc_anims: Dictionary = {}
+	for a in _doc.get("animations", []):
+		doc_anims[str(a.get("name", ""))] = a
+	if frames.is_empty() and doc_anims.has("floor"):
+		frames = doc_anims["floor"]["frames"]
+	for f_path in frames:
+		var full := "%s/%s" % [_folder, str(f_path)]
+		if ResourceLoader.exists(full):
+			_decal_texts.append(load(full))
+		else:
+			_decal_texts.append(null)
+
+
+## Reconcile the decal set with the sim row's glitched list and age each decal's
+## appear / tear-flash / expire-flicker / fade phases against the row's rt_tick.
+func _sync_decals(row: Dictionary) -> void:
+	var now: int = int(row.get("rt_tick", 0))
+	var live: Dictionary = {}
+	for entry in row.get("glitched", []):
+		var key := str(entry.get("key", ""))
+		if key == "":
+			continue
+		live[key] = entry
+	# drop decals whose tile left the sim list
+	var dead: Array = []
+	for key in _decals.keys():
+		if not live.has(key):
+			dead.append(key)
+	for key in dead:
+		var d: Dictionary = _decals[key]
+		(d["node"] as Node3D).free()
+		_decals.erase(key)
+	# raise / age the rest
+	for key in live.keys():
+		var entry: Dictionary = live[key]
+		var born: int = int(entry.get("born", 0))
+		var life: int = int(entry.get("life", 0))
+		var age: float = float(now - born)
+		var d2: Variant = _decals.get(key, null)
+		if d2 == null:
+			d2 = _make_decal(entry)
+			if d2 == null:
+				continue
+			_decals[key] = d2
+		var sprite: Sprite3D = d2["sprite"]
+		var tex_i: int = _tile_offset(entry)
+		sprite.texture = _decal_texts[tex_i] if tex_i < _decals_texts_count() else null
+		_age_decal(sprite, age, float(life), now, born)
+
+
+func _decals_texts_count() -> int:
+	return _decal_texts.size()
+
+
+func _floor_fps() -> float:
+	var states: Dictionary = _anim_block.get("states", {})
+	var params: Dictionary = (states.get("attack_infect", {}) as Dictionary).get("effect", {}).get("params", {})
+	return float(params.get("glitchfloor_fps", 8.0))
+
+
+## The (x + z) mod 5 frame offset (the anim block's glitchfloor_frame_offset),
+## from the tile's grid coordinates: entries carry centres (x, z at +0.5).
+func _tile_offset(entry: Dictionary) -> int:
+	var gx := int(floor(float(entry.get("x", 0.0)) - 0.5))
+	var gz := int(floor(float(entry.get("z", 0.0)) - 0.5))
+	return posmod(gx + gz, 5)
+
+
+func _make_decal(entry: Dictionary) -> Variant:
+	var tex_i: int = _tile_offset(entry)
+	if _decal_texts.is_empty():
+		return null
+	var sprite := Sprite3D.new()
+	sprite.pixel_size = DECAL_SIZE_U / 256.0
+	sprite.rotation.x = -PI / 2.0
+	sprite.shaded = false
+	sprite.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
+	sprite.alpha_scissor_threshold = 0.05
+	sprite.render_priority = 1
+	var node := Node3D.new()
+	node.position = Vector3(float(entry.get("x", 0.0)), float(entry.get("y", 0.0)) + 0.02,
+			float(entry.get("z", 0.0)))
+	sprite.position = Vector3.ZERO
+	node.add_child(sprite)
+	_decal_root.add_child(node)
+	return {"node": node, "sprite": sprite}
+
+
+# appear: alpha 0 -> 1 over the appear ticks (danger-red tear flash under it);
+# expiry: the last 60 ticks flicker at 10 Hz, the final 12 ticks fade to 0.
+func _age_decal(sprite: Sprite3D, age: float, life: float, _now: int, _born: int) -> void:
+	var alpha := 1.0
+	var col := Color(1.0, 1.0, 1.0, 1.0)
+	if age < _appear:
+		alpha = age / maxf(_appear, 1.0)
+	var left := life - age
+	if left <= 0.0:
+		alpha = 0.0
+	elif left <= _fade:
+		alpha = left / maxf(_fade, 1.0)
+	elif left <= _flicker:
+		# 10 Hz flicker: alpha chops between 0.15 and its base every half period
+		var half_tick := 60.0 / (2.0 * maxf(_flicker_hz, 0.01))
+		alpha = 0.15 if fmod(age, 2.0 * half_tick) < half_tick else 1.0
+	if age < _flash:
+		col = Color(_red.r, _red.g, _red.b, 1.0)
+	sprite.modulate = Color(col.r, col.g, col.b, alpha)

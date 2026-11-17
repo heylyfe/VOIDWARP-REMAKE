@@ -3555,6 +3555,79 @@ stillness lethal (SR-4)"; tell "elephant trumpet on appearance; a low rumble bui
 threshold weakened). WHY [gameplay reason]: the panel is the only place the counter-play is
 taught before the fight; the roster count is what the launch content promises.
 
+### D-T-037-1 - [CONTESTABLE] The toucher's burst ceiling is 0.75, its own pursuit ceiling (T-037).
+DECISION (T-037): DESIGN.md 5.8's pursuit line - "pursuit ceiling 0.75 - its own base
+speed, so it never speeds up under any multiplier" - is read to cover bursts too: the
+row's cfg carries base_speed 6.75, pursuit_ceiling 0.75, burst_ceiling 0.75, and the
+behavior never calls begin_burst(). WHY [gameplay reason]: 5.8's own sentence says NO
+multiplier may speed the finger up (a glitched player at 7.2 u/s still gains 0.45 u/s,
+SR-5); a 1.00 burst ceiling would let a future script-curse sprint it at 9.0 u/s and
+invert exactly that race. Zoomies is kiwi's curse, so nothing reads burst_ceiling
+today; if the owner ever grants the toucher a burst, this is the data row to change.
+### D-T-037-2 - [CONTESTABLE] "Infects all tiles within 3 u below it" is tiles whose centre sits within 3.0 u of the finger and whose top is at or below its feet (T-037).
+DECISION (T-037): the implementation reads api.tiles_in_radius(feet, 3.0) (the level's
+deterministic tile-index order) and drops every tile whose top is above the finger's
+feet (+1e-6: its own feet-level floor counts as "below"). WHY [gameplay reason]: 5.8
+closes routes with the patch (a glitched 2-wide walkway is a wall), which is a
+horizontal area around the finger's column, not a vertical shaft under it; 3.0 u on
+the 1-u grid is up to 29 tiles - the 60-tile cap then bounds the trail. A
+vertical-column reading (only the tiles under the finger) would leave the finger
+harmless on approach and make the terrain section's "glitched 2-wide walkway"
+impossible. ON A TILE-ALIGNED POSITION the radius is exact (29 flat-floor keys); a
+mid-flight position yields whatever the radius clips - that is the reading's shape.
+### D-T-037-3 - [CONTESTABLE] The 60-tile cap frees seats oldest-first (FIFO eviction) (T-037).
+DECISION (T-037): at the 60-tile cap a new infection evicts the oldest listed tiles
+(row["glitched"] is in infection order) until the fresh ones fit, so the world never
+holds more than 60 per toucher (5.8's "Max 60 glitched tiles per toucher") while the
+patch keeps following its own finger. WHY [gameplay reason]: the alternative reading
+(at the cap, add nothing until old tiles expire) disarms the enemy after ~4 infections
+on open floor - a toucher that can never close another route, which contradicts 5.8's
+"Pressure: it herds you" line. Ben's ring cleanse also frees seats (the touched keys
+leave the world map, the behavior drops them next tick).
+### D-T-037-4 - [CONTESTABLE] The 18 s tile life reads the level number from cfg "level_number" (T-037).
+SPEC GAP: DESIGN.md 5.8 says the glitched tile "lasts 12 s (18 s from level 14)", but
+the section 12 Enemy API exposes no level number and enemy_runtime.gd carries none.
+BUILT: the behavior reads cfg "level_number" (the enemy.json stats block is the cfg
+contract, the T-034 D-T-034-7 shape; the engine's plan/spawn caller - T-073 - supplies
+the run's current level there). Default 1 (pre-14, 12 s). The stat key mirrors the
+anim block's data (tile_life_s 12.0 / tile_life_s_from_level_14 18.0). WHY [gameplay
+reason]: without a level source the two lives are indistinguishable; cfg is DATA, so
+T-073 wiring the field needs no behavior edit. Flagged so the wiring ticket sees it.
+### D-T-037-5 - The glitched-tile state is ONE world map: keys "x,z,y_hu" (collision.gd's tile_key); the slow/lock live with the controller (T-037).
+DECISION (T-037): the toucher writes world["glitched"][key] = true with key =
+"x,z,y_hu" (collision.gd tile_key's exact format - the controller's cur_key spelling),
+and NEVER kills through a tile: the -20% run speed and the ability lock are the
+controller's D-051 handling of that same map (sim/controller.gd run_speed /
+ability_locked), asserted in tests directly. thicc ben's ring (T-032
+cleanse_glitched_within) reads/maps the same keys, so the two enemies agree on what a
+glitched tile is by construction - test_enemy_toucher.gd cleanses a full patch at
+ben's 8 u and asserts a 1:1 drop. The section 12 Enemy API has no world-write call for
+live tiles (D-T-035-8's shape): world["glitched"] is this enemy's OWN live surface,
+reached through api.rt like coil's telegraph aging (D-T072-4) - flagged for T-073 to
+formalise, not silently widened.
+### D-T-037-6 - The pulse is the row's own telegraph footprint and the toucher ages it itself (T-037).
+DECISION (T-037): the 18-tick glitch pulse is announced as a toucher_pulse telegraph
+(circle r 3.0 at the finger, the so-far-to-be patch) ONE PER CYCLE, immediately after
+5.8's infection countdown crosses 18 ticks, and the behavior AGES it each tick down to
+0, never negative (coil's D-T072-4 pattern, the PARKED row 9 workaround) - the toucher
+fires a pulse every 2.0 s for the whole run, so a footprint that never expires would
+park a permanent circle on the player and block address me's SR-4 gate forever.
+### D-T-037-7 - attack_infect is the infection tick itself; no duration is invented (T-037).
+DECISION (T-037): the anim block records attack_infect as "on the infection tick"
+(total_ticks null) and the deliverable forbids inventing a duration; the sim sets
+anim_state "attack_infect" on the infect tick (anim_state_t 0) and returns to
+idle_chase on the NEXT tick - the state is observable for exactly the one tick, and
+the killing/ infecting work happens on that tick. test asserts the block's null
+duration AND the sim's 1-tick observability.
+### D-T-037-8 - Placeholder audio: one cue named for the ENEMIES.md New sound line (T-037).
+DECISION (T-037): ENEMIES.md assigns the toucher exactly one sound - "corrupted
+squelch - wet glitch gurgle and digital distortion as the floor becomes corrupted",
+which the behavior fires as an "audio" event (cue "toucher_squelch") ONLY on ticks
+where new tiles appeared (5.8: "an audio cue plays whenever new glitched tiles
+appear" - a re-infect that adds nothing stays silent, asserted). No .wav ships here:
+synthesis is T-055's scope (enemy.json stats: "audio_cues": ["toucher_squelch"],
+"tbd_audio": true; TBD.md carries the row).
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
