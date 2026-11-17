@@ -144,7 +144,10 @@ static func _scan_kind(kind: String, schemas: Dictionary, res: Dictionary) -> vo
 				continue
 			var path := "res://content/enemies/%s/enemy.json" % sub
 			if not FileAccess.file_exists(path):
-				res["errors"].append("res://content/enemies/%s: enemy folder without enemy.json" % sub)
+				# An enemy folder without enemy.json is content that has not been written yet, not
+				# malformed content: the enemy behaviour wave (T-030..T-041) owns enemy.json, while
+				# T-016 creates the folder for its sprites. Skip it so the registry still boots.
+				push_warning("content registry: res://content/enemies/%s has no enemy.json yet - skipped (pending the enemy wave)" % sub)
 				continue
 			entries.append([sub, path])
 	else:
