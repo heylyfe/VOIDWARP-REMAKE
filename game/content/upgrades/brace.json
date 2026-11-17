@@ -1,0 +1,13 @@
+{
+  "id": "brace",
+  "name": "Brace",
+  "tier": "T1",
+  "price": 80,
+  "max_stacks": 3,
+  "class_only": null,
+  "class_boost": [],
+  "effect": "coil's shockwave push and ben's eject −30% per stack (push 8 → 5.6 → 3.9 → 2.7 u/s; eject 18 → 12.6 → 9.0 → 6.3 u/s) — the launch super-jump shrinks with it",
+  "modifiers": [],
+  "hooks": [],
+  "script": true
+}

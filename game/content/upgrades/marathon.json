@@ -1,0 +1,15 @@
+{
+  "id": "marathon",
+  "name": "Marathon",
+  "tier": "T3",
+  "price": 340,
+  "max_stacks": 1,
+  "class_only": "athletic",
+  "class_boost": [
+    "athletic"
+  ],
+  "effect": "Athletic only: +2 max stacks of Yearn for Speed",
+  "modifiers": [],
+  "hooks": [],
+  "script": true
+}

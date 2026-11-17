@@ -1,0 +1,13 @@
+{
+  "id": "cold_blood",
+  "name": "Cold Blood",
+  "tier": "T3",
+  "price": 280,
+  "max_stacks": 1,
+  "class_only": null,
+  "class_boost": [],
+  "effect": "overtime tiers rise every 30 s instead of 20 s (Long Night: 21 s instead of 14 s)",
+  "modifiers": [],
+  "hooks": [],
+  "script": true
+}

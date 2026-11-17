@@ -1,0 +1,19 @@
+{
+  "id": "high_ceiling",
+  "name": "High Ceiling",
+  "tier": "T3",
+  "price": 320,
+  "max_stacks": 1,
+  "class_only": null,
+  "class_boost": [],
+  "effect": "chain cap ×2.00 → ×2.50",
+  "modifiers": [
+    {
+      "stat": "chain_cap",
+      "op": "set",
+      "value": 2.5
+    }
+  ],
+  "hooks": [],
+  "script": false
+}

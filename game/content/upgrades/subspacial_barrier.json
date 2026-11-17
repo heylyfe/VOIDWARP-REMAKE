@@ -1,0 +1,19 @@
+{
+  "id": "subspacial_barrier",
+  "name": "Subspacial Barrier",
+  "tier": "T3",
+  "price": 350,
+  "max_stacks": 1,
+  "class_only": null,
+  "class_boost": [],
+  "effect": "1 shield per level, restored on beacon entry: absorbs exactly one tripmine (checked after the defuse roll), consumed; tripmines only — nothing absorbs the nuke [CANON]",
+  "modifiers": [
+    {
+      "stat": "barrier_shields",
+      "op": "add",
+      "value": 1
+    }
+  ],
+  "hooks": [],
+  "script": false
+}

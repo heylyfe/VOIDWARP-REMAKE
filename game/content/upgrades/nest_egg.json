@@ -1,0 +1,15 @@
+{
+  "id": "nest_egg",
+  "name": "Nest Egg",
+  "tier": "T2",
+  "price": 160,
+  "max_stacks": 2,
+  "class_only": null,
+  "class_boost": [],
+  "effect": "on beacon entry gain 5% of unspent gold, max 30 g, per stack",
+  "modifiers": [],
+  "hooks": [
+    "on_beacon_enter"
+  ],
+  "script": true
+}

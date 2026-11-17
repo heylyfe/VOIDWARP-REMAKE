@@ -1,0 +1,17 @@
+{
+  "id": "stand_fast",
+  "name": "Stand Fast",
+  "tier": "T2",
+  "price": 170,
+  "max_stacks": 1,
+  "class_only": null,
+  "class_boost": [],
+  "effect": "the first chain-breaking event each level (void fall, defused or shielded tripmine, ben's eject) does not reset the chain",
+  "modifiers": [],
+  "hooks": [
+    "on_void_fall",
+    "on_mine_defused",
+    "on_barrier_absorbed"
+  ],
+  "script": true
+}

@@ -1,0 +1,15 @@
+{
+  "id": "updraft",
+  "name": "Updraft",
+  "tier": "T3",
+  "price": 340,
+  "max_stacks": 1,
+  "class_only": "glider",
+  "class_boost": [
+    "glider"
+  ],
+  "effect": "Glider only: once per glide, press jump to rise 3 u (6 s cooldown)",
+  "modifiers": [],
+  "hooks": [],
+  "script": true
+}

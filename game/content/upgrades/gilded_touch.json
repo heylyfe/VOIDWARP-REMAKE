@@ -1,0 +1,19 @@
+{
+  "id": "gilded_touch",
+  "name": "Gilded Touch",
+  "tier": "T2",
+  "price": 150,
+  "max_stacks": 3,
+  "class_only": null,
+  "class_boost": [],
+  "effect": "gold gift base value +1.00 g per stack",
+  "modifiers": [
+    {
+      "stat": "gold_value",
+      "op": "add",
+      "value": 1.0
+    }
+  ],
+  "hooks": [],
+  "script": false
+}

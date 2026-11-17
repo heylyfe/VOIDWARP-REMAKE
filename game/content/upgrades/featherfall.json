@@ -1,0 +1,15 @@
+{
+  "id": "featherfall",
+  "name": "Featherfall",
+  "tier": "T2",
+  "price": 150,
+  "max_stacks": 1,
+  "class_only": null,
+  "class_boost": [
+    "glider"
+  ],
+  "effect": "hold jump to cap fall speed at 6 u/s (Glider: +1.5 s glide energy instead)",
+  "modifiers": [],
+  "hooks": [],
+  "script": true
+}

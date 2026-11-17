@@ -1,0 +1,15 @@
+{
+  "id": "skeleton_key",
+  "name": "Skeleton Key",
+  "tier": "T4",
+  "price": 750,
+  "max_stacks": 1,
+  "class_only": null,
+  "class_boost": [],
+  "effect": "the beacon opens at 90% of real black gifts; the rest turn gold in place",
+  "modifiers": [],
+  "hooks": [
+    "on_beacon_open"
+  ],
+  "script": true
+}

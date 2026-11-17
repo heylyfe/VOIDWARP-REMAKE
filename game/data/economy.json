@@ -1,0 +1,199 @@
+{
+  "_doc": "Every number in DESIGN.md section 3.2 (gold phase), section 7 system (curse economy) and section 8 system (shop). Percentages are fractions (0.8 = 80%). Gold is counted in integer centi-gold and rounds DOWN (R4 addendum). Stacked price = floor(price x 1.5^stacks) in whole gold; stacked prices and bounties are whole-gold floors. A bounty = floor(base x (20 + level) / 20).",
+  "currency": "gold",
+  "gold_arithmetic": {
+    "unit": "centi_gold",
+    "rounding": "floor",
+    "stacked_price": "floor(price * 1.5^stacks)",
+    "bounty": "floor(base * (20 + level) / 20)"
+  },
+  "gold_phase": {
+    "gold_gift_base_value": 2.0,
+    "chain": {
+      "start": 1.0,
+      "window_s": 4.0,
+      "per_gift_increment": 0.05,
+      "cap": 2.0,
+      "break_events": [
+        "void_fall",
+        "defused_or_shielded_tripmine",
+        "thicc_ben_eject"
+      ]
+    },
+    "overtime": {
+      "start_tier": 0,
+      "period_s": 20,
+      "max_tier": 8,
+      "enemy_speed_per_tier": 0.06,
+      "enemy_cooldown_per_tier": 0.05,
+      "resets_each_level": true
+    },
+    "clear_stipend": {
+      "base": 10,
+      "per_level": 2,
+      "formula": "10 + 2 * level"
+    },
+    "income_model_average_player": {
+      "description": "collects 50% of gold at mean chain x1.4",
+      "rows": [
+        {
+          "level": 1,
+          "slots": 40,
+          "stipend": 12,
+          "gold_income_avg": 52,
+          "total_per_level": 64,
+          "cumulative": 64
+        },
+        {
+          "level": 5,
+          "slots": 56,
+          "stipend": 20,
+          "gold_income_avg": 74,
+          "total_per_level": 94,
+          "cumulative": 394
+        },
+        {
+          "level": 10,
+          "slots": 76,
+          "stipend": 30,
+          "gold_income_avg": 99,
+          "total_per_level": 129,
+          "cumulative": 969
+        },
+        {
+          "level": 15,
+          "slots": 96,
+          "stipend": 40,
+          "gold_income_avg": 121,
+          "total_per_level": 161,
+          "cumulative": 1694
+        },
+        {
+          "level": 20,
+          "slots": 116,
+          "stipend": 50,
+          "gold_income_avg": 146,
+          "total_per_level": 196,
+          "cumulative": 2589
+        },
+        {
+          "level": 25,
+          "slots": 136,
+          "stipend": 60,
+          "gold_income_avg": 171,
+          "total_per_level": 231,
+          "cumulative": 3660
+        },
+        {
+          "level": 30,
+          "slots": 156,
+          "stipend": 70,
+          "gold_income_avg": 197,
+          "total_per_level": 267,
+          "cumulative": 4900
+        }
+      ],
+      "greedy_multiplier": 2.4
+    }
+  },
+  "curse_bay": {
+    "offering_altars": 3,
+    "tithe": {
+      "base": 100,
+      "per_tithe_paid_this_run": 75,
+      "formula": "100 + 75 * tithes_paid_this_run"
+    },
+    "bounties": {
+      "mild": 20,
+      "harsh": 45,
+      "brutal": 90,
+      "level_scale": "floor(base * (20 + level) / 20)",
+      "harshest_is_richest": true
+    },
+    "free_rerolls_per_c_intermission": 1,
+    "safety_rule": {
+      "max_total_run_speed_reduction": 0.1
+    }
+  },
+  "shop": {
+    "upgrade_altars": 3,
+    "sales_per_altar_per_visit": 1,
+    "reroll_plinth": {
+      "base": 15,
+      "increment_per_use_that_visit": 15
+    },
+    "stacking": {
+      "multiplier": 1.5,
+      "round": "floor",
+      "formula": "floor(price * 1.5^stacks)"
+    },
+    "affordability_filter": {
+      "purse_multiplier": 2,
+      "floor": 80,
+      "formula": "price <= max(2 * purse, 80)",
+      "min_offered": 3,
+      "fill_with": "cheapest remaining pool items"
+    },
+    "draw": {
+      "count": 3,
+      "distinct": true,
+      "exclude_max_stacks": true,
+      "class_boost_weight": 2,
+      "seeded": true
+    },
+    "price_tiers": [
+      {
+        "tier": "T1",
+        "price_min": 40,
+        "price_max": 80,
+        "pool_from": 1,
+        "intent": "foundational; one per early shop"
+      },
+      {
+        "tier": "T2",
+        "price_min": 120,
+        "price_max": 200,
+        "pool_from": 4,
+        "intent": "a real choice vs. two T1"
+      },
+      {
+        "tier": "T3",
+        "price_min": 280,
+        "price_max": 400,
+        "pool_from": 10,
+        "intent": "build-defining"
+      },
+      {
+        "tier": "T4",
+        "price_min": 550,
+        "price_max": 800,
+        "pool_from": 18,
+        "intent": "must be saved for (skip a shop)"
+      },
+      {
+        "tier": "T5",
+        "price_min": 1100,
+        "price_max": 1500,
+        "pool_from": 26,
+        "intent": "run-warping; two acts of saving"
+      }
+    ],
+    "economy_targets": {
+      "avg_afford_at_least_one_offered_min": 0.8,
+      "avg_afford_all_three_max": 0.3,
+      "avg_purchases_per_run_to_level_30": {
+        "min": 18,
+        "max": 24
+      },
+      "cautious_purchases_per_run": {
+        "min": 6,
+        "max": 10
+      }
+    },
+    "level_1_pool": [
+      "paycheck",
+      "more",
+      "yearn_for_speed"
+    ]
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "id": "long_reach",
+  "name": "Long Reach",
+  "tier": "T1",
+  "price": 60,
+  "max_stacks": 3,
+  "class_only": null,
+  "class_boost": [],
+  "effect": "pickup radius +40% per stack",
+  "modifiers": [
+    {
+      "stat": "pickup_radius",
+      "op": "mul",
+      "value": 1.4
+    }
+  ],
+  "hooks": [],
+  "script": false
+}
