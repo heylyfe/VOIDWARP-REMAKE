@@ -75,23 +75,39 @@ static var TRACE := false           # --trace: print each trial's death cause
 ## Levels section 2 does not name are noted in DECISIONS.md (D-T075-3).
 ## telegraph: the row kind that starts the answer ("release" for isagi = the
 ## aim row's release flash, 1.2 s after the cue, answers.gd's own anchor).
+## Extra knobs, each read from the doc's own arithmetic (D-T075-4, [CONTESTABLE]):
+##   lag         ticks AFTER the anchor the first input lands. Default the
+##               addendum's DELAY_TICKS. "ON the cue" rows (seal: "jump ON the
+##               bark", claude: "jump on the beat") get 0 - the doc says ON.
+##               you: 75 - the cue is the 90-tick rumble's END (the ring
+##               releases there; the doc's answer times the jump to the ring,
+##               "as the ring reaches you" - 5/6 of the rumble in).
+##               isagi: here the lag = the aim row's wind-up (read live) + 3,
+##               the release flash - the answers.gd entry's own anchor.
+##   lead        body-reach triggers (the run's own arrival anchor). kiwi
+##               "hurdle it as it arrives": 1.6 u (bot_run's hurdle bar). The
+##               toucher's 1.4 u body needs a slightly wider lead: 2.4 u, which
+##               at its 6.75 u/s is the ~0.2 s the jump's rise to 1.4 u needs.
+##   move_ticks  how long a movement input persists (default 60). The nuke's
+##               ring follows 2.5 s before it stops - the answer must KEEP the
+##               distance until the follow ends: 220 ticks.
 static func _pairs() -> Array:
 	return [
-		{"enemy": "kiwi_cat", "level": "flat_lane", "telegraph": "meow", "standoff": 8.0},
-		{"enemy": "kiwi_cat", "level": "nook", "telegraph": "meow", "standoff": 6.0},
+		{"enemy": "kiwi_cat", "level": "flat_lane", "telegraph": "meow", "standoff": 8.0, "lead": 1.6},
+		{"enemy": "kiwi_cat", "level": "nook", "telegraph": "meow", "standoff": 6.0, "lead": 1.6},
 		{"enemy": "coil", "level": "flat_lane", "telegraph": "coil_ring", "standoff": 6.0},
 		{"enemy": "coil", "level": "hub", "telegraph": "coil_ring", "standoff": 6.0},
 		{"enemy": "thicc_ben", "level": "flat_lane", "telegraph": "teleport", "standoff": 6.0},
-		{"enemy": "seal", "level": "flat_lane", "telegraph": "bark", "standoff": 5.0},
-		{"enemy": "you", "level": "flat_lane", "telegraph": "you_rumble", "standoff": 6.0},
-		{"enemy": "nuke", "level": "flat_lane", "telegraph": "ground_ring", "standoff": 10.0},
+		{"enemy": "seal", "level": "flat_lane", "telegraph": "bark", "standoff": 5.0, "lag": 0},
+		{"enemy": "you", "level": "flat_lane", "telegraph": "you_rumble", "standoff": 6.0, "lag": 75},
+		{"enemy": "nuke", "level": "flat_lane", "telegraph": "ground_ring", "standoff": 10.0, "move_ticks": 220},
 		{"enemy": "gift_larper", "level": "flat_lane", "telegraph": "gift_larper", "standoff": 4.0},
 		{"enemy": "gift_larper", "level": "hub", "telegraph": "gift_larper", "standoff": 4.0},
-		{"enemy": "toucher", "level": "flat_lane", "telegraph": "toucher_pulse", "standoff": 6.0},
+		{"enemy": "toucher", "level": "flat_lane", "telegraph": "toucher_pulse", "standoff": 6.0, "lead": 2.4},
 		{"enemy": "address_me", "level": "flat_lane", "telegraph": "address_me", "standoff": 0.0},
-		{"enemy": "isagi", "level": "flat_lane", "telegraph": "aim", "standoff": 7.0, "lag": 75},
-		{"enemy": "isagi", "level": "stepped_lane", "telegraph": "aim", "standoff": 7.0, "lag": 75},
-		{"enemy": "claude", "level": "flat_lane", "telegraph": "drum_ring", "standoff": 8.0},
+		{"enemy": "isagi", "level": "flat_lane", "telegraph": "aim", "standoff": 7.0},
+		{"enemy": "isagi", "level": "stepped_lane", "telegraph": "aim", "standoff": 7.0},
+		{"enemy": "claude", "level": "flat_lane", "telegraph": "drum_ring", "standoff": 8.0, "lag": 0},
 		{"enemy": "gin", "level": "flat_lane", "telegraph": "mark", "standoff": 10.0},
 	]
 
@@ -105,6 +121,27 @@ static func _combos() -> Array:
 		{"enemy": "kiwi_cat + address_me", "level": "flat_lane", "telegraph": "meow", "standoff": 8.0, "extra": "address_me"},
 		{"enemy": "nuke + address_me", "level": "flat_lane", "telegraph": "ground_ring", "standoff": 10.0, "extra": "address_me"},
 		{"enemy": "gin + address_me", "level": "flat_lane", "telegraph": "mark", "standoff": 10.0, "extra": "address_me"},
+	]
+
+
+## The stacked cases: the same enemy at the proposed cap (the per-enemy
+## max_votes from data/offering_schedule.json's "enemies" gate block, the
+## chaser ceiling 6 separately - the stacks below stay under it, except kiwi's
+## 4 + nothing else is a chaser). Copies spawn on a line east of the spawn.
+## Stacks of address me / claude are not meaningful (the one-at-a-time gate /
+## cap 1 in the schedule) - skipped here, noted in D-T075-3.
+static func _stacked() -> Array:
+	return [
+		{"enemy": "kiwi_cat", "level": "flat_lane", "telegraph": "meow", "standoff": 8.0, "lead": 1.6, "copies": 4},
+		{"enemy": "coil", "level": "hub", "telegraph": "coil_ring", "standoff": 6.0, "copies": 3},
+		{"enemy": "thicc_ben", "level": "flat_lane", "telegraph": "teleport", "standoff": 6.0, "copies": 2},
+		{"enemy": "seal", "level": "flat_lane", "telegraph": "bark", "standoff": 5.0, "lag": 0, "copies": 3},
+		{"enemy": "you", "level": "flat_lane", "telegraph": "you_rumble", "standoff": 6.0, "lag": 75, "copies": 2},
+		{"enemy": "nuke", "level": "flat_lane", "telegraph": "ground_ring", "standoff": 10.0, "move_ticks": 220, "copies": 2},
+		{"enemy": "isagi", "level": "flat_lane", "telegraph": "aim", "standoff": 7.0, "copies": 2},
+		{"enemy": "toucher", "level": "flat_lane", "telegraph": "toucher_pulse", "standoff": 6.0, "lead": 2.4, "copies": 2},
+		{"enemy": "gift_larper", "level": "hub", "telegraph": "gift_larper", "standoff": 4.0, "copies": 5},
+		{"enemy": "gin", "level": "flat_lane", "telegraph": "mark", "standoff": 10.0, "copies": 3},
 	]
 
 
@@ -122,6 +159,8 @@ func _init() -> void:
 	var failures: Array = []
 	for cfg in _pairs():
 		_one_pair(cfg, trials, failures)
+	for cfg in _stacked():
+		_one_pair(cfg, trials, failures, true)
 	for cfg in _combos():
 		_one_pair(cfg, trials, failures, true)
 	print("")
@@ -129,6 +168,7 @@ func _init() -> void:
 	for fline in failures:
 		print("  %s" % fline)
 	print("DONE")
+	quit(0)   # ...always: a measurement, not a gate (the SceneTree would idle otherwise)
 
 
 # ------------------------------------------------------ test-facing API --
@@ -194,11 +234,14 @@ static func _trial(cfg: Dictionary, seed_i: int, p_answer_mode: bool) -> Diction
 	var sx: float = float(ctl.x)
 	var sz: float = float(ctl.z)
 	var eid := str(cfg["enemy"]).split(" + ")[0]
-	if float(cfg["standoff"]) > 0.0:
-		var eg: Variant = lv.ground_at(sx + float(cfg["standoff"]), sz)
+	var n_copies: int = int(cfg.get("copies", 1))
+	for k in n_copies:
+		if float(cfg["standoff"]) <= 0.0:
+			break
+		var eg: Variant = lv.ground_at(sx + float(cfg["standoff"]) + 3.0 * float(k), sz)
 		var ey: float = float(eg) if eg != null else 0.0
 		rt.spawn_at(eid, eid, behavior_for(eid), _cfg(eid),
-				Vector3(sx + float(cfg["standoff"]), ey, sz))
+				Vector3(sx + float(cfg["standoff"]) + 3.0 * float(k), ey, sz))
 	if cfg.has("extra"):
 		rt.spawn_at(str(cfg["extra"]), str(cfg["extra"]), behavior_for(str(cfg["extra"])),
 				_cfg(str(cfg["extra"])), Vector3(sx - 3.0, 0.0, sz))
@@ -215,7 +258,8 @@ static func _trial(cfg: Dictionary, seed_i: int, p_answer_mode: bool) -> Diction
 			var trig: Variant = _trigger_tick(cfg, rt, fired, ctl)
 			if trig != null and not armed:
 				armed = true
-				arm_at = t + int(fired.get("lag", 0))
+				var lag_v: Variant = cfg.get("lag", fired.get("lag", Answers.DELAY_TICKS))
+				arm_at = t + int(lag_v)
 				threat = trig
 				if TRACE:
 					print("    seed %d: TRIGGER t=%d threat=(%.1f,%.1f)" % [seed_i, t, threat.x, threat.y])
@@ -262,16 +306,18 @@ static func _trigger_tick(cfg: Dictionary, rt, fired: Dictionary, ctl) -> Varian
 						fired["larper_seen"] = int(rt.tick)
 						return Vector2(float(e["x"]), float(e["z"]))
 		return null
-	if kind == "meow":
-		# kiwi cat, answers.gd anchor "arrival": the event is the body closing
-		# to the hurdle's lead - 3.2 u covers the F3 window's 0.43 s of closing
-		# (5.6 u/s) plus the addendum's own 15-tick reaction, so the press
-		# lands with the feet rising before the 0.12 s overlap.
+	if kind == "meow" or kind == "toucher_pulse":
+		# body-reach answers ("as it arrives" / the hurdle): the trigger is the
+		# enemy's body closing to the pair's lead distance, grounded. The lead
+		# (the pair's own "lead") is the doc's arrival reading: kiwi 1.6 u
+		# (bot_run's hurdle bar), toucher 2.4 u (its 1.4 u body needs the
+		# jump's rise airtime).
+		var lead: float = float(cfg.get("lead", 1.6))
 		for e in rt.enemies:
-			if str(e.get("id", "")) != "kiwi_cat":
+			if str(e.get("id", "")) != _pair_enemy(cfg):
 				continue
 			var d := Vector2(float(e["x"]) - float(ctl.x), float(e["z"]) - float(ctl.z))
-			if bool(ctl.grounded) and d.length() < 3.2:
+			if bool(ctl.grounded) and d.length() < lead:
 				return Vector2(float(e["x"]), float(e["z"]))
 		return null
 	var key := ""
@@ -319,22 +365,20 @@ static func _trigger_tick(cfg: Dictionary, rt, fired: Dictionary, ctl) -> Varian
 static func _play_answer(a_in: Dictionary, cfg: Dictionary, since: int, ctl,
 		threat: Vector2) -> void:
 	var ins: Array = Answers.inputs_for(_pair_enemy(cfg))
-	var lag: int = int(cfg.get("lag", 0))   # e.g. isagi: the aim row's release flash is 1.2 s in
-	var done_releases := 0
 	for inp in ins:
 		var act: String = str(inp.get("action", ""))
 		if act == "stop":
 			return
-		var want: int = int(inp.get("tick_offset", 0)) + Answers.DELAY_TICKS + lag
-		if since >= want and done_releases <= want:
-			done_releases = want
+		var want: int = int(inp.get("tick_offset", 0))
+		if since >= want:
 			if act == "jump":
 				if since - want < PRESS_TICKS:
 					a_in["buttons"] = 1
 					return
 			elif act == "move_out" or act == "move_around" \
 					or act == "move_out_of_patch" or act == "step_behind_rise":
-				if since - want < MOVE_TICKS_MAX:
+				var dur: int = int(cfg.get("move_ticks", MOVE_TICKS_MAX))
+				if since - want < dur:
 					var away := Vector2(float(ctl.x), float(ctl.z)) - threat
 					if away.length() < 0.05:
 						away = Vector2(1.0, 0.0)
@@ -342,7 +386,7 @@ static func _play_answer(a_in: Dictionary, cfg: Dictionary, since: int, ctl,
 					a_in["move_x"] = int(round(away.x * 127.0))
 					a_in["move_z"] = int(round(away.y * 127.0))
 					return
-	# the last input's window has closed: the answer is over (inputs stay off)
+	# the answer's windows have all closed: inputs stay off
 
 
 static func _pair_enemy(cfg: Dictionary) -> String:
