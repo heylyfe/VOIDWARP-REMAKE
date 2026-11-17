@@ -920,22 +920,17 @@ func _contact_kills() -> void:
 
 # ---- T-080: the death records' on-screen evidence ----------------------------------------------
 
-## View-free "on screen" proxy (D-T080-2 [CONTESTABLE]): the killer's content id had a
-## body or a telegraph footprint within this radius of the player's centre during the
-## last 120 ticks (the 2 s the owner's spec names). 24 u sits between the fill-light
-## range (18 u) and the Radar: Threats marker range (30 u); there is no camera in sim.
+## View-free "on screen" proxy (D-T080-2 [CONTESTABLE]): the killer had a body or a
+## telegraph footprint within this radius of the player's centre during the last 120
+## ticks (the 2 s the owner's spec names). 24 u sits between the fill-light range
+## (18 u) and the Radar: Threats marker range (30 u); there is no camera in sim.
 const ON_SCREEN_R := 24.0
-## The death code -> content id map (the rosetta stone: killer strings vary between the
-## contact path (body name), the kill-idiom constants ("YOU", "gin") and the display
-## names; the code is closed - DESIGN.md section 3.1 - so it keys the proximity map).
-const CODE_IDS := {
-	"D-KIWI": "kiwi_cat", "D-COIL": "coil", "D-ISAGI": "isagi", "D-NUKE": "nuke",
-	"D-YOU": "you", "D-MINE": "gift_larper", "D-TOUCH": "toucher", "D-SEAL": "seal",
-	"D-ADDR": "address_me", "D-CLAUDE": "claude", "D-GIN": "gin", "D-VOID": "void",
-}
 
-## Last tick each content id was within ON_SCREEN_R of each player's centre:
-## {player_index: {id: tick}}. Runtime-owned telemetry (not part of the state hash).
+## Last tick each killer was within ON_SCREEN_R of each player's centre:
+## {player_index: {"<death code>": tick, "<content id>": tick}}. Keys come from the
+## LIVE rows only (cfg death_code + content id) - this file never names a content id
+## (the boundary rule; the roster's data carries the pairing, not this code).
+## Runtime-owned telemetry (not part of the state hash).
 var near_seen: Dictionary = {}
 
 
@@ -955,6 +950,9 @@ func _update_near() -> void:
 			var dz: float = float(e["z"]) - float(ctl.z)
 			if dx * dx + dy * dy + dz * dz <= ON_SCREEN_R * ON_SCREEN_R:
 				seen[str(e["id"])] = tick
+				var dc: String = str((e["cfg"] as Dictionary).get("death_code", ""))
+				if dc != "":
+					seen[dc] = tick
 		# a LIVE telegraph's footprint is on screen by the view's own language (the
 		# client draws exactly these) - the no-body killers' evidence (nuke's ring,
 		# gin's patch, the rumble cues). Rows in rt.telegraphs never expire (the
@@ -973,17 +971,25 @@ func _update_near() -> void:
 				seen[str(t.get("source", ""))] = tick
 
 
-## True when the killer's content id was within ON_SCREEN_R of any live player's centre
-## in the killer's last 120 ticks. "void" never has a body: false by construction.
+## True when the death code's killer was within ON_SCREEN_R of any player's centre in
+## the last 120 ticks. The code -> id resolution reads the live plan rows' cfg
+## (death_code) - never a literal id here. "D-VOID" has no body: false by construction.
 func _killer_on_screen(code: String) -> bool:
-	var id := str(CODE_IDS.get(code, ""))
-	if id == "" or id == "void":
+	if code == "" or code == "D-VOID":
+		return false
+	if code.begins_with("D-CURSE:"):
 		return false
 	var window := tick - 120
 	for i in near_seen.keys():
 		var seen: Dictionary = near_seen[i]
-		if int(seen.get(id, -999999)) >= window:
+		if int(seen.get(code, -999999)) >= window:
 			return true
+		# the code's content id via the plan's cfg (the contact path stores the code
+		# there; the kill-idiom constants in content reach the same key)
+		for p in planned:
+			var cfg: Dictionary = (p["cfg"] as Dictionary)
+			if str(cfg.get("death_code", "")) == code and int(seen.get(str(p["id"]), -999999)) >= window:
+				return true
 	return false
 
 

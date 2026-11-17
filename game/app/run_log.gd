@@ -147,13 +147,17 @@ func _feed_one(ev: Dictionary) -> void:
 	var ty := str(ev.get("type", ""))
 	if ty == "gift_collected":
 		var wal := str(ev.get("phase", "black"))
-		# the chain VALUE AT COLLECTION is the pre-increment multiplier (economy.gd pays
-		# with it, then advances); black-phase gifts always carry x1.00
+		# the chain VALUE AT COLLECTION = the multiplier that paid it: the pre-increment
+		# centi AFTER the missed-window reset the economy runs first (economy.gd's
+		# collect_gold_gift resets, pays, then advances). Black gifts carry x1.00.
+		if wal == "gold" and total_t - since_tick > WINDOW_TICKS:
+			chain_centi = CHAIN_START
 		var chain_now := float(chain_centi) / float(CHAIN_START)
-		_advance_chain(wal == "gold")
-		_record("gift", {"slot": int(ev.get("slot", -1)), "phase": wal, "chain": chain_now})
 		if wal == "gold":
+			chain_centi = mini(chain_centi + CHAIN_INCREMENT, CHAIN_CAP)
+			since_tick = total_t
 			gold_count += 1
+		_record("gift", {"slot": int(ev.get("slot", -1)), "phase": wal, "chain": chain_now})
 		return
 	if ty == "beacon_opened":
 		phase = "gold"
@@ -231,17 +235,6 @@ func _feed_one(ev: Dictionary) -> void:
 
 
 # ---- pure helpers ------------------------------------------------------------------------
-
-## The chain replica of economy.gd: a gold gift past the window resets first (the missed
-## window), the VALUE at collection is the pre-increment chain, then +5 centi capped.
-func _advance_chain(is_gold: bool) -> void:
-	if not is_gold:
-		return
-	if total_t - since_tick > WINDOW_TICKS:
-		chain_centi = CHAIN_START
-	chain_centi = mini(chain_centi, CHAIN_CAP)
-	chain_centi = mini(chain_centi + CHAIN_INCREMENT, CHAIN_CAP)
-	since_tick = total_t
 
 
 func _push_seen(t: int, by: String) -> void:
