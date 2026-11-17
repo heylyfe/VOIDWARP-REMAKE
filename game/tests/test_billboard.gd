@@ -11,6 +11,70 @@ const Billboard := preload("res://view/billboard.gd")
 const CAM_R := 4.0
 
 
+# For EVERY enemy in content/enemies, EVERY animation, EVERY frame: the body's bottom edge
+# must land on the node origin (world y = 0) within 1e-3 u. Measured two ways that never
+# read the offset expression billboard.gd itself uses:
+#   1. engine-generated quad geometry (generate_triangle_mesh) - the quad's lowest vertex
+#      plus the px distance from the frame's bottom row to the body bottom row;
+#   2. the node's own offset property read after _apply_frame, not recomputed.
+# Uses the real imported texture dimensions and the real body_rect from sprites.json.
+# Tight tolerance on purpose: this is the assertion that was missing when the sign shipped.
+func _feet_all_enemies(f: Array[String]) -> void:
+	const PX := 0.01
+	const TOL := 1e-3
+	var dir := DirAccess.open("res://content/enemies")
+	if dir == null:
+		f.append("billboard feet: cannot open res://content/enemies")
+		return
+	for enemy_id in dir.get_directories():
+		var folder := "res://content/enemies/" + enemy_id
+		var jf := FileAccess.open(folder + "/sprites.json", FileAccess.READ)
+		if jf == null:
+			continue
+		var doc: Variant = JSON.parse_string(jf.get_as_text())
+		if not (doc is Dictionary):
+			f.append("billboard feet: %s/sprites.json did not parse" % enemy_id)
+			continue
+		for a in doc.get("animations", []):
+			var frames: Array = a.get("frames", [])
+			var brs: Array = a.get("body_rect", [])
+			var anim: String = str(a.get("name", ""))
+			if brs.is_empty():
+				f.append("billboard feet: %s/%s has no body_rect" % [enemy_id, anim])
+				continue
+			for i in range(frames.size()):
+				# fresh node per frame: generate_triangle_mesh() caches per node
+				var b := Billboard.new()
+				b.setup_from_sheet(doc, folder)
+				b.anim_name = anim
+				b._apply_frame(i)
+				var tex: Texture2D = b.texture
+				if tex == null:
+					f.append("billboard feet: %s/%s[%d] texture failed to load" % [enemy_id, anim, i])
+					b.free()
+					continue
+				var frame_h: float = float(tex.get_height())
+				var br: Array = brs[mini(i, brs.size() - 1)]
+				var body_bottom_row: float = float(br[1]) + float(br[3])
+				var mesh: TriangleMesh = b.generate_triangle_mesh()
+				var bottom_mesh := NAN
+				if mesh != null:
+					var verts: PackedVector3Array = mesh.get_faces()
+					if verts.size() > 0:
+						var mn := verts[0].y
+						for v in verts:
+							mn = minf(mn, v.y)
+						# quad min-y + px distance from frame bottom row to body bottom row,
+						# all in local (unscaled) y, then node scale - offset never read
+						bottom_mesh = (mn + (frame_h - body_bottom_row) * PX) * b.scale.y
+				var bottom_off: float = (b.offset.y + frame_h * 0.5 - body_bottom_row) * PX * b.scale.y
+				if is_nan(bottom_mesh) or absf(bottom_mesh) > TOL:
+					f.append("billboard feet: %s/%s[%d] body bottom at y=%.6f (mesh), want 0 +/- %.4f" % [enemy_id, anim, i, bottom_mesh, TOL])
+				elif absf(bottom_off) > TOL:
+					f.append("billboard feet: %s/%s[%d] body bottom at y=%.6f (offset), want 0 +/- %.4f" % [enemy_id, anim, i, bottom_off, TOL])
+				b.free()
+
+
 func run() -> Array[String]:
 	var f: Array[String] = []
 	var b = Billboard.new()
@@ -20,6 +84,7 @@ func run() -> Array[String]:
 	_angles(f, b)
 	_frames(f, b)
 	b.free()
+	_feet_all_enemies(f)
 	return f
 
 

@@ -5858,9 +5858,57 @@ probes carry the same information from the content tree, so FIX-A14 holds for th
 English-prose hits were un-derivable by definition (they are prose) and were reworded per D-FIX-A14-1.
 Gate evidence: pending at commit time; recorded in the handover entry once the gate run completes.
 
+### D-FIX-BILLBOARD-1 - the billboard feet offset sign: SpriteBase3D.offset.y is +up, the body bottom stands on the node origin
+`game/view/billboard.gd` `_apply_frame()` computed the feet offset with the wrong sign, so
+EVERY sprite drawn through it (all in-game enemy views, the lobby exhibits) rendered its body
+BELOW the node origin instead of standing on it - thicc_ben's 4 u body landed ~5.1 u under the
+island. The body's bottom edge sits `(br[1] + br[3]) - frame_h * 0.5` px BELOW the frame centre;
+SpriteBase3D.offset.y is world-up positive, so standing that edge on the origin needs the
+POSITIVE distance, not its negation. `body_feet_shift` and `offset` were negated together, so
+whatever reads `body_feet_shift` gets the same correction. Two verification routes, both
+independent of the formula being fixed: (1) the Godot 4 docs for SpriteBase3D.offset ("When you
+increase offset.y in Sprite3D, the sprite moves upward in world space (i.e., +Y is up)");
+(2) `SpriteBase3D.generate_triangle_mesh()` called on real billboards built from the shipped
+sprites.json - the generated quad's lowest vertex equals `(offset.y - frame_h/2) * pixel_size`
+exactly, for every offset tried (headless Node3D, offset never re-read by the verifier). Note
+generate_triangle_mesh() CACHES per node (it kept frame 0's offset after later frames changed
+it), which is why both the probe and the test build a fresh billboard per frame. Measured
+before the fix (body bottom y rel. node origin): thicc_ben -4.56..-7.52, kiwi_cat -1.59..-1.65,
+nuke n/a (see below). After: y = 0.0000 on every frame of every enemy.
+The missing assertion that let this ship is now in `game/tests/test_billboard.gd`
+(`_feet_all_enemies`): for every enemy in content/enemies, every animation, every frame - the
+body bottom lands on the node origin within 1e-3 u. Measured WITHOUT the offset expression the
+code uses: (a) from engine-generated quad geometry (mesh min-y + px distance from frame bottom
+to body bottom, x node scale), (b) from the node's own offset property read after _apply_frame.
+Red on the old sign: 99 failures (one per enemy frame, all sunk). Green on the new one.
+Sweep results (nothing else was compensating for the sign): `body_feet_shift` is read nowhere
+outside billboard.gd; no view or test pins a sprite's y offset; the only billboard child y
+writes are kiwi_cat_view's symmetric bob (+/-0.08 u from the anim block, base 0) and
+gift_larper_view's defuse grey-out drop (0.5 u below ITS OWN captured base y, not a sign
+compensation); antechamber scales `bb.scale` and `bb.world_height` by the same exhibit factor
+(uniform scale, feet-at-origin preserved with the fixed sign); thicc_ben_view reads `_base_scale`
+after setup. gift_larper_view sets `billboard.world_height = world_height` after setup without
+re-applying the frame - a redundant no-op (the doc value it assigns is the one setup already
+used), not a sign issue; left alone. No document in the repo states the feet-offset sign, so no
+PARKED.md row. body_rects were re-checked against the textures (all fit; validate_sprites pins
+body_rect to the alpha>16 tight bbox), so no clipping/floating from art data other than the sign.
+CAVEAT (reported, not re-tuned): `nuke/sprites.json` has `world_height: null` (SR-2: the NUKE
+attack_descent frame carries no body row), so the billboard computes scale 0 and the sprite is
+invisible regardless of the sign - the sign fix cannot be observed on nuke until the owner rules
+on its world_height. The forced-`world_height = 2.0` probe showed the same sign error and the
+same fix (body bottom -1.92..-2.06 before, 0.0000 after). Similarly `spawn_00` for thicc_ben:
+bottom at the origin like every other frame. ENEMIES.md / DESIGN.md unchanged.
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
+- 2026-11-17 FIX-BILLBOARD (this session, worktree t3/fix-billboard-feet-sign): the feet
+  offset sign in view/billboard.gd fixed (D-FIX-BILLBOARD-1); every enemy frame's body bottom
+  now stands on the node origin (was sunk by 2x the intended shift). New geometric assertion
+  in tests/test_billboard.gd (red on old sign: 99 failures; green on new). Sweep: no other
+  file compensated; nuke world_height null caveat reported (sprite invisible, owner to rule).
+  No PARKED rows. No push. Gate: GATE OK (9 ran, 0 skipped, 246 s); TESTS 56 passed 0 failed;
+  zero SCRIPT ERROR lines.
 - 2026-11-17 T-051 (zai-glm-5-3-flash, this session): the enemy-linked scripted test file
   DONE and green on t3/t051-enemy-curse-tests (08c5e04): game/tests/ 
   test_curses_scripted_enemy.gd, one test per enemy-linked scripted curse (the 12 whose
