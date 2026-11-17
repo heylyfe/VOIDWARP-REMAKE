@@ -31,6 +31,14 @@ const OVERTIME_CD_PER_TIER := 0.05      # enemy cooldowns -5% per tier
 const FLOATER_CLIMB := 2.0        # SR-1 vertical easing cap, u/s - NEVER multiplied (D-068)
 const LOS_STEP := 0.25            # api.los ray march step, u (D-T027-2)
 const HIT_DIA_FRACTION := 0.8     # hit cylinder diameter = 0.8 x body width (HITBOXES)
+const BASE_RUN_SPEED := 9.0       # SR-5: ceilings are fractions of BASE run speed, NEVER the
+                                  # player's current speed (speed upgrades always gain ground)
+const TEMPO_FLOOR := 0.6          # SR-5: a tempo-shortened cycle never below 0.6x the base cycle
+const BURST_MAX_TICKS := 180      # SR-5: a telegraphed sprint lasts at most 3.0 s
+const VOLLEY_MAX := 3             # D-064: at most 3 balls per volley
+const VOLLEY_TICKS := 9           # D-064: balls inside one volley 0.15 s apart
+const VOLLEY_GAP_TICKS := 45      # D-064: consecutive volleys 0.75 s apart (start to start)
+const SALVO_MAX_TICKS := 360      # D-064: one salvo (tracking + restarts + descent) <= 6.0 s
 
 # Anchor kinds (TERRAIN_SPEC section 6.5): 0 perch, 1 open, 2 lane, 4 nook. Kind 3 (`hop`) is
 # retired and reserved - never emitted, the id is never reused (D-056).
@@ -138,6 +146,201 @@ class Api:
 			out = 0
 		return out
 
+	# T-071: the curse speed multiplier (rate curses and repeatable +5% hunger-style
+	# stacks), kept by the engine layer in rt.curse_speed_mul from the stats system's
+	# enemy_speed_mul. Overtime is separate (speed_mul); FloatBody multiplies BOTH before
+	# the SR-5 clamp.
+	func curse_speed_mul() -> float:
+		return rt.curse_speed_mul
+
+	# SR-5 overflow: the calling row's tempo multiplier (1.0 when the behavior attached no
+	# FloatBody to its row - behaviors attach one with FloatBody.from_cfg in on_spawn).
+	func tempo_mul() -> float:
+		var fb: Variant = row.get("float", null)
+		if fb == null:
+			return 1.0
+		return float(fb.tempo_mul)
+
+	# SR-5: a cycle shortened by tempo, NEVER below TEMPO_FLOOR of the base cycle. The floor
+	# is applied here, at the conversion, so every behavior reads the same bounded value.
+	func tempo_ticks(base_ticks: int) -> int:
+		var tm: float = tempo_mul()
+		if tm <= 1.0:
+			return maxi(int(base_ticks), 0)
+		var t: float = float(base_ticks) / tm
+		var out := int(round(t))
+		var low := int(ceil(float(base_ticks) * TEMPO_FLOOR))
+		return maxi(out, maxi(low, 0))
+
+
+# ---- FloatBody (T-071: SR-1 floater kinematics + SR-5 pursuit ceilings) ----------------------
+# A floating body's kinematics, driven from enemy.json data (arriving as the cfg dictionary
+# until the T-073 data pass lands the files). Horizontal speed is the cfg base speed times
+# EVERY speed multiplier - overtime (speed_mul), curses and repeatable speed stacks
+# (curse_speed_mul), an active burst - clamped AFTER all of them to ceiling x BASE_RUN_SPEED
+# (pursuit: the pursuit ceiling; a telegraphed sprint: the burst ceiling, bounded to
+# BURST_MAX_TICKS). Vertical easing toward the target's feet runs at FLOATER_CLIMB u/s and
+# is NEVER multiplied (D-068). Whatever part of a multiplier the ceiling removes is exposed
+# as tempo_mul (capped so a tempo-shortened cycle never runs below TEMPO_FLOOR of the base
+# cycle; SR-5).
+class FloatBody:
+	extends RefCounted
+
+	var base_speed := 0.0          # u/s, from enemy.json ("base_speed")
+	var pursuit_ceiling := 1.0     # fraction of BASE_RUN_SPEED, from enemy.json
+	var burst_ceiling := 1.0       # fraction of BASE_RUN_SPEED, from enemy.json
+	var burst_mult := 1.0          # the active burst's multiplier (1.0 = no burst)
+	var burst_ticks_left := 0
+	var h_speed := 0.0             # last computed effective horizontal speed, u/s
+	var tempo_mul := 1.0           # SR-5 overflow factor, exposed to the behavior
+
+	static func from_cfg(cfg: Dictionary) -> FloatBody:
+		var b := FloatBody.new()
+		b.base_speed = float(cfg.get("base_speed", 0.0))
+		b.pursuit_ceiling = float(cfg.get("pursuit_ceiling", 1.0))
+		b.burst_ceiling = float(cfg.get("burst_ceiling", 1.0))
+		return b
+
+	## Begin a telegraphed sprint (the +60%-for-3 s script-curse pattern): multiplier and
+	## duration from the caller; the DURATION is clamped to BURST_MAX_TICKS here, the SPEED
+	## is clamped per tick in _speeds against burst_ceiling x BASE_RUN_SPEED (so overtime
+	## cannot push a burst past the bound either).
+	func begin_burst(mult: float, ticks: int) -> void:
+		burst_mult = maxf(mult, 1.0)
+		burst_ticks_left = mini(maxi(ticks, 0), BURST_MAX_TICKS)
+
+	func bursting() -> bool:
+		return burst_ticks_left > 0
+
+	## One sim tick: recompute h_speed + tempo_mul from the current multipliers and move
+	## `row` toward (tx, tz) (api.move_toward applies the SR-1 vertical easing at
+	## FLOATER_CLIMB, never multiplied). Call once per tick from the behavior.
+	func step(row: Dictionary, api, dt_ticks: int, tx: float, tz: float) -> void:
+		_speeds(api, dt_ticks)
+		api.move_toward(row, tx, tz, h_speed)
+
+	## Recompute h_speed + tempo_mul without moving (behaviors that steer themselves).
+	func update(api, dt_ticks: int = 1) -> void:
+		_speeds(api, dt_ticks)
+
+	func _speeds(api, dt_ticks: int) -> void:
+		var mult: float = api.speed_mul() * api.curse_speed_mul()
+		var raw: float = base_speed * mult
+		# SR-5 overflow -> tempo, from the PURSUIT path (a burst rides on top of it and has
+		# its own bound); clamped to 1/TEMPO_FLOOR so a cycle never shortens past 0.6x base.
+		var clamped: float = api.clamp_pursuit(raw, BASE_RUN_SPEED, pursuit_ceiling)
+		if clamped > 1e-9:
+			tempo_mul = clampf(raw / clamped, 1.0, 1.0 / TEMPO_FLOOR)
+		else:
+			tempo_mul = 1.0
+		if burst_ticks_left > 0:
+			burst_ticks_left = maxi(burst_ticks_left - dt_ticks, 0)
+			h_speed = minf(raw * burst_mult, burst_ceiling * BASE_RUN_SPEED)
+		else:
+			burst_mult = 1.0
+			h_speed = clamped
+
+
+# ---- VolleyClock (T-071: the D-064 volley gap, generic - no content id) ----------------------
+## Splits a burst of n projectiles into volleys of at most VOLLEY_MAX, the remainder on the
+## LAST volley: 4 -> [3,1], 5 -> [3,2], 6 -> [3,3], 7 -> [3,3,1]. Balls inside one volley
+## sit VOLLEY_TICKS apart (0.15 s); consecutive volleys start VOLLEY_GAP_TICKS apart
+## (0.75 s - one full jump), so each volley is cleared by its own jump.
+static func volley_plan(balls: int) -> Array:
+	return VolleyClock.plan_for(balls)
+
+
+class VolleyClock:
+	extends RefCounted
+
+	var plan: Array = []           # volley sizes, e.g. [3, 3, 1] for 7
+	var idx := 0                   # next volley
+	var in_volley := 0             # balls already released of the current volley
+	var wait := 0                  # ticks until the next release
+
+	# (a static on the class: an inner class cannot call the outer script's statics)
+	static func plan_for(balls: int) -> Array:
+		var out: Array = []
+		var left := maxi(int(balls), 0)
+		while left > VOLLEY_MAX:
+			out.append(VOLLEY_MAX)
+			left -= VOLLEY_MAX
+		if left > 0:
+			out.append(left)
+		return out
+
+	func start(balls: int) -> void:
+		plan = plan_for(balls)
+		idx = 0
+		in_volley = 0
+		wait = 0
+
+	func active() -> bool:
+		return idx < plan.size()
+
+	## Advance one tick; returns how many balls to release NOW (0 or 1 - releases are
+	## staggered inside the volley, never two on the same tick). A release schedules the
+	## next one VOLLEY_TICKS - 1 ticks later (wait counts down on the ticks BETWEEN
+	## releases), so balls sit VOLLEY_TICKS apart and a volley's first balls sit
+	## VOLLEY_GAP_TICKS apart start to start.
+	func tick(dt_ticks: int = 1) -> int:
+		var fired := 0
+		for _i in range(maxi(dt_ticks, 0)):
+			if idx >= plan.size():
+				break
+			if wait > 0:
+				wait -= 1
+				continue
+			fired += 1
+			in_volley += 1
+			if in_volley >= int(plan[idx]):
+				# next volley starts a full VOLLEY_GAP_TICKS after THIS volley started
+				wait = VOLLEY_GAP_TICKS - (int(plan[idx]) - 1) * VOLLEY_TICKS - 1
+				idx += 1
+				in_volley = 0
+			else:
+				wait = VOLLEY_TICKS - 1
+		return fired
+
+
+# ---- SalvoClock (T-071: the D-064 salvo life limit, generic - no content id) -----------------
+## One salvo = tracking (including EVERY restart after a broken lock) plus the descent, at
+## most SALVO_MAX_TICKS from its FIRST tracking tick; a restart does not reset the budget.
+## When the clock expires the salvo dies harmlessly: the caller stops tracking/descending
+## and starts its pause.
+class SalvoClock:
+	extends RefCounted
+
+	var ticks := 0
+	var active := false
+	var expired := false
+
+	func start() -> void:
+		# a restart (broken lock -> re-track) never resets the salvo's budget (D-064)
+		if not active:
+			active = true
+			ticks = 0
+			expired = false
+
+	func tick(dt_ticks: int = 1) -> bool:
+		## Advances the clock; true while the salvo may still act.
+		if not active or expired:
+			return false
+		ticks += dt_ticks
+		if ticks >= SALVO_MAX_TICKS:
+			expired = true
+			active = false
+			return false
+		return true
+
+
+## SR-3 / F7: copy k of n starts its cycle offset by k/n of the cycle length (same unit as
+## the cycle passed in - ticks or seconds; the caller rounds ticks).
+static func stack_phase(cycle: float, k: int, n: int) -> float:
+	if n <= 0 or cycle <= 0.0:
+		return 0.0
+	return cycle * float(k) / float(n)
+
 
 # ---- the runtime itself ---------------------------------------------------------------------
 
@@ -160,6 +363,9 @@ var overtime_tier := 0
 var overtime_running := false
 var overtime_t := 0.0
 var overtime_period := OVERTIME_PERIOD
+var curse_speed_mul := 1.0         # curse + repeatable-stack speed multiplier, kept here by
+                                   # the engine layer from core stats; FloatBody multiplies
+                                   # it with overtime BEFORE the SR-5 clamp
 var seed_base := 0                  # the run's enemy_ai stream state at setup (D-T010-3)
 
 
@@ -279,7 +485,14 @@ func _spawn_one(plan_row: Dictionary, spot: Dictionary, copy_index: int, copies:
 		"rng": VoidRngScript.new(VoidRngScript.mix(seed_base, enemies.size() + 1)),
 		"spawn_tick": tick,
 	}
-	row["anim_t"] = float(row["anim_phase"]) * float(cfg.get("cycle_s", 0.0))
+	row["anim_t"] = stack_phase(float(cfg.get("cycle_s", 0.0)), copy_index, maxi(copies, 1))
+	row["phase_ticks"] = int(round(stack_phase(float(cfg.get("cycle_ticks", 0)),
+			copy_index, maxi(copies, 1))))
+	# T-071: a floater cfg carries its kinematics (base_speed / pursuit_ceiling /
+	# burst_ceiling); the runtime attaches the FloatBody so tests and behaviors read one
+	# instance from the row. Behaviors may still build their own.
+	if cfg.has("base_speed"):
+		row["float"] = FloatBody.from_cfg(cfg)
 	enemies.append(row)
 	world["enemies"].append({"x": row["x"], "y": row["y"], "z": row["z"], "r": row["diameter_u"] * 0.5})
 	var api := Api.new()
@@ -331,7 +544,16 @@ static func pick_spawn_tile(lv: Dictionary, preferred_kind: String, player_pos: 
 			continue
 		if Vector3(wx - sx, wy - sy, wz - sz).length() < MIN_PLAYER_DIST:
 			continue
-		if Vector3(wx - player_pos.x, 0.0, wz - player_pos.z).length() < min_sep:
+		# SR-3/T-071: copies must clear min_sep against the EXCLUDED positions (the earlier
+		# copies), not against the player - the player floor is the MIN_PLAYER_DIST check
+		# above. (T-027's step (c) compared against the player here; a 2-copy plan with no
+		# anchors could then land both copies 5 u apart at the far end of the level.)
+		var too_close := false
+		for ex in exclude:
+			if Vector3(wx - float(ex.x), 0.0, wz - float(ex.z)).length() < min_sep:
+				too_close = true
+				break
+		if too_close:
 			continue
 		if best == null or d > best_d or (absf(d - best_d) < 1e-12 and int(idx) < int(best["tile_index"])):
 			best = {"x": wx, "y": wy, "z": wz, "kind": "round_trip", "tile_index": int(idx)}
@@ -556,8 +778,14 @@ func _step_projectiles(dt: float) -> void:
 		p["y"] = float(p["y"]) + float(p["vy"]) * dt
 		p["z"] = float(p["z"]) + float(p["vz"]) * dt
 		p["life_ticks"] = int(p["life_ticks"]) - 1
-		var dead_now := int(p["life_ticks"]) <= 0 or _point_solid(float(p["x"]), float(p["y"]), float(p["z"]))
-		if not dead_now:
+		var cause := ""
+		if int(p["life_ticks"]) <= 0:
+			cause = "life"
+		elif _point_solid(float(p["x"]), float(p["y"]), float(p["z"])):
+			# died on a tile slab or prop box (includes every pad: a spire pad is tiles -
+			# a descending missile meets the slab and detonates there, D-064)
+			cause = "solid"
+		if cause == "":
 			for i in range(controllers.size()):
 				var ctl = controllers[i]
 				if ctl == null or ctl.dead or ctl.respawn_t >= 0.0:
@@ -572,9 +800,14 @@ func _step_projectiles(dt: float) -> void:
 					api.rt = self
 					api.row = p
 					api.kill(i, str(p["name"]))
-					dead_now = true
+					cause = "hit"
 					break
-		if not dead_now:
+		if cause != "":
+			# T-071: where and why the projectile ended - the view detonates/explores the
+			# effect there; tests read it instead of guessing positions
+			events.append({"e": "projectile_end", "name": p["name"], "cause": cause,
+					"x": p["x"], "y": p["y"], "z": p["z"], "tick": tick})
+		else:
 			keep.append(p)
 	projectiles = keep
 	# mirror for the controller's safe-tile checks (valid_safe_tile reads w["projectiles"])
