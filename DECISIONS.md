@@ -3214,6 +3214,64 @@ asserts the realized window +/-1 tick and ~0.51 s window length +/-1 tick instea
 unreachable continuous values, and the end-to-end "jump on the bark" survival through the
 fixed dash line. WHY: a test against 0.12/0.63 s continuous would encode a jump the
 engine never produces. [CONTESTABLE], same shape as D-T030-8.
+### D-T-033-1 — CONTESTABLE — Egoist burst size: "+1 ball per stack" vs the ticket's "up to 7 balls arrive 3+3+1".
+DESIGN.md section 7.1 (egoist row rule column) says "+1 ball per burst per stack" with max stacks 2
+→ 4 or 5 balls → plans 3+1 / 3+2. Its own consequence column AND this ticket say a 7-ball Egoist
+burst arrives as 3+3+1 (research/fable-enemies.md F6/R10 also say "5 or 7 balls" with "+2 per
+stack"). The two cannot both bind (3 + 1×2 = 5 ≠ 7). Built: the burst size is DATA in
+enemy.json stats — `volley_balls` 3 and `balls_per_stack` 1 — so the rule text holds as shipped and
+the 7-ball plan stays reachable through the same code path (`volley_plan(7)` = 3+3+1, asserted in
+the ticket's test); a one-word owner ruling flips `balls_per_stack` to 2 with no code change. The
+volley shape itself (≤ 3 balls per volley, 0.75 s between volleys start to start) is D-064 FINAL
+and untouched either way.
+
+### D-T-033-2 — CONTESTABLE — Isagi relocation target floor: the 25 u body floor applies to relocation too, no 60 u cap.
+DESIGN.md section 5.4 says "every 12 s he relocates to the `perch` anchor nearest the player with
+line of sight" and names no minimum distance; the 25 u floor and the 60 u preference are written
+only for the D-056 SPAWN rule. Built: relocation picks the nearest qualifying perch but a
+candidate must still sit ≥ 25 u from the player (the spawn rule's MIN_PLAYER_DIST), and the
+60 u preference is NOT carried over — nearest means nearest. WHY: relocating the body onto or
+next to the player is unanswerable under the one-hit rules (research/fable-enemies.md section 4
+answerability standard); the 25 u is borrowed from the spawn rule, not a change to D-056 —
+relocation is not a spawn and the spawn fallback order stays exactly D-056. Tie-break: lowest
+anchor index; each copy skips its copy_index in the sorted candidate list so copies spread
+deterministically without reading sibling bodies (SR-3 has no sibling query on the section 12
+Api surface) — a copy offset, not a distance edit.
+
+### D-T-033-3 — CONTESTABLE — "Flat in-line lane" wind-up suppression numbers (T-070 item 10 / R10).
+research/fable-enemies.md section 4 item 3 (adopted by T-070 R10, mitigation would not touch
+D-056): Isagi does not begin a wind-up while the horizontal line from him to the player runs
+along a walkway axis with less than 2 HU of total height change — he relocates instead, with the
+relocation timer cut to 4 s (240 ticks). No document defines "walkway axis" numerically. Built:
+he is on a `lane` anchor; the lane's axis is the row/column of FELLOW lane anchors sharing his
+integer x or z within 24 u (a walkway piece is grid-aligned, so its axis is an x or z axis);
+"runs along" = the horizontal unit direction to the player has dot ≥ 0.9 with that axis (a
+2-wide walkway is 1.0 u to a side at a 5 u sight distance: 1.0/5 = 0.2 → cos ≈ 0.98 along it,
+so 0.9 is generous to the DANGER side); height change |player feet − his feet| < 2.0 HU (the
+section 5.4 "2 HU step" that answers a ball line). On the intersection of two axes (both x and z
+have lane members) no axis is taken and no suppression applies — a crossing has side-exit
+options. He still fires across paths, down onto them, and along stepped ones (Δy ≥ 2 HU), and
+once a burst has begun it is never aborted mid-way (only its BEGIN is gated).
+
+### D-T-033-4 — CONTESTABLE — Isagi's hit cylinder comes from enemy.json stats, not the TBD sheet's body_rect.
+SR-2 (D-065) fixes Isagi's body at 1.8 u tall, 0.7 u hit diameter. But the T-016 pipeline derives
+the body cylinder from the sprite frame's body_rect (cylinder_from_sheet), and Isagi's frames are
+TBD placeholders with a square 224/256 bbox → it would derive height 1.8, width 1.8, diameter
+1.44 — double the spec's 0.7. Built: enemy.json stats carry `world_height` 1.8 and
+`hit_diameter` 0.7, and the behavior sets its row's height/diameter from those stats in
+on_spawn (the frame sheet drives only the render; the transparent padding is anyway never
+solid). WHY: the headless tests must assert the frozen SR-2 cylinder, not whatever size the
+placeholder art happens to have. When the real art lands, the pipeline should emit body_rects so
+that 0.8 × width ≈ 0.7 u (width ≈ 0.875 u), or the loader must scale — flagged for the art wave.
+
+### D-T-033-5 — SPEC GAP — Isagi's sound file names exist in no document.
+ENEMIES.md "New sound" names the DESIGN ("direct shot voice lines, Isagi shoot sae math final
+shot gun-shot sound when shooting"), never file names. Placeholder hook names are derived from
+that sentence and live in the view's sound-hook table: `isagi_voice_direct_shot` (the burst's
+audio cue, at wind-up start), `isagi_shoot_sae_math_final_shot` (at each release flash),
+`isagi_gunshot` (per ball release, layered under the SAE line). No audio files exist; the hooks
+are named constants on the view side, wired to the anim-block states, and the TBD.md row records
+them. Adding the real files later is a content drop, not a code change.
 
 ## Handover log
 
