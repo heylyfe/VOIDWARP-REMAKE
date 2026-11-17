@@ -4,10 +4,10 @@
 		{
 			"body_rect": [
 				[
-					16,
-					16,
-					224,
-					224
+					34,
+					190,
+					443,
+					320
 				]
 			],
 			"fps": 1,
@@ -16,6 +16,54 @@
 			],
 			"loop": true,
 			"name": "cycle"
+		},
+		{
+			"body_rect": [
+				[
+					34,
+					190,
+					443,
+					320
+				]
+			],
+			"fps": 1,
+			"frames": [
+				"sprites/spawn_00.png"
+			],
+			"loop": false,
+			"name": "spawn"
+		},
+		{
+			"body_rect": [
+				[
+					34,
+					203,
+					443,
+					307
+				]
+			],
+			"fps": 1,
+			"frames": [
+				"sprites/idle_chase_00.png"
+			],
+			"loop": true,
+			"name": "idle_chase"
+		},
+		{
+			"body_rect": [
+				[
+					34,
+					190,
+					443,
+					320
+				]
+			],
+			"fps": 1,
+			"frames": [
+				"sprites/telegraph_00.png"
+			],
+			"loop": false,
+			"name": "telegraph"
 		}
 	],
 	"id": "kiwi_cat",
@@ -26,13 +74,14 @@
 			"image": 1,
 			"path": "assets_src/enemies/kiwicat.png",
 			"role": "base",
-			"state": "MISSING -> TBD"
+			"state": "OK",
+			"pixels": 141760
 		}
 	],
-	"tbd": true,
+	"tbd": false,
 	"world_height": 1.0,
 	"anim": {
-		"_doc": "T-083. Spec: research/fable-tickets.md section 1.1 (the 1.x tables are the spec; ENEMIES.md behavior sentences are frozen per D-040). One entry per table row, keyed by a snake_case state id; 'row' repeats the exact table row label. spec_frames are the section 1.1 frame names in table order; frames are the files that exist on disk, relative to this folder (T-016 produced TBD placeholders - see frame_map and DECISIONS D-T083-1/D-T083-2). Timings are in 60 Hz ticks; the sim drives frame = table lookup from ticks_in_state (section 1.0), never a wall clock; the attack frame lands on the tick its kill resolves. Effects are shader/transform effects on the billboard and never change body_rect. Timings are binding; frame art is not (all frames today are TBD placeholders, so every state uses the TBD frame and the timings stay exactly as the table says).",
+		"_doc": "T-083. Spec: research/fable-tickets.md section 1.1 (the 1.x tables are the spec; ENEMIES.md behavior sentences are frozen per D-040). One entry per table row, keyed by a snake_case state id; 'row' repeats the exact table row label. spec_frames are the section 1.1 frame names in table order; frames are the files that exist on disk, relative to this folder (the art is real as of T-ART-KIWI_CAT: spawn/idle_chase/telegraph are distinct frames derived from assets_src/enemies/kiwicat.png by game/tools/art/kiwi_cat.gd; see frame_map and DECISIONS D-T083-1/D-T083-2 and D-ART-KIWI_CAT-1..4). Timings are in 60 Hz ticks; the sim drives frame = table lookup from ticks_in_state (section 1.0), never a wall clock; the attack frame lands on the tick its kill resolves. Effects are shader/transform effects on the billboard and never change body_rect. Timings are binding; frame art is not. frame_map keeps the spec's single kiwicat_00 mapped to sprites/cycle_00.png (all visual states share that one spec frame name, so the map can only hold one target); the per-state files are listed in states[*].frames and in the top-level animations[].",
 		"section": "1.1",
 		"frame_map": {
 			"kiwicat_00": "sprites/cycle_00.png"
@@ -41,7 +90,7 @@
 			"spawn": {
 				"row": "spawn",
 				"spec_frames": ["kiwicat_00"],
-				"frames": ["sprites/cycle_00.png"],
+				"frames": ["sprites/spawn_00.png"],
 				"loop": false,
 				"total_ticks": 30,
 				"ticks_per_frame": 30,
@@ -51,7 +100,7 @@
 			"idle_chase": {
 				"row": "idle / chase",
 				"spec_frames": ["kiwicat_00"],
-				"frames": ["sprites/cycle_00.png"],
+				"frames": ["sprites/idle_chase_00.png"],
 				"loop": true,
 				"total_ticks": null,
 				"ticks_per_frame": null,
@@ -61,7 +110,7 @@
 			"telegraph": {
 				"row": "telegraph (meow)",
 				"spec_frames": ["kiwicat_00"],
-				"frames": ["sprites/cycle_00.png"],
+				"frames": ["sprites/telegraph_00.png"],
 				"loop": false,
 				"total_ticks": 12,
 				"ticks_per_frame": 12,
