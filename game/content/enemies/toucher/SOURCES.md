@@ -7,8 +7,8 @@ their sources documented here.
 
 | image | exact filename | path (repo-relative) | pipeline state |
 |---|---|---|---|
-| 10 | `toucher.jpeg` | `assets_src/enemies/toucher.jpeg` | MISSING -> TBD |
-| 11 | `glitchedground.jpeg` | `assets_src/enemies/glitchedground.jpeg` | MISSING -> TBD |
+| 10 | `toucher.jpeg` | `assets_src/enemies/toucher.jpeg` | NO BODY AFTER BACKGROUND REMOVAL -> TBD |
+| 11 | `glitchedground.jpeg` | `assets_src/enemies/glitchedground.jpeg` | NO BODY AFTER BACKGROUND REMOVAL -> TBD |
 
 Pipeline (every source): RGBA convert, background removed by a flood fill from the four
 image corners (colour tolerance 24/255, skipped when the corners are already alpha 0),

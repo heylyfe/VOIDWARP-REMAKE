@@ -7,8 +7,8 @@ their sources documented here.
 
 | image | exact filename | path (repo-relative) | pipeline state |
 |---|---|---|---|
-| 13 | `address me elephant.png` | `assets_src/enemies/address me elephant.png` | MISSING -> TBD |
-| 14 | `explosionsffect.jpg` | `assets_src/enemies/explosionsffect.jpg` | MISSING -> TBD |
+| 13 | `address me elephant.png` | `assets_src/enemies/address me elephant.png` | NO BODY AFTER BACKGROUND REMOVAL -> TBD |
+| 14 | `explosionsffect.jpg` | `assets_src/enemies/explosionsffect.jpg` | NO BODY AFTER BACKGROUND REMOVAL -> TBD |
 
 Pipeline (every source): RGBA convert, background removed by a flood fill from the four
 image corners (colour tolerance 24/255, skipped when the corners are already alpha 0),

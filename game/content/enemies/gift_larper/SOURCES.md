@@ -7,7 +7,7 @@ their sources documented here.
 
 | image | exact filename | path (repo-relative) | pipeline state |
 |---|---|---|---|
-| 9 | `tripine.png` | `assets_src/enemies/tripine.png` | MISSING -> TBD |
+| 9 | `tripine.png` | `assets_src/enemies/tripine.png` | OK |
 
 Pipeline (every source): RGBA convert, background removed by a flood fill from the four
 image corners (colour tolerance 24/255, skipped when the corners are already alpha 0),

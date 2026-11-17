@@ -7,7 +7,7 @@ their sources documented here.
 
 | image | exact filename | path (repo-relative) | pipeline state |
 |---|---|---|---|
-| 8 | `character to be corrupted.png` | `assets_src/enemies/character to be corrupted.png` | MISSING -> TBD |
+| 8 | `character to be corrupted.png` | `assets_src/enemies/character to be corrupted.png` | NO BODY AFTER BACKGROUND REMOVAL -> TBD |
 
 Pipeline (every source): RGBA convert, background removed by a flood fill from the four
 image corners (colour tolerance 24/255, skipped when the corners are already alpha 0),

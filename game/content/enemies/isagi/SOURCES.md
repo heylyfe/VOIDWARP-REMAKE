@@ -7,9 +7,9 @@ their sources documented here.
 
 | image | exact filename | path (repo-relative) | pipeline state |
 |---|---|---|---|
-| 4 | `isagi_idle.jpeg` | `assets_src/enemies/isagi_idle.jpeg` | MISSING -> TBD |
-| 5 | `ISAGI_SHOOT.webp` | `assets_src/enemies/ISAGI_SHOOT.webp` | MISSING -> TBD |
-| 6 | `blueballprojectile.webp` | `assets_src/enemies/blueballprojectile.webp` | MISSING -> TBD |
+| 4 | `isagi_idle.jpeg` | `assets_src/enemies/isagi_idle.jpeg` | NO BODY AFTER BACKGROUND REMOVAL -> TBD |
+| 5 | `ISAGI_SHOOT.webp` | `assets_src/enemies/ISAGI_SHOOT.webp` | NO BODY AFTER BACKGROUND REMOVAL -> TBD |
+| 6 | `blueballprojectile.webp` | `assets_src/enemies/blueballprojectile.webp` | OK |
 
 Pipeline (every source): RGBA convert, background removed by a flood fill from the four
 image corners (colour tolerance 24/255, skipped when the corners are already alpha 0),

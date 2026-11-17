@@ -538,6 +538,22 @@ static func _rect_json(r: Rect2i) -> Array:
 	return [r.position.x, r.position.y, r.size.x, r.size.y]
 
 
+# The previous sprites.json, or {} when there is none yet (first build) or it does not
+# parse. Used only to carry over keys this pipeline does not own (T-083's `anim` block).
+static func _read_json(path: String) -> Dictionary:
+	if not FileAccess.file_exists(path):
+		return {}
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		return {}
+	var text := f.get_as_text()
+	f.close()
+	var parsed = JSON.parse_string(text)
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return {}
+	return parsed
+
+
 static func _process_enemy(enemy: Dictionary, src_dir: String, out_dir: String) -> Dictionary:
 	var id: String = enemy["id"]
 	var idx: int = enemy["index"]
@@ -621,6 +637,13 @@ static func _process_enemy(enemy: Dictionary, src_dir: String, out_dir: String) 
 		"animations": anim_rows,
 		"sources": src_rows,
 	}
+	# T-083's `anim` block is authored by hand and is NOT this pipeline's output: a rebuild
+	# must never delete it. Carry over every top-level key this pipeline does not own, so a
+	# re-run after the art lands keeps the state table, its timings and its frame_map.
+	var prev := _read_json(enemy_dir + "/sprites.json")
+	for k in prev.keys():
+		if not json.has(k):
+			json[k] = prev[k]
 	_write_text(JSON.stringify(json, "\t") + "\n", enemy_dir + "/sprites.json")
 	_write_text(_sources_md(enemy, src_rows), enemy_dir + "/SOURCES.md")
 	return {"pngs": n_png, "tbd": tbd}
@@ -667,6 +690,13 @@ func _init() -> void:
 	var n_png := 0
 	var n_tbd := 0
 	for enemy in ROSTER:
+		# An enemy with its own art module (game/tools/art/<id>.gd) owns its frames: that
+		# module does the background removal its source image actually needs and writes the
+		# per-state frames. Re-running this pipeline must not regress it back to the naive
+		# corner flood fill, so the enemy is skipped and the module is the generator.
+		if FileAccess.file_exists(game_dir + "/tools/art/" + enemy["id"] + ".gd"):
+			print("ENEMY %s SKIPPED (owned by tools/art/%s.gd)" % [enemy["id"], enemy["id"]])
+			continue
 		var res: Dictionary = _process_enemy(enemy, src_dir, out_dir)
 		n_png += res["pngs"]
 		if res["tbd"]:
