@@ -26,7 +26,7 @@ wired in full, the entry is marked `"tbd": true` in its JSON, and the row appear
 | 2 | T-033 | isagi: `isagi_shoot_sae_math_final_shot` - the shoot line per release (ENEMIES.md Isagi "New sound": Isagi shoot sae math final shot gun-shot sound) | no audio files exist yet | drop the hook file in, view wires it |
 | 3 | T-033 | isagi: `isagi_gunshot` - per ball release, layered under the shoot line | no audio files exist yet | drop the hook file in, view wires it |
 
-## 1. The 17 enemy images - 11 MISSING (coil, thicc ben, kiwi cat, isagi and YOU?! are real art since 2026-11-17)
+## 1. The 17 enemy images - 10 MISSING (coil, thicc ben, kiwi cat, isagi, YOU?! and toucher are real art since 2026-11-17)
 
 Enemy sprites are normally produced by `game/tools/sprite_pipeline.gd` (T-016): missing, unreadable, or
 validation-failing sources become `game/tools/make_tbd_png.gd` placeholder frames, `"tbd": true`
