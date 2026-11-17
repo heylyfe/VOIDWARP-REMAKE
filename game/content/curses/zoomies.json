@@ -6,7 +6,7 @@
   "requires_enemy": "kiwi_cat",
   "max_stacks": 2,
   "rule": "every 12 s each cat sprints at +60% speed for 3 s after a double meow",
-  "counter_play": "a burst is bounded: ≤ 1.00 × base run (9.0 u/s) for ≤ 3.0 s, then back under its 0.80 ceiling (SR-5) — gain height (it rises 2.0 u/s, SR-1) or hurdle it as it arrives",
+  "counter_play": "a burst is bounded: ≤ 0.55 × base run (4.95 u/s) for ≤ 3.0 s, then back under its 0.40 ceiling (SR-5) — gain height (it rises 2.0 u/s, SR-1) or hurdle it as it arrives",
   "modifiers": [],
   "script": true,
   "hooks": []

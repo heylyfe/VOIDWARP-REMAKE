@@ -4,7 +4,7 @@ extends RefCounted
 # and its death code, and the cfg/enemy.json coherence of the section 5 vote/anchor table.
 # ENEMIES.md (Behavior 1:1): "slowly follow the player, death on contact."
 #
-#   - 5.6 u/s pursuit (62% of run speed), pursuit ceiling 0.80 -> never above 7.2 u/s
+#   - 3.0 u/s pursuit (33% of run speed), pursuit ceiling 0.40 -> never above 3.6 u/s
 #     after ALL multipliers (SR-5; tested under overtime tier 8 + Rush Hour x3 + Hunger x2);
 #   - body 1.0 u tall, hit diameter 0.9 u (SR-2) - the cfg hit_diameter pin wins over the
 #     TBD-art derivation (D-T030-2);
@@ -12,7 +12,7 @@ extends RefCounted
 #   - Contact = kill, death code D-KIWI (DESIGN.md section 3.1 FINAL) - Last Light spent
 #     first or the save masks the kill (D-057);
 #   - meow every 3.0 s (180 ticks +/-1) while within 14 u - and never outside it;
-#   - Zoomies-style burst bounded by burst ceiling 1.00 (<= 9.0 u/s, <= 180 ticks, SR-5);
+#   - Zoomies-style burst bounded by burst ceiling 0.55 (<= 4.95 u/s, <= 180 ticks, SR-5);
 #   - spawns at tick 360 (6.0 s, D-056 fallback order; nook preferred);
 #   - the hurdle answer window: a jump clears its 1.5 u reach from 0.16 s to 0.59 s (+/-1 tick);
 #   - 1 PNG (ENEMIES.md: 1 base PNG); the anim block's meow telegraph is 12 ticks every 180.
@@ -78,17 +78,25 @@ func _cfg_coherence(f: Array[String]) -> void:
 	_eq(f, "max_votes", int(d.get("max_votes")), 4)
 	_eq(f, "vote_effect", str(d.get("vote_effect")), "+1 cat")
 	_eq(f, "anchor_kinds", str(d.get("anchor_kinds")), str(["nook"]))
-	_eq(f, "base_speed", float(stats.get("base_speed")), 5.6)
-	_eq(f, "pursuit_ceiling", float(stats.get("pursuit_ceiling")), 0.8)
-	_eq(f, "burst_ceiling", float(stats.get("burst_ceiling")), 1.0)
+	_eq(f, "base_speed", float(stats.get("base_speed")), 3.0)
+	_eq(f, "pursuit_ceiling", float(stats.get("pursuit_ceiling")), 0.4)
+	_eq(f, "burst_ceiling", float(stats.get("burst_ceiling")), 0.55)
+	# D-KIWI-SLOW-1 absolute u/s (SR-5 fractions of the 9.0 u/s base run)
+	_eq(f, "pursuit ceiling in u/s", float(stats.get("pursuit_ceiling")) * 9.0, 3.6)
+	_eq(f, "burst ceiling in u/s", float(stats.get("burst_ceiling")) * 9.0, 4.95)
+	_check_lt(f, "base_speed 3.0 u/s is clearly slower than the 9.0 u/s run",
+			float(stats.get("base_speed")), 9.0)
 	_eq(f, "body_height", float(stats.get("body_height")), 1.0)
 	_eq(f, "hit_diameter", float(stats.get("hit_diameter")), 0.9)
 	_eq(f, "meow_period_ticks", int(stats.get("meow_period_ticks")), 180)
 	_eq(f, "meow_range_u", float(stats.get("meow_range_u")), 14.0)
 	_eq(f, "death_code", str(stats.get("death_code")), "D-KIWI")
 	_eq(f, "audio cues", str(stats.get("audio_cues")), str(["meow", "meow_double"]))
-	_eq(f, "behavior cfg base_speed", float(KIWI_CFG["base_speed"]), 5.6)
-	_eq(f, "behavior cfg pursuit_ceiling", float(KIWI_CFG["pursuit_ceiling"]), 0.8)
+	_eq(f, "behavior cfg base_speed", float(KIWI_CFG["base_speed"]), 3.0)
+	_eq(f, "behavior cfg pursuit_ceiling", float(KIWI_CFG["pursuit_ceiling"]), 0.4)
+	_eq(f, "behavior cfg burst_ceiling", float(KIWI_CFG["burst_ceiling"]), 0.55)
+	_eq(f, "behavior cfg pursuit ceiling in u/s", float(KIWI_CFG["pursuit_ceiling"]) * 9.0, 3.6)
+	_eq(f, "behavior cfg burst ceiling in u/s", float(KIWI_CFG["burst_ceiling"]) * 9.0, 4.95)
 	_eq(f, "behavior cfg hit_diameter", float(KIWI_CFG["hit_diameter"]), 0.9)
 	_eq(f, "behavior cfg death_code", str(KIWI_CFG["death_code"]), "D-KIWI")
 	_eq(f, "behavior cfg preferred_kind", str(KIWI_CFG["preferred_kind"]), "nook")
@@ -112,6 +120,11 @@ func _cfg_coherence(f: Array[String]) -> void:
 func _eq(f: Array[String], what: String, got, want) -> void:
 	if str(got) != str(want):
 		f.append("%s: got %s, want %s" % [what, str(got), str(want)])
+
+
+func _check_lt(f: Array[String], what: String, got: float, bound: float) -> void:
+	if not (got < bound):
+		f.append("%s: got %.3f, want < %.3f" % [what, got, bound])
 
 
 func run() -> Array[String]:
@@ -153,18 +166,18 @@ func _body_and_contact_kill(f: Array[String]) -> void:
 		_eq(f, "death killer", str(deaths[0].get("killer")), "kiwi cat")
 
 
-# 5.6 u/s flat out, no multipliers running: the step covers exactly 5.6/60 u per tick.
+# 3.0 u/s flat out, no multipliers running: the step covers exactly 3.0/60 u per tick.
 func _chase_speed(f: Array[String]) -> void:
 	var pair := _runtime(_level([]))
 	var rt = pair[0]
 	var row := _spawn_kiwi(rt, Vector3(25.5, 0.0, 0.5))
 	rt.step(DT)
 	var fb = row["float"]
-	if absf(fb.h_speed - 5.6) > 1e-9:
-		f.append("chase: h_speed %.6f, want 5.6" % fb.h_speed)
+	if absf(fb.h_speed - 3.0) > 1e-9:
+		f.append("chase: h_speed %.6f, want 3.0" % fb.h_speed)
 	var d25: float = Vector3(float(row["x"]) - 25.5, 0.0, 0.0).length()
-	if absf(d25 - 5.6 / 60.0) > 1e-6:
-		f.append("chase: covered %.6f u in one tick, want %.6f (5.6/60)" % [d25, 5.6 / 60.0])
+	if absf(d25 - 3.0 / 60.0) > 1e-6:
+		f.append("chase: covered %.6f u in one tick, want %.6f (3.0/60)" % [d25, 3.0 / 60.0])
 	# it floats straight at the nearest player across the void (no collision on the line)
 	for i in range(600):
 		rt.step(DT)
@@ -173,7 +186,7 @@ func _chase_speed(f: Array[String]) -> void:
 
 
 # SR-5: the full stack (overtime tier 8 = +48%, Rush Hour x3, Hunger x2) clamps to exactly
-# 7.2 u/s - the 0.80 ceiling is applied AFTER every multiplier; never above, on any tick.
+# 3.6 u/s - the 0.40 ceiling is applied AFTER every multiplier; never above, on any tick.
 func _pursuit_ceiling_stack(f: Array[String]) -> void:
 	var pair := _runtime(_level([]))
 	var rt = pair[0]
@@ -184,11 +197,11 @@ func _pursuit_ceiling_stack(f: Array[String]) -> void:
 	var fb = row["float"]
 	for i in range(180):
 		rt.step(DT)
-		if fb.h_speed > 7.2 + 1e-9:
-			f.append("ceiling: tick %d h_speed %.6f exceeds 7.2" % [i, fb.h_speed])
+		if fb.h_speed > 3.6 + 1e-9:
+			f.append("ceiling: tick %d h_speed %.6f exceeds 3.6" % [i, fb.h_speed])
 			return
-	if absf(fb.h_speed - 7.2) > 1e-9:
-		f.append("ceiling: settled at %.6f, want exactly 7.2 under the full stack" % fb.h_speed)
+	if absf(fb.h_speed - 3.6) > 1e-9:
+		f.append("ceiling: settled at %.6f, want exactly 3.6 under the full stack" % fb.h_speed)
 
 
 # SR-1: feet ease toward the target's feet at 2.0 u/s, NEVER multiplied (D-068) - not by
@@ -221,8 +234,8 @@ func _feet_ease(f: Array[String]) -> void:
 			return
 
 
-# SR-5 burst bound: a Zoomies-style +60% sprint is clamped to 1.00 x base run speed
-# (9.0 u/s) and BURST_MAX_TICKS (180 ticks), then falls back under the pursuit ceiling.
+# SR-5 burst bound: a Zoomies-style +60% sprint is clamped to 0.55 x base run speed
+# (4.95 u/s) and BURST_MAX_TICKS (180 ticks), then falls back under the pursuit ceiling.
 func _burst_bound(f: Array[String]) -> void:
 	var pair := _runtime(_level([]))
 	var rt = pair[0]
@@ -234,12 +247,31 @@ func _burst_bound(f: Array[String]) -> void:
 	for i in range(400):
 		rt.step(DT)
 		max_speed = maxf(max_speed, fb.h_speed)
-		if fb.h_speed > 7.2 + 1e-9:
+		if fb.h_speed > 3.6 + 1e-9:
 			burst_ticks += 1
-	if max_speed > 9.0 + 1e-9:
-		f.append("burst: peak %.6f exceeds 9.0 (burst ceiling 1.00)" % max_speed)
+	if max_speed > 4.95 + 1e-9:
+		f.append("burst: peak %.6f exceeds 4.95 (burst ceiling 0.55)" % max_speed)
+	if absf(max_speed - 4.8) > 1e-6:
+		f.append("burst: peak %.6f, want exactly 4.8 (3.0 * 1.6, the Zoomies raw under the 4.95 cap)" % max_speed)
 	if burst_ticks != 180:
 		f.append("burst: %d ticks above the pursuit ceiling, want 180 (3.0 s cap)" % burst_ticks)
+	# under the full overtime stack the raw *1.6 exceeds the cap: clamped to exactly 4.95
+	var pair2 := _runtime(_level([]))
+	var rt2 = pair2[0]
+	rt2.overtime_running = true
+	rt2.add_overtime_tier(8)
+	rt2.curse_speed_mul = 1.08 * 1.08 * 1.08 * 1.05 * 1.05
+	var row2 := _spawn_kiwi(rt2, Vector3(60.5, 0.0, 0.5))
+	var fb2 = row2["float"]
+	fb2.begin_burst(1.6, 180)
+	var max2 := 0.0
+	for i in range(200):
+		rt2.step(DT)
+		max2 = maxf(max2, fb2.h_speed)
+	if max2 > 4.95 + 1e-9:
+		f.append("burst: peak under overtime %.6f exceeds 4.95 (burst ceiling 0.55)" % max2)
+	if absf(max2 - 4.95) > 1e-9:
+		f.append("burst: peak under overtime %.6f, want exactly 4.95 (the 0.55 cap)" % max2)
 
 
 # DESIGN.md section 5.1: "Meows every 3 s while within 14 u." One meow on entering the
@@ -364,17 +396,17 @@ func _hurdle_window(f: Array[String]) -> void:
 		f.append("hurdle: jump apex %.3f u, want ~2.25 u within the discretization (realized 2.15)" % apex)
 
 
-# Spec arithmetic, pinned against the shipped data: base run 9.0 + cat 5.6 = 14.6 u/s closing;
-# the body overlap window is (0.9 body + 2 x 0.4 player half-width) / 14.6 u/s = ~0.12 s.
+# Spec arithmetic, pinned against the shipped data: base run 9.0 + cat 3.0 = 12.0 u/s closing;
+# the body overlap window is (0.9 body + 2 x 0.4 player half-width) / 12.0 u/s = ~0.14 s.
 func _closing_speed_arithmetic(f: Array[String]) -> void:
 	var consts: Dictionary = Util.consts()
 	var run_speed := float(consts.get("run_speed", 9.0))
-	var closing := run_speed + 5.6
-	if absf(closing - 14.6) > 1e-9:
-		f.append("closing: %.3f u/s, want 14.6 (run 9.0 + cat 5.6)" % closing)
+	var closing := run_speed + 3.0
+	if absf(closing - 12.0) > 1e-9:
+		f.append("closing: %.3f u/s, want 12.0 (run 9.0 + cat 3.0)" % closing)
 	var window := (0.9 + 2.0 * 0.4) / closing
-	if absf(window - 0.12) > 0.005:
-		f.append("overlap: %.3f s, want ~0.12 s (1.7 u at 14.6 u/s)" % window)
+	if absf(window - 0.14) > 0.005:
+		f.append("overlap: %.3f s, want ~0.14 s (1.7 u at 12.0 u/s)" % window)
 
 
 

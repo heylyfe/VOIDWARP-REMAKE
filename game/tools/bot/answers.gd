@@ -142,7 +142,7 @@ const TABLE := {
 		"trigger": "meow within 14 u (it is always visible, always slow)",
 		"anchor": "arrival",
 		"inputs": [
-			{"tick_offset": 0, "action": "jump", "note": "the thin-path / dead-end hurdle: 0.43 s jump window for a 0.12 s overlap (F3); on open ground the answer is simply walking away"},
+			{"tick_offset": 0, "action": "jump", "note": "the thin-path / dead-end hurdle: 0.43 s jump window for a 0.14 s overlap (F3); on open ground the answer is simply walking away"},
 		],
 		"source": "research/fable-enemies.md section 4 (counter-play map), row 'kiwi cat'",
 		"caveat": "survivable today only with F1 + F2 (an altitude rule and a body size)",

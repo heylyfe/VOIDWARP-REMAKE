@@ -6,8 +6,8 @@ extends RefCounted
 #   - at overtime tier 8 + Rush Hour x 3 a 6.75 u/s floater (ceiling 0.75) moves at exactly
 #     6.75 u/s - the clamp is applied AFTER all multipliers - and its 2.0 s cycle is
 #     shortened to at most 1.2 s by the tempo overflow (floor 0.6 of the base cycle);
-#   - a 5.6 u/s floater (ceiling 0.80) never exceeds 7.2 u/s under the same stack;
-#   - a Zoomies-style burst never exceeds 9.0 u/s (burst ceiling 1.00) and lasts at most
+#   - a 3.0 u/s floater (ceiling 0.40) never exceeds 3.6 u/s under the same stack;
+#   - a Zoomies-style burst never exceeds 4.95 u/s (burst ceiling 0.55) and lasts at most
 #     3.0 s, then falls back under the pursuit ceiling;
 #   - a 4 HU climb (2.0 u) opens at least 1.0 s of vertical separation, at 2.0 u/s however
 #     hard the horizontal multipliers stack (the vertical easing is NEVER multiplied);
@@ -161,44 +161,44 @@ func _tempo_overflow_and_interval(f: Array[String]) -> void:
 	rt2.overtime_running = true
 	rt2.add_overtime_tier(2)
 	var row2: Dictionary = rt2.spawn_at("tbd", "TBD", FloaterBehavior.new(),
-			{"base_speed": 5.6, "pursuit_ceiling": 0.8, "contact_kill": false},
+			{"base_speed": 3.0, "pursuit_ceiling": 0.4, "contact_kill": false},
 			Vector3(40.5, 0.0, 0.5))
 	rt2.step(DT)
 	var fb2 = row2["float"]
 	if absf(fb2.tempo_mul - 1.0) > 1e-9:
 		f.append("floater: tempo_mul %.6f with no overflow, want 1.0" % fb2.tempo_mul)
-	if absf(fb2.h_speed - 5.6 * 1.12) > 1e-9:
-		f.append("floater: speed %.6f under mild overtime, want the raw 6.272" % fb2.h_speed)
+	if absf(fb2.h_speed - 3.0 * 1.12) > 1e-9:
+		f.append("floater: speed %.6f under mild overtime, want the raw 3.36" % fb2.h_speed)
 
 
 func _kiwi_ceiling(f: Array[String]) -> void:
-	# overtime 8 + Rush Hour x3 + Hunger x2: raw 5.6 * 1.48 * 1.259712 * 1.1025 = 11.5 u/s,
-	# the 0.80 ceiling holds the line at 7.2 - never above, at every tick
+	# overtime 8 + Rush Hour x3 + Hunger x2: raw 3.0 * 1.48 * 1.259712 * 1.1025 = 6.17 u/s,
+	# the 0.40 ceiling holds the line at 3.6 - never above, at every tick
 	var pair := _runtime(_level([]))
 	var rt = pair[0]
 	rt.overtime_running = true
 	rt.add_overtime_tier(8)
 	rt.curse_speed_mul = _max_stacks() * 1.05 * 1.05
-	var cfg := {"base_speed": 5.6, "pursuit_ceiling": 0.8, "burst_ceiling": 1.0,
+	var cfg := {"base_speed": 3.0, "pursuit_ceiling": 0.4, "burst_ceiling": 0.55,
 			"contact_kill": false}
 	var row: Dictionary = rt.spawn_at("tbd", "TBD", FloaterBehavior.new(), cfg,
 			Vector3(60.5, 0.0, 0.5))
 	var fb = row["float"]
 	for i in range(180):
 		rt.step(DT)
-		if fb.h_speed > 7.2 + 1e-9:
-			f.append("floater: tick %d speed %.6f exceeds the 7.2 ceiling" % [i, fb.h_speed])
+		if fb.h_speed > 3.6 + 1e-9:
+			f.append("floater: tick %d speed %.6f exceeds the 3.6 ceiling" % [i, fb.h_speed])
 			return
-	if absf(fb.h_speed - 7.2) > 1e-9:
-		f.append("floater: settled speed %.6f, want exactly 7.2 under the full stack" % fb.h_speed)
+	if absf(fb.h_speed - 3.6) > 1e-9:
+		f.append("floater: settled speed %.6f, want exactly 3.6 under the full stack" % fb.h_speed)
 
 
 func _burst_bounds(f: Array[String]) -> void:
-	# Zoomies: every 12 s the body sprints at +60% for "3 s" - bounded to 1.00 x base run
-	# (9.0 u/s) and 3.0 s (180 ticks), then back under the pursuit ceiling (SR-5)
+	# Zoomies: every 12 s the body sprints at +60% for "3 s" - bounded to 0.55 x base run
+	# (4.95 u/s) and 3.0 s (180 ticks), then back under the pursuit ceiling (SR-5)
 	var pair := _runtime(_level([]))
 	var rt = pair[0]
-	var cfg := {"base_speed": 5.6, "pursuit_ceiling": 0.8, "burst_ceiling": 1.0,
+	var cfg := {"base_speed": 3.0, "pursuit_ceiling": 0.4, "burst_ceiling": 0.55,
 			"contact_kill": false}
 	var row: Dictionary = rt.spawn_at("tbd", "TBD", FloaterBehavior.new(), cfg,
 			Vector3(60.5, 0.0, 0.5))
@@ -210,15 +210,15 @@ func _burst_bounds(f: Array[String]) -> void:
 	for i in range(400):
 		rt.step(DT)
 		max_speed = maxf(max_speed, fb.h_speed)
-		if fb.h_speed > 7.2 + 1e-9:
+		if fb.h_speed > 3.6 + 1e-9:
 			burst_ticks += 1
-	if max_speed > 9.0 + 1e-9:
-		f.append("floater: burst speed %.6f exceeds 9.0 (burst ceiling 1.00)" % max_speed)
-	if absf(max_speed - 8.96) > 1e-6:
-		f.append("floater: burst speed %.6f, want 5.6 * 1.6 = 8.96 under the cap" % max_speed)
+	if max_speed > 4.95 + 1e-9:
+		f.append("floater: burst speed %.6f exceeds 4.95 (burst ceiling 0.55)" % max_speed)
+	if absf(max_speed - 4.8) > 1e-6:
+		f.append("floater: burst speed %.6f, want 3.0 * 1.6 = 4.8 under the cap" % max_speed)
 	if burst_ticks != 180:
 		f.append("floater: burst lasted %d ticks above the ceiling, want 180 (3.0 s)" % burst_ticks)
-	# with the full overtime stack the burst is clamped to exactly 9.0 - never above
+	# with the full overtime stack the burst is clamped to exactly 4.95 - never above
 	var pair2 := _runtime(_level([]))
 	var rt2 = pair2[0]
 	rt2.overtime_running = true
@@ -232,10 +232,10 @@ func _burst_bounds(f: Array[String]) -> void:
 	for i in range(200):
 		rt2.step(DT)
 		max2 = maxf(max2, fb2.h_speed)
-	if max2 > 9.0 + 1e-9:
-		f.append("floater: burst under overtime hit %.6f, over the 9.0 bound" % max2)
-	if absf(max2 - 9.0) > 1e-9:
-		f.append("floater: burst under overtime peaked at %.6f, want the 9.0 cap" % max2)
+	if max2 > 4.95 + 1e-9:
+		f.append("floater: burst under overtime hit %.6f, over the 4.95 bound" % max2)
+	if absf(max2 - 4.95) > 1e-9:
+		f.append("floater: burst under overtime peaked at %.6f, want the 4.95 cap" % max2)
 	if fb2.burst_ticks_left != 0 or fb2.bursting():
 		f.append("floater: burst still running after its 180-tick cap")
 
@@ -329,7 +329,7 @@ func _spawn_separation(f: Array[String]) -> void:
 	]))
 	var rt = pair[0]
 	rt.plan("tbd", "TBD", FloaterBehavior.new(),
-			{"preferred_kind": "nook", "base_speed": 5.6, "pursuit_ceiling": 0.8,
+			{"preferred_kind": "nook", "base_speed": 3.0, "pursuit_ceiling": 0.4,
 			"contact_kill": false}, 3)
 	var spawns: Array = []
 	var ev_all: Array = []
@@ -363,7 +363,7 @@ func _spawn_separation(f: Array[String]) -> void:
 	var pair2 := _runtime(_level([]))
 	var rt2 = pair2[0]
 	rt2.plan("tbd", "TBD", FloaterBehavior.new(),
-			{"base_speed": 5.6, "pursuit_ceiling": 0.8, "contact_kill": false}, 2)
+			{"base_speed": 3.0, "pursuit_ceiling": 0.4, "contact_kill": false}, 2)
 	var spawns2: Array = []
 	for i in range(361):
 		for e in rt2.step(DT):
