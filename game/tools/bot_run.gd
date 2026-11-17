@@ -161,37 +161,53 @@ static func run_probe(runs: int, seed_base: int, max_level: int = MAX_LEVEL_DEFA
 
 ## One full probe run. Returns {"reached_6","reached_12","reached_18","outcome","entered","class"}
 ## outcome: "dead" | "stuck" | "timeout" | "complete" (reached max_level).
-static func play_run(api: RefCounted, seed: int, max_level: int) -> Dictionary:
+static func play_run(api: RefCounted, seed: int, max_level: int, p_log = null) -> Dictionary:
 	var ledger := {
 		"votes": {}, "curses": {}, "stacks": {}, "purse": 0, "tithes": 0,
 		"hunger": 0, "last_vote": "", "class": "",
 	}
+	# T-080: with an app/run_log.gd instance handed in, the run is logged - the lobby
+	# rows as offer/pick records, the levels as sim-event streams. Null (the default,
+	# and T-060's own probe path) logs nothing and behaves identically.
+	if p_log != null:
+		p_log.lobby_entered(0)
 	# the pre-run lobby (level_completed 0; picks the class + the first enemy vote)
-	_resolve_lobby(api, ledger, 0, seed)
+	_resolve_lobby(api, ledger, 0, seed, p_log)
+	if p_log != null:
+		p_log.lobby_left()
 	var entered := 1
 	var outcome := "complete"
 	var death_tick := -1
 	var death_killer := ""
 	var death_code := ""
 	while entered <= max_level:
-		var result: Dictionary = _play_level(api, ledger, seed, entered)
+		var result: Dictionary = _play_level(api, ledger, seed, entered, p_log)
 		var res := str(result.get("result", "dead"))
 		if res == "complete":
 			if entered >= max_level:
 				break
 			entered += 1
 			# the lobby AFTER completing `entered - 1` (votes/curses/purse carry over)
-			_resolve_lobby(api, ledger, entered - 1, seed)
+			if p_log != null:
+				p_log.lobby_entered(entered - 1)
+			_resolve_lobby(api, ledger, entered - 1, seed, p_log)
+			if p_log != null:
+				p_log.lobby_left()
 			continue
 		outcome = res
 		death_tick = int(result.get("death_tick", -1))
 		death_killer = str(result.get("death_killer", ""))
 		death_code = str(result.get("death_code", ""))
 		break
+	# T-080: the run ENDS here whatever the outcome (the harness stops, or the player died)
+	if p_log != null:
+		p_log.run_finished(entered, int(ledger["purse"]))
+	# T-080: the harness's final pip state (a stuck run never wrote it - default 2)
 	return {
 		"reached_6": entered >= 6, "reached_12": entered >= 12, "reached_18": entered >= 18,
 		"outcome": outcome, "entered": entered, "class": str(ledger["class"]),
 		"death_tick": death_tick, "death_killer": death_killer, "death_code": death_code,
+		"charges": int(ledger.get("charges", 2)),
 	}
 
 
@@ -201,14 +217,26 @@ static func play_run(api: RefCounted, seed: int, max_level: int) -> Dictionary:
 ## whose draw is empty can only be tithe-passed (DESIGN.md section 11) - paid when
 ## affordable, otherwise the run stalls on the lobby and is reported as "stuck".
 static func _resolve_lobby(api: RefCounted, ledger: Dictionary, level_completed: int,
-		seed: int) -> void:
+		seed: int, p_log = null) -> void:
 	var lb = Intermission.create(api, level_completed, int(ledger["purse"]),
 			VoidRngScript.mix(seed, 5000 + level_completed),
 			ledger["votes"], ledger["curses"], ledger["stacks"],
 			str(ledger["class"]), int(ledger["tithes"]), int(ledger["hunger"]),
 			str(ledger["last_vote"]))
+	# T-080: one offer record per unresolved bay at presentation (bay kind + the three
+	# altar ids; an Ex2 bay's between-votes redraw is not a new offer row - D-T080-5).
+	if p_log != null:
+		for bay in lb.bays:
+			var bd: Dictionary = bay
+			if bool(bd.get("resolved", false)):
+				continue
+			var bay_ids: Array = []
+			for a in bd.get("altars", []):
+				bay_ids.append(str((a as Dictionary).get("id", "")))
+			p_log.offer_shown(str(bd.get("kind", "")), bay_ids)
 	var rng := VoidRngScript.new(VoidRngScript.mix(VoidRngScript.mix(seed, 0xB07),
 			level_completed + 1))
+	var sel_events: Array = []   # T-080: the altar_selected events of the latest select
 	for _i in range(80):
 		if bool(lb.gate_open()):
 			break
@@ -227,11 +255,17 @@ static func _resolve_lobby(api: RefCounted, ledger: Dictionary, level_completed:
 			elif kind == "tithe" and bay_kind == "C":
 				tithes.append(i)
 		if not picks.is_empty():
-			lb.apply_select(0, picks[rng.urange(picks.size())], [])
+			sel_events = []
+			lb.apply_select(0, picks[rng.urange(picks.size())], sel_events)
+			if p_log != null:
+				p_log.feed_lobby(sel_events)
 		elif not tithes.is_empty():
 			# the only mandatory bay is an empty C draw: pass it with a tithe
-			if not bool(lb.apply_select(0, tithes[0], [])):
+			sel_events = []
+			if not bool(lb.apply_select(0, tithes[0], sel_events)):
 				break
+			if p_log != null:
+				p_log.feed_lobby(sel_events)
 		else:
 			break
 	ledger["votes"] = lb.votes
@@ -328,7 +362,8 @@ static func _path_to(parent: PackedInt32Array, start: int, goal: int) -> Array[i
 
 
 ## Play one level. Returns {"result": "complete" | "dead" | "stuck" | "timeout"}.
-static func _play_level(api: RefCounted, ledger: Dictionary, seed: int, level: int) -> Dictionary:
+static func _play_level(api: RefCounted, ledger: Dictionary, seed: int, level: int,
+		p_log = null) -> Dictionary:
 	var votes: Dictionary = ledger["votes"]
 	var curses: Dictionary = ledger["curses"]
 	var extra: int = E_GIFT_LARPER.extra_mines(int(votes.get("gift_larper", 0)))
@@ -344,10 +379,19 @@ static func _play_level(api: RefCounted, ledger: Dictionary, seed: int, level: i
 	var gtiles: Array = graph["tiles"]
 	var adj: Array = graph["adj"]
 	var w2 = graph["world"]
-	# the collection slots as tile indices (gifts hang 1.0 u above their tile)
+	# the collection slots as tile indices (gifts hang 1.0 u above their tile);
+	# the T-080 level_start counts ride the same walk (slots / real gifts / mines)
 	var slot_tiles: Array[int] = []
+	var slots_n := 0
+	var real_n := 0
+	var mine_n := 0
 	for s in lv.gifts.slots:
 		var sd: Dictionary = s
+		if int(sd["occ"]) == 0:
+			real_n += 1
+		elif int(sd["occ"]) == 1:
+			mine_n += 1
+		slots_n += 1
 		slot_tiles.append(VoidGenScript.find_tile(w2, int(sd["x"]), int(sd["z"]), int(sd["y"])))
 	# the player controller, same class the lobby picked, charges carried between levels
 	var ctl = ControllerScript.new()
@@ -365,6 +409,7 @@ static func _play_level(api: RefCounted, ledger: Dictionary, seed: int, level: i
 	rt.curse_speed_mul = pow(1.08, int(curses.get("rush_hour", 0))) * pow(1.05, int(ledger["hunger"]))
 	if curses.has("long_night"):
 		rt.overtime_period = 14.0
+	var planned_enemies := 0
 	for id in votes.keys():
 		var n := int(votes[id])
 		if n <= 0:
@@ -376,6 +421,11 @@ static func _play_level(api: RefCounted, ledger: Dictionary, seed: int, level: i
 		if beh == null:
 			continue
 		rt.plan(str(id), str(entry.get("name", id)), beh, _cfg_for(entry, str(id), level, n), n)
+		planned_enemies += n
+	# T-080: the level_start record - slots from the level dict, "enemies in play" =
+	# the enemy vote COPIES just planned (the votes ARE the DESIGN section 6 column)
+	if p_log != null:
+		p_log.level_started(level, slots_n, real_n, mine_n, planned_enemies)
 	# the per-level bot memory
 	var mem := _fresh_mem()
 	mem["slot_tiles"] = slot_tiles
@@ -403,7 +453,11 @@ static func _play_level(api: RefCounted, ledger: Dictionary, seed: int, level: i
 		for e in rt.step(DT):
 			ev.append(e)
 		_track_telegraphs(mem, rt, lv.tick)
-		if TRACE:
+		# T-080: the tick's event list is complete here (controller + gifts + mines +
+		# beacon + enemies) - one feed call per sim tick, then the clock advances.
+		if p_log != null:
+			p_log.feed_tick(ev)
+		if TRACE and lv.tick % 30 == 0:
 			print("POS t=%d x=%.2f y=%.2f z=%.2f grounded=%s cur=%d gifts=%d charges=%d" % [
 				lv.tick, ctl.x, ctl.y, ctl.z, ctl.grounded, _tile_under(w, ctl),
 				lv.gifts.remaining(), ctl.charges])

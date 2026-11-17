@@ -147,9 +147,11 @@ func _feed_one(ev: Dictionary) -> void:
 	var ty := str(ev.get("type", ""))
 	if ty == "gift_collected":
 		var wal := str(ev.get("phase", "black"))
+		# the chain VALUE AT COLLECTION is the pre-increment multiplier (economy.gd pays
+		# with it, then advances); black-phase gifts always carry x1.00
+		var chain_now := float(chain_centi) / float(CHAIN_START)
 		_advance_chain(wal == "gold")
-		_record("gift", {"slot": int(ev.get("slot", -1)), "phase": wal,
-				"chain": float(chain_centi) / float(CHAIN_START)})
+		_record("gift", {"slot": int(ev.get("slot", -1)), "phase": wal, "chain": chain_now})
 		if wal == "gold":
 			gold_count += 1
 		return
@@ -171,6 +173,28 @@ func _feed_one(ev: Dictionary) -> void:
 		_record("level_clear", {"black_ticks": beacon_open_t - level_start_t,
 				"gold_ticks": total_t - beacon_open_t,
 				"total_ticks": total_t - level_start_t})
+		return
+	# the mines ladder's typed events: the contact, then its outcome in the same tick's
+	# batch (D-058's fixed order); a pass is logged sim-side (the 1.4 u bypass zone)
+	if ty == "mine_pass":
+		_record("mine_pass", {"slot": int(ev.get("slot", -1)),
+				"closest": float(ev.get("closest", 0.0))})
+		return
+	if ty == "mine_contact":
+		_pending_mine_contact = int(ev.get("slot", -1))
+		return
+	if ty == "mine_defused":
+		_pending_mine_contact = -1
+		_record("mine_contact", {"slot": int(ev.get("slot", -1)), "outcome": "defused"})
+		return
+	if ty == "mine_shielded":
+		_pending_mine_contact = -1
+		_record("mine_contact", {"slot": int(ev.get("slot", -1)), "outcome": "shielded"})
+		return
+	if ty == "mine_detonated":
+		_pending_mine_contact = -1
+		var outcome := "killed" if str(ev.get("result", "death")) == "death" else "last_light"
+		_record("mine_contact", {"slot": int(ev.get("slot", -1)), "outcome": outcome})
 		return
 	# controller/runtime raw dicts below.
 	var e := str(ev.get("e", ""))
@@ -202,21 +226,6 @@ func _feed_one(ev: Dictionary) -> void:
 		since_tick = total_t
 	elif e == "push":
 		_push_seen(int(total_t), str(ev.get("by", "")))
-	elif e == "mine_pass":
-		_record("mine_pass", {"slot": int(ev.get("slot", -1)),
-				"closest": float(ev.get("closest", 0.0))})
-	elif e == "mine_contact":
-		_pending_mine_contact = int(ev.get("slot", -1))
-	elif e == "mine_defused":
-		_pending_mine_contact = -1
-		_record("mine_contact", {"slot": int(ev.get("slot", -1)), "outcome": "defused"})
-	elif e == "mine_shielded":
-		_pending_mine_contact = -1
-		_record("mine_contact", {"slot": int(ev.get("slot", -1)), "outcome": "shielded"})
-	elif e == "mine_detonated":
-		_pending_mine_contact = -1
-		var outcome := "killed" if str(ev.get("result", "death")) == "death" else "last_light"
-		_record("mine_contact", {"slot": int(ev.get("slot", -1)), "outcome": outcome})
 	elif e == "overtime_tier":
 		cur_overtime = int(ev.get("tier", cur_overtime))
 
@@ -249,3 +258,5 @@ func _record(type: String, payload: Dictionary) -> void:
 	var rec := {"t": total_t, "level": level_number, "phase": phase,
 			"type": type, "payload": payload}
 	_fh.store_line(JSON.stringify(rec))
+	# flushed per line so a concurrent reader (a report, a test mid-run) sees records
+	_fh.flush()
