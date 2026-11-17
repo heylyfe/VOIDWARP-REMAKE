@@ -4,28 +4,28 @@
 		{
 			"body_rect": [
 				[
-					144,
-					241,
-					224,
-					269
+					21,
+					14,
+					470,
+					99
 				],
 				[
-					144,
-					228,
-					224,
-					282
+					28,
+					9,
+					456,
+					106
 				],
 				[
-					144,
-					237,
-					224,
-					273
+					11,
+					19,
+					489,
+					93
 				],
 				[
-					144,
-					219,
-					224,
-					291
+					24,
+					15,
+					463,
+					101
 				]
 			],
 			"fps": 10,
@@ -47,13 +47,13 @@
 			"image": 7,
 			"path": "assets_src/enemies/NUKE.jpeg",
 			"role": "base",
-			"state": "MISSING -> TBD"
+			"state": "attack_descent (base art; all four spec frames derived from NUKE.jpeg)"
 		}
 	],
-	"tbd": true,
+	"tbd": false,
 	"world_height": null,
 	"anim": {
-		"_doc": "T-083. Spec: research/fable-tickets.md section 1.5 (the 1.x tables are the spec; ENEMIES.md behavior sentences are frozen per D-040). One entry per table row, keyed by a snake_case state id; 'row' repeats the exact table row label. spec_frames are the section 1.5 frame names in table order; frames are the files that exist on disk, relative to this folder (T-016 produced TBD placeholders - nuke_NN maps 1:1 onto cycle_NN, see frame_map and DECISIONS D-T083-1/D-T083-2). Timings are in 60 Hz ticks and are binding; the attack explosion starts on the tick the kill sphere resolves. Effects are shader/transform effects on the billboard and never change body_rect.",
+		"_doc": "T-083. Spec: research/fable-tickets.md section 1.5 (the 1.x tables are the spec; ENEMIES.md behavior sentences are frozen per D-040). One entry per table row, keyed by a snake_case state id; 'row' repeats the exact table row label. spec_frames are the section 1.5 frame names in table order; frames are the files that exist on disk, relative to this folder (the attack_descent frames are real art derived from assets_src/enemies/NUKE.jpeg by game/tools/art/nuke.gd; nuke_NN maps 1:1 onto cycle_NN, see frame_map and DECISIONS D-ART-NUKE-1/D-ART-NUKE-2). Timings are in 60 Hz ticks and are binding; the attack explosion starts on the tick the kill sphere resolves. Effects are shader/transform effects on the billboard and never change body_rect.",
 		"section": "1.5",
 		"frame_map": {
 			"nuke_00": "sprites/cycle_00.png",
