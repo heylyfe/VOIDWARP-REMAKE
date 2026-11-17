@@ -1,6 +1,7 @@
 {
   "id": "address_me",
   "name": "address me",
+  "spawn_line": "THE ELEPHANT SHALL BE ADDRESSED",
   "min_level": 9,
   "max_votes": 3,
   "vote_effect": "only one exists; each extra vote -5 s on its return interval",

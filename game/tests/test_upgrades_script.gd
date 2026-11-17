@@ -511,9 +511,9 @@ func _test_updraft(f: Array[String]) -> void:
 	_press(ctl, w, ControllerScript.BTN_JUMP, 45)
 	var ev := _press(ctl, w, 0, 2)
 	ev = _press(ctl, w, ControllerScript.BTN_JUMP)
-	_expect(f, _kind(ev, "updraft") == 1 and not ctl.gliding,
+	_expect(f, _kind(ev, "updraft_rise") == 1 and not ctl.gliding,
 			"updraft: the mid-glide re-press did not rise")
-	if _kind(ev, "updraft") != 1:
+	if _kind(ev, "updraft_rise") != 1:
 		return
 	_expect(f, _near(ctl.vy, ControllerScript.UPDRAFT_VY, 1e-6),
 			"updraft: step-exit vy %.4f, want the exact 3 u apex vy" % ctl.vy)
@@ -531,7 +531,7 @@ func _test_updraft(f: Array[String]) -> void:
 	_press(ctl, w, ControllerScript.BTN_JUMP, 40)
 	_press(ctl, w, 0, 1)
 	var ev2 := _press(ctl, w, ControllerScript.BTN_JUMP)
-	_expect(f, _kind(ev2, "updraft") == 0,
+	_expect(f, _kind(ev2, "updraft_rise") == 0,
 			"updraft: a second rise inside the 6 s cooldown")
 	var held := _glide_land(ctl, w)
 	_expect(f, held > 0, "updraft: the second glide never landed")
@@ -539,7 +539,7 @@ func _test_updraft(f: Array[String]) -> void:
 	_press(ctl, w, ControllerScript.BTN_JUMP, 40)
 	_press(ctl, w, 0, 1)
 	var ev3 := _press(ctl, w, ControllerScript.BTN_JUMP)
-	_expect(f, _kind(ev3, "updraft") == 1,
+	_expect(f, _kind(ev3, "updraft_rise") == 1,
 			"updraft: no rise after the 6 s cooldown ran out")
 
 

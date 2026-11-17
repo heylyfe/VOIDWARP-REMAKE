@@ -1,6 +1,7 @@
 {
   "id": "seal",
   "name": "seal",
+  "spawn_line": "THE SEAL SHALL BARK",
   "min_level": 3,
   "max_votes": 3,
   "vote_effect": "+1 seal",

@@ -143,7 +143,7 @@ func _cfg_coherence(f: Array[String]) -> void:
 	_eq(f, "idle revolution_ticks", int(idle_fx.get("revolution_ticks", 0)), 240)
 	_eq(f, "tell range param", float(idle_fx.get("tell_range_u", 0.0)), 12.0)
 	# the D-MINE killer display name (death.gd's FINAL map)
-	_eq(f, "D-MINE killer", str(DeathScript.CODES.get("D-MINE", "")), "gift Larper (Tripmine)")
+	_eq(f, "D-MINE killer", DeathScript.killer_for("D-MINE"), "gift Larper (Tripmine)")
 
 
 func _eq(f: Array[String], what: String, got, want) -> void:

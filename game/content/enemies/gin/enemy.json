@@ -1,6 +1,7 @@
 {
   "id": "gin",
   "name": "gin ichimaru",
+  "spawn_line": "GIN SHALL SEVER",
   "min_level": 17,
   "max_votes": 3,
   "vote_effect": "each extra vote -3 s on his strike cooldown",

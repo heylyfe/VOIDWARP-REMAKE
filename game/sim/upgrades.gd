@@ -11,13 +11,13 @@ extends RefCounted
 #   gift_radar      - nearest real gift within 40 u (80 u at 2 stacks)
 #   threat_radar    - enemies within 30 u
 #   beacon_compass  - compass heading and distance to the beacon
-#   cartographer    - every piece within 40 u of anywhere you have stood
+#   footprint_map   - every piece within 40 u of anywhere the player has stood
 #   skeleton_quota  - the beacon opens at 90 % of real black gifts
 #   beacon_channel  - once per level, 180-tick standing-still channel to the dais
 #
 # Pure sim: no engine types beyond Array/Dictionary, no RNG, fixed 60 Hz tick (the
 # channel is tick-counted, D-T053-3). The radar queries are read-only; the only state
-# is the cartographer footprint memory and the beacon channel, both per player index.
+# is the footprint-map memory and the beacon channel, both per player index.
 #
 # The section 3.3 mine-contact ladder does NOT live here: sim/mines.gd (T-021) owns
 # it and this module never replaces it - the Defuse Kit roll and the Subspacial
@@ -34,7 +34,7 @@ const ROLE_MINE_RADAR := "mine_radar"
 const ROLE_GIFT_RADAR := "gift_radar"
 const ROLE_THREAT_RADAR := "threat_radar"
 const ROLE_BEACON_COMPASS := "beacon_compass"
-const ROLE_CARTOGRAPHER := "cartographer"
+const ROLE_CARTOGRAPHER := "footprint_map"
 const ROLE_SKELETON_QUOTA := "skeleton_quota"
 const ROLE_BEACON_CHANNEL := "beacon_channel"
 
@@ -52,7 +52,7 @@ const CHANNEL_TICKS := 180
 
 ## The roles dict as the caller supplied it (read-only shared data).
 var roles: Dictionary = {}
-## Cartographer footprints: player index -> {Vector2i tile: true} (D-T053-2).
+## Footprint-map memory: player index -> {Vector2i tile: true} (D-T053-2).
 var visited: Dictionary = {}
 ## Pocket Beacon channel ticks held, per player index.
 var channels: Dictionary = {}
@@ -161,7 +161,7 @@ static func threat_markers(enemies: Array, px: float, pz: float,
 	return out
 
 
-# --------------------------------------------------------- cartographer (D-T053-2) --
+# -------------------------------------------------------- footprint map (D-T053-2) --
 
 ## One tick of footprint memory: records the 1 u tile under the player's centre.
 func note_footprint(p_index: int, px: float, pz: float) -> void:
@@ -212,7 +212,7 @@ static func _near_any(tiles: Dictionary, x: float, z: float, r2: float) -> bool:
 
 # ------------------------------------------- pocket beacon channel (D-T053-3) -------
 
-## One per-tick pass for one player: the cartographer footprint note, then the
+## One per-tick pass for one player: the footprint-map note, then the
 ## beacon channel. Called from sim.gd after the movement step (and, on the
 ## controller path, by its owner the same way after the step). inp: this tick's
 ## PlayerInput; prev_buttons: last tick's button bitmask (the edges).

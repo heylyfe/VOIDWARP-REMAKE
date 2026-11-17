@@ -267,7 +267,7 @@ func _test_screen_data(f: Array[String]) -> void:
 		f.append("screen: D-MINE killer name drift")
 	if DeathScript.killer_for("D-CURSE:hungry_void") != "curse hungry_void":
 		f.append("screen: the curse code form drifted")
-	if DeathScript.CODES.has("D-BEN"):
+	if DeathScript.killer_for("D-BEN") != "D-BEN":
 		f.append("screen: thicc ben grew a death code")
 	# an alive controller attributes nothing
 	var alive := _ctl()

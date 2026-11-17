@@ -1,6 +1,7 @@
 {
   "id": "kiwi_cat",
   "name": "kiwi cat",
+  "spawn_line": "THE KIWI CAT SHALL FOLLOW",
   "min_level": 1,
   "max_votes": 4,
   "vote_effect": "+1 cat",

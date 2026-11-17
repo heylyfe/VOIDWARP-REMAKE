@@ -129,7 +129,7 @@ class Api:
 	func eject_player(player, why: String, blur_ticks: int) -> void:
 		rt.eject_player(row, player, why, blur_ticks)
 
-	# T-032: the toucher-ben ring cleanse (DESIGN.md 5.8). Removes glitched tiles whose
+	# T-032: the ben ring cleanse (DESIGN.md 5.8). Removes glitched tiles whose
 	# tile centre is within r u (horizontal) of pos; returns the count removed.
 	func cleanse_glitched_within(pos: Vector3, r: float) -> int:
 		return rt.cleanse_glitched_within(row, pos, r)
@@ -427,7 +427,7 @@ func plan(id: String, display_name: String, behavior: RefCounted, cfg: Dictionar
 
 
 ## Direct spawn at an explicit world position (tests, drop-in fixtures, engine callers that
-## need a body now - e.g. the nuke launcher). Same row shape as the D-056 rule produces.
+## need a body now - e.g. the launcher). Same row shape as the D-056 rule produces.
 func spawn_at(id: String, display_name: String, behavior: RefCounted, cfg: Dictionary,
 		pos: Vector3, copy_index: int = 0, copies: int = 1) -> Dictionary:
 	var spot := {"x": pos.x, "y": pos.y, "z": pos.z}
@@ -818,7 +818,7 @@ func eject_player(source_row: Dictionary, player, why: String, blur_ticks: int) 
 			"player": idx})
 
 
-## T-032: the toucher-ben ring cleanse (DESIGN.md 5.8: "thicc ben's ring cleanses
+## T-032: the ben ring cleanse (DESIGN.md 5.8: "thicc ben's ring cleanses
 ## glitched tiles within 8 u"; T-083 anim block attack_ring expands the ring to
 ## 8 u in 18 ticks). D-T-032-3: horizontal (XZ) distance from the tile centre.
 func cleanse_glitched_within(source_row: Dictionary, pos: Vector3, r: float) -> int:
@@ -954,9 +954,9 @@ func _update_near() -> void:
 				if dc != "":
 					seen[dc] = tick
 		# a LIVE telegraph's footprint is on screen by the view's own language (the
-		# client draws exactly these) - the no-body killers' evidence (nuke's ring,
-		# gin's patch, the rumble cues). Rows in rt.telegraphs never expire (the
-		# toucher test's finding), so liveness is filtered by start tick + duration.
+		# client draws exactly these) - the no-body killers' evidence (the ring,
+		# the patch, the rumble cues). Rows in rt.telegraphs never expire (the
+		# glitch-floor test's finding), so liveness is filtered by start tick + duration.
 		for t in telegraphs:
 			if tick < int(t["tick"]) or tick >= int(t["tick"]) + maxi(int(t["total"]), 1):
 				continue

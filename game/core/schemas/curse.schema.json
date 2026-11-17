@@ -1,5 +1,5 @@
 {
-  "$comment": "Curse JSON schema (DESIGN.md sections 12 and 7; ticket T-013). Ids, stats and hooks are closed lists; severity is the lowercase full word per D-T014a-1 (accepted by T-013, see D-T013-2).",
+  "$comment": "Curse JSON schema (DESIGN.md sections 12 and 7; ticket T-013; FIX-A14 D-FIX-A14-3). Ids, stats and hooks are closed lists; severity is the lowercase full word per D-T014a-1 (accepted by T-013, see D-T013-2).",
   "type": "object",
   "additionalProperties": false,
   "required": ["id", "name", "severity", "min_level", "requires_enemy", "max_stacks", "modifiers", "hooks"],
@@ -8,7 +8,7 @@
     "name": {"type": "string"},
     "severity": {"type": "string", "enum": ["mild", "harsh", "brutal"]},
     "min_level": {"type": "integer", "minimum": 1},
-    "requires_enemy": {"type": ["string", "null"], "enum": [null, "kiwi_cat", "coil", "thicc_ben", "isagi", "nuke", "you", "gift_larper", "toucher", "seal", "address_me", "claude", "gin_ichimaru"]},
+    "requires_enemy": {"type": ["string", "null"], "pattern": "^[a-z][a-z0-9_]*$", "$comment": "an enemy id or null; validated against the scanned enemy ids at registry load (FIX-A14, D-FIX-A14-3) - the roster is never enumerated here"},
     "max_stacks": {"type": "integer", "minimum": 1},
     "rule": {"type": "string"},
     "counter_play": {"type": "string"},

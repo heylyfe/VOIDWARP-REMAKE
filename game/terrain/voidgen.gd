@@ -623,7 +623,7 @@ static func try_grow(W: World, rng, sock: Array, arm: int, trait_name: String, t
 			wv = 0  # paths near the hub are walkable on early levels (D8 gentle start)
 		lw.append(wv)
 	var larch: String = rng.wpick(WALKS, lw)
-	# width: 1 or 2 cells, never more (TERRAIN_SPEC section 1A rule 2)
+	# width: 1 or 2 cells, never wider (TERRAIN_SPEC section 1A rule 2)
 	var hi: int = wmax if wmax < 2 else 2
 	var w: int = hi
 	if not gentle:
