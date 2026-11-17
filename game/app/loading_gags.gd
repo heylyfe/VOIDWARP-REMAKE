@@ -247,9 +247,12 @@ static func _toucher_slip(tt: float, cast: Array[String]) -> Array[Dictionary]:
 	return out
 
 
-# ---- gag 2: the waddler gets its head stuck in a gift box --------------------------------------
-# A: it waddles in, a black gift drops on its head, it staggers blind: "mfph!".
-# B: carries on staggering, rates the box, leaves with it on.
+# ---- gag 2: the pup gets its head stuck in a gift box ------------------------------------------
+# The art is a white pup lying on its belly, facing the camera, head at the left of its
+# sprite. So it never turns round (a mirror flip would teleport the box across the sprite); it
+# belly-scoots, head first. A: it scoots in looking straight at the camera, a black gift drops over its face
+# (the box is wider than the head), "mfph!". B: it scoots blind back and forth, rates the box, leaves
+# with it on.
 
 static func _seal_x(tt: float) -> float:
 	if tt < 1.0:
@@ -266,35 +269,38 @@ static func _seal_giftbox(tt: float, cast: Array[String]) -> Array[Dictionary]:
 	var lead := cast[0]
 	var h := 170.0
 	var sx_pos := _seal_x(tt)
-	var moving_right := false
-	if tt >= 1.0 and tt < 3.9:
-		moving_right = cos((tt - 1.0) * 3.0) > 0.0
 	var frame := "idle_0%d" % (int(tt * 6.0) % 2)
-	var rot := 0.05 * sin(tt * 12.0)
-	var y := GROUND_Y - 6.0 * absf(sin(tt * 12.0))
+	var rot := 0.0
+	var y := GROUND_Y
 	var sy := 1.0
 	var sxs := 1.0
-	if tt >= 1.0 and tt < 3.9:
-		rot = 0.13 * sin(tt * 17.0)            # blind
+	# belly scoot: the body humps up and stretches out once per scoot (no legs to waddle on)
+	var scoot := sin(tt * 14.0)
+	if tt < 1.0 or tt >= 3.9:
+		sy = 1.0 + 0.05 * scoot
+		sxs = 1.0 - 0.04 * scoot
+		y = GROUND_Y - 3.0 * absf(scoot)
+	else:
+		rot = 0.06 * sin(tt * 17.0)               # blind
+		sy = 1.0 + 0.07 * scoot
+		sxs = 1.0 - 0.05 * scoot
+		y = GROUND_Y - 5.0 * absf(scoot)
 	if tt >= 0.95 and tt < 1.15:               # the box lands: squash
 		var us := _u(tt, 0.95, 1.15)
 		sy = 1.0 - 0.18 * _hop(us)
 		sxs = 1.0 + 0.1 * _hop(us)
-	var head_dx := -70.0 if not moving_right else 70.0
-	out.append(_spr(lead, frame, sx_pos, y, h, {"rot": rot, "flip": moving_right, "sy": sy, "sx": sxs,
-			"p": 0.0}))
-	# the box: falls from above onto the head (0.55-0.95), then rides it
-	var head_y := GROUND_Y - 0.4 * h
-	var bx := sx_pos + head_dx
-	var by := head_y + 62.0
+	out.append(_spr(lead, frame, sx_pos, y, h, {"rot": rot, "sy": sy, "sx": sxs, "p": 0.0}))
+	# the box: falls from above onto the face (0.55-0.95), then rides it. The face is ~70 px left of
+	# the sprite centre; the box sits on the ground so it hides the whole head.
+	var bx := sx_pos - 70.0
+	var by := GROUND_Y
 	var brot := rot
 	if tt < 0.95:
-		var uf := _u(tt, 0.55, 0.95)
-		by = lerpf(-160.0, by, _ei(uf))
-		bx = sx_pos + (-70.0)
-		brot = 0.3 * (1.0 - uf)
 		if tt < 0.55:
 			return out
+		var uf := _u(tt, 0.55, 0.95)
+		by = lerpf(-160.0, by, _ei(uf))
+		brot = 0.3 * (1.0 - uf)
 	elif tt < 1.15:
 		by -= 14.0 * _hop(_u(tt, 0.95, 1.15))
 	out.append(_gift(bx, by, 125.0, {"rot": brot}))
