@@ -1,9 +1,9 @@
-# PARKED.md - spec conflicts found while building, parked for the owner
+# PARKED.md — every parked ticket and every parked rule
 
-A row here means: this ticket read the two conflicting passages, built the reading closest to
-ENEMIES.md, did NOT resolve or rewrite either passage, and continues on the built reading until
-the owner rules.
+A row here is a written reason: what failed, the output, what was tried. A ticket is never dropped
+silently (FLEET_PACK.md §10.1 R1). A contradiction a worker finds is parked here and the orchestrator
+does not resolve it either (R5).
 
-| ticket | the two conflicting passages | what was built meanwhile |
-|---|---|---|
-| T-027 | ENEMIES.md intro: "Like Nullscape, all enemies are client-sided - rendered on the client, not the server." vs ENEMIES.md "Global notes": "All enemies stay server-sided (Nullscape's enemies are all server-sided too) - apart from gin ichimaru and his spears (spears included): rendered on the client, never the server." DESIGN.md section 5 follows the global notes ("Enemy logic runs in the deterministic simulation (the future server). Sprites, billboarding and gin ichimaru's spears are view-layer only."), and FLEET_PACK T-027 also quotes the global-notes sentence. The two passages say opposite things about the LOGIC side (client vs server). | Enemy logic in `sim/enemy_runtime.gd` (server-sided, per the global notes + DESIGN section 5 + the T-027 spec text); all sprites, billboarding and spawn text in the view layer, client-side. This is the global-notes reading and it is also the client-intro reading for everything the intro names (rendering); nothing was written into ENEMIES.md. |
+| # | ticket | what was parked | why | what was tried |
+|---|---|---|---|---|
+| 1 | T-027 | ENEMIES.md contradicts itself on which side enemy LOGIC runs. Intro: "Like Nullscape, all enemies are client-sided - rendered on the client, not the server." Global notes: "All enemies stay server-sided (Nullscape's enemies are all server-sided too) - apart from gin ichimaru and his spears (spears included): rendered on the client, never the server." | The two passages say opposite things about the logic side. DESIGN.md §5 and the T-027 spec text both follow the global notes, so the intro is the outlier. Neither passage was edited. | Built the global-notes reading: enemy logic in `sim/enemy_runtime.gd` (server-sided); all sprites, billboarding and spawn text in the view layer (client-side). This satisfies the intro for everything the intro names (rendering) and the global notes for logic. Owner to rule which passage stands. |
