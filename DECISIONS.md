@@ -5312,3 +5312,15 @@ artist pass could rebalance with a designed light rim instead of a global lift]
   test_enemy_thicc_ben PASS; run_all 49 passed / 5 failed - the 5 (claude, coil, toucher, you,
   vfx) fail identically on the pristine base: this checkout has no game/.godot import cache, so
   ResourceLoader.load of any PNG fails; not this ticket's to fix. No PARKED rows. No push.
+
+- 2026-11-17 T-016 art module (Inkling, this session): isagi real art DONE on
+  t3/isagi-real-art-frames - game/tools/art/isagi.gd owns the frames (the shared pipeline skips
+  isagi; corner flood fill could not strip the opaque-white sources); 9 frames written
+  (idle/spawn/telegraph/shoot/recover/shot + legacy fire_00/01/02 revamped to the new art), all
+  distinct per state; frame_map rebound (isagi_idle_00/isagi_shoot_00/isagi_ball_00), anim block
+  timings/loops/effects untouched; animations[] appended (idle/spawn/telegraph/attack/recover),
+  fire/shot entries kept in place; tbd -> false; sources[] -> OK. Fog contrast forced a lerp
+  toward white on the two photo/logo bodies (D-ART-ISAGI-2, POW curve measured and rejected).
+  Checks: SPRITES OK 340 checks; FOGCHECK OK (280 checks over 5 biomes); ANIM-DATA isagi PASS;
+  TESTS 54 passed 0 failed, 0 SCRIPT ERROR lines (after a --import pass generated the import
+  cache this worktree lacked; game/.godot not committed). No PARKED rows. No push.
