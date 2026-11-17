@@ -7,7 +7,7 @@ their sources documented here.
 
 | image | exact filename | path (repo-relative) | pipeline state |
 |---|---|---|---|
-| 12 | `babehseal.webp` | `assets_src/enemies/babehseal.webp` | REAL -> frames derived by `game/tools/art/seal.gd` (2026-11-17, D-ART-SEAL-1; background removed by per-column gradient model + luminance floor + largest component, fluff fringe synthesized) |
+| 12 | `babehseal.png` | `assets_src/enemies/babehseal.png` | REAL -> frames derived by `game/tools/art/seal.gd` (2026-11-17, D-ART-SEAL-3; the source is a transparent harp-seal pup - the alpha channel IS the matte, no flood fill, no defringe, no feather; tight crop + 512x512 bottom-anchored canvas) |
 
 Pipeline (every source): RGBA convert, background removed by a flood fill from the four
 image corners (colour tolerance 24/255, skipped when the corners are already alpha 0),
@@ -15,8 +15,8 @@ tight crop to the body (alpha > 16 = the only hitbox-eligible pixels), then fitt
 power-of-two canvas (max 512, transparent margin). Every derived frame is a deterministic
 overlay of the base: bands / channel offsets / pixel drops seeded by `mix(enemy_index,
 frame)` (TERRAIN_SPEC.md section 3) - a rebuild is byte-stable. THE SEAL IS AN EXCEPTION:
-`game/tools/art/seal.gd` owns its frames (the opaque photo defeats the corner fill);
-re-running that script reproduces them.
+`game/tools/art/seal.gd` owns its frames (the shared corner fill is not used - the
+transparent source needs no background model); re-running that script reproduces them.
 
 HITBOXES hard rule: a frame's `body_rect` in sprites.json (tight bbox of alpha > 16) is the
 only solid part of the sprite; the transparent padding and margins never hit.

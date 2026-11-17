@@ -79,7 +79,7 @@ const SOURCES := {
 		{"n": 10, "file": "toucher.jpeg", "role": "finger"},
 		{"n": 11, "file": "glitchedground.jpeg", "role": "floor"},
 	],
-	"seal": [{"n": 12, "file": "babehseal.webp", "role": "base"}],
+	"seal": [{"n": 12, "file": "babehseal.png", "role": "base"}],
 	"address_me": [
 		{"n": 13, "file": "address me elephant.png", "role": "normal"},
 		{"n": 14, "file": "explosionsffect.jpg", "role": "explode"},
