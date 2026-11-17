@@ -3272,6 +3272,71 @@ audio cue, at wind-up start), `isagi_shoot_sae_math_final_shot` (at each release
 `isagi_gunshot` (per ball release, layered under the SAE line). No audio files exist; the hooks
 are named constants on the view side, wired to the anim-block states, and the TBD.md row records
 them. Adding the real files later is a content drop, not a code change.
+### D-T-034-1 - [CONTESTABLE] The nuke's LOS ray origin: 12 u high, 20 u out, direction fixed per salvo (T-034).
+
+DECISION (T-034): no document states where the nuke's line-of-sight ray is traced from, so the
+behavior fixes it per salvo: a point 12 u above the court, thrown 20 u from the ring centre in an
+enemy-rng direction held for the whole salvo (`lock_height` 12.0, `tell_distance` 20.0 in
+enemy.json). GAMEPLAY REASON: a per-salvo fixed direction means the player cannot cheese the break
+by strafing - only real overhead cover (or leaving the sphere, parked row 5) breaks the ray; 20 u
+out keeps the ray's cells near the player's own position so cover the player can actually run to
+matters. 12 u puts the ray above the 3-4 u slab heights (it is "sky sight"), so only tall stacks
+break it. Both numbers are [CONTESTABLE]; the test asserts the MODEL (30-tick break, 120-tick
+relock, per-salvo fix), never the 12/20 constants.
+
+### D-T-034-2 - The locked ring and the missile descent share the same 90 ticks; detonation on tick 240 (T-034).
+
+DECISION (T-034): DESIGN.md section 5.5's "the same 90 ticks as the locked ring" is implemented as
+ONE phase: the locked telegraph row fills rim-inward over 90 ticks while the missile descends the
+same 90 ticks from 30 u above the ring centre (1/3 u per tick), the blast resolving on tick 240
+(150 tracking + 90 locked) - asserted +/-1 tick. The drawn explosion one-shot is the anim table's
+own 24 ticks (T-083), drawn over the first 24 ticks of the 300-tick pause; nothing changes the
+pause's length.
+
+### D-T-034-3 - A harmless expiry starts the 300-tick pause, then a FRESH salvo with a restarted budget (T-034).
+
+DECISION (T-034): D-064's "then a fresh salvo" is read as a full restart of the salvo's budget
+clock: the expired salvo's clock stays at exactly 360 (expired), the 5.0 s pause runs, and the
+re-tracking calls the clock's start() - legal ONLY because the clock is expired (start() on an
+ACTIVE clock is a no-op, which is what makes the 120-tick relock restarts of a LIVE salvo never
+reset the budget). The second salvo's first tracking tick is the first tick of a new 360-tick
+budget; the test asserts the retrack at pause+300 and the fresh clock at 0/1. The fresh salvo is
+the same behavior, not a harder one - section 5.5 has no escalation.
+
+### D-T-034-4 - Anim mapping: the body shows attack_descent during the shared 90; a real blast shows attack_explosion, a harmless expiry stays recover (T-034).
+
+DECISION (T-034): the anim row's state per phase is telegraph_tracking (track),
+attack_descent (lock - the FALLING MISSILE is the body; the locked fill itself is the sim's
+telegraph row the view renders), recover (the 120-tick relock - the table has no distinct
+"broken lock" state, so the row holds recover there: nothing new on screen), attack_explosion
+(pause, only after a REAL blast). A harmless expiry carries recover through its pause: no
+attack_explosion draws for an expiry that killed nobody - the explosion state's own "starts:
+tick 90 = the tick the 5 u sphere resolves" note ties it to the missile's arrival, which never
+happened.
+
+### D-T-034-5 - The three audio hooks are named per ENEMIES.md's "New sound" line, as anim-block effect params (T-034).
+
+DECISION (T-034): ENEMIES.md's nuke "New sound" names three cues: the lock-on beep speeding up as
+the missile closes (2 -> 8 Hz), the rocket-booster roar while it descends, the deep boom on impact.
+They are carried as `audio` params on the three anim states' effects: telegraph_tracking ->
+`lock_on_beep`, attack_descent -> `rocket_booster_roar`, attack_explosion -> `impact_boom`, each
+with an audio_note marking it a TBD hook (synthesis is a later ticket's asset work; the NAMES and
+their state wiring are this ticket's deliverable, asserted by test).
+
+### D-T-034-6 - Content scoreboard grows 1 -> 2 enemies, 88 -> 89 content_ids (T-034).
+
+DECISION (T-034): test_content.gd's registry counts are a scoreboard of what exists, not a frozen
+contract: the nuke's enemy.json is the second enemy the registry boots, so enemies 1 -> 2 and
+content_ids 88 -> 89. Every further enemy ticket makes the same one-line move in its own diff.
+Nothing else in test_content.gd is touched.
+
+### D-T-034-7 - The behavior's cfg contract: the enemy.json stats block, flatted one level (T-034).
+
+DECISION (T-034): the numbers reach the behavior as a plain cfg dictionary - the `stats` block of
+content/enemies/nuke/enemy.json flatted one level (the production loader that does the flatting is
+pending elsewhere; the behavior reads only `row["cfg"]`, so the wiring side can slot in unchanged).
+The T-034 test builds its cfg from the REAL enemy.json file (JSON.parse_string of stats), never
+from a test-local copy: the timings and numbers asserted are the deliverable data's own.
 
 ## Handover log
 

@@ -80,7 +80,7 @@
 				"total_ticks": 150,
 				"ticks_per_frame": null,
 				"tick_ranges": null,
-				"effect": { "name": "ground_ring", "params": { "radius_u": 5.0, "color": "#FF2A2A", "follows": "the player", "blink_hz_start": 2.0, "blink_hz_end": 8.0, "blink_ramp": "2 Hz at tick 0 rising linearly to 8 Hz at tick 150", "note": "loop; 150 ticks (2.5 s)" } }
+				"effect": { "name": "ground_ring", "params": { "radius_u": 5.0, "color": "#FF2A2A", "follows": "the player", "blink_hz_start": 2.0, "blink_hz_end": 8.0, "blink_ramp": "2 Hz at tick 0 rising linearly to 8 Hz at tick 150", "audio": "lock_on_beep", "audio_note": "TBD hook T-034: new lock-on beep design speeding up as it closes (2 -> 8 Hz)", "note": "loop; 150 ticks (2.5 s)" } }
 			},
 			"telegraph_locked": {
 				"row": "telegraph — locked",
@@ -101,7 +101,7 @@
 				"ticks_per_frame": 5,
 				"fps": 12,
 				"tick_ranges": null,
-				"effect": { "name": "missile", "params": { "height_u": 3.0, "from": "30 u above the ring centre", "to": "the ground", "arrival": "tick 90", "note": "the same 90 ticks as the locked ring; 12 fps = 5 ticks per frame" } }
+				"effect": { "name": "missile", "params": { "height_u": 3.0, "from": "30 u above the ring centre", "to": "the ground", "arrival": "tick 90", "audio": "rocket_booster_roar", "audio_note": "TBD hook T-034: rocket-booster roar while the missile descends", "note": "the same 90 ticks as the locked ring; 12 fps = 5 ticks per frame" } }
 			},
 			"attack_explosion": {
 				"row": "attack — explosion",
@@ -111,7 +111,7 @@
 				"total_ticks": 24,
 				"ticks_per_frame": null,
 				"tick_ranges": null,
-				"effect": { "name": "explosion", "params": { "radius_u": 5.0, "starts": "tick 90 = the tick the 5 u sphere resolves", "white_core_ticks": 6, "body": "orange-to-red sphere expanding to 5 u", "then": "smoke", "note": "one-shot; 24 ticks" } }
+				"effect": { "name": "explosion", "params": { "radius_u": 5.0, "starts": "tick 90 = the tick the 5 u sphere resolves", "white_core_ticks": 6, "body": "orange-to-red sphere expanding to 5 u", "then": "smoke", "audio": "impact_boom", "audio_note": "TBD hook T-034: deep boom on impact", "note": "one-shot; 24 ticks" } }
 			},
 			"recover": {
 				"row": "recover",
