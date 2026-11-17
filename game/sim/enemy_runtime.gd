@@ -484,16 +484,38 @@ func _spawn_planned() -> void:
 		var cfg: Dictionary = plan_row["cfg"]
 		var kind: String = str(cfg.get("preferred_kind", ""))
 		var copies: int = int(plan_row["copies"])
-		for k in range(copies):
-			var exclude: Array = _spawn_positions()
+		# SR-3: "copies of one chaser are >= 30 u apart" - the separation runs against THIS
+		# entry's own already-spawned copies (D-T061-6), not against the whole roster: with
+		# all 22 bodies excluded at 30 u a dense vote list starves (no round-trip tile ever
+		# clears every circle) and the plan never completes. _pick_round_trip's own comment
+		# already states the same reading ("the earlier copies").
+		# A partially-spawned entry tracks how many copies exist, so a deferral reschedules
+		# only the MISSING copies (never re-spawns the placed ones) and never drops the
+		# entries behind it - the old code `return`-ed on the first deferral, silently
+		# dropping the whole tail of the plan (D-T061-6).
+		var k: int = int(plan_row.get("spawned_copies", 0))
+		while k < copies:
+			# re-read the live copies each round: copy 1 must clear copy 0 (and so on)
+			var exclude: Array = _copy_positions(id)
 			var spot: Variant = pick_spawn_tile(level, kind, _player_pos(0), exclude,
 					COPY_SEP if copies > 1 else 0.0)
 			if spot == null:
 				spawn_deferred = true
-				planned.append(plan_row)   # retry the whole entry next tick
-				return
+				plan_row["spawned_copies"] = k
+				planned.append(plan_row)   # the entry's remaining copies retry next tick
+				break
 			spawn_deferred = false
 			_spawn_one(plan_row, spot, k, copies)
+			k += 1
+
+
+## The live copies of one planned entry (SR-3's "the earlier copies").
+func _copy_positions(id: String) -> Array:
+	var out: Array = []
+	for e in enemies:
+		if str(e["id"]) == id:
+			out.append(Vector3(float(e["x"]), float(e["y"]), float(e["z"])))
+	return out
 
 
 func _spawn_one(plan_row: Dictionary, spot: Dictionary, copy_index: int, copies: int) -> void:
