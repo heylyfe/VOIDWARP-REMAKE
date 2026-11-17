@@ -11,7 +11,7 @@ wired in full, the entry is marked `"tbd": true` in its JSON, and the row appear
 | 4 | T-016 | Isagi sprites - REAL ART (`tools/art/isagi.gd`, 2026-11-17) | Images 4/5/6 present since the art wave; the module removes the backgrounds and derives one frame per anim-block state | none - done; rebuild = rerun `tools/godot/godot.exe --headless --path game --script res://tools/art/isagi.gd` |
 | 5 | T-016 | nuke sprites - real art (4/4 attack_descent frames) | `NUKE.jpeg` was present but the shared flood-fill pipeline could not eat its opaque white background; `game/tools/art/nuke.gd` (T-083 art pass) removes it with a border flood fill on distance-from-white and derives the four `attack_descent` burn-cycle frames from the base body | done; re-run `game/tools/art/nuke.gd` to regenerate; states with no frames in the T-083 block stay empty |
 | 6 | T-016 | YOU?! sprites - REAL ART (`tools/art/you.gd`, 2026-11-17) | Image 8 present since the art wave; the module derives one frame per anim-block state | none - done; rebuild = rerun `tools/godot/godot.exe --headless --path game --script res://tools/art/you.gd` |
-| 7 | T-016 | gift Larper sprites - all frames TBD | Image 9 `tripine.png` absent | drop the PNG in, rebuild |
+| 7 | T-016 | gift Larper sprites - REAL ART (tools/art/gift_larper.gd, 2026-11-17) | Image 9 `tripine.png` present (corners already alpha 0; near-black body needed an art-side grade to clear the fog rule) | done; rebuild = rerun `tools/godot/godot.exe --headless --path game --script res://tools/art/gift_larper.gd` |
 | 8 | T-016 | toucher sprites - LANDED (T-ART): 17 real frames from `toucher.jpeg` / `glitchedground.jpeg` (all body states + 5 floor decals) | Images 10/11 landed via game/tools/art/toucher.gd | none - real art in game/content/enemies/toucher/sprites/; `"tbd": false` |
 | 9 | T-016 | seal sprites - all frames TBD | Image 12 `babehseal.webp` absent | drop the PNG in, rebuild |
 | 10 | T-016 | address me sprites - all frames TBD | Images 13/14 (`address me elephant.png`, `explosionsffect.jpg`) absent | drop both PNGs in, rebuild |
@@ -68,7 +68,7 @@ unchanged, fog contrast 3.05-3.87 at 40 u (palette fog; per-biome 4.3+).
 | 6 | Isagi (projectile) | `blueballprojectile.webp` | REAL ART - the `shot` state frame `shot_00.png` (`game/tools/art/isagi.gd`) |
 | 7 | nuke | `NUKE.jpeg` | REAL - base art + the four `attack_descent` frames (cycle_00..03.png, 512x128 POT, alpha-keyed background, tight body_rect); the other five T-083 states carry no sprite frames by the binding anim block (billboard-level effects) and stay empty | none for art; rebuild via `game/tools/art/nuke.gd` |
 | 8 | YOU?! | `character to be corrupted.png` | REAL ART - `game/tools/art/you.gd` (2026-11-17); frames `cycle_00..04`, `you_spawn_00`, `you_idle_00..04`, `you_telegraph_00..04`, `you_attack_00`, `you_recover_00..04`; `tbd: false` |
-| 9 | gift Larper | `tripine.png` | MISSING -> TBD |
+| 9 | gift Larper | `tripine.png` | REAL ART - `game/tools/art/gift_larper.gd` (2026-11-17); frames `cycle_00..04` (5 distinct idle cycle) + `defused_00`; `tbd: false`; fog contrast 3.05-3.87 at 40 u |
 | 10 | toucher | `toucher.jpeg` | LANDED (game/tools/art/toucher.gd; 12 real frames) |
 | 11 | toucher (floor) | `glitchedground.jpeg` | LANDED (game/tools/art/toucher.gd; 5 real decal frames) |
 | 12 | seal | `babehseal.webp` | MISSING -> TBD |
