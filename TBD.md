@@ -63,6 +63,8 @@ synthesized stand-in under the TBD rule, marked `"tbd_audio": true` (T-087).
 | # | ticket | what is TBD | why | owner action |
 |---|---|---|---|---|
 | 21 | T-025 | HUD curse/upgrade/enemy-roster icons - synthesized hash-hue squares with the item id's initials (game/view/hud/icon_placeholder.gd) | no curse, upgrade or enemy icon assets exist anywhere in the repo | commission 40 px icon art per curse/upgrade/enemy; swap icon_placeholder.gd for a texture loader |
+| 28 | T-030 | kiwi cat audio cue `meow` - not synthesized yet; `game/view/audio/kiwi_cat_audio.gd` no-ops silently until `assets/audio/enemies/kiwi_cat/meow.wav` lands | ENEMIES.md "New sound" ("cat meow when near player") is brand-new audio; T-055 owns placeholder synthesis | T-055 synthesises the placeholder (stdlib wave; cue name = file name); the owner replaces it with real cat meow art later |
+| 29 | T-030 | kiwi cat audio cue `meow_double` (Zoomies) - not synthesized yet; same no-op hook | same | same - T-055 synthesises; the owner replaces |
 
 ## 4. T-083 animation-block TBD rows (this ticket, enemies 7-12)
 
