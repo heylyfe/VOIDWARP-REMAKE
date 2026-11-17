@@ -5940,6 +5940,27 @@ levels" (lobby gate -> next level <= 2.0 s) while the ticket says the screen app
 the flow": the screen object supports any call site, the choice of call sites is the flow's, and the apparent
 conflict is parked (PARKED.md #21), not resolved here.
 
+### D-LOAD-10 - The seal gag is re-staged for the new belly-down pup (TICKET LOADING-RECHECK)
+DECISION: the seal art is now a transparent harp-seal pup lying on its belly, facing the camera (head at the
+left of the sprite). `seal_giftbox` keeps its joke and its lines ("mfph!", "10/10. keeping the box.") but is
+re-staged for that pose: (1) the pup never mirror-flips - the old gag flipped the sprite whenever it changed
+direction, which with the box stuck to the head side made the box teleport 140 px across the sprite; now the
+head stays left, the box sits on it, and the pup moves head first both ways; (2) the sway/hop of an upright
+waddler is replaced by a belly scoot (the body humps and stretches once per scoot, a small blind wobble while
+the box is on); (3) the box rests on the floor over the whole head instead of floating 6 px above it. Beat A
+still lands the whole joke inside 2.0 s: the pup looks straight at the camera 0.0-0.55 s, the gift drops on
+its face 0.55-0.95 s, "mfph!" is up 1.2-2.3 s. A pup lying down facing you is a BETTER setup for the joke
+than the old art - it looks at you right up to the moment the box lands - so the gag was kept, not swapped.
+Also in loading_stage.gd: a speech bubble draws its text only at full size (s > 0.97, was 0.8), because
+mid-pop the scaled bubble is narrower than the text and the line spilled out of the box (seen on every gag's
+first 0.1 s of bubble). Re-rendered all five gags (stage drawn windowed at 1280x720, 6-8 times each) after
+the change: the other four are unchanged and read correctly. No tip changed: tip_seal_bark and the seal
+clause of tip_hurdle are pinned to enemy.json by test_loading.gd (unchanged art, unchanged numbers), and
+tip_address_me states only the arbiter conditions and the 1.5 s hold - never the look of the enemy, so the
+new office-photo art does not touch it. billboard.gd's feet fix does not apply: the loading stage is 2D and
+positions every sprite itself.
+WHY: the owner replaced the art; the gag is built on its pose.
+
 ### D-FIX-APP-BOUNDARY-1 - The three app/ files FIX-A14 landed are made content-derived (FIX-APP-BOUNDARY)
 DECISION (each hit, by route):
 - app/world.gd enemy-factory table -> probed at load, no id named: module-level `behavior()` /
@@ -6327,3 +6348,5 @@ bottom at the origin like every other frame. ENEMIES.md / DESIGN.md unchanged.
   updates DESIGN.md section 2/14.
 
 - 2026-11-17 ART-FIX-SEAL (owner ruling: "seal also needs to have its PNG replaced with this"): `assets_src/enemies/babehseal.png` (transparent harp-seal pup render, committed in a4835c7) is now the seal's only source - the webp is gone for good; `game/tools/art/seal.gd` rewritten (alpha channel IS the matte; tight crop; 512x512 bottom-anchored; no flood fill, no defringe, no feather - the edge was already a ~10 px feather) and re-emits all seven frames with one distinct pose per anim-block state (telegraph = crouched wind-up sy 0.88 + mouth gape; dash_00 = lunge sx 1.16 / sy 0.74 / -5 deg shear / mouth gape; dash_01 = the alternate lunge; recover = +6% vstretch). The dash axis is NOT in the anim block or enemy.json (enemy.gd computes dash_dx/dy/dz at telegraph start), so the lunge is a fixed forward lunge (ticket fallback). anim tick ranges/loops/fps/effect params/frame counts untouched; world_height stays 0.6; body_rect re-synced to the printed tight alpha>16 bboxes; sprite_pipeline.gd's stale seal source reference updated to the png. b82621a. validate SPRITES OK 515 checks (fog ratio 4.65-5.95 per frame); FOGCHECK OK (550 checks over 5 biomes; seal rows 6.85-9.54 vs the five fogs @40 u). D-ART-SEAL-3 (the ticket asked for D-ART-SEAL-2 - taken by the JSON round-trip entry). TBD.md rows 9/12/24, SOURCES.md, seal_view.gd comments updated. Gate: GATE OK (9 ran, 0 skipped, 230 s), TESTS 56 passed 0 failed, zero SCRIPT ERROR lines. No PARKED rows. No push.
+
+- 2026-11-17 LOADING-RECHECK: seal gag re-staged for the new belly-down harp-seal pup (no flip, belly scoot, box over the whole head; D-LOAD-10), speech-bubble text only drawn at full size (loading_stage.gd). Other four gags re-rendered, unchanged. Tips re-checked against the build: none changed. Worktree already level with main (c10e618), no rebase conflict. See D-LOAD-10 for the gate line.

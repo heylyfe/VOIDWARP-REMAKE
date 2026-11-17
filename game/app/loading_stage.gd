@@ -225,6 +225,6 @@ func _draw_bubble(font: Font, d: Dictionary, origin: Vector2, sc: float) -> void
 			Vector2(tail.x + 14.0 * sc * s, rect.end.y - 2.0), tail]),
 			PackedColorArray([GagsScript.PAPER, GagsScript.PAPER, GagsScript.PAPER]))
 	draw_style_box(_bubble_box, rect)
-	if s > 0.8:
+	if s > 0.97:   # text only at full size: mid-pop the scaled bubble is narrower than its text
 		draw_string(font, Vector2(rect.position.x + pad, rect.position.y + pad * 0.6 + tsz.y * 0.8),
 				txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, GagsScript.INK)
