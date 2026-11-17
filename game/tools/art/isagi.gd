@@ -322,10 +322,14 @@ func _write_sprites_json(out_dir: String, rects: Dictionary, src_pixels: Diction
 			prev = parsed
 
 	# animations[]: keep the existing fire/shot entries (order and names), refresh their
-	# per-frame body_rect, then APPEND idle/spawn/telegraph/attack/recover
+	# per-frame body_rect, then APPEND idle/spawn/telegraph/attack/recover. Re-running the
+	# module must not duplicate the appended entries, so drop any of ours before re-adding.
+	const APPENDED_NAMES := ["idle", "spawn", "telegraph", "attack", "recover"]
 	var anims: Array = []
 	for a in prev.get("animations", []):
 		if not (a is Dictionary):
+			continue
+		if APPENDED_NAMES.has(str(a.get("name", ""))):
 			continue
 		var a2: Dictionary = (a as Dictionary).duplicate(true)
 		var fs: Array = a2.get("frames", [])
