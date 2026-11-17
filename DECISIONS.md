@@ -4419,6 +4419,79 @@ gates (the wiring gap below). Crumbling's schedule (fall after 72 ticks, return 
 later, first-schedule-wins) is D-T051-1's module shape with the 1-wide/stepped-on tile
 READING owned by the future dispatcher (collision.gd's support_at is sim-surface).
 
+### D-T085-1 - [CONTESTABLE] The tripmine star is split out of the single vertex-coloured .glb at load time, and the four side-face hexagrams are view geometry (T-085).
+
+DECISION (T-085): section 2.1's star row wants "six-pointed, on all four side
+faces, `#FF4FD8`, emission 1.0; alpha 0 beyond 14 u -> 1 at 10 u". The T-015 model
+(`assets_src/blender/tripmine_box.py`) bakes the hexagram into ONE vertex-coloured
+primitive, on the TOP face only, and Blender is not available in this environment,
+so the .glb cannot be rebuilt. `view/tripmine_view.gd` therefore splits the loaded
+mesh by vertex colour at setup (`split_star()`: a triangle is a star triangle when
+all three of its vertices are the tell pink - red and blue above half, green below
+it) into a box surface and a star surface, and gives the star surface its own pink
+emissive material whose alpha follows the ramp. The four side-face hexagrams are
+view-layer geometry (three crossing bars per face at 0/60/120 deg, 0.40 x 0.05 u,
+on the frame's own faces). WHY: the ramp IS the deception rule - a pink star that
+never fades gives the mine away at 60 u - and the split is the only way to fade the
+baked star without a Blender rebuild or a shader. CONTESTABLE: the model's star is
+on the top face, the table says the side faces; both are drawn.
+
+### D-T085-2 - [CONTESTABLE] The particle "± 0.2 u drift" is the emission volume radius (T-085).
+
+DECISION (T-085): section 2.1's particle row states "rising 0.4 u/s with ± 0.2 u
+drift" without saying whether the 0.2 u is a lateral velocity or a spread. Built as
+the emission volume: `CPUParticles3D` emission shape SPHERE, `emission_sphere_radius`
+0.2 u, direction UP, spread 0, initial velocity 0.4 u/s, gravity zero. WHY: a
+0.2 u/s lateral velocity would let a spark wander 0.3 u over its 1.5 s life, which
+reads as a swarm rather than a tell; the volume reading keeps the column tight and
+still gives the drift. CONTESTABLE: the velocity reading is equally defensible and
+changes only the emitter's shape.
+
+### D-T085-3 - The beacon column is visible on the open tick itself: the ramp starts at 1/36 (T-085).
+
+DECISION (T-085): section 2.3 says the column "rises from the dais to Y +60 u over
+the same 36 ticks" and the ticket's done-when says the column "appears on the tick
+of the last real black gift". A ramp of `(tick - open_tick) / 36` is 0 on the open
+tick, which would make the column appear one tick late. `view/beacon_view.gd`
+computes `(tick - open_tick + 1) / 36`, so the column is 1.67 u tall on the open
+tick and 60 u tall after 36 ticks. WHY: the done-when is a tick contract and a
+zero-height column on the open tick fails it; the 36-tick ramp length is unchanged.
+
+### D-T085-4 - The beacon's door slab is not built: the T-015 model has no doorway (T-085).
+
+DECISION (T-085): section 2.3's opening row wants "the slab splits and slides away
+over 36 ticks". The T-015 beacon mesh is a solid obelisk with no doorway (D-T020-6
+already recorded this) and Blender is absent, so there is no slab to split. Built
+instead: the emission ramp 0 -> 4.0, the column rise, and the white shock ring that
+crosses the hub - the other three clauses of the same row. The OPEN row's "doorway
+glows" is likewise not built (no doorway). Not parked as a contradiction: D-T020-6
+already ruled it and no document contradicts itself here.
+
+### D-T085-5 - The glitched floor's "checker at 40% brightness" is the decal texture's own alpha, not the view's modulate (T-085).
+
+DECISION (T-085): section 2.2's body row says "the tile keeps its checker
+underneath at 40% brightness, so the path stays readable". The decal's modulate
+alpha is the appear/fade ramp, which T-037's test pins at 1.0 at full appear
+(`test_enemy_toucher.gd`), and the `glitchfloor_00..04` PNGs are TBD placeholders
+(TBD.md row 8). Built: the decal is drawn over the tile top and the checker shows
+through the texture's own alpha; the 40% is an asset property, not a view constant.
+WHY: dimming the terrain checker per tile would need a per-tile vertex-colour
+channel in `view/level_mesher.gd`'s shader (T-011/T-014 territory) and would change
+a merged, tested terrain surface for a VFX row. CONTESTABLE: if the owner wants the
+checker dimmed by the view, it is a level_mesher change.
+
+### D-T085-6 - The respawn blink phase is measured from the respawn tick; 8 Hz is 7.5 ticks per cycle (T-085).
+
+DECISION (T-085): section 2.5's invulnerability row says "60 ticks (1.0 s,
+binding): the player model blinks at 8 Hz with a white rim; the rim disappears on
+the tick invulnerability ends". `view/respawn_view.gd` measures the blink phase
+from the respawn tick: 8 Hz = 7.5 ticks per cycle, half period 3.75 ticks,
+`blink_on(elapsed) = fmod(elapsed, 7.5) < 3.75`. The rim's alpha is 1 while the
+controller's invulnerability countdown is > 0 and 0 at 0, so it disappears ON the
+end tick, not a frame later. WHY: a frame-driven blink would drift against the
+sim's 60 Hz tick and could leave the rim one frame past the end; a tick function
+cannot.
+
 ## Handover log
 
 - 2026-11-17 GLM (T-051): scripted curses, GENERAL family (the 11 `script: true` /

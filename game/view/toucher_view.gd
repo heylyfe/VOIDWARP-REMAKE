@@ -15,7 +15,9 @@ extends Node3D
 # per live glitched tile (the sim row's "glitched" list), 5 frames cycling at 8 fps
 # with a (x + z) mod 5 per-tile offset, appearing alpha 0 -> 1 over 12 ticks under a
 # 6-tick danger-red (#FF2A2A) tear flash, and in the last 60 ticks of a tile's life
-# flickering at 10 Hz then fading alpha -> 0 over the final 12 ticks.
+# flickering at 10 Hz then fading alpha -> 0 over the final 12 ticks. thicc ben's
+# cleanse (T-085, section 2.2 last row) takes the decals inside 8 u away in an
+# outward wave over 18 ticks: on_cleanse() reads the sim's glitched_cleanse event.
 #
 # BILLBOARDING / TRANSPARENCY: the finger always faces the camera (billboard.gd,
 # Y-rotation only, never rotated the other way - the anim block's face_player says
@@ -38,6 +40,9 @@ const DECAL_FADE_TICKS := 12
 const DECAL_FLICKER_HZ := 10.0
 const DECAL_SIZE_U := 1.0             # one decal covers exactly one tile (1 x 1 u)
 const DANGER_RED := Color(1.0, 0.1647, 0.1647, 1.0)   # #FF2A2A; replaced by the block
+## thicc ben's cleanse (section 2.2, last row): the decals inside 8 u leave in an
+## outward wave over 18 ticks.
+const CLEANSE_TICKS := 18
 
 var billboard = null                  # BillboardScript instance (the finger PNG)
 var anim: RefCounted = null           # the shared enemy_anim.gd player
@@ -57,6 +62,7 @@ var _red := DANGER_RED
 var _last_state := ""
 var _pulse_scale := 1.0
 var _body_alpha := 1.0
+var _cleanse: Dictionary = {}         # the live ben cleanse wave (see on_cleanse)
 
 
 ## The anim block's state ids, for callers/tests that prove the wiring.
@@ -203,11 +209,22 @@ func _sync_decals(row: Dictionary) -> void:
 		if key == "":
 			continue
 		live[key] = entry
-	# drop decals whose tile left the sim list
+	# drop decals whose tile left the sim list - unless a ben cleanse wave is
+	# still sweeping outward over them (section 2.2, last row)
 	var dead: Array = []
 	for key in _decals.keys():
-		if not live.has(key):
+		if live.has(key):
+			continue
+		var d: Dictionary = _decals[key]
+		if _cleanse.is_empty():
 			dead.append(key)
+			continue
+		var dist: float = _wave_dist(d)
+		if dist > float(_cleanse["r"]) or dist <= _wave_front(now):
+			dead.append(key)
+		else:
+			# the wave has not reached this tile yet: it keeps its decal
+			(d["sprite"] as Sprite3D).modulate = Color(1.0, 1.0, 1.0, 1.0)
 	for key in dead:
 		var d: Dictionary = _decals[key]
 		(d["node"] as Node3D).free()
@@ -225,13 +242,47 @@ func _sync_decals(row: Dictionary) -> void:
 				continue
 			_decals[key] = d2
 		var sprite: Sprite3D = d2["sprite"]
-		var tex_i: int = _tile_offset(entry)
-		sprite.texture = _decal_texts[tex_i] if tex_i < _decals_texts_count() else null
+		var frame_i: int = _decal_frame(entry, age)
+		sprite.texture = _decal_texts[frame_i] if frame_i < _decals_texts_count() else null
 		_age_decal(sprite, age, float(life), now, born)
 
 
 func _decals_texts_count() -> int:
 	return _decal_texts.size()
+
+
+## thicc ben's ring cleanse (section 2.2, last row): the sim's glitched_cleanse
+## event carries the centre (x, z), the radius and the tick. The decals inside
+## the radius leave in an outward wave over CLEANSE_TICKS ticks - the wave front
+## travels from the centre to r, and a tile loses its decal when the front
+## reaches it.
+func on_cleanse(ev: Dictionary) -> void:
+	var r := float(ev.get("r", 0.0))
+	if r <= 0.0:
+		return
+	_cleanse = {
+		"tick": int(ev.get("tick", 0)),
+		"x": float(ev.get("x", 0.0)),
+		"z": float(ev.get("z", 0.0)),
+		"r": r,
+	}
+
+
+## The wave front's radius at `now` (0 at the cleanse tick, r after 18 ticks).
+func _wave_front(now: int) -> float:
+	if _cleanse.is_empty():
+		return 0.0
+	var age: float = float(now - int(_cleanse["tick"]))
+	return clampf(age / float(CLEANSE_TICKS), 0.0, 1.0) * float(_cleanse["r"])
+
+
+## Horizontal distance from the cleanse centre to a decal (the view sits at the
+## enemy's feet, so the decal's world position is this node's position + its own).
+func _wave_dist(d: Dictionary) -> float:
+	var p: Vector3 = position + (d["node"] as Node3D).position
+	var dx: float = p.x - float(_cleanse["x"])
+	var dz: float = p.z - float(_cleanse["z"])
+	return sqrt(dx * dx + dz * dz)
 
 
 func _floor_fps() -> float:
@@ -246,6 +297,17 @@ func _tile_offset(entry: Dictionary) -> int:
 	var gx := int(floor(float(entry.get("x", 0.0)) - 0.5))
 	var gz := int(floor(float(entry.get("z", 0.0)) - 0.5))
 	return posmod(gx + gz, 5)
+
+
+## The decal frame: the 5-frame cycle at 8 fps (7.5 ticks per frame, section 2.2
+## "7-8 ticks per frame"), each tile offset by (x + z) mod 5 frames so neighbours
+## do not flash in unison.
+func _decal_frame(entry: Dictionary, age: float) -> int:
+	var n: int = _decals_texts_count()
+	if n <= 0:
+		return 0
+	var step: int = int(age / (60.0 / maxf(_floor_fps(), 0.01)))
+	return posmod(_tile_offset(entry) + step, n)
 
 
 func _make_decal(entry: Dictionary) -> Variant:
