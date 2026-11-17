@@ -63,6 +63,12 @@ var _last_state := ""
 var _pulse_scale := 1.0
 var _body_alpha := 1.0
 var _cleanse: Dictionary = {}         # the live ben cleanse wave (see on_cleanse)
+# the anim block's per-state frames (states[*].frames), loaded once per state
+# (D-ART-TOUCHER-1): the shared player resolves frame_path through the block's
+# global frame_map, which can only hold one file per spec frame name, so the
+# per-state art is swapped in here, where the state id is known.
+var _state_frames: Dictionary = {}    # state_id -> Array[Texture2D]
+var _active_state := ""
 
 
 ## The anim block's state ids, for callers/tests that prove the wiring.
@@ -116,13 +122,41 @@ func _read_anim_block() -> void:
 	var pulse: Dictionary = (states.get("telegraph", {}) as Dictionary).get("effect", {}).get("params", {})
 	if pulse.has("scale_to"):
 		_pulse_scale = float(pulse["scale_to"])
+	_load_state_frames(states)
+
+
+## Load the per-state frame textures listed in the anim block (states[*].frames).
+## Missing files leave a null entry (TBD allowed; the block's frame_map path still
+## resolves through the cycle sheet as before).
+func _load_state_frames(states: Dictionary) -> void:
+	_state_frames = {}
+	for state_id in states.keys():
+		var arr: Array = []
+		for rel in (states[state_id] as Dictionary).get("frames", []):
+			var full := "%s/%s" % [_folder, str(rel)]
+			if ResourceLoader.exists(full):
+				arr.append(load(full))
+			else:
+				arr.append(null)
+		_state_frames[str(state_id)] = arr
+
+
+## The texture of the frame the anim block pins for the active state at the current
+## billboard frame index (null when unavailable).
+func _active_state_texture() -> Texture2D:
+	if billboard == null:
+		return null
+	var arr: Array = _state_frames.get(_active_state, [])
+	if arr.is_empty():
+		return null
+	var i := clampi(int(billboard.frame_i), 0, arr.size() - 1)
+	return arr[i]
 
 
 # ---- the enemy_anim.gd caller contract (duck-typed; never stores sim state) -------
 
-func set_stage(_state_id: String) -> void:
-	# the finger sheet has ONE body animation (the cycle); the player drives frames
-	pass
+func set_stage(state_id: String) -> void:
+	_active_state = state_id
 
 
 func set_stage_frame(i: int) -> void:
@@ -130,6 +164,9 @@ func set_stage_frame(i: int) -> void:
 		return
 	billboard.frame_i = i
 	billboard._apply_frame(i)
+	var tex := _active_state_texture()
+	if tex != null:
+		billboard.texture = tex
 
 
 func set_effect(k: String, v) -> void:
@@ -147,6 +184,13 @@ func set_effect(k: String, v) -> void:
 
 
 func set_texture(tex) -> void:
+	# the per-state art from the anim block wins over the frame_map target (the
+	# frame_map can only hold one file per spec frame name; see D-ART-TOUCHER-1)
+	var active := _active_state_texture()
+	if active != null:
+		if billboard != null:
+			billboard.texture = active
+		return
 	if tex != null and billboard != null:
 		billboard.texture = tex
 

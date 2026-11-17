@@ -12,7 +12,7 @@ wired in full, the entry is marked `"tbd": true` in its JSON, and the row appear
 | 5 | T-016 | nuke sprites - real art (4/4 attack_descent frames) | `NUKE.jpeg` was present but the shared flood-fill pipeline could not eat its opaque white background; `game/tools/art/nuke.gd` (T-083 art pass) removes it with a border flood fill on distance-from-white and derives the four `attack_descent` burn-cycle frames from the base body | done; re-run `game/tools/art/nuke.gd` to regenerate; states with no frames in the T-083 block stay empty |
 | 6 | T-016 | YOU?! sprites - REAL ART (`tools/art/you.gd`, 2026-11-17) | Image 8 present since the art wave; the module derives one frame per anim-block state | none - done; rebuild = rerun `tools/godot/godot.exe --headless --path game --script res://tools/art/you.gd` |
 | 7 | T-016 | gift Larper sprites - all frames TBD | Image 9 `tripine.png` absent | drop the PNG in, rebuild |
-| 8 | T-016 | toucher sprites - all frames TBD | Images 10/11 (`toucher.jpeg`, `glitchedground.jpeg`) absent | drop both PNGs in, rebuild |
+| 8 | T-016 | toucher sprites - LANDED (T-ART): 17 real frames from `toucher.jpeg` / `glitchedground.jpeg` (all body states + 5 floor decals) | Images 10/11 landed via game/tools/art/toucher.gd | none - real art in game/content/enemies/toucher/sprites/; `"tbd": false` |
 | 9 | T-016 | seal sprites - all frames TBD | Image 12 `babehseal.webp` absent | drop the PNG in, rebuild |
 | 10 | T-016 | address me sprites - all frames TBD | Images 13/14 (`address me elephant.png`, `explosionsffect.jpg`) absent | drop both PNGs in, rebuild |
 | 11 | T-016 | Claude sprites - all frames TBD | Image 15 `claudelogo.png` absent (clawd Crab plushie source unfetched -> TBD) | drop the PNG in, rebuild |
@@ -26,7 +26,7 @@ wired in full, the entry is marked `"tbd": true` in its JSON, and the row appear
 | 2 | T-033 | isagi: `isagi_shoot_sae_math_final_shot` - the shoot line per release (ENEMIES.md Isagi "New sound": Isagi shoot sae math final shot gun-shot sound) | no audio files exist yet | drop the hook file in, view wires it |
 | 3 | T-033 | isagi: `isagi_gunshot` - per ball release, layered under the shoot line | no audio files exist yet | drop the hook file in, view wires it |
 
-## 1. The 17 enemy images - 11 MISSING (coil, thicc ben, kiwi cat, isagi and YOU?! are real art since 2026-11-17)
+## 1. The 17 enemy images - 10 MISSING (coil, thicc ben, kiwi cat, isagi, YOU?! and toucher are real art since 2026-11-17)
 
 Enemy sprites are normally produced by `game/tools/sprite_pipeline.gd` (T-016): missing, unreadable, or
 validation-failing sources become `game/tools/make_tbd_png.gd` placeholder frames, `"tbd": true`
@@ -45,6 +45,9 @@ false on 2026-11-17. Isagi's rows below say REAL ART; the other fourteen remain 
 Isagi's T-083 anim block named the TBD placeholder files, not the spec names - those references are
 now the real frames (frame_map isagi_idle_00/isagi_shoot_00/isagi_ball_00); the tick counts, loop
 flags, tick ranges and effect params are untouched.
+body_rect). Note: the toucher is NOT pipeline-built - it is owned by `game/tools/art/toucher.gd`
+(the pipeline skips it), which keys the black/white backdrops itself and derives the per-state
+frames from one base.
 
 | # | enemy | expected filename | state |
 |---|---|---|---|
@@ -57,8 +60,8 @@ flags, tick ranges and effect params are untouched.
 | 7 | nuke | `NUKE.jpeg` | REAL - base art + the four `attack_descent` frames (cycle_00..03.png, 512x128 POT, alpha-keyed background, tight body_rect); the other five T-083 states carry no sprite frames by the binding anim block (billboard-level effects) and stay empty | none for art; rebuild via `game/tools/art/nuke.gd` |
 | 8 | YOU?! | `character to be corrupted.png` | REAL ART - `game/tools/art/you.gd` (2026-11-17); frames `cycle_00..04`, `you_spawn_00`, `you_idle_00..04`, `you_telegraph_00..04`, `you_attack_00`, `you_recover_00..04`; `tbd: false` |
 | 9 | gift Larper | `tripine.png` | MISSING -> TBD |
-| 10 | toucher | `toucher.jpeg` | MISSING -> TBD |
-| 11 | toucher (floor) | `glitchedground.jpeg` | MISSING -> TBD |
+| 10 | toucher | `toucher.jpeg` | LANDED (game/tools/art/toucher.gd; 12 real frames) |
+| 11 | toucher (floor) | `glitchedground.jpeg` | LANDED (game/tools/art/toucher.gd; 5 real decal frames) |
 | 12 | seal | `babehseal.webp` | MISSING -> TBD |
 | 13 | address me | `address me elephant.png` | MISSING -> TBD |
 | 14 | address me (explosion) | `explosionsffect.jpg` | MISSING -> TBD |
@@ -99,7 +102,7 @@ class of placeholder is the same; the rows are split per enemy for owner action.
 | # | ticket | what is TBD | why | owner action |
 |---|---|---|---|---|
 | 22 | T-083 | gift Larper: spec frames `larper_00..04` are referenced as `sprites/cycle_00..04.png`; timings unchanged | T-016 TBD placeholder names differ from the spec's names | drop the real tripine frames in keeping the cycle names, or rebuild the pipeline to emit the spec names |
-| 23 | T-083 | toucher: spec `toucher_00..02` referenced as `sprites/cycle_00..02.png`, spec `glitchfloor_00..04` as `sprites/floor_00..04.png` | same T-016 placeholder naming | drop the real toucher.jpeg / glitchedground.jpeg derivatives in |
+| 23 | T-083 | toucher: FIXED (T-ART) - real art landed; the states' frames point at per-state files (spawn_00, idle_00..02, telegraph_00..02, attack_00), frame_map resolves the pinned spec names onto the cycle art (cycle_00..02), spec `glitchfloor_00..04` remain `sprites/floor_00..04.png` (now real decals), spec `toucher_00..02` remain cycle_00..02. Frame counts, tick ranges, loops and effect parameters unchanged | art landed via game/tools/art/toucher.gd | none - the A8 fog-contrast on the floor decals is met by relighting the ART (glowing magenta family), never the threshold |
 | 24 | T-083 | seal: spec `seal_01` (mouth open) and `seal_02/03` (flippers up/down) DO NOT EXIST in the TBD sheet. The anim block holds `idle_00.png` for idle (at the table's 9 ticks/frame) and telegraph (45 ticks held), and alternates `dash_00/dash_01.png` at the table's 4 ticks per frame for the 60-tick dash. Frame set cannot express the table's flap overlay | T-016 produced only `idle_00` and `dash_00/01` | drop the real babehseal derivatives in (mouth-open, flippers up/down); the anim block then names them and the frame-count gap closes |
 | 25 | T-083 | address me: spec `addressme_00/01` referenced as `sprites/cycle_00/01.png`; the spec's explode frame (Image 14 composited over the elephant at 30% alpha) is unbuilt - both frames are identical placeholder art | same T-016 placeholder | drop the real address-me-elephant.png / explosionsffect.jpg derivatives in and rebuild |
 | 26 | T-083 | claude: spec `claude_00` referenced as `sprites/idle_00.png`; spec `plushie_00..02` DO NOT EXIST - `plushie_idle` loops the three TBD logo frames at the table's 6 fps / 10 ticks per frame (the only 3-frame set in the sheet) | clawd Crab plushie sprite was never fetched (ENEMIES.md points at github.com/xyc/plushie) | fetch the clawd Crab sprite, rebuild the pipeline, point `plushie_idle` at the real plushie_00..02 |
