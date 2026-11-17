@@ -7,7 +7,14 @@ their sources documented here.
 
 | image | exact filename | path (repo-relative) | pipeline state |
 |---|---|---|---|
-| 2 | `springer.png` | `assets_src/enemies/springer.png` | MISSING -> TBD |
+| 2 | `springer.png` | `assets_src/enemies/springer.png` | real art - background removed by `game/tools/art/coil.gd` (the pipeline skips enemies that have an art module), squash-and-stretch cycle frames, tight crop on a 512x512 bottom-anchored canvas |
+
+Note (T-016 art wave): the shared pipeline cannot eat this source (opaque near-white
+checkerboard corners - the 24/255 corner flood fill empties the image), so `game/tools/art/coil.gd`
+owns coil's frames: border flood fill at darkest-channel >= 233, largest connected opaque
+component kept, crop, 50/65/80/100/120% squash -> extend with sx = 1/sqrt(sy). The anim block
+(T-083) is byte-identical to the pipeline's output; only the frame pixels and the per-frame
+body_rect changed. See DECISIONS.md D-ART-COIL-1.
 
 Pipeline (every source): RGBA convert, background removed by a flood fill from the four
 image corners (colour tolerance 24/255, skipped when the corners are already alpha 0),
