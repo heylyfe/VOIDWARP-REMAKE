@@ -15,6 +15,10 @@ const GiftsScript := preload("res://sim/gifts.gd")
 const BeaconScript := preload("res://sim/beacon.gd")
 # T-021: the tripmine entity (occupies the Level.gifts occ == 1 slots).
 const MinesScript := preload("res://sim/mines.gd")
+# T-053: the scripted-upgrade engine, built from role keys (D-T053-1) supplied by
+# the caller - sim never names an upgrade id, so the id -> role aggregation lives
+# outside sim (content scripts + the app/shop wiring).
+const UpgradesScript := preload("res://sim/upgrades.gd")
 
 ## Height (world u) of a tile's top surface; HU = 0.5 u (TERRAIN_SPEC.md section 4).
 const HU := 0.5
@@ -34,13 +38,17 @@ var gifts: RefCounted = null
 var beacon: RefCounted = null
 ## T-021: the tripmine set (exactly the occ == 1 slots) + consumed bitset.
 var mines: RefCounted = null
+## T-053: the scripted-upgrade state, built from ROLE keys (D-T053-1) supplied by
+## the caller; null when no scripted upgrade is owned.
+var upgrades: RefCounted = null
 
 
 ## level_number is 1-based (the run's current level). player_count in 1..8 (TERRAIN_SPEC.md spawns).
 ## run_seed feeds the defuse roll (D-051); defaults to 0 so existing callers
-## (which have no run to seed from) stay valid.
+## (which have no run to seed from) stay valid. p_upgrade_roles carries the
+## scripted-upgrade roles aggregated OUTSIDE sim (D-T053-1); default {} = none owned.
 static func build(level: Dictionary, p_level_number: int, p_player_count: int,
-		p_run_seed: int = 0) -> RefCounted:
+		p_run_seed: int = 0, p_upgrade_roles: Dictionary = {}) -> RefCounted:
 	var st := new()
 	st.level_dict = level
 	st.level_hash = VoidGenScript.level_hash(level) if not level.is_empty() else ""
@@ -49,6 +57,11 @@ static func build(level: Dictionary, p_level_number: int, p_player_count: int,
 	st.gifts = GiftsScript.create(level)
 	st.beacon = BeaconScript.create(level)
 	st.mines = MinesScript.create(level, p_level_number, p_run_seed)
+	st.upgrades = UpgradesScript.create(p_upgrade_roles)
+	if st.upgrades != null:
+		# Skeleton Key (D-T053-4): the beacon-open condition becomes the 90 % quota.
+		if st.upgrades.has(UpgradesScript.ROLE_SKELETON_QUOTA):
+			st.gifts.black_quota = UpgradesScript.skeleton_threshold(st.gifts.total_real)
 	return st
 
 

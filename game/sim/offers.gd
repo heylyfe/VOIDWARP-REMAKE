@@ -5,7 +5,9 @@ extends RefCounted
 # The shop never shows the full catalog. draw_shop() walks the CANON pipeline:
 #   1. pool: data/upgrade_pools.json bracket for the level (core/content_api.gd
 #      shop_pool), tier min level already enforced there;
-#   2. exclude upgrades already at max stacks (stacks dict, absent key = 0);
+#   2. exclude upgrades already at max stacks (stacks dict, absent key = 0); the
+#      optional p_max_stacks_bonus dict ({upgrade id: extra stacks}, T-053's
+#      Marathon, D-T053-7) raises an id's cap for this draw;
 #   3. price whole gold: floor(base x 1.5^stacks x shop_price_mul x discount_mul)
 #      - shop_price_mul is the stats dict's value ( Bargain stacks), discount_mul the
 #      REST bay's (100 - discount_pct) / 100 (D-T022-4);
@@ -58,7 +60,8 @@ static func price_for(p_upgrade: Dictionary, p_stacks: int, p_price_mul: float =
 ##   filled_from_cheapest - true when < 3 passed the filter and the fill rule ran
 static func draw_shop(p_api: RefCounted, p_level: int, p_purse_gold: int,
 		p_stacks: Dictionary, p_class: String, p_rng: RefCounted,
-		p_discount_mul: float = 1.0, p_stats: Dictionary = {}) -> Dictionary:
+		p_discount_mul: float = 1.0, p_stats: Dictionary = {},
+		p_max_stacks_bonus: Dictionary = {}) -> Dictionary:
 	var price_mul := float(p_stats.get("shop_price_mul", 1.0))
 	var afford_raw: Dictionary = p_api.data("economy").get("shop", {}).get("affordability_filter", {})
 	var floor_gold := int(afford_raw.get("floor", AFFORD_FLOOR))
@@ -72,7 +75,7 @@ static func draw_shop(p_api: RefCounted, p_level: int, p_purse_gold: int,
 		if u.is_empty() or _class_locked(u, p_class):
 			continue
 		var stacks := int(p_stacks.get(id, 0))
-		if stacks >= int(u.get("max_stacks", 1)):
+		if stacks >= int(u.get("max_stacks", 1)) + int(p_max_stacks_bonus.get(id, 0)):
 			continue
 		var price := price_for(u, stacks, price_mul, p_discount_mul)
 		if price <= threshold:
@@ -91,7 +94,7 @@ static func draw_shop(p_api: RefCounted, p_level: int, p_purse_gold: int,
 			if u.is_empty() or pass_ids.has(id) or _class_locked(u, p_class):
 				continue
 			var stacks := int(p_stacks.get(str(id), 0))
-			if stacks >= int(u.get("max_stacks", 1)):
+			if stacks >= int(u.get("max_stacks", 1)) + int(p_max_stacks_bonus.get(id, 0)):
 				continue
 			backfill.append([price_for(u, stacks, price_mul, p_discount_mul), id, stacks, u])
 		backfill.sort_custom(func(a, b): return int(a[0]) < int(b[0]) or (int(a[0]) == int(b[0]) and str(a[1]) < str(b[1])))

@@ -20,6 +20,9 @@ const EventsScript := preload("res://sim/events.gd")
 # driven via sim/beacon.gd try_enter - the T-010 placeholder rows carry no
 # charge state, D-T020-4).
 const GiftsScript := preload("res://sim/gifts.gd")
+# T-053: the scripted-upgrade engine (radar state, cartographer footprints, the
+# pocket-beacon channel). Null on levels with no roles - a no-op hook.
+const UpgradesScript := preload("res://sim/upgrades.gd")
 
 ## D-012 movement constants (carried over from v1 unchanged).
 const DT := 1.0 / 60.0
@@ -105,3 +108,8 @@ static func _step_player(events: Array, lv: RefCounted, i: int, inp: RefCounted)
 	# T-020: gift pickup from the settled position; the last real black gift
 	# opens the beacon on the same tick (sim/beacon.gd owns the state machine).
 	GiftsScript.tick(lv, i, events)
+
+	# T-053: the scripted-upgrade per-tick pass (cartographer footprints, the
+	# pocket-beacon channel); a no-op when no scripted upgrade is owned this level.
+	if lv.upgrades != null:
+		lv.upgrades.step_player(lv, i, inp, prev_buttons, events)

@@ -27,6 +27,10 @@ var players: int = 1
 var content_ids: Array = []  # sorted content ids (the "content set" input, DESIGN.md section 13)
 var level: RefCounted = null  # LevelState or null between levels
 var rng: Dictionary = {}  # stream name -> VoidRng instance (lookup only, never iterated directly)
+## T-053: the scripted-upgrade ROLES of this run (D-T053-1: role keys, never upgrade
+## ids - the id->role aggregation lives outside sim). Empty = none owned; load_level
+## hands them to LevelState.build, which builds the upgrade state when non-empty.
+var upgrade_roles: Dictionary = {}
 
 
 static func new_run(p_run_seed: int, p_players: int, p_content_ids: Array) -> RefCounted:
@@ -48,7 +52,7 @@ func load_level(level_dict: Dictionary, p_level_number: int) -> void:
 	level_number = p_level_number
 	for s in STREAMS:
 		(rng[s[0]] as RefCounted).s = _stream_seed(run_seed, s[1], level_number)
-	level = LevelStateScript.build(level_dict, level_number, players, run_seed)
+	level = LevelStateScript.build(level_dict, level_number, players, run_seed, upgrade_roles)
 
 
 static func _stream_seed(p_run_seed: int, stream_id: int, p_level_number: int) -> int:

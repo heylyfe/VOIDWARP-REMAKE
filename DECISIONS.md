@@ -4267,6 +4267,90 @@ attack offset 45; assertion 2 passes, assertion 3 is not applicable to a loop), 
 `bark` as the on-attack stinger. WHY: the done-when demands every lethal attack name a
 binding cue; silently uncovered attacks fail, documented parked ones stay visible.
 
+### D-T053-1 - The sim layer never names an upgrade id: scripted upgrades are wired through role strings, the id→role pairing lives in the content scripts (T-053).
+
+DECISION (T-053): `sim/upgrades.gd` and every other sim file compute the batch's behaviors behind
+role keys ("mine_radar", "gift_radar", "threat_radar", "beacon_compass", "cartographer",
+"skeleton_quota", "beacon_channel") — never the literal upgrade ids. The pairing id→role (and the
+per-id ranges/thresholds: 14 u, 40/80 u, 30 u, 40 u, 90 %, 180 ticks, 3 u, 6 s, +2 stacks) lives in
+one thin `content/upgrades/<id>.gd` script per upgrade, matching the T-051 curse-script convention.
+WHY: `tests/test_boundaries.gd` forbids content ids under terrain/ sim/ core ("or any content id",
+KNOWN_CONTENT_IDS mechanism), so a sim file that read `stacks.has("radar_gifts")` would be a scan
+violation the moment upgrade ids are appended. Callers outside sim (app/ later, tests now) aggregate
+the roles from the content scripts.
+
+### D-T053-2 - Cartographer's "anywhere you have stood" is the union of 1 u tiles, measured tile-centre to tile-centre (T-053). [CONTESTABLE]
+
+DECISION (T-053): the footprint is the tile containing the player's centre, recorded once per tick
+into a set per player; "every piece within 40 u of anywhere you have stood" = every gift slot (occ
+0 real gift, occ 1 mine) and the beacon whose tile centre is within 40 u of any recorded tile
+centre. Alternative rejected for this pass: continuous per-tick position memory (exact but
+unbounded and hot-path heavy); a run of 300 s x 60 Hz x 8 players would hold 144 000 points. The
+tile set is bounded by the level's walked area. Flipping to continuous costs one store in
+`note_footprint()`.
+
+### D-T053-3 - Pocket Beacon: INTERACT press edge while standing still starts a 3.0 s channel; any input cancels; fill teleports to the dais; once per level, works while the beacon is closed (T-053). [CONTESTABLE]
+
+DECISION (T-053): the DESIGN.md §8 sentence gives the fill (exactly 180 ticks) and the cancel ("any
+input") but no activation. Built reading: the INTERACT press edge starts the channel when the
+player owns it, has not used it this level, is grounded and standing still (both move axes neutral
+and speed <= 0.05 u/s, i.e. the feet-still gate); "any input" = any of the three buttons pressed or
+held, OR any non-neutral move axis, OR losing grounding — any of these cancels on that tick with
+the channel emptied (it can be restarted; "once per level" is spent only by the teleport). On the
+180th channel tick the player's row moves to the beacon dais centre (beacon.cx, base_y, beacon.cz)
+and event `beacon_teleport` fires; the beacon's own state machine is untouched (the upgrade does
+not open it). [CONTESTABLE] points: the activation button (INTERACT; the design table does not name
+one) and the closed-beacon allowance (the owner's "teleport to the beacon dais" reads as a
+traversal tool, and DESIGN §3 says a level is completed only by entering the OPEN beacon — the
+teleport lands you on the dais, the entry rule alone pays out).
+
+### D-T053-4 - Skeleton Key's 90 % is a collection quota on the beacon-open condition; the remainder goes gold by the existing phase flip, no second conversion (T-053).
+
+DECISION (T-053): `gifts.gd` gains one optional field `black_quota: int = -1` (set at level build;
+-1 = the exact merged rule, every default path unchanged). When set to ceil(0.9 × total_real),
+`all_black_collected()` — the beacon-open condition — passes at the quota instead of at 0 remaining.
+"The rest turn gold in place" is exactly what the merged gold-phase flip already does: gold gifts
+appear at EVERY slot that held a black gift, including the uncollected ones, same slots, same
+positions (TERRAIN_SPEC 6.7's zero placement rule). No separate conversion pass exists.
+
+### D-T053-5 - Twin Dash is a second dash stock with its own 3 s regen, charged at purchase (T-053). [CONTESTABLE]
+
+DECISION (T-053): dasher-only. The merged `dash_ready`/`dash_cd` pair stays charge 1 untouched
+(existing tests keep passing); the second charge is a bonus stock: consuming it starts its own
+`bonus_cd` of dash_regen (3 s), frozen under ability lock exactly like the primary (D-070). At
+purchase the stock is granted charged (usable immediately). Alternative rejected: replacing the
+bool with a 2-charge pool would touch the merged regen branch every existing class test runs
+through.
+
+### D-T053-6 - Updraft: vy = sqrt(2 × 32 × 3) ≈ 13.8564 (apex exactly 3.0 u under gravity 32), once per glide engagement, 6 s cooldown (T-053). [CONTESTABLE]
+
+DECISION (T-053): glider-only. Re-pressing jump while gliding sets vy to the exact 3 u apex
+velocity, ends the glide, and starts the 6 s cooldown (frozen under ability lock, D-070). "Once
+per glide" = once per glide ENGAGEMENT: the flag resets when a new glide engages, so glide →
+updraft → re-glide → updraft is legal (at 6 s+ spacing, two energy bars apart). [CONTESTABLE]:
+"once per glide" could instead read once per continuous airborne period; the engagement reading is
+the literal one and the cooldown already bounds it.
+
+### D-T053-7 - Marathon's +2 max stacks reaches the shop as an optional max-stacks bonus dict in draw_shop; the pairing lives in content/upgrades/marathon.gd, the call site is the shop wiring (T-053). [CONTESTABLE]
+
+DECISION (T-053): `offers.draw_shop` gains one optional parameter, `p_max_stacks_bonus: Dictionary`
+({upgrade id: extra stacks}, default empty — every existing call site and test unchanged), and both
+exclusion checks compare against max_stacks + bonus. `content/upgrades/marathon.gd` is the single
+source of the pairing (athletic + marathon owned → {"yearn_for_speed": +2}). The app/intermission
+call site that aggregates content scripts does not exist yet (no sim file may name an upgrade id,
+see D-T053-1, and the shop wiring is T-052's surface) — until it lands, the bonus is supplied by
+whoever calls draw_shop. [CONTESTABLE]: the call-site owner; the data path itself is final.
+
+### D-T053-8 - The radar/minimap render contract constants (24 px chevron, 220 px minimap) live in the view widgets; the sim layer exposes pure queries only (T-053).
+
+DECISION (T-053): addendum R4's render numbers — chevron 24 px at the screen edge with the
+distance in u under it; 220 px north-up square top-right under the purse, pieces as filled shapes
+in their biome colour, real gifts as 2 px dots, the player as a white triangle; the Pocket Beacon
+ring filling over exactly 180 ticks — are carried by `view/hud/radar_arrows.gd` and
+`view/hud/cartographer_map.gd` as named constants over the pure sim queries. The renderer physics
+are view-layer facts, pinned by test_upgrades_script.gd's widget tests reading the widgets' models,
+not by any sim change.
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
