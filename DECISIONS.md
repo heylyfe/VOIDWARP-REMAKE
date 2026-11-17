@@ -6049,6 +6049,47 @@ invisible regardless of the sign - the sign fix cannot be observed on nuke until
 on its world_height. The forced-`world_height = 2.0` probe showed the same sign error and the
 same fix (body bottom -1.92..-2.06 before, 0.0000 after). Similarly `spawn_00` for thicc_ben:
 bottom at the origin like every other frame. ENEMIES.md / DESIGN.md unchanged.
+### D-FIX-A3-1 - Bot edge discipline: weighted routing, validated arcs, banned edges (FIX-A3)
+
+The bot's router was an unweighted BFS, so a one-edge drop was cheaper than a long
+walkable bypass and the follower "walked off and prayed" when no arc validated
+(8 of 10 level-1 deaths D-VOID in AUDIT.md's A3 sample; T-081 at scale: 175 of 176
+charges spent terrain-caused, 99.4%). FIX-A3 changes ONLY the bot policy in
+game/tools/bot_run.gd: (a) Dijkstra costs - same-level walk 1, 1 HU step down/up 2/3,
+a rise over a gap 6+2*gap, a gap drop to just-below ground 6, a drop onto far-below
+ground 60 (one-way, no recovery); (b) a through-air edge is followed only when the
+controller's own jump physics validate an arc that lands within 1.15 u of the far
+waypoint (the old "any tile but the takeoff" acceptance validated garbage arcs - a
+5-cell jump at approach speed 2 u/s looked valid, missed the far tile, D-VOID);
+(c) a refused edge is banned for the level ("from>to"), never relaxed onto, with a
+300-tick lift cooldown when nothing reachable remains; the beacon route lifts bans
+immediately (the beacon is the only exit). No sim file, band, threshold, or enemy
+constant is touched; test_bot_run.gd's determinism assertion stays green.
+
+### D-FIX-A3-2 - [CONTESTABLE] Bot enemy-awareness constants (FIX-A3)
+
+No document states the bot's own anti-enemy geometry; these are bot-policy numbers,
+not sim numbers, chosen for their gameplay reason and freely re-tunable by a future
+competence pass: HURDLE_DIST 2.0 u (a contact-kill body closing inside this triggers
+the ENEMIES.md kiwi-cat counter-play jump "a jump exceeds its 1.5 u reach from 0.16 s
+to 0.59 s" - at combined closing ~14.6 u/s a 2.0 u trigger leaves ~0.07 s margin,
+measured too late in traces), AVOID_DIST 3.0 u, the menace cost +30 per tile within
+2 tiles of a live contact-kill body (the route curves around a chaser's position),
+the arc-landing tolerance 1.15 u, and the ban-lift cooldown 300 ticks. These are
+bot-policy estimates of what a human player does, not sim numbers; ENEMIES.md and the
+enemy.json stats are untouched.
+
+### D-FIX-A3-3 - A3 remains FAIL at the FIX-A3 build: parked (see PARKED.md #20)
+
+The full pinned sweep (bot_run.gd --dodge, seeds 0..99, --max-level 2, the current
+build, verified byte-identical on a re-run) measures 56 of 100 level-1 completions
+(audit baseline: 1 of 10) with median level-1 sim time 43.4 s over completions
+(criterion 120 s: met whenever the level is completed). The residual cause is NOT
+void falls (2 D-VOID level-1 deaths, was 8 of 10) but the flying pure-pursuit kiwi
+cat: 37 of the 44 level-1 failures are D-KIWI, 4 are stuck, 2 D-VOID, 1 D-COIL -
+evidence in tickets/FIX-A3.response.md and PARKED.md #20. Enemy tuning is parked for
+the owner per T-060's own ordering (bot competence first, re-measure, then enemy
+tuning if the bands still miss - the bands still miss).
 
 ## Handover log
 
@@ -6405,3 +6446,5 @@ only the cat's ceiling and bound move. DESIGN.md's SR-5 prose bound ("may reach 
 run speed") stays as the global burst bound; the cat's own burst ceiling (0.55) sits under it.
 WHY record before code: this entry is committed before any line that implements it, so the
 diff order shows the ruling first.
+
+- 2026-11-17 FIX-A3 (zai-glm-5-3-flash, this session): bot edge discipline + enemy-awareness in game/tools/bot_run.gd ONLY; A3 measured 56/100 level-1 completions (was 1/10), median 43.4 s of completions, GATE OK (9 ran, 0 skipped, 210 s) TESTS 55 passed 0 failed; A3 remains FAIL - parked PARKED.md #20; DECISIONS.md D-FIX-A3-1..3; next: owner lever per T-060 ordering (deeper chaser-intercept competence or enemy tuning).
