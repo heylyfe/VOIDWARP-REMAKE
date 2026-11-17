@@ -9,7 +9,7 @@ edited. Every defect found is written here and left in place.
 
 ---
 
-## 0. Method and two document defects worked around
+## 0. Method, and four document defects worked around
 
 Every command of FLEET_PACK.md §4 was run on this checkout. Long output was redirected to a file under
 `out/` (gitignored) and grepped; nothing was piped through `tail` in PowerShell.
@@ -142,7 +142,7 @@ run 8 seed=8 class=athletic entered=1 outcome=dead tick=1034 killer=void     cod
 run 9 seed=9 class=glider   entered=1 outcome=dead tick=1216 killer=void     code=D-VOID
 ```
 
-- **1 of 10 seeds completed level 1** (`entered=2`, seed 2). The other nine died on level 1. That is **10%**, against a required **95%**. 8 of the 9 deaths are `D-VOID` (a void fall at 0 charges).
+- **1 of 10 seeds completed level 1** (`entered=2`, seed 2). The other nine died on level 1. That is **10%**, against a required **95%**. All ten runs died; **8 of the 10 deaths are `D-VOID`** (a void fall at 0 charges), and **7 of the 9 level-1 deaths are `D-VOID`** (the other two are `D-KIWI` and `D-COIL`).
 - A 30-seed extension (`--runs 30 --seed-base 10 --max-level 2`) was started and had **not finished after 35 minutes** — the bot hits its 7,199-tick cap on many seeds, which is itself consistent with the failure. It is not needed to decide the criterion.
 - This is **already parked**: PARKED.md #4 (T-026) records `BOT-RUNS completed=0 failed=4` and states A3 is not met. The audit confirms the park is honest and the criterion still fails.
 - Proof: `game/tools/bot_run.gd`, `game/tests/test_bot_run.gd`.
@@ -693,7 +693,7 @@ is a small fix (record ten runs; populate `KNOWN_CONTENT_IDS` and scan the schem
 ### The three findings that matter most for the owner
 
 1. **The game cannot be finished by the bot, and the terrain is what kills it.** 1 of 10 seeds completes
-   level 1; 8 of the 9 level-1 deaths are `D-VOID`. T-081's 100-run report says the same thing at scale:
+   level 1; 8 of the 10 deaths are `D-VOID` and 7 of the 9 level-1 deaths are `D-VOID`. T-081's 100-run report says the same thing at scale:
    175 of 176 charges (99.4%) are terrain-caused, 59 of 99 deaths (59.6%) are `D-VOID`, and **no run
    reached level 6**. This is the single largest risk to the alpha being fun, and it is a design signal
    the owner must rule on — the audit does not gate on it, but A3 does fail because of it.
