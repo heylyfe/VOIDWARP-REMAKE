@@ -50,6 +50,8 @@ extends SceneTree
 #     early_bird -> 2 s spawn delay; understudies -> +4 flat extra mines per stack);
 #     every other curse/upgrade has no knob in the sim today and is NOT applied -
 #     see DECISIONS.md (D-T060-x) and tickets/T-060.response.md.
+#   - hurdles a contact-kill enemy within 1.6 u horizontally while grounded (the roster's
+#     own counter-play: a human jumps the cat; the bot never jumps THROUGH one on purpose).
 #   - death = the run ends. Dying is the outcome the bands measure; it is never
 #     treated as an error of the probe.
 #
@@ -401,7 +403,10 @@ static func _play_level(api: RefCounted, ledger: Dictionary, seed: int, level: i
 		for e in rt.step(DT):
 			ev.append(e)
 		_track_telegraphs(mem, rt, lv.tick)
-		if TRACE and lv.tick % 30 == 0:
+		if TRACE and lv.tick >= 1300 and lv.tick <= 1332:
+			for e in ev:
+				print("EVT-ALL t=%d %s" % [lv.tick, JSON.stringify(e)])
+		if TRACE and (lv.tick % 30 == 0 or (lv.tick >= 1300 and lv.tick <= 1332) or (lv.tick >= 1290 and lv.tick <= 1360) or (lv.tick >= 1960 and lv.tick <= 2040) or (lv.tick >= 1776 and lv.tick <= 1812) or (lv.tick >= 770 and lv.tick <= 835) or (lv.tick >= 1355 and lv.tick <= 1420) or (lv.tick >= 1110 and lv.tick <= 1200)):
 			print("POS t=%d x=%.2f y=%.2f z=%.2f grounded=%s cur=%d gifts=%d charges=%d" % [
 				lv.tick, ctl.x, ctl.y, ctl.z, ctl.grounded, _tile_under(w, ctl),
 				lv.gifts.remaining(), ctl.charges])
@@ -420,7 +425,7 @@ static func _play_level(api: RefCounted, ledger: Dictionary, seed: int, level: i
 				mem["repath"] = true
 			if TRACE:
 				if ek == "respawn" or ek == "last_light_save" or ek == "mine_detonated" \
-						or ek == "death" or ek == "void_fall":
+						or ek == "death" or ek == "void_fall" or ek == "chain_reset" or ek == "screen_blur":
 					print("EV t=%d %s %s" % [lv.tick, ek, JSON.stringify(e)])
 		if _stuck_window(mem, ctl):
 			return {"result": "stuck"}
@@ -626,67 +631,127 @@ static func _tile_under(w, ctl) -> int:
 			best = int(t["i"])
 	return best
 
-## Solve the jump arc for a path edge: pick (hold k ticks, approach speed v) so the cut arc
-## lands on the target tile. One unified rule for level / rising / drop edges (rise in
-## world u, negative for drops). v <= 9 is always found for generator-legal links; when it
-## is not, the fullest arc at full speed is used (the generator never builds such a link).
-static func _jump_solution(rise: float, D: float) -> Dictionary:
-	var best := {"k": 12, "v": 9.0, "err": 1e9, "t": 0.75}
-	for k in range(0, 45):
-		var vy := 12.0
-		var y := 0.0
-		var t := 0.0
-		var tick := 0
-		var landed := -1.0
-		# an arc only "lands" on the target surface when it first goes ABOVE it (or the
-		# takeoff is already above it: level/drop edges) and then descends through it
-		var was_above := rise <= 0.0
-		while t < 6.0:
-			vy -= 32.0 * DT
-			y += vy * DT
-			t += DT
-			tick += 1
-			if tick == k + 1 and vy > 0.0:
-				vy *= 0.5
-			if y > rise:
-				was_above = true
-			if vy < 0.0 and y <= rise and was_above:
-				landed = t
-				break
-		if landed < 0.0:
-			continue   # this tap cannot reach the rise at all
-		var v := D / landed
-		var err: float
-		if v <= 9.0:
-			err = 0.0
+## Simulate the horizontal speed ramp exactly as sim/controller.gd does it
+## (accel 90 u/s^2 toward the target velocity), from `vz` (speed toward the
+## target) toward `v_max`; returns the distance covered in t seconds.
+static func _dist_at(vz: float, v_max: float, t: float) -> float:
+	var v := vz
+	var dist := 0.0
+	var tc := 0.0
+	var want := 1.5
+	while tc < t - 1e-9:
+		var d := v_max - v
+		if d > want:
+			v += want
+		elif d < -want:
+			v -= want
 		else:
-			err = (v - 9.0) * 100.0 + absf(9.0 * landed - D)
-		if err < best["err"]:
-			best = {"k": k, "v": minf(v, 9.0), "err": err, "t": landed}
-	return best
+			v = v_max
+		dist += v * DT
+		tc += DT
+	return dist
+
+## Solve v_max so the horizontal distance over t seconds from `vz` matches D.
+## Monotonic in v_max; returns > 9 when even full speed falls short (err carries it).
+static func _solve_vmax(t: float, D: float, vz: float) -> float:
+	if _dist_at(vz, 9.0, t) < D:
+		return 9.0 + (D - _dist_at(vz, 9.0, t)) * 4.0
+	var lo := 0.0
+	var hi := 9.0
+	for _i in range(24):
+		var mid := (lo + hi) * 0.5
+		if _dist_at(vz, mid, t) < D:
+			lo = mid
+		else:
+			hi = mid
+	return (lo + hi) * 0.5
+
+## Forward-simulate the controller's jump physics (vy = 12 on jump, gravity 32 on the way
+## down, vy *= 0.5 on release after k ticks, accel 90 u/s^2 toward the target velocity)
+## from the CURRENT state and find an arc that lands on a tile. Returns {"v": speed,
+## "hold": ticks to hold JUMP} - or {} when no candidate arc lands on a tile. Deterministic.
+## The bot jumps exactly when this finds an arc - i.e., exactly when a jump would work.
+static func _jump_arc(ctl, w, wp_x: float, wp_z: float) -> Dictionary:
+	var x0 := float(ctl.x)
+	var y0 := float(ctl.y)
+	var z0 := float(ctl.z)
+	var vx0 := float(ctl.vx)
+	var vz0 := float(ctl.vz)
+	var dx := wp_x - x0
+	var dz := wp_z - z0
+	var dl := sqrt(dx * dx + dz * dz)
+	if dl < 1e-6:
+		return {}
+	var dir_x := dx / dl
+	var dir_z := dz / dl
+	var ct_takeoff := _tile_under(w, {"x": x0, "y": y0, "z": z0})
+	var v_opts := [9.0, 7.5, 6.0, 4.0, 2.0]
+	var k_opts := [0, 2, 4, 8, 14, 22, 30]
+	for k in k_opts:
+		for v_max in v_opts:
+			var x := x0
+			var y := y0
+			var z := z0
+			var vx := vx0
+			var vz := vz0
+			var vy := 12.0
+			var grounded := false
+			for tick in range(240):
+				vy -= 32.0 * DT
+				if tick == k and vy > 0.0:
+					vy *= 0.5
+				# accel toward v_max * dir (friction 1.0)
+				var tvx: float = dir_x * v_max
+				var tvz: float = dir_z * v_max
+				var ddx: float = tvx - vx
+				var ddz: float = tvz - vz
+				var dlen := sqrt(ddx * ddx + ddz * ddz)
+				if dlen > 1e-9:
+					var want := 1.5
+					var s := 1.0 if want >= dlen else want / dlen
+					vx += ddx * s
+					vz += ddz * s
+				var r = CollisionScript.move_body(w, x, y, z, vx * DT, vy * DT, vz * DT,
+						1.8, 0.5, grounded)
+				x = r["x"]
+				y = r["y"]
+				z = r["z"]
+				grounded = bool(r["grounded"])
+				if grounded:
+					var p = {"x": x, "y": y, "z": z}
+					var ti := _tile_under_sim(w, p)
+					if ti >= 0 and ti != ct_takeoff:
+						return {"v": v_max, "hold": k + 1}
+					break
+				if y < -40.0:
+					break
+			# no arc from this candidate set was found at this position
+			pass
+	return {}
 
 
-## The arc solution for a jump edge: {"mag": float 0..1, "hold": int} - hold = how many
-## ticks JUMP stays pressed (jump-cut distance control). Pure function of (rise, D).
-static func _arc_for(rise: float, D: float) -> Dictionary:
-	var sol := _jump_solution(rise, D)
-	return {"mag": clampf(float(sol["v"]) / 9.0, 0.25, 1.0), "hold": int(sol["k"]) + 1}
+## Tile index under a raw {"x","y","z"} point (feet) - the same probe as _tile_under but
+## for simulated points; returns -1 over the void.
+static func _tile_under_sim(w, p: Dictionary) -> int:
+	return _tile_under(w, p)
 
 
 ## Jump handling for a non-walk path edge: {"mag": float 0..1, "hold": int} - hold = how
-## many ticks JUMP stays pressed (jump-cut distance control).
+## many ticks JUMP stays pressed (jump-cut distance control). Forward-simulates the
+## controller's own physics and finds an arc that lands on a tile; the bot jumps only
+## when one exists. `vz` is the player's speed toward the target at this moment.
 static func _jump_plan(ct: Array, _wt: Array, wp_pos: Vector2, dir: Vector2,
-		dy_hu: int) -> Dictionary:
+		dy_hu: int, vz: float, ctl, w) -> Dictionary:
 	var exit := _cell_exit(ct, dir)
 	var D := exit.distance_to(wp_pos)
 	var rise := float(dy_hu) * 0.5
-	if rise < 0.0:
-		var h := -rise
-		var walk_range := 9.0 * sqrt(2.0 * h / 32.0)
-		var gap := maxf(0.0, D - 0.5)
-		if walk_range >= gap + 0.35:
-			return {"mag": 1.0, "hold": 0}
-	return _arc_for(rise, D)
+	var arc := _jump_arc(ctl, w, wp_pos.x, wp_pos.y)
+	if arc.is_empty():
+		# no arc lands on a tile from this position/orientation: walk off and pray
+		return {"mag": 1.0, "hold": 0}
+	# the arc the sim validated may use a LOW approach speed (e.g. a gentle hop over a
+	# 1-cell wall): the bot must keep THAT speed, not launch at 9 u/s past the tile
+	return {"mag": maxf(float(arc["v"]) / 9.0, 0.25), "hold": int(arc["hold"])}
 
 
 ## The point where a ray from the tile's centre toward `dir` exits the cell boundary.
@@ -869,27 +934,21 @@ static func _routing(mem: Dictionary, lv, ctl, w, w2, gtiles: Array, adj: Array,
 	var dy := int(wt[2]) - int(ct[2])
 	var dx := absi(int(wt[0]) - int(ct[0]))
 	var dz := absi(int(wt[1]) - int(ct[1]))
-	var is_walk := dx <= 1 and dz <= 1 and absi(dy) <= 1
+	var is_walk := dx <= 1 and dz <= 1 and dy == 0   # downhill edges are hop-downs, not walks - the bot would flutter off them and never land
 	var mag := 1.0
 	if not is_walk:
-		var cache_key := "%d:%d" % [cur, wp]
-		var plan: Dictionary
-		if mem.has("jump_cache") and (mem["jump_cache"] as Dictionary).has(cache_key):
-			plan = (mem["jump_cache"] as Dictionary)[cache_key]
-		else:
-			# the arc solution is a pure function of the edge; only the trigger is live
-			plan = _jump_plan(ct, wt, wp_pos, dir, dy)
-			if not mem.has("jump_cache"):
-				mem["jump_cache"] = {}
-			(mem["jump_cache"] as Dictionary)[cache_key] = plan
+		# the arc solution depends on the player's CURRENT speed toward the target
+		var vz := float(ctl.vx) * dir.x + float(ctl.vz) * dir.y
+		var plan: Dictionary = _jump_plan(ct, wt, wp_pos, dir, dy, vz, ctl, w)
 		mag = float(plan["mag"])
 		var exitp := _cell_exit(ct, dir)
 		var D := exitp.distance_to(wp_pos)
-		var at_exit := Vector2(ctl.x, ctl.z).distance_to(exitp) < 0.42
-		var jump := bool(ctl.grounded) and at_exit and int(plan["hold"]) > 0
+		var at_exit: bool = pi >= 1 and cur >= 0 and cur == int(path[pi - 1])
+		var jump := (bool(ctl.grounded) or float(ctl.coyote) > 0.0) and at_exit and int(plan["hold"]) > 0
 		if TRACE:
-			print("PLAN t=%d pi=%d cur=%d wp=%d dy=%d D=%.2f at_exit=%s grounded=%s jump=%s" % [
-				mem.get("tick", -1), pi, cur, wp, dy, D, str(at_exit), str(ctl.grounded), str(jump)])
+			print("PLAN t=%d pi=%d cur=%d wp=%d dy=%d D=%.2f at_exit=%s grounded=%s coyote=%.2f jump=%s" % [
+				mem.get("tick", -1), pi, cur, wp, dy, D, str(at_exit), str(ctl.grounded),
+				float(ctl.coyote), str(jump)])
 		if jump and int(mem["jump_hold"]) == 0:
 			mem["jump_hold"] = int(plan["hold"])
 			buttons |= BUTTON_JUMP
@@ -902,7 +961,11 @@ static func _routing(mem: Dictionary, lv, ctl, w, w2, gtiles: Array, adj: Array,
 
 
 ## One tick of bot input. Dodge overrides routing; JUMP holds from _routing apply across
-## both paths (jump-cut bookkeeping must survive a dodge mid-hop).
+## both paths (jump-cut bookkeeping must survive a dodge mid-hop). A contact-kill enemy
+## on the bot's tile line is hurdled (the roster's own counter-play, enemy.json's
+## "hurdle it as it arrives"): the bot jumps when one is within HURDLE_DIST horizontally.
+const HURDLE_DIST := 1.6
+
 static func _bot_input(mem: Dictionary, lv, rt, ctl, w, w2, gtiles: Array, adj: Array,
 		L: Dictionary) -> Dictionary:
 	var tick: int = lv.tick
@@ -919,6 +982,16 @@ static func _bot_input(mem: Dictionary, lv, rt, ctl, w, w2, gtiles: Array, adj: 
 		var r: Dictionary = _routing(mem, lv, ctl, w, w2, gtiles, adj, L)
 		move = r["move"]
 		buttons = int(r["buttons"])
+	# hurdle a contact-kill enemy on the tile line (grounded only; the arc clears 0.9 u bodies)
+	if bool(ctl.grounded) and (buttons & BUTTON_JUMP) == 0:
+		for e in rt.enemies:
+			if not bool(e.get("contact_kill", true)):
+				continue
+			var dx := float(e["x"]) - float(ctl.x)
+			var dz := float(e["z"]) - float(ctl.z)
+			if dx * dx + dz * dz < HURDLE_DIST * HURDLE_DIST:
+				buttons |= BUTTON_JUMP
+				break
 	return {
 		"move_x": clampi(int(round(move.x * 127.0)), -127, 127),
 		"move_z": clampi(int(round(move.y * 127.0)), -127, 127),
