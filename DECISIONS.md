@@ -4603,6 +4603,16 @@ previously crash-parsed every windowed run).
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
+- 2026-11-17 T-061 (zai-glm-5-3-flash, this session): tools/feel_probe.gd (A12: 6 rows,
+  all PASS) + tools/perf_probe.gd (A13: the pinned 22-enemy scene - all 22 place per the
+  fixed vote list, dodge bot, third-person rig, 600/120 frames, 1920x1080 v-sync off,
+  OS/CPU/GPU printed; p99 1.20 ms <= 16.6, mean sim tick 0.733 ms <= 2.0, both PASS) -
+  D-T061-1..7. The scene exposed and fixed two sim/enemy_runtime.gd spawn-plan defects
+  (dropped tail + duplicated copies + SR-3 scope, D-T061-6, regression in
+  test_spawn_rule.gd) and view/billboard.gd's world_height-null crash (T-016 schema's
+  documented no-body row). CAVEAT (D-T061-7): this box renders through a Parsec virtual
+  display (VkResult -13 every frame) - the frame rows are CPU-side costs; mean_sim_tick
+  is the solid number. Response: tickets/T-061.response.md. TESTS 47 passed 0 failed.
 - 2026-11-17 GLM (T-051): scripted curses, GENERAL family (the 11 `script: true` /
   `requires_enemy: null` curses: cold_start, crowded_dais, crumbling, curfew, dull_gifts,
   early_bird, leaky_purse, no_refunds, rearguard, slow_door, unmarked). One
