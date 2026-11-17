@@ -4238,13 +4238,16 @@ event; the check enforces `offset_ticks \u003c= attack_offset_ticks - binding_cu
 (735.0 samples at 44.1 kHz). thicc ben's `thicc_ben_chime` is the reference: event
 `telegraph` kind `teleport` occurrence 1, offset 45 (the chime lands in the LAST 30 of
 the 75-tick smoke, T-032), binding 30, attack offset 75 (the arrival tick) - assertion 2:
-45 \u003c= 45; assertion 3: end == 75 exactly. thicc ben has NO lethal attack (D-065: the
-launch is the danger, never a kill) - its `lethal_attacks` list is empty and the check
-prints `INFO thicc_ben: no lethal attacks` instead of failing. `thicc_ben_bell` anchors
+45 <= 45; assertion 3: end == 75 exactly. thicc ben has NO lethal attack (D-065: the
+launch is the danger, never a kill), so its ledger declares the arrival as a NON-lethal
+bound attack (`lethal: false`, code "", event `telegraph` kind `teleport`, attack offset 75,
+binding cue `thicc_ben_chime`, binding 30); the check validates that pair and prints
+`BOUND thicc_ben/teleport_arrival (non-lethal)`. Coverage and the PARKED machinery apply
+only to `lethal: false`. `thicc_ben_bell` anchors
 the `screen_blur` event (the only sim event on the touch path; the ring/blur/eject is
 D-T-032's surface), role `stinger`, unbound. WHY: ben proves the data model on the one
-case whose cue span equals the pre-arrival window exactly; empty `lethal_attacks` is a
-legitimate, printed state, not a failure.
+case whose cue span equals the pre-arrival window exactly, and binding to a named,
+validated non-lethal attack keeps the cue-reference check honest without a dangling id.
 
 ### D-T087-8 - Coverage: every lethal attack names a binding cue or a parked exemption (T-087).
 
