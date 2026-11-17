@@ -412,3 +412,153 @@ targets. The retired *mechanic* term (thicc ben's "Overtuned" LETHAL state) does
 
 **Verdict: 7 hits, 0 allowed.** Two are a self-referential grep instruction in FLEET_PACK.md; five are
 the ordinary English word "lethal" used as an adjective. Nothing was edited.
+
+---
+
+## 8. Every `[CONTESTABLE]` entry added during the run
+
+`grep -c "\[CONTESTABLE\]" DECISIONS.md` = **216 occurrences**; **130 of them are section
+headings** (`grep -c "^### D-.*\[CONTESTABLE\]"` = 130). The 130 headings are the owner's open
+rulings and are listed one per line below. The other 86 occurrences are inline `[CONTESTABLE]`
+markers inside entries whose heading is not itself marked; they are the same rulings restated in
+prose and are not counted twice.
+
+| # | id | one-clause summary |
+|---|---|---|
+| 1 | `D-T010-2` | move_x / move_z axis scale: int8 in −127..127 = −1..+1 of RUN_SPEED, clamped |
+| 2 | `D-T010-3` | sim RNG sub-streams are named, per-run, re-seeded per level: `s(mix(mix(run_seed, 900 + id), level_number))`, ids w... |
+| 3 | `D-062` | Cold Start's Athletic penalty is coyote time −0.05 s |
+| 4 | `D-T012-1` | Terminal fall speed is 40 u/s. |
+| 5 | `D-T012-3` | Upgrade-strength composition, and Hungry Void clamp reading. |
+| 6 | `D-T082-1` | Third-person orbit camera: pivot-orbit rig and its numbers (T-082). |
+| 7 | `D-T082-2` | Bindings and capture semantics: data/bindings.json, Held-bit buttons, diagonal normalization, HUD/pause are app-lev... |
+| 8 | `D-T082-3` | Settings: user://settings.json, clamp-not-reject on load (T-082, the T-024 addendum made concrete). |
+| 9 | `D-T014c-1` | Fog density for levels 31+ (the cycled acts). |
+| 10 | `D-T011-1` | The fog-readability check runs in linear radiance, not on raw sRGB bytes (T-011, tools/fog_check.gd). |
+| 11 | `D-T011-6` | Deepwater walkway_light raised from #2A5BFF to #3A74FF (orchestrator, at T-011's R6 gate). |
+| 12 | `D-T020-2` | The pickup test point is the player's centre (feet + 0.9 u) (T-020) |
+| 13 | `D-T020-3` | "Last 20%" reads as remaining * 5 <= total_real (floor semantics) (T-020) |
+| 14 | `D-T027-2` | api.los is a ray march at 0.25 u against tile slabs and prop boxes (T-027). |
+| 15 | `D-T027-7` | Diegetic spawn text is the enemy's own display name, in-world, fading (T-027). |
+| 16 | `D-T022-6` | The A11 audit's simulation model, and why it is weak evidence (T-022). |
+| 17 | `D-T071-4` | Volley reading: start-to-start 45 ticks, balls 9 apart, remainder on the last volley (T-071). |
+| 18 | `D-T071-5` | SalvoClock: budget from the FIRST tracking tick, restart never resets, expires ON tick 360 (T-071). |
+| 19 | `D-T071-6` | Projectiles report where and why they ended (T-071). |
+| 20 | `D-T024-4` | The About disclaimer is the ENEMIES.md paragraph VERBATIM |
+| 21 | `D-T024-5` | Rotation boundary and first tip are not specified anywhere (T-024). |
+| 22 | `D-T025-1` | HUD layout: positions, sizes, and the purse format (T-025). |
+| 23 | `D-T025-2` | The gift counter is phase-scoped |
+| 24 | `D-T021-6` | View tells: 1 rev / 4 s turn, constant pink particles, rim glow beyond 12 u (T-021 |
+| 25 | `D-T023-2` | the E draw gates on the NEXT level (T-023). |
+| 26 | `D-T023-3` | the CLASS bay is mandatory in the pre-run lobby (T-023). |
+| 27 | `D-T023-4` | curse gating and bounty use the level just completed (T-023). |
+| 28 | `D-T023-5` | the REST bay carries a paid reroll plinth (T-023). |
+| 29 | `D-T086-1` | The HUD animation clock is ticks at 60 per second |
+| 30 | `D-T086-2` | The spend's void edge flash is a 12-tick single flash, 48 px edge band, alpha 0.55 -> 0 (T-086). |
+| 31 | `D-T086-3` | Already-full restore = one whole-row glow pulse over 12 ticks (T-086). |
+| 32 | `D-T086-4` | Field Dressing pip: stays filled, white flash for the first 12 of 60 FREE ticks (T-086). |
+| 33 | `D-T086-5` | The restore glint is a white surface line plus a 6-tick glow tail (T-086). |
+| 34 | `D-T086-6` | Last Light shatter = 12 ticks, six wedge shards, concurrent with the 12-tick bloom (T-086). |
+| 35 | `D-T074-1` | "first-shown level" = the gate table's min_level (T-074). |
+| 36 | `D-T074-2` | the chaser-ceiling numbers live in the schedule file's "chaser" block (T-074). |
+| 37 | `D-T074-3` | kitten bodies at draw time (T-074). |
+| 38 | `D-T074-4` | the FREE altar may re-show the type picked at the previous vote (T-074). |
+| 39 | `D-T074-5` | altar slots NEW / REPEAT / FREE in that draw order |
+| 40 | `D-T074-6` | the 1,000-run walker's vote policy (T-074). |
+| 41 | `D-T072-1` | "No enemy body within N u" reads as 3D distance (T-072). |
+| 42 | `D-T072-5` | The gate evaluates the targeted player, index 0 today (T-072). |
+| 43 | `D-T083-2` | All art is TBD, so multi-frame spec sequences collapse onto the placeholder frames (T-083). |
+| 44 | `D-T083-3` | fps rows convert to ticks exactly (T-083). |
+| 45 | `D-T083-4` | No invented numbers: unstated cells are null |
+| 46 | `D-T083-5` | gin attack_launch: the launch frame is held for the 18-tick spear flight (T-083). |
+| 47 | `D-T030-3` | kiwi cat's meow rides the sim telegraph channel |
+| 48 | `D-T030-4` | kiwi cat audio: cue names `meow` / `meow_double`, files under `assets/audio/enemies/kiwi_cat/`, placeholders until... |
+| 49 | `D-T030-5` | the meow re-arms on range entry: the first tick back inside 14 u meows at once (T-030). |
+| 50 | `D-T-031-2` | The coil arc apex is 4.0 u above the chord (T-031). |
+| 51 | `D-T-031-3` | "Airborne at landing avoids the shockwave" is read as a 1 HU y-band on the landing plane (T-031). |
+| 52 | `D-T-031-4` | The landing kill is a horizontal circle r = 1.2 u with no y band (T-031). |
+| 53 | `D-T-031-9` | coil copy staggering: first cue delay staggered by CYCLE/n, never mid-cue spawn (T-031). |
+| 54 | `D-T-032-1` | thicc ben's touch re-trigger is cooldowned at 30 ticks (T-032). |
+| 55 | `D-T-032-2` | the 13.35 s teleport interval is not shortened by overtime or tempo (T-032). |
+| 56 | `D-T-032-3` | the ben-ring cleanse radius is horizontal (XZ) distance (T-032). |
+| 57 | `D-T-032-8` | ben's stats carry pursuit_ceiling = burst_ceiling = 0.0 and no base_speed (T-032). |
+| 58 | `D-T-032-9` | ben's teleport cycle counts from on_spawn, not from level start (T-032). |
+| 59 | `D-T-032-10` | telegraph kind "teleport", circle r = 1.2 u at the locked point (T-032). |
+| 60 | `D-T-032-11` | lock break is measured 3D from the locked point to the player's feet (T-032). |
+| 61 | `D-T-032-13` | ben's touch has no blur "strength" state in the sim |
+| 62 | `D-T-035-1` | YOU?!'s ring vertical kill window: feet-based, (feet_e - 1.5, feet_e + 1.0). |
+| 63 | `D-T-035-2` | Ring radial kill window: /d - r/ <= 0.7 u. |
+| 64 | `D-T-035-3` | The ring-release (attack) hold is 18 ticks. |
+| 65 | `D-T-035-5` | The 10 u rumble trigger is the 3D nearest-player distance. |
+| 66 | `D-T-035-6` | YOU?! keeps floating during its rumble. |
+| 67 | `D-T-035-7` | Burst ceiling recorded as 1.00 - YOU?! has no burst. |
+| 68 | `D-T-035-13` | The ring kill fans out over nearest_player() only (the section 12 API has no players-in-radius). |
+| 69 | `D-T-036-1` | gift Larper's world body height is 1.0 u / hit diameter 0.8 u (T-036) |
+| 70 | `D-T-036-2` | gift Larper's pursuit ceiling and burst ceiling are 0.0 (T-036) |
+| 71 | `D-T-034-1` | The nuke's LOS ray origin: 12 u high, 20 u out, direction fixed per salvo (T-034). |
+| 72 | `D-T-039-1` | address me's body contact does NOT kill (D-065 FINAL wins a ticket deliverable) (T-039) |
+| 73 | `D-T-039-2` | stillness is read from the controller snapshot nearest_player returns (T-039) |
+| 74 | `D-T-039-3` | the 5.0 s expiry kill has no distance limit (T-039) |
+| 75 | `D-T-039-4` | the return cadence: uniform(30,45) s, -5 s per extra vote beyond the first, hard floors (15, 30) s (T-039) |
+| 76 | `D-T-039-5` | between episodes the body is parked at y = 1000.0 u (T-039) |
+| 77 | `D-T-039-6` | the countdown travels as row state + pending=["address_me"] |
+| 78 | `D-T-037-1` | The toucher's burst ceiling is 0.75, its own pursuit ceiling (T-037). |
+| 79 | `D-T-037-2` | "Infects all tiles within 3 u below it" is tiles whose centre sits within 3.0 u of the finger and whose top is at o... |
+| 80 | `D-T-037-3` | The 60-tile cap frees seats oldest-first (FIFO eviction) (T-037). |
+| 81 | `D-T-037-4` | The 18 s tile life reads the level number from cfg "level_number" (T-037). |
+| 82 | `D-T041-1` | The fade-in window is 15-25 u with bounds inclusive, ties to the lowest tile index (T-041). |
+| 83 | `D-T041-2` | The platform-tile-only filter is data-only on the current sim surface (T-041). |
+| 84 | `D-T041-3` | "Never marks the beacon dais" = the dais cell is cut out of the marked patch (T-041). |
+| 85 | `D-T041-4` | The void zone's column kill and the fade-back lift are row state |
+| 86 | `D-T041-5` | The strike cooldown is row arithmetic: 840 base, -180 per extra vote, floored at 300 (T-041). |
+| 87 | `D-T-040-1` | "Floats at 4 u/s keeping within 20 u" is a leash, not a chase (T-040). |
+| 88 | `D-T-040-2` | The drums' ring kill windows adopt D-T-035-1/-2's YOU?! readings (T-040). |
+| 89 | `D-T-040-4` | The strings beam's sweep sense is counterclockwise |
+| 90 | `D-T040-6` | Plushie placement: the farthest tile in the 10-25 u band, 2 u apart |
+| 91 | `D-T073-1` | 0.0 pursuit/burst ceiling marks "not a floating body / no burst" |
+| 92 | `D-T073-2` | gift Larper's merged tripmine model numbers (world_height 1.0 / body_height 1.0 / hit_diameter 0.8) kept under sect... |
+| 93 | `D-T073-3` | T-073's check script treats section 5's em-dash diameter as "no hit_diameter key" and parses the burst bound from t... |
+| 94 | `D-T050-1` | Slippery = the `friction` stat set to 0.4 while on the surface (R4 addendum, T-050 |
+| 95 | `D-T054-2` | DESIGN.md section 10's "tripmine particles vs platform light >= 3.0" is unsatisfiable by ANY platform_light hex |
+| 96 | `D-T055-1` | Placeholder cues land at `game/assets/audio/enemies/<id>/<cue>.wav`, not section 3's `content/enemies/<id>/audio/`... |
+| 97 | `D-T055-2` | Isagi and nuke enemy.json files name NO audio cues |
+| 98 | `D-T055-3` | All synth recipes and lengths are placeholder stand-ins |
+| 99 | `D-T056-1` | Minimal boot scene (app/main.tscn) so the exported exe starts to the menu (T-056). |
+| 100 | `D-T087-1` | The section 3 row -> enemy.json cue-name reconciliation (T-087). |
+| 101 | `D-T087-2` | Loop cues get a 2.0 s bed |
+| 102 | `D-T087-3` | Claude `string_sweep` is 3.0 s |
+| 103 | `D-T087-4` | Behavior-phase anchors where the sim emits no event (T-087). |
+| 104 | `D-T087-5` | `keystroke_tick` and `isagi_shoot_sae_math_final_shot` have no section 3 row (T-087). |
+| 105 | `D-T053-2` | Cartographer's "anywhere you have stood" is the union of 1 u tiles, measured tile-centre to tile-centre (T-053). |
+| 106 | `D-T053-3` | Pocket Beacon: INTERACT press edge while standing still starts a 3.0 s channel |
+| 107 | `D-T053-5` | Twin Dash is a second dash stock with its own 3 s regen, charged at purchase (T-053). |
+| 108 | `D-T053-6` | Updraft: vy = sqrt(2 × 32 × 3) ≈ 13.8564 (apex exactly 3.0 u under gravity 32), once per glide engagement, 6 s cool... |
+| 109 | `D-T053-7` | Marathon's +2 max stacks reaches the shop as an optional max-stacks bonus dict in draw_shop |
+| 110 | `D-T051-3` | Cold Start's per-class mapping: dasher regen x1.25, glider 0 start energy, athletic coyote -0.05 s (T-051) |
+| 111 | `D-T085-1` | The tripmine star is split out of the single vertex-coloured .glb at load time, and the four side-face hexagrams ar... |
+| 112 | `D-T085-2` | The particle "± 0.2 u drift" is the emission volume radius (T-085). |
+| 113 | `D-T061-2` | A12's five rows measured at component level () (T-061) |
+| 114 | `D-T061-3` | The perf probe runs the 22-enemy scene as one real sim hour () (T-061) |
+| 115 | `D-T061-4` | The probe's dodge bot is built in, pending the real bot () (T-061) |
+| 116 | `D-T060-1` | The probe's "competent bot" is fixed seeded policy, not "a human": BFS graph distance for nearest-gift, footprint-o... |
+| 117 | `D-T080-1` | The log's tick clock is the run-wide accumulated sim tick (T-080) |
+| 118 | `D-T080-8` | The ticket says "20 record types" but its verbatim list has 18 |
+| 119 | `D-T081-4` | Restart time (signal 2) is NOT measurable from the T-080 records |
+| 120 | `D-T075-4` | the answer executor's reaction timing |
+| 121 | `D-ART-NUKE-2` | The derivation constants are art judgment, owner may flip |
+| 122 | `D-ART-COIL-1` | coil's real-art derivation numbers (the shared pipeline skips this enemy) |
+| 123 | `D-ART-YOU-1` | YOU?! frames: image segmentation against a near-fog source |
+| 124 | `D-ART-YOU-2` | YOU?! frames: canvas, fit, contrast lift and the per-state set |
+| 125 | `D-ART-GIN-2` | one distinct derived frame per anim-block state |
+| 126 | `D-ART-GIN-3` | launch_00 fits the sword in a 500 px box, not 508 (T-ART-GIN) |
+| 127 | `D-ART-gift_larper-2` | The art-derivation numbers are judgment, owner may re-tone |
+| 128 | `D-ART-claude-2` | The Claude art derivation constants are art judgment, owner may flip |
+| 129 | `D-ART-ADDRESS_ME-2` | the fog-contrast bar is met by lifting the hide, never the threshold |
+| 130 | `D-ART-ADDRESS_ME-3` | background removal per image, constants stated |
+
+**130 open owner rulings.** The ones that matter most for alpha, in the auditor's order:
+`D-T054-2` (DESIGN section 10's fog row is unsatisfiable by any hex — parked, not worked around),
+`D-T039-1` (address me has no contact kill; D-065 FINAL beats a ticket deliverable),
+`D-T075-4` (the answer lab's reaction timing), `D-T024-4` (two disclaimer wordings),
+`D-T083-2` (art was TBD when the anim block was written), and the ten `D-ART-*` derivation-constant
+entries (art judgment the owner may re-tone).
