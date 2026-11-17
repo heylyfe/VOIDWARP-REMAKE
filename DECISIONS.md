@@ -4660,6 +4660,14 @@ parked with PARKED.md 16.
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
+- 2026-11-17 T-051 (zai-glm-5-3-flash, this session): the enemy-linked scripted test file
+  DONE and green on t3/t051-enemy-curse-tests (08c5e04): game/tests/ 
+  test_curses_scripted_enemy.gd, one test per enemy-linked scripted curse (the 12 whose
+  modules are on main), long_toll done-when proven END-TO-END against the real thicc_ben
+  behavior; four module repairs the honest sentences forced (D-T051-21); the other 12
+  modules + check_mine_cap.gd are on the unmerged t3/scripted-curses-groups-4-6 branch
+  (PARKED.md 16 - the understudies 20% mine-cap assertion rides with that merge). Gate at
+  the end of the session: GATE OK (9 ran, 0 skipped, 131 s), TESTS 50 passed 0 failed.
 - 2026-11-17 T-061 (zai-glm-5-3-flash, this session): tools/feel_probe.gd (A12: 6 rows,
   all PASS) + tools/perf_probe.gd (A13: the pinned 22-enemy scene - all 22 place per the
   fixed vote list, dodge bot, third-person rig, 600/120 frames, 1920x1080 v-sync off,
