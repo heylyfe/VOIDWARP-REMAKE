@@ -6049,6 +6049,52 @@ invisible regardless of the sign - the sign fix cannot be observed on nuke until
 on its world_height. The forced-`world_height = 2.0` probe showed the same sign error and the
 same fix (body bottom -1.92..-2.06 before, 0.0000 after). Similarly `spawn_00` for thicc_ben:
 bottom at the origin like every other frame. ENEMIES.md / DESIGN.md unchanged.
+### D-FIX-A3-1 - Bot edge discipline: weighted routing, validated arcs, banned edges (FIX-A3)
+
+The bot's router was an unweighted BFS, so a one-edge drop was cheaper than a long
+walkable bypass and the follower "walked off and prayed" when no arc validated
+(8 of 10 level-1 deaths D-VOID in AUDIT.md's A3 sample; T-081 at scale: 175 of 176
+charges spent terrain-caused, 99.4%). FIX-A3 changes ONLY the bot policy in
+game/tools/bot_run.gd: (a) Dijkstra costs - same-level walk 1, 1 HU step down/up 2/3,
+a rise over a gap 6+2*gap, a gap drop to just-below ground 6, a drop onto far-below
+ground 60 (one-way, no recovery); (b) a through-air edge is followed only when the
+controller's own jump physics validate an arc that lands within 1.15 u of the far
+waypoint (the old "any tile but the takeoff" acceptance validated garbage arcs - a
+5-cell jump at approach speed 2 u/s looked valid, missed the far tile, D-VOID);
+(c) a refused edge is banned for the level ("from>to"), never relaxed onto, with a
+300-tick lift cooldown when nothing reachable remains; the beacon route lifts bans
+immediately (the beacon is the only exit). No sim file, band, threshold, or enemy
+constant is touched; test_bot_run.gd's determinism assertion stays green.
+
+### D-FIX-A3-2 - [CONTESTABLE] Bot enemy-awareness constants (FIX-A3)
+
+No document states the bot's own anti-enemy geometry; these are bot-policy numbers,
+not sim numbers, chosen for their gameplay reason and freely re-tunable by a future
+competence pass: HURDLE_DIST 2.0 u (a contact-kill body closing inside this triggers
+the ENEMIES.md kiwi-cat counter-play jump "a jump exceeds its 1.5 u reach from 0.16 s
+to 0.59 s" - at combined closing ~14.6 u/s a 2.0 u trigger leaves ~0.07 s margin,
+measured too late in traces), AVOID_DIST 3.0 u, the menace cost +30 per tile within
+2 tiles of a live contact-kill body (the route curves around a chaser's position),
+the arc-landing tolerance 1.15 u, and the ban-lift cooldown 300 ticks. These are
+bot-policy estimates of what a human player does, not sim numbers; ENEMIES.md and the
+enemy.json stats are untouched.
+
+### D-FIX-A3-3 - A3 remains FAIL at the FIX-A3 build: parked (see PARKED.md #24)
+
+Re-measured on the rebased build (main with KIWI-SLOW, merge 64e3332, owner ruling
+D-KIWI-SLOW-1 FINAL): 82 of 100 seeds complete level 1 (was 56/100 with the fast
+kiwi; audit baseline 1/10), median level-1 sim time 43.4 s over completions
+(criterion 120 s: met whenever the level is completed). Level-1 failures (44 at the
+old kiwi, 18 now): D-KIWI 8, D-VOID 4, stuck 4, timeout 1, D-COIL 1. The criterion
+still misses; parked - no threshold moved, no criterion edit, no enemy number
+touched by this ticket (the kiwi numbers are the owner's, D-KIWI-SLOW-1).
+
+Pre-ruling sweep (the build before KIWI-SLOW): 56 of 100 level-1 completions,
+median 43.4 s; back then 37 of the 44 level-1 failures were D-KIWI. The rebase onto
+KIWI-SLOW (owner ruling D-KIWI-SLOW-1) re-measured 82/100; the kiwi's remaining 8
+level-1 kills, the 4 D-VOID, the 4 stuck and the 1 timeout are the kept evidence -
+the level-1 failure list with the current build is: seeds 10, 22, 31, 35, 44, 49,
+51, 53, 55, 63, 64, 68, 69, 74, 82, 87, 88, 92.
 
 ## Handover log
 
@@ -6405,3 +6451,7 @@ only the cat's ceiling and bound move. DESIGN.md's SR-5 prose bound ("may reach 
 run speed") stays as the global burst bound; the cat's own burst ceiling (0.55) sits under it.
 WHY record before code: this entry is committed before any line that implements it, so the
 diff order shows the ruling first.
+
+- 2026-11-17 FIX-A3 (zai-glm-5-3-flash, this session): bot edge discipline + enemy-awareness in game/tools/bot_run.gd ONLY; A3 measured 56/100 level-1 completions (was 1/10), median 43.4 s of completions, GATE OK (9 ran, 0 skipped, 210 s) TESTS 55 passed 0 failed; A3 remains FAIL - parked PARKED.md #20; DECISIONS.md D-FIX-A3-1..3; next: owner lever per T-060 ordering (deeper chaser-intercept competence or enemy tuning).
+
+- 2026-11-17 FIX-A3 re-measure (zai-glm-5-3-flash, this session): rebased onto KIWI-SLOW main (64e3332); pinned sweep re-measured 82/100 level-1 completions (was 56/100 with the fast kiwi), median 43.4 s of completions; failures 18: D-KIWI 8, D-VOID 4, stuck 4, timeout 1, D-COIL 1. A3 still FAIL - PARKED.md #24 updated; GATE OK (9 ran, 0 skipped, 233 s) TESTS 58 passed 0 failed; no threshold/criterion/enemy number touched.
