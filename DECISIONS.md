@@ -5106,6 +5106,44 @@ art tuning only (gameplay reads colour through the same fog rule; no threshold m
 [CONTESTABLE]: the exact lift/rim/ramp values are the minimum that satisfy fog contrast
 >= 3.0 at 40 u with the least wash-out of the black body; owner may re-grade the source.
 
+### D-ART-TOUCHER-1 - the toucher's per-state frames render through a minimal view patch
+The T-083 anim block pins spec_frames (spawn=[toucher_00], idle_chase/telegraph=[toucher_00..02],
+attack_infect=[toucher_02]) and check_anim_data.gd pins those verbatim, while frame_map is GLOBAL
+per enemy - so telegraph and idle cannot resolve different files through the shared player's
+frame_path() (view/enemy_anim.gd, untouched). The brief (this art wave) demands a distinct frame
+per state; the pinned table reuses the spec names (its telegraph distinctness rides the binding
+scale_pulse effect, exactly as section 1.8 states). Built closest to the brief WITHOUT touching
+the binding machinery: the states[*].frames arrays list the new per-state files (this is the one
+per-state lever the block has); animations[] keeps cycle+floor (body_rect updated to the real
+frames) and appends spawn/idle/telegraph/attack_infect; frame_map resolves toucher_00..02 onto
+cycle_00..02 (the same finger art; the shared player's hit shape and the tests' frame_texture both
+land on real, consistent pixels); and game/view/toucher_view.gd - the enemy's OWN view, not a
+shared file - was minimally patched: set_stage records the active state, set_stage_frame swaps the
+billboard texture for that state's block frame when available, and set_texture prefers it over the
+frame_map target (probe-verified: spawn/idle_chase/telegraph/attack_infect show spawn_00 /
+idle_00 / telegraph_00 / attack_00; frameless states keep holding the last frame). All body frames
+keep ONE identical silhouette (colour-only derivations - brightness bands, scanlines, tints; never
+geometry), so billboard scale/feet offset and the hit shape cannot disagree with whatever frame is
+shown; the floor decals carry their own per-frame body_rects (row-displacement glitch). No tick,
+loop flag, effect parameter, spec_frame, tick range or anim-row key changed; no shared sim/view
+file other than the toucher's own view was edited. The residual ambiguity (brief vs pinned block)
+is PARKED.md #18 - owner to rule. A8 moved nothing; validate_sprites: SPRITES OK 255 checks.
+
+### D-ART-TOUCHER-2 - the floor decal was relit, not the threshold (A8 fog contrast)
+The glitched-floor source (300x300 isometric magenta/black cube on opaque white) fails the brief's
+A8 rule as-is: kept dark, its mean opaque colour sits near the Deepwater fog (#021416) and reads
+~2.1 at 40 u (the dark faces dominate the mean, not the fog colour itself). The ART was adjusted
+inside tools/art/toucher.gd: background keyed out by border flood fill (white >= ~61/255, no cube
+pixel is near white), tight crop, then the faces are remapped to a glowing magenta family (seam
+~0.55/0.13/0.55, shadow face ~0.92/0.16/0.90, mid ~1.00/0.22/0.97, top ~1.00/0.62/1.00) with
+per-frame pulse/cool variants - keeps the isometric cube read, drops the black faces to thin
+seams. Measured means / ratios at 40 u: floor_00 3.06+, floor_01 3.1+, floor_02 3.0+, floor_03 3.45,
+floor_04 3.49 (final SPRITES OK). The finger needs no help (mean ~0.81/0.64/0.27, ratio 4.4-5.9).
+spawn_00 was lifted 0.78 -> 0.90 mult for the same rule (2.90 -> above 3.0). These palette numbers
+are art choices driven by the measured A8 ratio, not spec numbers; no threshold, palette or check
+was touched. The finger's backdrop is removed by a border flood fill at tolerance ~34/255 (a global
+key would have eaten the finger's dark outline pixels, e.g. (36,20,0)); the JPEG ring noise inside
+that tolerance is fully enclosed.
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
@@ -5365,3 +5403,17 @@ art tuning only (gameplay reads colour through the same fog rule; no threshold m
   Checks: SPRITES OK 340 checks; FOGCHECK OK (280 checks over 5 biomes); ANIM-DATA isagi PASS;
   TESTS 54 passed 0 failed, 0 SCRIPT ERROR lines (after a --import pass generated the import
   cache this worktree lacked; game/.godot not committed). No PARKED rows. No push.
+
+- 2026-11-17 T-ART-TOUCHER (inkling-2-small-free, this session): toucher sprites DONE - game/tools/art/toucher.gd
+  keys the black (finger) / white (cube) backdrops by border flood fill (not the shared
+  corner-fill pipeline, which skips this enemy), crops tight, and derives 17 real frames
+  deterministically: cycle_00..02 (idle flicker, also the frame_map targets for the pinned
+  spec names toucher_00..02), floor_00..04 (decal relit to a glowing magenta family to hold
+  the A8 fog contrast at 40 u - D-ART-TOUCHER-2), plus the new per-state spawn_00 / idle_00..02 /
+  telegraph_00..02 / attack_00 (identical silhouette; states[*].frames point at them, appended
+  animations[] entries; anim block timings/loops/effects/spec_frames untouched; attack_touch and
+  recover stay empty as the table lists). Minimal toucher_view.gd patch so the per-state art
+  renders (D-ART-TOUCHER-1, PARKED.md #18 for the brief-vs-pinned-block ambiguity). Gate run:
+  SPRITES OK 255 checks, FOGCHECK OK (295), TESTS 54 passed 0 failed, zero SCRIPT ERROR lines
+  (after the gate's --import prep on the fresh worktree). TBD.md rows 8/10/11/23 updated. No
+  ENEMIES.md, threshold, sim, or other enemy touched.
