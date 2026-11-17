@@ -22,9 +22,12 @@ extends Node3D
 # Frames and per-state effects come through game/view/enemy_anim.gd (T-084's shared
 # player): this node duck-types its view contract (set_stage / set_stage_frame /
 # set_effect / set_texture) and applies the uniform contract {flash, tint, scale_pulse,
-# shake, alpha} to a sprite wrap. The plushie_idle row's 3-frame loop (6 fps, 10 ticks
-# per frame) is rendered on the PLUSHIE billboards - the body itself only ever shows
-# claude_00 (sprites/idle_00.png, the TBD stand-in for the unfetched Claude logo).
+# shake, alpha} to a sprite wrap. The anim block's frame lists are the per-state textures:
+# the eight logo states show their own distinct real frame (spawn_00, telegraph_drums_00,
+# attack_drums_00, telegraph_strings_00, attack_strings_00, attack_wind_00, deadline_00,
+# idle = idle_00), swapped here on set_stage / set_stage_frame. The plushie_idle row's
+# 3-frame loop (6 fps, 10 ticks per frame) is rendered on the PLUSHIE billboards - the body
+# only ever shows idle_00 (sprites/idle_00.png, the real Claude logo).
 #
 # BILLBOARDING / TRANSPARENCY: the sprite always faces the camera (billboard.gd's
 # Y-rotation face_camera); the alpha scissor discards the transparent padding.
@@ -48,6 +51,7 @@ const PLUSHIE_SCALE := 0.6                    # the plushie stand-in's body heig
 
 var billboard = null                  # the body's Sprite3D (billboard.gd)
 var anim_player = null                # the T-084 shared animation player
+var _state_texs: Dictionary = {}      # state id -> [Texture2D] (the anim block's frames)
 var _wrap: Node3D = null              # metronome rotation / shake / pulse live here
 var _bands: Array = []                # drum ring bands ([MeshInstance3D])
 var _band_mats: Array = []
@@ -84,8 +88,9 @@ func setup(sheet_path: String = SHEET_REL, folder: String = FOLDER_REL) -> void:
 	if not doc.is_empty():
 		billboard.setup_from_sheet(doc, folder)
 	anim_player = EnemyAnimScript.new()
-	anim_player.setup("claude", doc, FOLDER_REL)
+	anim_player.setup("claude", doc, folder)
 	anim_player.bind_view(self)
+	_cache_state_frames(folder)
 	_build_bands()
 	_build_strings_line()
 	_build_beams()
@@ -98,10 +103,34 @@ func setup(sheet_path: String = SHEET_REL, folder: String = FOLDER_REL) -> void:
 
 func set_stage(state_id: String) -> void:
 	_state = state_id
+	_apply_state_texture(state_id, 0)
 
 
-func set_stage_frame(_frame_i: int) -> void:
-	pass   # every claude state renders the same single TBD frame; the texture follows
+func set_stage_frame(frame_i: int) -> void:
+	_apply_state_texture(_state, frame_i)
+
+
+## Loads the anim block's per-state frames once (folder is the enemy folder's res:// path).
+func _cache_state_frames(folder: String) -> void:
+	_state_texs.clear()
+	var states: Dictionary = (anim_player.doc as Dictionary).get("anim", {}).get("states", {})
+	for state_id in states.keys():
+		var texs: Array = []
+		for p in states[state_id].get("frames", []):
+			var full := (folder + "/") + str(p)
+			texs.append(load(full) if ResourceLoader.exists(full) else null)
+		_state_texs[state_id] = texs
+
+
+## Points the billboard at the state's frame_i texture (keeps the current texture when the
+## file is missing/unimportable - the billboard never blanks out).
+func _apply_state_texture(state_id: String, frame_i: int) -> void:
+	var texs: Array = _state_texs.get(state_id, [])
+	if texs.is_empty() or billboard == null:
+		return
+	var t = texs[clampi(frame_i, 0, texs.size() - 1)]
+	if t != null:
+		billboard.texture = t
 
 
 func set_effect(k: String, v) -> void:
@@ -216,7 +245,8 @@ func _build_plushies(folder: String) -> void:
 	_plushie_root.name = "Plushies"
 	add_child(_plushie_root)
 	# the plushie_idle row's 3 frames (the only 3-frame set in the sheet; the clawd Crab
-	# sprite was never fetched - TBD.md row 26 - so the TBD logo frames stand in)
+	# plushie sprite was never fetched - TBD.md row 26 - so the TBD magenta plushie_00..02
+	# placeholders stand in)
 	var states: Dictionary = (anim_player.doc as Dictionary).get("anim", {}).get("states", {})
 	var paths: Array = (states.get("plushie_idle", {}) as Dictionary).get("frames", [])
 	for p in paths:
