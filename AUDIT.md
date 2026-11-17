@@ -103,6 +103,154 @@ entries **Play / Settings / About / Quit**. The exe's stdout is the clean Vulkan
 
 ---
 
+## 2. A1 to A16, one by one
+
+Verdicts: **PASS** = the criterion's own number is met and a test proves it. **PARTIAL** = the
+behaviour exists and is tested, but the criterion's stated number, scope or proof is not met.
+**FAIL** = the criterion's number is not met.
+
+### A1 — native export, starts to the menu — **PASS** (with a stated measurement limitation)
+
+- Command: `mkdir -p build` then `godot --headless --path game --export-release "Windows Desktop" ../build/voidwrap_run.exe` → `[ DONE ] savepack`, exit **0**.
+- Artifact: `build/voidwrap_run.exe`, **118,145,528 bytes**. Native Godot export (Vulkan 1.4.359, Forward+), no browser or Electron wrapper.
+- Smoke: `--quit-after 600` → exit **0**; `--quit-after 6000` → exit **0**; `--quit-after 12000` → exit **0**; `--quit-after 60000` → exit **0**, **15.97 s alive**.
+- Menu: visually confirmed from `out/exe_menu.png` — title, tagline, **Play / Settings / About / Quit**.
+- **Limitation:** A1's literal "process alive 10 s on `--quit-after 600`" is unachievable here (~3,700 fps; 600 frames = 0.92 s). The brief's substitute (6000 → ~10.3 s) also does not reproduce (2.45 s). The 10 s liveness claim rests on `--quit-after 60000`. Nothing was faked.
+- Proof: `game/export_presets.cfg`, `game/app/main.tscn` (`run/main_scene`), `game/app/menu.gd`.
+
+### A2 — terrain: 5,000-seed harness + GDScript parity — **PASS**
+
+- `python terrain_ref/validate.py --seeds 0:5000` → **32 PASS / 0 FAIL**, `total wall time 255.7 s`, exit **0**. Every H check `failures=0/5000`; every D check PASS with its limit (D1 max dev 0.00576 ≤ 0.01000; D2 300/300; D3 5000; D4 0.3935 ≤ 0.5; D5 0; D6 0.0179 ≤ 0.1; D7 strictly increasing; D8 10.374 ≤ 50 and 75.0 ≤ 80; D9 112.5 ≤ 250 and 1139.5 ≤ 2000).
+- `godot --headless --path game --script res://tests/test_terrain_parity.gd -- <abs>/terrain_ref/gallery.json` → `GALLERY_PIN 16/16` and `PARITY 56/56 OK`, exit **0**. 56 = the 16 pinned gallery records + the 40 parity cases, so A2's "16/16 + 40/40" is met.
+- Proof: `terrain_ref/validate.py`, `game/tests/test_terrain_parity.gd`.
+
+### A3 — the bot completes level 1 in ≥ 95 of 100 seeds, median ≤ 120 s — **FAIL**
+
+- Command (A3's literal command does not exist — see D1): `godot --headless --path game --script res://tools/bot_run.gd -- --dodge --runs 10 --seed-base 0 --max-level 2`, exit 0, 181 s.
+- Pasted evidence, all ten runs:
+
+```
+run 0 seed=0 class=dasher   entered=1 outcome=dead tick=1728 killer=void     code=D-VOID
+run 1 seed=1 class=dasher   entered=1 outcome=dead tick=1554 killer=kiwi cat code=D-KIWI
+run 2 seed=2 class=athletic entered=2 outcome=dead tick=1284 killer=void     code=D-VOID
+run 3 seed=3 class=athletic entered=1 outcome=dead tick=2548 killer=coil     code=D-COIL
+run 4 seed=4 class=glider   entered=1 outcome=dead tick=2048 killer=void     code=D-VOID
+run 5 seed=5 class=glider   entered=1 outcome=dead tick=2326 killer=void     code=D-VOID
+run 6 seed=6 class=glider   entered=1 outcome=dead tick=1849 killer=void     code=D-VOID
+run 7 seed=7 class=dasher   entered=1 outcome=dead tick=2307 killer=void     code=D-VOID
+run 8 seed=8 class=athletic entered=1 outcome=dead tick=1034 killer=void     code=D-VOID
+run 9 seed=9 class=glider   entered=1 outcome=dead tick=1216 killer=void     code=D-VOID
+```
+
+- **1 of 10 seeds completed level 1** (`entered=2`, seed 2). The other nine died on level 1. That is **10%**, against a required **95%**. 8 of the 9 deaths are `D-VOID` (a void fall at 0 charges).
+- A 30-seed extension (`--runs 30 --seed-base 10 --max-level 2`) was started and had **not finished after 35 minutes** — the bot hits its 7,199-tick cap on many seeds, which is itself consistent with the failure. It is not needed to decide the criterion.
+- This is **already parked**: PARKED.md #4 (T-026) records `BOT-RUNS completed=0 failed=4` and states A3 is not met. The audit confirms the park is honest and the criterion still fails.
+- Proof: `game/tools/bot_run.gd`, `game/tests/test_bot_run.gd`.
+
+### A4 — replay determinism: 10 recorded bot runs, identical hashes at every checkpoint — **PARTIAL**
+
+- `test_replay.gd` runs inside `run_all` (`TESTS 55 passed 0 failed`). It records **one** 3,600-tick run with a deterministic bot-input generator, replays it twice from a fresh `RunState`, and compares the state hash at **every 60th tick (60 checkpoints)**; it then perturbs one input at tick 1200 and asserts every checkpoint from there on differs.
+- **The criterion says 10 recorded bot runs. The test does 1.** Determinism is proven strongly (60 checkpoints plus a must-diverge perturbation), but not on the number of runs the criterion names.
+- Proof: `game/tests/test_replay.gd` (`TICKS := 3600`, `CHECK_EVERY := 60`, `PERTURB_AT := 1200`).
+
+### A5 — black→gold at the same slot ids/positions on 100 seeds; beacon CLOSED→OPEN exactly then — **PASS**
+
+- `test_gifts.gd` has `const SEED_COUNT := 100` and `_test_a5_100_seeds(f)`; it also asserts the beacon entry restores exactly 1 charge (0→1, 1→2, 2→2), the straggler rule marks only real gifts (`occ == 0`) and only the last 20%, and a slot-position confinement scan.
+- Proof: `game/tests/test_gifts.gd`, `game/sim/gifts.gd`, `game/sim/beacon.gd`.
+
+### A6 — tripmines: occ-only occupancy, 0.9 u any-height contact, the fixed four-step ladder, deterministic roll, ±2 points at 1/2/3 stacks — **PASS**
+
+- `test_mines.gd` asserts: the mine set is exactly the `occ == 1` slots; contact is the player's centre within 0.9 u horizontal at any height; the ladder order defuse → Subspacial Barrier → Last Light → death with `D-MINE`; determinism over **1,000 seeds** (`for seed in range(1000)`, prints `MINE determinism: 1000 seeds, same seed -> same outcome`); the defuse rate at 1/2/3 stacks within **±0.02** of 20/40/60% over 300 seeds × 10 slots = 3,000 samples per stack, plus the 60% cap at 4 stacks.
+- Kill tests run with Last Light already spent (D-057), as the criterion requires.
+- Proof: `game/tests/test_mines.gd`, `game/sim/mines.gd`.
+
+### A7 — all 12 enemies: timings within ±1 tick, contact kills except thicc ben and the three non-killing effects, Last Light spent, sprites.json with body_rect, hitbox padding test — **PASS**
+
+- Twelve per-enemy tests exist and run: `test_enemy_kiwi_cat, coil, thicc_ben, isagi, nuke, you, gift_larper, toucher, seal, address_me, claude, gin`. Each header pins its DESIGN §5 numbers "within ±1 tick" and each states "KILL TESTS RUN WITH LAST LIGHT ALREADY SPENT (D-057)".
+- `test_hitbox.gd` proves a probe inside the PNG rect but outside `body_rect` never hits, using ENEMIES.md's own 512×512 / 300×400 example.
+- `contact_kill` per `enemy.json`: true for `claude, gin, isagi, kiwi_cat, seal, toucher, you`; false for `address_me, gift_larper, nuke, thicc_ben`; `coil` kills by landing (`landing_kill_radius_u: 1.2`), not by contact.
+- **Note on the criterion's wording:** "every body contact kills except thicc ben" is not literally true — `address_me` also has no contact kill, because DESIGN §5.2 / D-065 (FINAL) gives it "no body contact; it is a countdown, not an obstacle". That is the spec's own text, and PARKED.md #10 records the ticket-vs-FINAL clash. The build follows the FINAL. Not a defect; recorded so the wording is not mistaken for a miss.
+- Proof: the twelve `game/tests/test_enemy_*.gd`, `game/tests/test_hitbox.gd`, `game/content/enemies/*/enemy.json`.
+
+### A8 — sprite validator: alpha 0 in all four corners, no opaque 1-px border, fog contrast ≥ 3.0 at 40 u — **PASS**
+
+- Gate step 8: `SPRITES OK 515 checks over 12 sprites.json`, exit 0.
+- `validate_sprites.gd` checks exactly the criterion's clauses plus two more: four corners alpha 0; no edge pixel with alpha ≥ 16; ≥ 15% fully transparent; **fog contrast ≥ 3.0 at 40 u** (`FOG_CONTRAST := 3.0`, `FOG_DIST := 40.0`, `FOG_DENSITY := 0.012`); and per-frame `body_rect` equals the tight bbox of alpha > 16.
+- Proof: `game/tools/validate_sprites.gd`.
+
+### A9 — lobby: physical scene, F-hold 0.35 s altars, schedule from data/offering_schedule.json, mandatory bays gate the Descent Gate — **PASS**
+
+- `test_lobby.gd` drives inputs: "nothing under 0.35 s, exactly one Select at the hold" (`for _i in 3: # 3 x 0.1 s = 0.30 s < 0.35 s`), the schedule read from `data/offering_schedule.json`, and the mandatory-bay gate.
+- Proof: `game/tests/test_lobby.gd`, `game/view/lobby/antechamber.gd`, `game/sim/intermission.gd`.
+
+### A10 — 46 curses, 36 upgrades, 12 enemies, 5 biomes load and pass schema; level-1 shop pool is exactly Paycheck, More, Yearn for Speed — **PASS**
+
+- `test_content.gd`: `var counts := {"curses": 46, "upgrades": 36, "biomes": 5, "enemies": 12}` and the level-1 pool assertion `ids == ["paycheck", "more", "yearn_for_speed"]`.
+- Independent count on disk: `ls game/content/curses/*.json` = 46, `upgrades/*.json` = 36, `biomes/*.json` = 5, `enemies/` = 12 folders.
+- Gate step 5: `OK content schema (ran in run_all: game/tests/test_content.gd)`.
+- Proof: `game/tests/test_content.gd`, `game/core/schemas/*.json`.
+
+### A11 — economy audit: >= 1 item affordable in >= 80% of shops, all 3 in <= 30%, 1,000 runs to level 30 — **PASS**
+
+- `godot --headless --path game --script res://tools/economy_audit.gd` -> `AUDIT OK (runs=1000 shops/run=15 afford1=99.5% afford3=29.3% purchases=23.89 cautious=8.25)`, exit **0**.
+- afford1 99.5% >= 80% PASS; afford3 29.3% <= 30% PASS (margin 0.7 points — tight, but inside); purchases 23.89 in 18-24 PASS; cautious 8.25 in 6-10 PASS.
+- Proof: `game/tools/economy_audit.gd`.
+
+### A12 — feel budget: loading >= 5.0 s and <= 8 s, gate->level <= 2.0 s, death->run-over <= 2.0 s, void fall->respawn <= 0.8 s, generate+mesh L30 <= 1.5 s — **PASS**
+
+- `godot --headless --path game --script res://tools/feel_probe.gd` -> `T-061 RESULT: OK`, exit **0**:
+
+```
+PASS loading_screen_hold 5.050 s >= 5.0 s
+PASS loading_screen_total_l30 5.050 s <= 8.0 s (hold 5.0 + build 0.160 s)
+PASS gate_to_level 0.160 s <= 2.0 s (gen+world+mesh+sim state, level 30)
+PASS death_to_run_over 0.0044 s <= 2.0 s (kill tick -> screen_data + run-over build; kiwi cat)
+PASS void_fall_to_respawn 0.800 s <= 0.80 s (void_fall -> respawn; landed on 1,1,1)
+PASS generate_mesh_l30 0.159 s <= 1.5 s (voidgen + level_mesher, seed 7)
+```
+
+- `void_fall_to_respawn` is **exactly at the bound** (0.800 vs 0.80). It passes, but with zero margin.
+- Proof: `game/tools/feel_probe.gd`, `game/app/loading_screen.gd`.
+
+### A13 — performance: level 30, 22 enemies, 600 frames, p99 <= 16.6 ms windowed 1080p, mean sim tick <= 2.0 ms — **PASS**
+
+- `godot --path game --script res://tools/perf_probe.gd` (a real window, not headless), exit **0**:
+
+```
+MACHINE[OS] Windows
+MACHINE[CPU] AMD Ryzen 5 9600X 6-Core Processor
+MACHINE[GPU] AMD Radeon RX 9060 XT (vendor AMD)
+PASS p99_frame_time 1.47 ms <= 16.6 ms (windowed 1080p, v-sync off; n=600)
+PASS mean_sim_tick 0.779 ms <= 2.0 ms (ctl+enemy runtime step; 22 enemy rows)
+T-061 RESULT: OK
+```
+
+- Proof: `game/tools/perf_probe.gd`.
+
+### A14 — drop-in proof: fixture enemy/curse/upgrade/biome copied into content/ are offered and work with zero core edits; boundary scan clean — **PARTIAL**
+
+- Gate step 6: `OK drop-in fixture (ran in run_all: game/tests/test_dropin.gd)`. `test_dropin.gd` copies one enemy, one curse, one upgrade and one biome into `content/`, re-boots, asserts all four register and are functional, corrupts one file and asserts the boot refuses with the file named, then removes everything.
+- **The "boundary scan clean" half does not hold.** The scan is green only because `KNOWN_CONTENT_IDS` is empty and it reads only `.gd` files; `game/core/schemas/curse.schema.json` hardcodes all 12 enemy ids, and `game/sim/death.gd` hardcodes the 12 roster display names. A 13th enemy therefore needs a core edit to `death.gd` (and to the curse schema if any curse requires it). See section 5.
+- Proof: `game/tests/test_dropin.gd`, `game/tests/test_boundaries.gd`.
+
+### A15 — README and the lobby About plaque contain the disclaimer verbatim — **PARTIAL**
+
+- README: **verbatim**, em dash included, and `test_disclaimer.gd` asserts it.
+- Lobby About plaque (`game/view/lobby/antechamber.gd:63`): present, but **one character differs** — ASCII hyphen `-` at index 51 where the spec has em dash. **No test reads `antechamber.gd`**, so A15's stated proof does not cover the plaque at all.
+- Full detail in section 6.
+- Proof: `game/tests/test_disclaimer.gd`, `README.md`, `game/app/menu.gd`, `game/view/lobby/antechamber.gd`.
+
+### A16 — TBD.md lists every TBD substitution; 0 tickets stalled on a refusal — **PASS** (with two documentation defects)
+
+- `TBD.md` has 8 sections and 49 numbered rows covering: the 17 enemy source images (section 1), placeholder audio hooks (section 2), and the synthesized audio stand-ins (rows 36-49). The one live `"tbd": true` is `claude` (the clawd Crab plushie, row 15 / row 26) — a documented TBD, not a failure.
+- **0 tickets stalled on a refusal.** Every ticket in `tickets/` has a response file; the refusals that did occur were handled by the TBD FALLBACK rule (name kept, placeholder wired, row written).
+- **Two documentation defects in TBD.md, reported not fixed:**
+  1. Section 1's heading reads `## 1. The 17 enemy images - 4 MISSING (coil, thicc ben, kiwi cat, isagi, YOU?!, toucher, gin, gift Larper, seal, the Claude logo and address me are real art since 2026-11-17; only the clawd Crab plushie and the four remaining source rows are still TBD)`. "4 MISSING" contradicts the eleven names it then lists as real art, and contradicts its own table, where all 17 rows are PRESENT/REAL except the plushie.
+  2. The section 1 body text still says "the other fourteen remain MISSING -> TBD" and "Isagi's rows below say REAL ART; the other fourteen remain MISSING -> TBD", which the table below it contradicts. The heading and body were not updated when the art wave landed.
+- Proof: `TBD.md`, `game/content/enemies/*/sprites.json`.
+
+---
+
 ## 3. The canon table
 
 **The owner's VOIDWRAP_CANON list is not in this repository** (defect D4 above). The rows below are the
