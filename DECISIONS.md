@@ -1381,6 +1381,27 @@ the bbox; skipped entirely when any of the 9 columns around the bbox-centre cell
 strictly below the platform's own minimum tile y ("contains a tile below the platform"). Never
 under the hub (role 0 is not in the role filter) and never under walkways.
 
+### D-T011-6 - [CONTESTABLE] - Deepwater walkway_light raised from #2A5BFF to #3A74FF (orchestrator, at T-011's R6 gate).
+
+DECISION (orchestrator, not T-011): TERRAIN_SPEC section 12.2 states walkway_light #2A5BFF for the
+Deepwater reference palette; section 12.3 requires platform/walkway checker light vs fog at 60 u to
+reach contrast 3.0. The stated value measures 2.737, so the spec's own reference palette fails the
+spec's own check. T-011 implemented section 12.3 exactly and reported the defect instead of patching
+it (D-T011-1 records the linear-radiance reading, D-T011-2 the defect). The failure is the only one
+in 250 checks across all five biomes and was confirmed by two independent implementations (GDScript
+and Python). Section 12.3 says the build must fail below threshold, so the palette is what is wrong,
+not the check. #3A74FF is T-011's measured candidate and reaches 3.394. NO THRESHOLD WAS MOVED.
+Changed in exactly two places: game/data/palette.json (the reference) and
+game/content/biomes/deepwater.json (its override). The other four biomes carry their own brighter
+walkway_light values and are unaffected.
+WHY (gameplay reason): the walkway light is the surface the player plans a route on at the 60 u
+planning horizon; at 2.737 it is the one role that fades into the fog before the player can read the
+path, which is exactly what section 12.3 exists to prevent.
+CONTESTABLE - the owner may prefer a different hex, or may rule that section 12.2's #2A5BFF stands
+and section 12.3's 3.0 threshold is the thing to revisit. Reverting is these two lines. TERRAIN_SPEC
+section 12.2 was NOT edited, so the spec and the data now differ on this one value by design until
+the owner rules.
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
