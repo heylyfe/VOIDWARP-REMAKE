@@ -3628,6 +3628,76 @@ appear" - a re-infect that adds nothing stays silent, asserted). No .wav ships h
 synthesis is T-055's scope (enemy.json stats: "audio_cues": ["toucher_squelch"],
 "tbd_audio": true; TBD.md carries the row).
 
+### D-T041-1 - The fade-in window is 15-25 u with bounds inclusive, ties to the lowest tile index (T-041). [CONTESTABLE]
+DECISION (T-041): DESIGN.md section 5.12 says gin "fades in on a tile 15-25 u from the
+player" but no document says whether either bound is inclusive, and none states a
+tie-break. Built: both bounds inclusive (a tile at exactly 15 u or exactly 25 u
+qualifies), and ties break to the LOWEST tile index in the level's tile order.
+WHY (gameplay reason): inclusive bounds keep the rule's whole written band usable -
+on a sparse level an exclusive bound could leave no candidate tile at all and push gin
+onto the hub fallback every strike; the lowest-index tie-break is the same
+determinism convention D-056's step (c) already uses, so two clients never disagree
+about where he stands.
+
+### D-T041-2 - The platform-tile-only filter is data-only on the current sim surface (T-041). [CONTESTABLE]
+DECISION (T-041): D-072 says gin's fade-in tile is "always a platform tile (never a
+walkway tile)", but the section 12 Enemy API returns tile rows that carry no
+platform/walkway bit (api.tiles_in_radius yields {x, y, z, index} only; the piece
+roles live in the generator, not in anything a behavior can read). Built: the 15-25 u
+window (D-T041-1) over the tiles the API returns, farthest-from-the-player first, and
+the FARDEST-TILE-OF-THE-SPAWN-HUB fallback implemented as the farthest tile within
+HUB_RADIUS (12.0 u) of the level's first `open` anchor. WHY (gameplay reason): the
+hub is the one place every level guarantees as a wide platform (D-025), so the
+fallback reading preserves D-072's intent - his body never blocks or cuts the only
+route home - without inventing level data the sim does not expose. The filter needs a
+platform bit on the tile rows (or a behavior-readable piece-role list) to be enforced
+literally; flagged for T-073 like the toucher's live-tile surface.
+
+### D-T041-3 - "Never marks the beacon dais" = the dais cell is cut out of the marked patch (T-041). [CONTESTABLE]
+DECISION (T-041): section 5.12 says gin "never marks the beacon dais" without saying
+what happens when the player's tile sits within 2 cells of it (a centred 5x5 patch
+would cover the dais). Built: the patch is carved as the full 5x5 block MINUS the
+dais cell, and gin still strikes. WHY (gameplay reason): the dais cell itself is
+never inside the lethal column, so the safe zone stays perfectly safe - but the four
+tiles around it are taken away while the zone lasts, which keeps the pressure the
+mechanism exists for ("rewrites the puzzle live") instead of granting a stand-still
+immunity every time the player camps the dais. The alternative reading (skip the
+whole strike while the player is dais-adjacent) would let the player park gin
+indefinitely by standing 2 cells from the beacon.
+
+### D-T041-4 - The void zone's column kill and the fade-back lift are row state; the boundary tick closes the zone before it kills (T-041). [CONTESTABLE]
+DECISION (T-041): the zone's lethal column (anything whose tile is inside the marked
+5x5 dies, any height, code D-GIN) and the fade-back lift (a player inside is pushed
+straight up onto the returning surface) both live in the behavior's own row state
+(row["patch"]), reached through api.kill/api.push - no sim tile edit and no new
+surface call (the section 12 Enemy API has no world-write for tile solidity, per
+D-T-035-8/D-T-037-6's precedent: flagged for T-073, not silently widened). The zone's
+open tick (telegraph 120 + spear flight 18 = tick 138) and 600-tick life are the
+anim block's binding numbers, asserted within +/-1 tick.
+ALSO (order, found by the test): the boundary tick (tick 138 + 600 = 738) closes the
+zone FIRST and THEN lifts anyone still inside - a fade-back tick is never a kill
+tick. WHY (gameplay reason): without the reorder, the same tick's lethal pass would
+kill a player standing on the vanished tile in the very tick the spec says they are
+"lifted onto the surface" - the lift sentence would be dead text for the only player
+it is written for. The impulse is an api.push straight up at 6.0 u/s (no document
+states a magnitude; the controller's own gravity then lands them on the returning
+tile).
+
+### D-T041-5 - The strike cooldown is row arithmetic: 840 base, -180 per extra vote, floored at 300 (T-041). [CONTESTABLE]
+DECISION (T-041): section 5.12's "Cooldown 14 s (-3 s per extra vote, min 5 s)" is
+implemented as the row's own cooldown counter: 840 ticks (60 Hz) base, minus 180
+ticks per extra vote beyond the first, floored at 300 ticks (5 s), and the countdown
+runs from the tick the tiles finish fading back - the next fade-in (another 30 ticks)
+sits INSIDE the window, i.e. the 840 is the whole wait between the end of one
+strike's footprint and the start of the next mark, not the gap between marks.
+WHY (gameplay reason): the anim block's recover row carries cooldown_ticks 840 /
+per_vote -180 / min 300 as binding numbers, and "extra vote" is read as this row's
+copies beyond the first (SR-3's copy model - each E-bay vote is a copy, the roster
+row's vote_effect is "-3 s on his strike cooldown" per copy). Anchoring the window to
+the fade-back's end (not the launch) keeps the promised "walk back in before he
+strikes again" number honest: the player experiences 14 s of gin being unable to
+REOPEN the patch after the tiles return, which is the sentence a player would act on.
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
