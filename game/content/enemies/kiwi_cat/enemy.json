@@ -19,12 +19,15 @@
     "meow_ticks": 12,
     "contact_kill": true,
     "death_code": "D-KIWI",
-    "audio_cues": ["meow", "meow_double"],
+    "audio_cues": [
+      "meow",
+      "meow_double"
+    ],
     "frames": 1
   },
   "behavior": "Floats toward the nearest player at 5.6 u/s (pursuit ceiling 0.80 - never above 7.2 u/s after multipliers); contact kills. Meows every 3 s while within 14 u.",
-  "counter_play": "Open ground - walk away. Thin path or dead end - hurdle it as it arrives: a jump exceeds its 1.5 u reach from 0.16 s to 0.59 s of the jump.",
-  "tell": "Meows every 3 s while within 14 u - a slow clock that never stops.",
+  "counter_play": "open ground — walk away. Thin path or dead end — hurdle it as it arrives: a jump exceeds its 1.5 u reach from 0.16 s to 0.59 s of the jump, a 0.43 s window over a 0.12 s overlap (closing speed 14.6 u/s, SR-2).",
+  "tell": "Meows every 3 s while within 14 u.",
   "sprites": "res://content/enemies/kiwi_cat/sprites.json",
   "script": true
 }

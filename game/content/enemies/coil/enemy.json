@@ -1,4 +1,4 @@
-﻿{
+{
   "id": "coil",
   "name": "coil",
   "min_level": 1,
@@ -37,8 +37,9 @@
       "landing": "coil_landing_twang"
     }
   },
-  "counter_play": "leave the 3 u landing ring and be airborne or > 6 u from your last grounded tile when it lands; the shove decays over 0.5 s and never kills; an idle coil (1.0 u squashed) is hurdle-able",
-  "tell": "the boing + squash frames and a red 3 u ring drawn at your last grounded tile, 0.6 s before it lands",
   "sprites": "res://content/enemies/coil/sprites.json",
-  "script": true
+  "script": true,
+  "behavior": "jumps between platforms, aiming at where you are, not where you will be; the pre-jump cue gives away its landing zone.",
+  "tell": "pre-jump cue 0.6 s (\"boing\", squash frames, a ring of radius 3 u drawn at the landing zone)",
+  "counter_play": "leave the ring (1.2 u) and be airborne or > 6 u from the last grounded tile when it lands — 3.35 s of cue covers 6 u at a walk. An idle coil parked on the path is hurdle-able (1.0 u squashed, SR-2)."
 }

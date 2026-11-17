@@ -13,7 +13,7 @@ extends Control
 # fraction on the bar. `set_load_progress(p)` wires the real loader; the first call switches the
 # fraction source off the simulated estimate for good.
 #
-# Tips (D-T024-3): data-driven from data/tips.json (18 tips, 11 hazard_tell, T-014c — unchanged).
+# Tips (D-T024-3): data-driven from data/tips.json (21 tips, 11 hazard_tell, T-014c + T-076).
 # The draw pool expands each hazard_tell tip x3; the rotation is a seeded shuffle of that pool,
 # cycled and reshuffled per cycle; the visible tip changes exactly at multiples of 5.0 s of
 # elapsed display time (tip_step = floor(elapsed / 5.0)).

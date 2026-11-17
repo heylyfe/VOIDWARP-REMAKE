@@ -8,7 +8,9 @@
   "preferred_kind": "perch",
   "arbiter": {
     "appear_requires": [],
-    "yields_to": [ "address_me" ]
+    "yields_to": [
+      "address_me"
+    ]
   },
   "stats": {
     "world_height": 1.8,
@@ -17,7 +19,12 @@
     "burst_ceiling": 0.0,
     "frame_w": 256,
     "frame_h": 256,
-    "body_rect": [16, 16, 224, 224],
+    "body_rect": [
+      16,
+      16,
+      224,
+      224
+    ],
     "contact_kill": true,
     "death_code": "D-GIN",
     "preferred_kind": "perch",
@@ -38,14 +45,19 @@
     "patch_outline_color": "#FF2A2A",
     "mark_blink_hz_first": 2.0,
     "mark_blink_hz_second": 4.0,
-    "audio_cues": ["crack_rumble", "shing", "whoosh", "zone_open", "zone_close"],
+    "audio_cues": [
+      "crack_rumble",
+      "shing",
+      "whoosh",
+      "zone_open",
+      "zone_close"
+    ],
     "tbd_audio": true
   },
   "sprites": "res://content/enemies/gin/sprites.json",
   "script": true,
   "contact_kill": true,
-  "preferred_kind": "perch",
   "behavior": "fades in on a platform tile 15-25 u from the player (farthest spawn-hub tile as fallback, D-072), then strikes: the 5x5 tile patch centred on the player's tile is marked for 2.0 s (red outline #FF2A2A, deep cracking rumble), sword-spears streak to the patch in 0.3 s (view-layer VFX only), and the patch is a void zone for 10 s - its tiles are non-solid and anything that enters its column is killed; the tiles fade back over 0.5 s and a player inside is lifted onto the surface",
-  "counter_play": "walk out of the patch - 3 cells is 0.33 s of running inside a 2.0 s mark - and change direction during a double mark; his body is never on the path (D-072), so only the patch threatens you",
-  "tell": "the 5x5 patch outline blinks 2 Hz then 4 Hz while cracks spread over 120 ticks, with a deep cracking rumble; a bright shing as the spears launch"
+  "counter_play": "walk out of the patch — 3 cells, 0.33 s of running inside a 2.0 s mark — and change direction during a Twin Fangs double mark; his body is never on the path (D-072), so only the patch threatens you.",
+  "tell": "the 5×5 tile patch centred on the player's tile is marked (red outline #FF2A2A, deep cracking rumble) for 2.0 s"
 }

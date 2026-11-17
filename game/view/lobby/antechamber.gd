@@ -503,6 +503,8 @@ func altar_details(p_lobby: RefCounted, p_bay_index: int, p_altar: int,
 			var lines: Array = [str(altar.get("name", "TBD"))]
 			var sheet: Dictionary = _enemy_doc(str(altar.get("id", "")))
 			lines.append(str(sheet.get("behavior", "Behavior: TBD (enemy wave pending)")))
+			if str(sheet.get("tell", "")) != "":
+				lines.append(str(sheet.get("tell")))
 			lines.append(str(sheet.get("counter_play", "")))
 			lines.append("In play: x%d" % int(altar.get("votes", 0)))
 			return lines

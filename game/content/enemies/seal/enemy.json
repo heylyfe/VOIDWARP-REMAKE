@@ -22,12 +22,15 @@
     "recover_ticks": 45,
     "contact_kill": true,
     "death_code": "D-SEAL",
-    "audio_cues": ["bark", "flipper_flap"],
+    "audio_cues": [
+      "bark",
+      "flipper_flap"
+    ],
     "frames": 3
   },
   "behavior": "Flaps toward the nearest player at 4.0 u/s (pursuit ceiling 0.60 - never above 5.4 u/s while flapping); between 4 u and 12 u it stops and telegraphs for 0.75 s (dashed red 3D line fixed from its body centre through the player's centre), barks on tick 0 of the dash and dashes 20 u in 1.0 s along the fixed line, then idles 0.75 s. Contact at any time = kill.",
-  "counter_play": "Jump on the bark - your feet are more than 1.2 u above their telegraph-start height from 0.12 s to 0.63 s after take-off, a 0.51 s window for its 0.07 s body crossing. A 3 HU step (1.5 u, up or down) also clears it; a sidestep >= 0.7 u works on a 2-wide path or platform.",
-  "tell": "Mouth-open frame held for 0.75 s with a dashed red line drawn along the fixed 3D dash line, brightening until the bark - the line never re-aims.",
+  "counter_play": "jump on the bark, or stand a 3 HU step above/below the line, or sidestep ≥ 0.7 u on a 2-wide path or platform. Pup Pack's counter-play text is \"jump each bark\" — its second seal runs its own fixed line 0.5 s later, and seals capped at 3 with stagger (SR-3) keep the barks from coinciding.",
+  "tell": "telegraph 0.75 s (dashed 3D line, mouth-open frame) → bark on tick 0 of the dash",
   "sprites": "res://content/enemies/seal/sprites.json",
   "script": true
 }
