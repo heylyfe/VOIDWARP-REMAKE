@@ -71,7 +71,112 @@
       "ui_chime",
       "keystroke_tick",
       "notification_ping",
-      "squeak_pop"
+      "squeak_pop",
+      "beat",
+      "string_sweep"
+    ],
+    "audio_cue_timing": {
+      "ui_chime": {
+        "event": "telegraph",
+        "kind": "drum_ring",
+        "occurrence": null,
+        "offset_ticks": 0,
+        "length_s": 0.2,
+        "role": "on_attack",
+        "attack": "drum_ring_kill",
+        "attack_offset_ticks": null,
+        "binding_cue_ticks": null
+      },
+      "keystroke_tick": {
+        "event": "telegraph",
+        "kind": "strings_line",
+        "occurrence": null,
+        "offset_ticks": 0,
+        "length_s": 0.08,
+        "role": "tell",
+        "attack": null,
+        "attack_offset_ticks": null,
+        "binding_cue_ticks": null
+      },
+      "notification_ping": {
+        "event": "bar_beat",
+        "kind": "",
+        "occurrence": null,
+        "offset_ticks": 0,
+        "length_s": 0.15,
+        "role": "on_attack",
+        "attack": "wind_shot_kill",
+        "attack_offset_ticks": null,
+        "binding_cue_ticks": null
+      },
+      "squeak_pop": {
+        "event": "plushie_pickup",
+        "kind": "",
+        "occurrence": 1,
+        "offset_ticks": 0,
+        "length_s": 0.2,
+        "role": "stinger",
+        "attack": null,
+        "attack_offset_ticks": null,
+        "binding_cue_ticks": null
+      },
+      "beat": {
+        "event": "bar_beat",
+        "kind": "",
+        "occurrence": null,
+        "offset_ticks": 0,
+        "length_s": 0.05,
+        "role": "tell",
+        "attack": null,
+        "attack_offset_ticks": null,
+        "binding_cue_ticks": null
+      },
+      "string_sweep": {
+        "event": "telegraph",
+        "kind": "strings_line",
+        "occurrence": 1,
+        "offset_ticks": 0,
+        "length_s": 3.0,
+        "role": "binding",
+        "attack": "strings_beam_kill",
+        "attack_offset_ticks": 180,
+        "binding_cue_ticks": 180
+      }
+    },
+    "lethal_attacks": [
+      {
+        "attack": "drum_ring_kill",
+        "code": "D-CLAUDE",
+        "event": "none",
+        "kind": "",
+        "occurrence": 1,
+        "attack_offset_ticks": null,
+        "binding_cue": null,
+        "binding_cue_ticks": null,
+        "parked": "PARKED.md #14"
+      },
+      {
+        "attack": "strings_beam_kill",
+        "code": "D-CLAUDE",
+        "event": "telegraph",
+        "kind": "strings_line",
+        "occurrence": 1,
+        "attack_offset_ticks": 180,
+        "binding_cue": "string_sweep",
+        "binding_cue_ticks": 180,
+        "parked": null
+      },
+      {
+        "attack": "wind_shot_kill",
+        "code": "D-CLAUDE",
+        "event": "none",
+        "kind": "",
+        "occurrence": 1,
+        "attack_offset_ticks": null,
+        "binding_cue": null,
+        "binding_cue_ticks": null,
+        "parked": "PARKED.md #14"
+      }
     ]
   }
 }

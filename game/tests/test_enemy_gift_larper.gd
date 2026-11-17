@@ -112,7 +112,7 @@ func _cfg_coherence(f: Array[String]) -> void:
 	_eq(f, "defuse_drop_u", float(stats.get("defuse_drop_u")), 0.5)
 	_eq(f, "contact_kill cfg", str(bool(stats.get("contact_kill"))), "false")
 	_eq(f, "death_code", str(stats.get("death_code")), "D-MINE")
-	_eq(f, "audio cues", str(stats.get("audio_cues")), str(["explosion", "pff"]))
+	_eq(f, "audio cues", str(stats.get("audio_cues")), str(["explosion", "pff", "mine_hum"]))
 	_eq(f, "behavior line", str(d.get("behavior", "").length() > 0), "true")
 	_eq(f, "counter_play line", str(d.get("counter_play", "").length() > 0), "true")
 	_eq(f, "tell line", str(d.get("tell", "").length() > 0), "true")

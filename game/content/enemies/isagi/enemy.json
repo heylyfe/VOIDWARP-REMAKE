@@ -32,7 +32,68 @@
     "counters": "get a 2 HU step between you and him, or jump after the release flash, or sidestep >= 0.9 u; on a lane anchor a jump per volley (0.75 s apart) clears even Egoist bursts, and he is gone within 4.0 s",
     "tell": "the idle pose flashes with an accelerating red rim, a thin red aim line snaps onto you, and the direct-shot voice cue plays 1.2 s before the balls",
     "death_code": "D-ISAGI",
-    "fps": 60
+    "fps": 60,
+    "audio_cues": ["isagi_voice_direct_shot", "isagi_shoot_sae_math_final_shot", "isagi_gunshot"],
+    "audio_cue_timing": {
+      "isagi_voice_direct_shot": {
+      "event": "telegraph",
+      "kind": "aim",
+      "occurrence": 1,
+      "offset_ticks": 0,
+      "length_s": 1.2,
+      "role": "binding",
+      "attack": "volley_kill",
+      "attack_offset_ticks": 72,
+      "binding_cue_ticks": 72
+    },
+      "isagi_shoot_sae_math_final_shot": {
+      "event": "projectile_spawn",
+      "kind": "",
+      "occurrence": null,
+      "offset_ticks": 0,
+      "length_s": 0.6,
+      "role": "on_attack",
+      "attack": "volley_kill",
+      "attack_offset_ticks": null,
+      "binding_cue_ticks": null
+    },
+      "isagi_gunshot": {
+      "event": "projectile_spawn",
+      "kind": "",
+      "occurrence": null,
+      "offset_ticks": 0,
+      "length_s": 0.12,
+      "role": "on_attack",
+      "attack": "volley_kill",
+      "attack_offset_ticks": null,
+      "binding_cue_ticks": null
+    }
+    },
+    "lethal_attacks": [
+      {
+      "attack": "volley_kill",
+      "code": "D-ISAGI",
+      "event": "telegraph",
+      "kind": "aim",
+      "occurrence": 1,
+      "attack_offset_ticks": 72,
+      "binding_cue": "isagi_voice_direct_shot",
+      "binding_cue_ticks": 72,
+      "parked": null
+    },
+      {
+      "attack": "body_contact",
+      "code": "D-ISAGI",
+      "event": "none",
+      "kind": "",
+      "occurrence": 1,
+      "attack_offset_ticks": null,
+      "binding_cue": null,
+      "binding_cue_ticks": null,
+      "parked": "PARKED.md #12"
+    }
+    ],
+    "tbd_audio": true
   },
   "sprites": "res://content/enemies/isagi/sprites.json",
   "script": true,

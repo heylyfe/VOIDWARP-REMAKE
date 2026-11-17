@@ -35,7 +35,45 @@
     "audio": {
       "jump_cue": "coil_boing",
       "landing": "coil_landing_twang"
+    },
+    "audio_cue_timing": {
+      "coil_boing": {
+      "event": "telegraph",
+      "kind": "coil_ring",
+      "occurrence": 1,
+      "offset_ticks": 0,
+      "length_s": 0.6,
+      "role": "binding",
+      "attack": "landing_kill",
+      "attack_offset_ticks": 201,
+      "binding_cue_ticks": 201,
+      "parked": "PARKED.md #13"
+    },
+      "coil_landing_twang": {
+      "event": "coil_land",
+      "kind": "",
+      "occurrence": 1,
+      "offset_ticks": 0,
+      "length_s": 0.4,
+      "role": "on_attack",
+      "attack": "landing_kill",
+      "attack_offset_ticks": null,
+      "binding_cue_ticks": null
     }
+    },
+    "lethal_attacks": [
+      {
+      "attack": "landing_kill",
+      "code": "D-COIL",
+      "event": "telegraph",
+      "kind": "coil_ring",
+      "occurrence": 1,
+      "attack_offset_ticks": 201,
+      "binding_cue": "coil_boing",
+      "binding_cue_ticks": 201,
+      "parked": null
+    }
+    ]
   },
   "sprites": "res://content/enemies/coil/sprites.json",
   "script": true,

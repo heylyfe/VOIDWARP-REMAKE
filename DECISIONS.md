@@ -4131,6 +4131,142 @@ reason to encrypt). embed_pck is the one field the owner's spec actually pins ("
 standalone native .exe"). A number no document states would have been a SPEC GAP; none was needed
 beyond the preset mechanics themselves.
 
+### D-T087-1 - [CONTESTABLE] The section 3 row -> enemy.json cue-name reconciliation (T-087).
+
+DECISION (T-087): section 3 names cues by BRIEF (`boing`, `twang`, `chime`, `bong`,
+`windup`, `shot`, `lock_beep`, `descent_roar`, `boom`, `static_build`, `ring_release`,
+`mine_blast`, `mine_dud`, `mine_hum`, `squelch`, `prowl`, `bark`, `flap`, `trumpet`,
+`rumble`, `boom`, `leaves`, `beat`, `drum_hit`, `string_sweep`, `wind_ping`,
+`plushie_pop`, `crack_rumble`, `shing`, `whoosh`, `zone_open`, `zone_close`), but the
+view hooks, the enemy.json files and the T-055 wave names are the shipped contract
+(file name = cue name). T-087 does NOT rename anything: the mapping is recorded here
+and in `tools/check_audio.gd`'s ROW_TO_CUE table, and every file resolves:
+`meow`>`meow`, `meow_double`>`meow_double`, `boing`>`coil_boing`,
+`twang`>`coil_landing_twang`, `chime`>`thicc_ben_chime`,
+`bong`>`thicc_ben_bell`, `windup`>`isagi_voice_direct_shot`,
+`shot`>`isagi_gunshot`, `lock_beep`>`lock_on_beep`, `locked`>`locked`
+(NEW), `descent_roar`>`rocket_booster_roar`, `boom`(nuke)>`impact_boom`,
+`static_build`>`you_corrupted_rumble`, `ring_release`>`ring_release` (NEW),
+`mine_blast`>`explosion`, `mine_dud`>`pff`, `mine_hum`>`mine_hum` (NEW),
+`squelch`>`toucher_squelch`, `prowl`>`prowl` (NEW), `bark`>`bark`,
+`flap`>`flipper_flap`, `trumpet`>`spawn_trumpet`, `rumble`>`rumble_build`,
+`boom`(address me)>`explode_boom`, `leaves`>`leaves` (NEW),
+`beat`>`beat` (NEW), `drum_hit`>`ui_chime`, `string_sweep`>`string_sweep`
+(NEW), `wind_ping`>`notification_ping`, `plushie_pop`>`squeak_pop`,
+`crack_rumble`>`crack_rumble`, `shing`>`shing`, `whoosh`>`whoosh`,
+`zone_open`>`zone_open`, `zone_close`>`zone_close`. The section 3 file path
+(`content/enemies/<id>/audio/<cue>.wav`) stays superseded by the merged view-hook path
+`game/assets/audio/enemies/<id>/<cue>.wav` (D-T055-1, unamended). WHY: renaming would
+move every view hook and every test string pin for zero gameplay change; the row ->
+file mapping is data, so it lives in the check and here.
+
+### D-T087-2 - [CONTESTABLE] Loop cues get a 2.0 s bed; loop cues are exempt from the length check (T-087).
+
+DECISION (T-087): section 3 lists `mine_hum`, `prowl` and `flap` as `loop` with no
+length - a SPEC GAP. All loop beds are synthesized at 2.0 s (`flipper_flap` regenerated
+1.0 s > 2.0 s; the other two beds are new). A loop is exempt from the ±10 ms
+file-length assertion (existence + 44.1 kHz/mono/16-bit only). WHY: a seamless 2.0 s bed
+is long enough not to stutter-repeat audibly and short enough to remain a synthesis
+placeholder; nothing in the sim or any binding computation reads a loop's length, and the
+FLAP tell is its 3.3 Hz > 6.6 Hz cadence baked into the bed, not the bed's length.
+Binding/offset data never rides on a loop's length.
+
+### D-T087-3 - [CONTESTABLE] Claude `string_sweep` is 3.0 s; gin `crack_rumble` reads as the whole 120-tick mark (T-087).
+
+DECISION (T-087): section 3 gives string_sweep's length as "1 beat + 4 beats" and no
+seconds anywhere - a SPEC GAP. Built 3.0 s at the 100 BPM base tempo (beat 0.6 s;
+36 ticks per beat; the bar_beat anchor, the metronome, is fixed at the base tempo - the
+file never re-times with agitation; cue timings are sim-driven, never audio-driven).
+gin's crack_rumble row ("the 120-tick mark | 2.0 s") is read as covering the whole
+120-tick mark window: offset 0 from the `mark` telegraph, ending on the launch tick
+(120). WHY: 5 beats from the strings telegraph start (1 telegraph beat + 4 sweep beats)
+is the only reading consistent with "the telegraph beat, then through the 4-beat sweep";
+the mark reading is the only one consistent with a 2.0 s file that ends on the tick the
+spears launch.
+
+### D-T087-4 - [CONTESTABLE] Behavior-phase anchors where the sim emits no event (T-087).
+
+DECISION (T-087): the sim's event vocabulary is fixed (telegraph [+ kind], coil_land,
+toucher_infect, projectile_spawn, screen_blur, enemy_spawn, ...); for cues whose host
+phase is row state with no raised event, the cue's `event` field names the behavior
+phase instead - `appear`/`explode`/`leaves` (address me; the countdown is row state,
+never an api.telegraph row - D-T-039-11), `mine_contact`/`mine_defused`/`proximity_6u`
+(gift Larper; sim/mines.gd raises no contact event and gift_larper is the mines.gd
+ladder), `proximity_14u` (toucher prowl), `release` (YOU?!'s ring), `blast` (nuke's
+impact boom; the blast is api.kill, not an event), `bar_beat` (Claude's metronome),
+`plushie_pickup` (Claude's squeak_pop), `zoomies` (kiwi cat's meow_double - the Zoomies
+curse sprint start), and isagi's `isagi_shoot_sae_math_final_shot` anchors
+`projectile_spawn`. WHY: the ticket requires every cue to name the sim event that starts
+it; where none exists, the phase is named honestly rather than disguised as an event that
+does not fire. Wiring these phases as real sim events is a runtime (T-027) surface
+change and out of T-087's scope; the views already play these cues off row state.
+
+### D-T087-5 - [CONTESTABLE] `keystroke_tick` and `isagi_shoot_sae_math_final_shot` have no section 3 row (T-087).
+
+DECISION (T-087): `keystroke_tick` (0.08 s, one tick per beat while the strings beam
+sweeps - claude_audio.gd's per-beat hook; section 3 names only the 5-beat string_sweep
+for strings) and `isagi_shoot_sae_math_final_shot` (0.6 s; ENEMIES.md's "Isagi shoot sae
+math final shot" voice-line - section 3's Isagi rows cover windup and shot only) have no
+section 3 row. Their lengths stand from T-055 as [CONTESTABLE] SPEC GAPs and neither
+takes part in any binding computation (roles `tell`/`on_attack`). WHY: both are real
+hooks named by ENEMIES.md/merged view code; inventing section-3 rows for them is silent
+spec drift - recording them here is the audit trail.
+
+### D-T087-6 - `enemy.json` gains `audio_cue_timing` + `lethal_attacks`, additively (T-087).
+
+DECISION (T-087): every enemy.json gains two additive stats blocks and NOTHING else
+changes: `audio_cue_timing` (per cue: `event`, `kind`, `occurrence`, `offset_ticks`,
+`length_s`, `role` (`binding`|`on_attack`|`tell`|`stinger`|`loop`), `attack`,
+`attack_offset_ticks`, `binding_cue_ticks`, optional `parked`) and `lethal_attacks` (per
+lethal attack: `attack`, `code`, `event`/`kind`/`occurrence`, `attack_offset_ticks`,
+`binding_cue` or null, `binding_cue_ticks`, optional `parked`). No existing key was
+removed, renamed or renumbered; no behavior number moved. Isagi's and nuke's
+`enemy.json` had NO audio cues; T-087 wires the six T-055-synthesized cues (and nuke’s
+NEW `locked`) into their `audio_cues` lists. The three named recordings stand in as
+synthesized cues marked `tbd_audio: true`: thicc ben chime (already marked), Isagi's
+voice-line/gunshot cues and gift Larper's `explosion` (both newly marked in their
+enemy.json stats), with TBD.md rows 47-49. gin, toucher and address me keep their
+pre-existing all-placeholder `tbd_audio` markers from the T-055 era (rows 37-46
+stand). WHY: the done-when needs a machine-readable per-cue event + tick offset and a
+roster enumeration of lethal attacks; additive blocks keep the merged contract intact.
+
+### D-T087-7 - The binding math, worked: thicc ben chime is the reference (T-087).
+
+DECISION (T-087): binding cues carry their own tick math relative to the anchoring
+event; the check enforces `offset_ticks \u003c= attack_offset_ticks - binding_cue_ticks`
+(both assertions relative to the same anchor) and `cue end == attack tick ± 1 tick`
+(735.0 samples at 44.1 kHz). thicc ben's `thicc_ben_chime` is the reference: event
+`telegraph` kind `teleport` occurrence 1, offset 45 (the chime lands in the LAST 30 of
+the 75-tick smoke, T-032), binding 30, attack offset 75 (the arrival tick) - assertion 2:
+45 <= 45; assertion 3: end == 75 exactly. thicc ben has NO lethal attack (D-065: the
+launch is the danger, never a kill), so its ledger declares the arrival as a NON-lethal
+bound attack (`lethal: false`, code "", event `telegraph` kind `teleport`, attack offset 75,
+binding cue `thicc_ben_chime`, binding 30); the check validates that pair and prints
+`BOUND thicc_ben/teleport_arrival (non-lethal)`. Coverage and the PARKED machinery apply
+only to `lethal: false`. `thicc_ben_bell` anchors
+the `screen_blur` event (the only sim event on the touch path; the ring/blur/eject is
+D-T-032's surface), role `stinger`, unbound. WHY: ben proves the data model on the one
+case whose cue span equals the pre-arrival window exactly, and binding to a named,
+validated non-lethal attack keeps the cue-reference check honest without a dangling id.
+
+### D-T087-8 - Coverage: every lethal attack names a binding cue or a parked exemption (T-087).
+
+DECISION (T-087): `lethal_attacks` is the coverage ledger. Every entry must either name
+a `binding_cue` (which must exist, be role `binding`, agree on attack id / event /
+kind / occurrence / offsets / binding time, and pass the two binding assertions - A3 or
+an explicit `parked`), or carry `parked = "PARKED.md #N"` plus `binding_cue = null`,
+which the check prints LOUDLY (`PARKED` lines, exit stays 0 only because the row is a
+written, owner-visible reason). Anything else fails the build. The parked set as built:
+the no-wind-up contact class (kiwi cat, toucher, gift Larper, YOU?! touch, gin body,
+Isagi body - PARKED.md #12), coil's boing vs the landing tick (#13), Claude's drums +
+wind (#14), gin's crack_rumble vs the zone-open tick (#15). Claude's strings ARE covered
+(`string_sweep`, D-T087-3, attack offset 180 = the end of the beam's kill window, binding
+180, both assertions pass). Seal's dash IS covered (`flipper_flap`, role `binding`,
+`loop` = true, offset 0 from the `dash_line` telegraph, binding 45 = TELEGRAPH_TICKS,
+attack offset 45; assertion 2 passes, assertion 3 is not applicable to a loop), with the
+`bark` as the on-attack stinger. WHY: the done-when demands every lethal attack name a
+binding cue; silently uncovered attacks fail, documented parked ones stay visible.
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
@@ -4321,3 +4457,4 @@ beyond the preset mechanics themselves.
 - 2026-11-17 T-052 (inkling-2-small-free, this session): the upgrade declarative proof landed on t3/upgrades-declarative-proof - game/tests/test_upgrades_decl.gd (every script:false upgrade through the real modifier path; stat deltas from the DESIGN.md section 8 rows; the pinned script:false/script:true partition; Athletic x1.5 speed / x1.3 air-jump height wired through the real Yearn for Speed card into controller.gd; the R4 centi-gold floor rule over the whole catalog and all 46 bounties via an exact integer dyadic oracle, plus to_centi(2.675) = 267) - insulation.json mul 0.5 -> add 0.1 (D-T052-3) - DECISIONS D-T052-1..3 appended. TESTS 42 passed 0 failed. No content ids added (counts stay 12/99). No PARKED rows. No push.
 
 - 2026-11-17 T-055 (Inkling, this session): tools/synth_audio.py + game/assets/audio/enemies/<id>/<cue>.wav for the 24 cues referenced by the twelve enemy.json files (stats.audio_cues + stats.audio) plus the 6 Isagi/nuke TBD-hook cues (D-T055-2); all recipes/lengths [CONTESTABLE] placeholders (D-T055-3); landing path per merged view hooks (D-T055-1). TBD.md section 8 lists ALL enemy audio as placeholder. python tools/synth_audio.py [--check] re-synthesises / verifies; every enemy.json cue resolves to a file. Gate run at end of session; enemy.json untouched; T-087 owns binding lengths, cue offsets and the check.
+- 2026-11-17 T-087 (Inkling, this session): section 3 reconciled (D-T087-1) and completed - 7 new wavs (locked, ring_release, mine_hum, prowl, leaves, beat, string_sweep 3.0 s per D-T087-3; loops at 2.0 s, D-T087-2), flipper_flap regenerated to the 2.0 s bed; enemy.json files gained additively stats.audio_cue_timing + stats.lethal_attacks (D-T087-6) with every cue's sim event + tick offset and the roster's 17-entry ledger (16 lethal attacks + thicc_ben's non-lethal bound arrival); isagi/nuke cue lists wired; the three stand-ins flagged/kept tbd_audio with TBD rows 47-49; tools/check_audio.gd built (three assertions + coverage ledger; negative-tested; the three documents conflicts as PARKED.md #12-15 and SPEC GAPs as D-T087-1..8). Gate green: GATE OK (9 ran, 0 skipped, 52 s), TESTS 44 passed 0 failed.

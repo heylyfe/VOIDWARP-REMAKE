@@ -55,10 +55,70 @@
     "audio_cues": [
       "spawn_trumpet",
       "rumble_build",
-      "explode_boom"
+      "explode_boom",
+      "leaves"
     ],
     "tbd_audio": true,
-    "tbd_art": true
+    "tbd_art": true,
+    "audio_cue_timing": {
+      "spawn_trumpet": {
+        "event": "appear",
+        "kind": "",
+        "occurrence": 1,
+        "offset_ticks": 0,
+        "length_s": 0.9,
+        "role": "stinger",
+        "attack": null,
+        "attack_offset_ticks": null,
+        "binding_cue_ticks": null
+      },
+      "rumble_build": {
+        "event": "appear",
+        "kind": "",
+        "occurrence": 1,
+        "offset_ticks": 0,
+        "length_s": 5.0,
+        "role": "binding",
+        "attack": "explode_kill",
+        "attack_offset_ticks": 300,
+        "binding_cue_ticks": 300
+      },
+      "explode_boom": {
+        "event": "explode",
+        "kind": "",
+        "occurrence": 1,
+        "offset_ticks": 0,
+        "length_s": 1.2,
+        "role": "on_attack",
+        "attack": "explode_kill",
+        "attack_offset_ticks": null,
+        "binding_cue_ticks": null
+      },
+      "leaves": {
+        "event": "leaves",
+        "kind": "",
+        "occurrence": 1,
+        "offset_ticks": 0,
+        "length_s": 0.3,
+        "role": "stinger",
+        "attack": null,
+        "attack_offset_ticks": null,
+        "binding_cue_ticks": null
+      }
+    },
+    "lethal_attacks": [
+      {
+        "attack": "explode_kill",
+        "code": "D-ADDR",
+        "event": "appear",
+        "kind": "",
+        "occurrence": 1,
+        "attack_offset_ticks": 300,
+        "binding_cue": "rumble_build",
+        "binding_cue_ticks": 300,
+        "parked": null
+      }
+    ]
   },
   "sprites": "res://content/enemies/address_me/sprites.json",
   "script": true,

@@ -30,7 +30,67 @@
     "descent_height": 30.0,
     "descent_speed_u_per_tick": 0.3333333333333333,
     "tell_line": "a warning cue that speeds up as the missile closes in: the ground ring follows the locked player for 2.5 s while the lock-on beep rises 2 -> 8 Hz, the ring then stops (1.5 s) and the missile descends 1.5 s",
-    "counter_play": "leave the 5 u sphere within 1.5 s (13.5 u of running at full speed; <= 11 u even from the back of a 6-wide nook), or put a prop, a spire pad, a bastion wall or a tile slab between you and the sky. (ENEMIES.md words it 'break line of sight'; the D-025 terrain has almost nothing overhead, so the working answer is 'leave the sphere' - both readings are named here, neither canon sentence changed.)"
+    "counter_play": "leave the 5 u sphere within 1.5 s (13.5 u of running at full speed; <= 11 u even from the back of a 6-wide nook), or put a prop, a spire pad, a bastion wall or a tile slab between you and the sky. (ENEMIES.md words it 'break line of sight'; the D-025 terrain has almost nothing overhead, so the working answer is 'leave the sphere' - both readings are named here, neither canon sentence changed.)",
+    "audio_cues": ["lock_on_beep", "locked", "rocket_booster_roar", "impact_boom"],
+    "audio_cue_timing": {
+      "lock_on_beep": {
+      "event": "telegraph",
+      "kind": "ground_ring",
+      "occurrence": 1,
+      "offset_ticks": 0,
+      "length_s": 0.05,
+      "role": "tell",
+      "attack": null,
+      "attack_offset_ticks": null,
+      "binding_cue_ticks": null
+    },
+      "locked": {
+      "event": "telegraph",
+      "kind": "ground_ring",
+      "occurrence": 2,
+      "offset_ticks": 0,
+      "length_s": 0.2,
+      "role": "stinger",
+      "attack": null,
+      "attack_offset_ticks": null,
+      "binding_cue_ticks": null
+    },
+      "rocket_booster_roar": {
+      "event": "telegraph",
+      "kind": "ground_ring",
+      "occurrence": 2,
+      "offset_ticks": 0,
+      "length_s": 1.5,
+      "role": "binding",
+      "attack": "blast_kill",
+      "attack_offset_ticks": 90,
+      "binding_cue_ticks": 90
+    },
+      "impact_boom": {
+      "event": "blast",
+      "kind": "",
+      "occurrence": 1,
+      "offset_ticks": 0,
+      "length_s": 1.2,
+      "role": "on_attack",
+      "attack": "blast_kill",
+      "attack_offset_ticks": null,
+      "binding_cue_ticks": null
+    }
+    },
+    "lethal_attacks": [
+      {
+      "attack": "blast_kill",
+      "code": "D-NUKE",
+      "event": "telegraph",
+      "kind": "ground_ring",
+      "occurrence": 2,
+      "attack_offset_ticks": 90,
+      "binding_cue": "rocket_booster_roar",
+      "binding_cue_ticks": 90,
+      "parked": null
+    }
+    ]
   },
   "sprites": "res://content/enemies/nuke/sprites.json",
   "script": true,

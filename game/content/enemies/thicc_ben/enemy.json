@@ -27,8 +27,46 @@
       "teleport_chime": "thicc_ben_chime",
       "touch_bell": "thicc_ben_bell"
     },
+    "lethal_attacks": [
+      {
+      "attack": "teleport_arrival",
+      "code": "",
+      "event": "telegraph",
+      "kind": "teleport",
+      "occurrence": 1,
+      "attack_offset_ticks": 75,
+      "binding_cue": "thicc_ben_chime",
+      "binding_cue_ticks": 30,
+      "parked": null,
+      "lethal": false
+    }
+    ],
     "tbd_audio": true,
-    "tbd_art": true
+    "tbd_art": true,
+    "audio_cue_timing": {
+      "thicc_ben_chime": {
+      "event": "telegraph",
+      "kind": "teleport",
+      "occurrence": 1,
+      "offset_ticks": 45,
+      "length_s": 0.5,
+      "role": "binding",
+      "attack": "teleport_arrival",
+      "attack_offset_ticks": 75,
+      "binding_cue_ticks": 30
+    },
+      "thicc_ben_bell": {
+      "event": "screen_blur",
+      "kind": "",
+      "occurrence": 1,
+      "offset_ticks": 0,
+      "length_s": 1.8,
+      "role": "stinger",
+      "attack": null,
+      "attack_offset_ticks": null,
+      "binding_cue_ticks": null
+    }
+    }
   },
   "sprites": "res://content/enemies/thicc_ben/sprites.json",
   "script": true,
