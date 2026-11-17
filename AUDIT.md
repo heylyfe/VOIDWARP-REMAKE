@@ -230,7 +230,7 @@ T-061 RESULT: OK
 ### A14 — drop-in proof: fixture enemy/curse/upgrade/biome copied into content/ are offered and work with zero core edits; boundary scan clean — **PARTIAL**
 
 - Gate step 6: `OK drop-in fixture (ran in run_all: game/tests/test_dropin.gd)`. `test_dropin.gd` copies one enemy, one curse, one upgrade and one biome into `content/`, re-boots, asserts all four register and are functional, corrupts one file and asserts the boot refuses with the file named, then removes everything.
-- **The "boundary scan clean" half does not hold.** The scan is green only because `KNOWN_CONTENT_IDS` is empty and it reads only `.gd` files; `game/core/schemas/curse.schema.json` hardcodes all 12 enemy ids, and `game/sim/death.gd` hardcodes the 12 roster display names. A 13th enemy therefore needs a core edit to `death.gd` (and to the curse schema if any curse requires it). See section 5.
+- **The "boundary scan clean" half does not hold.** The scan is green only because `KNOWN_CONTENT_IDS` is empty and it reads only `.gd` files; `game/core/schemas/curse.schema.json` hardcodes all 12 enemy ids, and `game/sim/death.gd` hardcodes the 12 roster display names. A 13th enemy therefore needs a core edit to `death.gd` (and to the curse schema if any curse requires it). The view layer is worse: `game/view/hud/run_over.gd` (13 ids), `game/view/hud/danger_text.gd` (12 ids) and `game/view/fog_env.gd` (5 biome ids) hardcode the whole roster and biome list, so a drop-in enemy registers but cannot render. See section 5.
 - Proof: `game/tests/test_dropin.gd`, `game/tests/test_boundaries.gd`.
 
 ### A15 — README and the lobby About plaque contain the disclaimer verbatim — **PARTIAL**
@@ -329,7 +329,8 @@ schema accepts the bad value.
 
 **Gate step 4 passes:** `OK boundary scan (ran in run_all: game/tests/test_boundaries.gd)`, and
 `test_boundaries.gd` is part of the `TESTS 55 passed 0 failed` run. **The scan is nonetheless vacuous
-for content ids, and my own grep finds four violations it cannot see.**
+for content ids, and my own grep finds four violations it cannot see in `sim/` and `core/`, plus a
+further ten non-per-enemy files in `view/` that hardcode the roster and the biome list.**
 
 ### 5.1 Why the existing proof does not prove the claim
 
@@ -365,6 +366,40 @@ matched whole-word against every `.gd` under `game/sim`, `game/core`, `game/terr
 **Verdict: FAIL.** The rule "nothing under `terrain/ sim/ core/` may contain … any content id" is
 violated by `core/schemas/curse.schema.json` (all 12 enemy ids) and by two sim files naming upgrade ids.
 The gate's boundary step is green because the check that would catch this is an empty array.
+
+### 5.3 The view and app layers (the brief's stricter rule)
+
+The audit brief says `game/sim/`, `game/core/`, `game/view/` (except per-enemy view files) and
+`game/app/` must not hardcode an enemy/curse/upgrade/biome id. **FLEET_PACK.md section 3's own dependency
+rule is looser** — it forbids content ids only under `terrain/ sim/ core/` and says "view and app may use
+everything". So the rows below are violations of the brief's rule, not of FLEET_PACK section 3. Both are
+reported because the brief is the instruction this audit runs under.
+
+Whole-word id matches in `game/view` and `game/app`, excluding the twelve per-enemy `*_view.gd` files:
+
+| file | ids named | note |
+|---|---|---|
+| `game/view/hud/run_over.gd` | **13** | the full 12-enemy roster plus `D-COIL`/`D-GIN` codes; a 13th enemy needs this file edited |
+| `game/view/hud/danger_text.gd` | **12** | the full 12-enemy roster mapped to danger strings |
+| `game/view/fog_env.gd` | **5** | all five biome ids hardcoded, plus `biome_id := "deepwater"` as the default |
+| `game/view/hud/cartographer_map.gd` | 2 | the `cartographer` upgrade id, and a `preload` of its script |
+| `game/view/enemy_anim.gd` | 2 | `coil` in comments only |
+| `game/view/audio/claude_audio.gd` | 2 | the `claude` audio directory |
+| `game/view/vfx/pocket_ring.gd` | 1 | `pocket_beacon` |
+| `game/view/vfx/coil_telegraph.gd` | 1 | `coil` |
+| `game/view/lobby/antechamber.gd` | 1 | `"deepwater"` default biome |
+| `game/view/level_mesher.gd` | 1 | `"deepwater"` fallback palette |
+| `game/view/hud/icon_rows.gd` | 1 | an upgrade id |
+| `game/view/billboard.gd` | 1 | an enemy id |
+| `game/view/audio/{seal,kiwi_cat,gin,gift_larper}_audio.gd` | 1 each | per-enemy audio directories; arguably per-enemy files |
+
+**Verdict under the brief's rule: FAIL.** The two HUD files (`run_over.gd`, `danger_text.gd`) and
+`fog_env.gd` hardcode the entire enemy roster and the entire biome list. Adding a 13th enemy or a 6th
+biome requires editing view code, which is exactly what "drop-in content" (DESIGN section 1.5, canon C25)
+forbids. `test_dropin.gd` does not catch it because it only asserts that a fixture *registers*, never
+that it *renders*.
+
+**Verdict under FLEET_PACK section 3's rule: FAIL anyway**, on the `sim/` and `core/` rows in section 5.2.
 
 ---
 
@@ -700,7 +735,9 @@ is a small fix (record ten runs; populate `KNOWN_CONTENT_IDS` and scan the schem
 2. **The boundary scan is a green light wired to nothing.** `KNOWN_CONTENT_IDS` is empty and the scan
    reads only `.gd` files, so the "no core file names a content id" rule is unenforced. It is already
    violated: `game/core/schemas/curse.schema.json` hardcodes all 12 enemy ids, `game/sim/death.gd`
-   hardcodes the 12 roster display names, and two sim files name upgrade ids. The same schema is why
+   hardcodes the 12 roster display names, and two sim files name upgrade ids. The view layer is worse —
+   `run_over.gd` (13 ids), `danger_text.gd` (12 ids) and `fog_env.gd` (5 biome ids) hardcode the whole
+   roster and biome list, so a drop-in enemy registers but cannot render. The same schema is why
    `twin_fangs`'s `requires_enemy: "gin_ichimaru"` (the enemy id is `gin`) passes validation — **one of
    the 46 curses can never be offered in play**, and no test notices.
 3. **Three magenta placeholder blocks ship in the alpha.** `claude`'s `plushie_00..02.png` are still
