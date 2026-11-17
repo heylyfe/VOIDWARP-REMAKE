@@ -717,12 +717,17 @@ func lock_abilities(player, ticks: int) -> void:
 # "deferred"}. The player is the row's target (player 0 - the nearest player, D-T072-5);
 # deferral answers this row's yields_to ids (DATA) against the live telegraph/caller
 # countdown sources: no id is named here, this runtime only assembles the state.
-func arbiter_evaluate(cfg: Dictionary, player_index: int = 0) -> Dictionary:
+func arbiter_evaluate(cfg: Dictionary, player_index: int = 0, pending: Array = []) -> Dictionary:
 	var target = null
 	if player_index >= 0 and player_index < controllers.size():
 		target = controllers[player_index]
-	var busy: Array = ArbiterScript.busy_sources(telegraphs)
-	return ArbiterScript.evaluate(cfg, target, world, telegraphs, busy)
+	# The gate's own data is the cfg `arbiter` block (T-072's response, SR-4), not the whole
+	# row cfg - evaluate() reads appear_requires/yields_to at the top of what it is given.
+	# `pending` is the caller's own countdown ids (Api.arbiter_gate forwards them here);
+	# evaluate() folds them into busy_sources() itself, so they are passed through, not
+	# pre-computed. Passing a pre-computed busy list here double-counted the telegraphs.
+	var gate: Dictionary = cfg.get("arbiter", {})
+	return ArbiterScript.evaluate(gate, target, world, telegraphs, pending)
 
 
 # ---- body contact (the KILL RULE: every body contact kills) ---------------------------------
