@@ -4871,6 +4871,31 @@ re-tone the lift and re-shape the burn cycle by editing `game/tools/art/nuke.gd`
 re-running it; `validate_sprites.gd` will re-derive pass/fail, and `sprites.json`'s
 `body_rect` must be re-synced to the printed `RECT` lines after every regeneration.
 
+### D-ART-COIL-1 - coil's real-art derivation numbers (the shared pipeline skips this enemy) [CONTESTABLE]
+ENEMIES.md and the T-083 block pin the frame COUNT, the file names and the tick
+ranges, but no document states the canvas size, the base body height, the transparent
+margin below the feet, the background-removal floor or the per-frame squash ratios of
+coil's real art - so they are recorded here as SPEC GAPs rather than written silently
+into game/tools/art/coil.gd. Chosen: (a) a 512x512 power-of-two canvas (the pipeline's
+MAX_CANVAS ladder, both dimensions POT); (b) the cropped body fitted to a 400 px base
+body height so the 120% extended frame (coil_04, the apex pose) still lands inside the
+canvas with its bottom 8 px above the edge - the enemy is bottom-anchored (it stands on
+the ground) and 8 px >= the 2 px transparent margin the validator demands on every
+edge; (c) the five frames squash/extend at 50/65/80/100/120% of the base height - the
+same ladder the shared pipeline used (COIL_PCTS, the ENEMIES.md squash -> extend cycle,
+heights pinned to the SR-2 1.0 -> 2.0 u range via animations[].world_height) with width
+compensation sx = 1/sqrt(sy) so a squashed spring widens and an extended one thins
+(volume-preserving stretch, the classic squash-and-stretch read of "squash -> extend
+cycle"); (d) the photo's backdrop is a flat near-white checkerboard (238/255 cells), so
+background removal flood-fills from the border eating any pixel whose darkest channel
+is >= 233 and then keeps only the largest connected opaque component (the metal wires
+dunk to ~100 so they block the fill; stray sub-233 anti-alias specks stranded in the
+backdrop are erased by the largest-component keep); (e) frames are byte-stable: no
+randomness anywhere in the module. Gameplay reason: the spring is the T-031 jumper -
+the squashed coil_00 reads as "compressed on landing" at 1.0 u and the extended coil_04
+as the apex pose at 2.0 u; nothing here moves a tick, a loop flag, an effect parameter
+or the hitbox rule (body_rect = tight bbox of alpha > 16 per frame).
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)

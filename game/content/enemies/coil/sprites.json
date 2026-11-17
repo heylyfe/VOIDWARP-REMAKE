@@ -4,34 +4,34 @@
 		{
 			"body_rect": [
 				[
-					144,
-					398,
-					224,
-					112
+					196,
+					304,
+					120,
+					200
 				],
 				[
-					144,
-					364,
-					224,
-					146
+					203,
+					244,
+					105,
+					260
 				],
 				[
-					144,
-					331,
-					224,
-					179
+					208,
+					184,
+					95,
+					320
 				],
 				[
-					144,
-					286,
-					224,
-					224
+					213,
+					104,
+					85,
+					400
 				],
 				[
-					144,
-					241,
-					224,
-					269
+					217,
+					24,
+					78,
+					480
 				]
 			],
 			"fps": 8,
@@ -61,13 +61,13 @@
 			"image": 2,
 			"path": "assets_src/enemies/springer.png",
 			"role": "base",
-			"state": "MISSING -> TBD"
+			"state": "real art (springer.png, background removed by tools/art/coil.gd)"
 		}
 	],
-	"tbd": true,
+	"tbd": false,
 	"world_height": 2.0,
 	"anim": {
-		"_doc": "T-083. Spec: research/fable-tickets.md section 1.2 (the 1.x tables are the spec; ENEMIES.md behavior sentences are frozen per D-040). One entry per table row, keyed by a snake_case state id; 'row' repeats the exact table row label. spec_frames are the section 1.2 frame names in table order; frames are the files that exist on disk, relative to this folder (T-016 produced TBD placeholders - coil_NN maps 1:1 onto cycle_NN, see frame_map and DECISIONS D-T083-1/D-T083-2). Timings are in 60 Hz ticks and are binding; the attack frame lands on the tick the kill resolves. Effects are shader/transform effects on the billboard and never change body_rect.",
+		"_doc": "T-083. Spec: research/fable-tickets.md section 1.2 (the 1.x tables are the spec; ENEMIES.md behavior sentences are frozen per D-040). One entry per table row, keyed by a snake_case state id; 'row' repeats the exact table row label. spec_frames are the section 1.2 frame names in table order; frames are the files that exist on disk, relative to this folder (coil_NN maps 1:1 onto cycle_NN, see frame_map and DECISIONS D-T083-1/D-T083-2; the frames are REAL art since tools/art/coil.gd - the T-016 TBD placeholders are gone, the anim block itself is unchanged). Timings are in 60 Hz ticks and are binding; the attack frame lands on the tick the kill resolves. Effects are shader/transform effects on the billboard and never change body_rect.",
 		"section": "1.2",
 		"frame_map": {
 			"coil_00": "sprites/cycle_00.png",
