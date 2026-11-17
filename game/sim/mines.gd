@@ -63,6 +63,10 @@ const BLAST_RADIUS := 3.0
 ## Defuse Kit (D-051): 20 % per stack, cap 60 %.
 const DEFUSE_PCT := 20
 const DEFUSE_CAP := 60
+## T-080 bypass detection (the owner's "bypass passed within 0.5 u of a mine"):
+## the player's centre inside 0.9 + 0.5 = 1.4 u of a live mine's centre (horizontal)
+## and out again without contact -> one mine_pass record (payload: slot, closest).
+const PASS_R := 1.4
 
 ## The slot dict it occupies: read-only shared data (the Level.gifts rows).
 var slots: Array = []
@@ -73,6 +77,9 @@ var ids: Array = []
 var consumed := PackedByteArray()
 var run_seed: int = 0
 var level_number: int = 0
+## T-080: the per-player bypass tracker, {"in": bool, "slot": int, "closest": float} —
+## live state of ONE level (reset by create() per level); deterministic, controller-driven.
+var pass_state: Dictionary = {}
 
 
 static func create(level: Dictionary, p_level_number: int, p_run_seed: int) -> RefCounted:
@@ -133,6 +140,23 @@ static func defuse_roll(p_run_seed: int, p_level: int, slot_id: int, stacks: int
 	return roll < mini(DEFUSE_PCT * stacks, DEFUSE_CAP)
 
 
+## Nearest (horizontal) live mine to (px, pz): Vector2(distance, slot id); distance -1.0
+## when no live mine exists (T-080, the bypass tracker's probe).
+func nearest_dist(px: float, pz: float) -> Vector2:
+	var best := -1.0
+	var best_slot := -1
+	for slot_id in ids:
+		if is_consumed(slot_id):			continue
+		var c: Vector3 = point(slot_id)
+		var dx: float = px - c.x
+		var dz: float = pz - c.z
+		var d: float = sqrt(dx * dx + dz * dz)
+		if best < 0.0 or d < best:
+			best = d
+			best_slot = slot_id
+	return Vector2(best, best_slot)
+
+
 ## One 60 Hz pass over every player (call after the controllers' step).
 ##   ctls:   one controller per player index (or a null entry to skip that
 ##           player - the T-010 placeholder rows pass nulls);
@@ -148,11 +172,50 @@ static func tick(lv, ctls: Array, w: Dictionary, stacks: Array, tick: int,
 		var ctl = ctls[i]
 		if bool(ctl.dead) or ctl.respawn_t >= 0.0 or ctl.invuln > 0.0:
 			continue
-		var slot: int = mines.contact_at(float(ctl.x), float(ctl.z))
+		var near: Vector2 = mines.nearest_dist(float(ctl.x), float(ctl.z))
+		var slot: int = int(mines.contact_at(float(ctl.x), float(ctl.z)))
 		if slot < 0:
+			_pass_track(mines, i, near, tick, events)
 			continue
+		# a contact ends any open bypass approach for this player: the mine's fate was
+		# the ladder below (defused / shielded / saved / killed), never a clean pass
+		mines.pass_state[i] = {"in": false, "slot": -1, "closest": 0.0}
 		var stacks_i: int = int(stacks[i]) if i < stacks.size() else 0
 		_contact(lv, ctls, w, i, ctl, slot, stacks_i, tick, events)
+	# T-080: a mine kill is its own proximity proof - the contact (and the blast) happen
+	# at the player's centre, so the killer is on screen by construction. This array
+	# carries only this tick's mine events (the caller passes a per-tick list).
+	for ev in events:
+		if str(ev.get("e", "")) == "death" and not (ev as Dictionary).has("on_screen"):
+			ev["on_screen"] = true
+
+
+## The T-080 bypass tracker (owner spec: "logged when the player's centre comes within
+## 0.9 u + 0.5 u = 1.4 u of a live mine centre and leaves again without contact").
+## Enter/track/leave all from the horizontal distance only; a pass is emitted once,
+## on leaving, unless the mine was consumed in the meantime (a contact happened).
+static func _pass_track(mines, i: int, near: Vector2, tick: int, events: Array) -> void:
+	var lv_pass: Dictionary = mines.pass_state
+	if near.x < 0.0 or near.x > PASS_R:
+		var st: Dictionary = lv_pass.get(i, {})
+		if bool(st.get("in", false)):
+			var slot: int = int(st["slot"])
+			if not mines.is_consumed(slot):
+				var ev := EventsScript.make(EV_MINE, tick, i)
+				ev["slot"] = slot
+				ev["closest"] = float(st["closest"])
+				events.append(ev)
+			lv_pass[i] = {"in": false, "slot": -1, "closest": 0.0}
+		return
+	var prev: Dictionary = lv_pass.get(i, {})
+	if bool(prev.get("in", false)) and int(prev.get("slot", -1)) == int(near.y):
+		prev["closest"] = minf(float(prev["closest"]), near.x)
+		return
+	lv_pass[i] = {"in": true, "slot": int(near.y), "closest": near.x}
+
+
+## The mine_pass event kind (T-080; the ladder's kinds are unchanged).
+const EV_MINE := "mine_pass"
 
 
 ## The contact ladder for player i on mine slot (the fixed order of D-058).

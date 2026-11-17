@@ -111,7 +111,7 @@ class Api:
 		return rt.kill(player, killer_id, code)
 
 	func push(player, dir: Vector3, speed: float) -> void:
-		rt.push(player, dir, speed)
+		rt.push(player, dir, speed, row)
 
 	func lock_abilities(player, ticks: int) -> void:
 		rt.lock_abilities(player, ticks)
@@ -450,6 +450,9 @@ func step(dt: float) -> Array:
 		while overtime_t >= overtime_period and overtime_tier < OVERTIME_MAX_TIER:
 			overtime_t -= overtime_period
 			overtime_tier += 1
+			# T-080 telemetry event: the tier rise, so a log keeps the tier current
+			# from events alone (beacon_enter records it). Additive.
+			events.append({"e": "overtime_tier", "tier": overtime_tier, "tick": tick})
 	# behaviors
 	var dt_ticks := 1
 	for e in enemies:
@@ -462,6 +465,10 @@ func step(dt: float) -> Array:
 	# projectiles, then body-contact kills (the KILL RULE: the framework checks contact).
 	_step_projectiles(dt)
 	_contact_kills()
+	# T-080: proximity sampling (the death records' on-screen field) and the death
+	# enrichment; both AFTER the kills, additive, no behavior change.
+	_update_near()
+	_annotate_deaths()
 	tick += 1
 	return events
 
@@ -740,7 +747,7 @@ func kill(player, killer_id: String, code: String = "") -> bool:
 	return ctl.try_kill(death_code, str(killer_id), world, events)
 
 
-func push(player, dir: Vector3, speed: float) -> void:
+func push(player, dir: Vector3, speed: float, src_row: Dictionary = {}) -> void:
 	var ctl = _resolve_player(player)
 	if ctl == null:
 		return
@@ -755,6 +762,10 @@ func push(player, dir: Vector3, speed: float) -> void:
 	ctl.vz = d.z * speed
 	if d.y > 0.0:
 		ctl.grounded = false
+	# T-080 telemetry event (the void_fall record's "pushed in the last 120 ticks / by
+	# which enemy" reads these): additive, no behavior change. Keyed by content id.
+	events.append({"e": "push", "by": str(src_row.get("id", "")), "tick": tick,
+			"player": controllers.find(ctl) if controllers.has(ctl) else -1})
 
 
 func lock_abilities(player, ticks: int) -> void:
@@ -801,6 +812,10 @@ func eject_player(source_row: Dictionary, player, why: String, blur_ticks: int) 
 	events.append({"e": "chain_reset", "why": str(why), "tick": tick, "player": idx})
 	events.append({"e": "screen_blur", "ticks": int(blur_ticks), "tick": tick,
 			"player": idx, "source": str(source_row.get("id", ""))})
+	# T-080: an eject is a push in the void_fall record's sense (the launch is the
+	# danger). Same additive event, also counted toward on-screen evidence.
+	events.append({"e": "push", "by": str(source_row.get("id", "")), "tick": tick,
+			"player": idx})
 
 
 ## T-032: the toucher-ben ring cleanse (DESIGN.md 5.8: "thicc ben's ring cleanses
@@ -901,6 +916,82 @@ func _contact_kills() -> void:
 				api.row = e
 				# D-T030-1: cfg death_code (verbatim) wins over the name derivation
 				api.kill(i, str(e["name"]), str(e["cfg"].get("death_code", "")))
+
+
+# ---- T-080: the death records' on-screen evidence ----------------------------------------------
+
+## View-free "on screen" proxy (D-T080-2 [CONTESTABLE]): the killer's content id had a
+## body or a telegraph footprint within this radius of the player's centre during the
+## last 120 ticks (the 2 s the owner's spec names). 24 u sits between the fill-light
+## range (18 u) and the Radar: Threats marker range (30 u); there is no camera in sim.
+const ON_SCREEN_R := 24.0
+## The death code -> content id map (the rosetta stone: killer strings vary between the
+## contact path (body name), the kill-idiom constants ("YOU", "gin") and the display
+## names; the code is closed - DESIGN.md section 3.1 - so it keys the proximity map).
+const CODE_IDS := {
+	"D-KIWI": "kiwi_cat", "D-COIL": "coil", "D-ISAGI": "isagi", "D-NUKE": "nuke",
+	"D-YOU": "you", "D-MINE": "gift_larper", "D-TOUCH": "toucher", "D-SEAL": "seal",
+	"D-ADDR": "address_me", "D-CLAUDE": "claude", "D-GIN": "gin", "D-VOID": "void",
+}
+
+## Last tick each content id was within ON_SCREEN_R of each player's centre:
+## {player_index: {id: tick}}. Runtime-owned telemetry (not part of the state hash).
+var near_seen: Dictionary = {}
+
+
+func _update_near() -> void:
+	for i in range(controllers.size()):
+		var ctl = controllers[i]
+		if ctl == null:
+			continue
+		var seen: Dictionary = near_seen.get(i, {})
+		near_seen[i] = seen
+		var cy: float = float(ctl.y) + 0.9
+		for e in enemies:
+			if float(e["diameter_u"]) <= 0.0:
+				continue
+			var dx: float = float(e["x"]) - float(ctl.x)
+			var dy: float = float(e["y"]) + float(e["height_u"]) * 0.5 - cy
+			var dz: float = float(e["z"]) - float(ctl.z)
+			if dx * dx + dy * dy + dz * dz <= ON_SCREEN_R * ON_SCREEN_R:
+				seen[str(e["id"])] = tick
+		# a LIVE telegraph's footprint is on screen by the view's own language (the
+		# client draws exactly these) - the no-body killers' evidence (nuke's ring,
+		# gin's patch, the rumble cues). Rows in rt.telegraphs never expire (the
+		# toucher test's finding), so liveness is filtered by start tick + duration.
+		for t in telegraphs:
+			if tick < int(t["tick"]) or tick >= int(t["tick"]) + maxi(int(t["total"]), 1):
+				continue
+			var sh: Dictionary = t["shape"]
+			var tx: float = float(sh.get("cx", -1e9))
+			var tz: float = float(sh.get("cz", -1e9))
+			var r: float = maxf(float(sh.get("r", 0.0)), 0.0)
+			var lim := ON_SCREEN_R + r
+			var dx2: float = tx - float(ctl.x)
+			var dz2: float = tz - float(ctl.z)
+			if dx2 * dx2 + dz2 * dz2 <= lim * lim:
+				seen[str(t.get("source", ""))] = tick
+
+
+## True when the killer's content id was within ON_SCREEN_R of any live player's centre
+## in the killer's last 120 ticks. "void" never has a body: false by construction.
+func _killer_on_screen(code: String) -> bool:
+	var id := str(CODE_IDS.get(code, ""))
+	if id == "" or id == "void":
+		return false
+	var window := tick - 120
+	for i in near_seen.keys():
+		var seen: Dictionary = near_seen[i]
+		if int(seen.get(id, -999999)) >= window:
+			return true
+	return false
+
+
+func _annotate_deaths() -> void:
+	for ev in events:
+		var d: Dictionary = ev
+		if str(d.get("e", "")) == "death" and not d.has("on_screen"):
+			d["on_screen"] = _killer_on_screen(str(d.get("code", "")))
 
 
 # ---- projectiles (kill on hit - KILL RULE; no partial effect) --------------------------------

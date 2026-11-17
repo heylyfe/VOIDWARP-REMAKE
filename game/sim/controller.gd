@@ -539,6 +539,7 @@ func _try_launch_pad(w: Dictionary, ev: Array) -> void:
 
 func _void_fall(w: Dictionary, ev: Array) -> void:
 	if charges >= 1:
+		var before := charges
 		charges -= 1
 		respawn_t = float(C["respawn_delay"])
 		vx = 0.0
@@ -546,10 +547,16 @@ func _void_fall(w: Dictionary, ev: Array) -> void:
 		vz = 0.0
 		gliding = false
 		dash_ticks = 0
-		ev.append({"e": "void_fall", "charges": charges})
+		# T-080 telemetry payload: the tile the player last stood on, the nearest enemy
+		# body at the fall, and the before/after charge counts (the log's charge_spent
+		# record derives free from them; Field Dressing is not wired into this path yet).
+		ev.append({"e": "void_fall", "charges": charges, "charges_before": before,
+				"tile": cur_key, "nearest_enemy_dist": _nearest_enemy_dist(w)})
 		ev.append({"e": "chain_reset", "why": "void_fall"})
 	else:
-		_die("D-VOID", "void", ev)
+		var dd: Dictionary = _die("D-VOID", "void", ev)
+		# a void fall is its own killer (D-VOID): no enemy body was ever on screen
+		dd["on_screen"] = false
 
 
 func _tick_respawn(dt: float, w: Dictionary, ev: Array) -> void:
@@ -721,11 +728,31 @@ static func push_enemy_bodies(enemies: Array, dais_center: Array) -> void:
 				e["z"] = float(dais_center[2]) + dz / d * rad
 
 
-func _die(code: String, killer: String, ev: Array) -> void:
+func _die(code: String, killer: String, ev: Array) -> Dictionary:
 	dead = true
 	dead_code = code
 	dead_killer = killer
-	ev.append({"e": "death", "code": code, "killer": killer})
+	# T-080 telemetry payload on every death: charges held and the Last Light state
+	# (hud_last_light: lit / dim / grey). on_screen is set by the killer's own layer
+	# (enemy_runtime / mines / the void fall above) or defaults in the log.
+	var evd := {"e": "death", "code": code, "killer": killer,
+			"charges": charges, "last_light": hud_last_light()}
+	ev.append(evd)
+	return evd
+
+
+# T-080: nearest enemy body (the world mirror's rows) from the player's centre
+# (feet + 0.9 u), 3D; -1.0 when no bodies exist.
+func _nearest_enemy_dist(w: Dictionary) -> float:
+	var best := -1.0
+	for e in w["enemies"]:
+		var dx: float = float(e["x"]) - x
+		var dy: float = float(e["y"]) - (y + 0.9)
+		var dz: float = float(e["z"]) - z
+		var d: float = sqrt(dx * dx + dy * dy + dz * dz)
+		if best < 0.0 or d < best:
+			best = d
+	return best
 
 
 # Beacon entry (DESIGN.md section 3.1): restores exactly 1 charge, capped. The caller
