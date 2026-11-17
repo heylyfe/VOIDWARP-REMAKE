@@ -69,6 +69,7 @@ const Intermission := preload("res://sim/intermission.gd")
 const GiftsScript := preload("res://sim/gifts.gd")
 const MinesScript := preload("res://sim/mines.gd")
 const EnemyRuntime := preload("res://sim/enemy_runtime.gd")
+const RunLogScript := preload("res://app/run_log.gd")
 
 const E_ADDRESS_ME := preload("res://content/enemies/address_me/enemy.gd")
 const E_CLAUDE := preload("res://content/enemies/claude/enemy.gd")
@@ -140,14 +141,26 @@ static func format_report(agg: Dictionary) -> String:
 ## Runs `runs` full probes (run i = seed seed_base + i). Returns the aggregate dict
 ## (summarize() output + seed_base + per-run rows under "rows"). Used by _init and by the
 ## T-060 test (3-run smoke). Deterministic: identical inputs -> identical report text.
-static func run_probe(runs: int, seed_base: int, max_level: int = MAX_LEVEL_DEFAULT) -> Dictionary:
+static func run_probe(runs: int, seed_base: int, max_level: int = MAX_LEVEL_DEFAULT,
+		p_log_every_run: bool = false, p_log_dir: String = "") -> Dictionary:
 	var api := ContentApiScript.load()
 	var rows: Array = []
 	if not bool(api.is_ok()):
 		return {"ok": false, "boot_errors": api.boot_errors(), "rows": rows}
 	for i in range(runs):
 		var seed: int = seed_base + i
-		var row: Dictionary = play_run(api, seed, max_level)
+		# T-081 (D-T081-3): --log writes a T-080 run log per run. run_start.class is ""
+		# here: the class is chosen by the run's own pre-run lobby, which runs after
+		# run_started, and the picks carry it in the log (the CLASS bay's altar id).
+		var lg = null
+		if p_log_every_run:
+			lg = RunLogScript.new()
+			if p_log_dir != "":
+				lg.dir_base = p_log_dir
+			lg.run_started(seed, "", 0)
+		var row: Dictionary = play_run(api, seed, max_level, lg)
+		if lg != null:
+			lg.close()
 		row["seed"] = seed
 		rows.append(row)
 	var agg: Dictionary = summarize(rows)
@@ -1060,11 +1073,13 @@ func _init() -> void:
 	var runs: int = int(args.get("runs", RUNS_DEFAULT))
 	var seed_base: int = int(args.get("seed_base", SEED_BASE))
 	var max_level: int = int(args.get("max_level", MAX_LEVEL_DEFAULT))
+	var log_runs: bool = bool(args.get("log", false))
+	var log_dir: String = str(args.get("log_dir", ""))
 	if bool(args.get("trace", false)):
 		TRACE = true
-	print("BOT RUN (runs=%d seed_base=%d max_level=%d votes=seeded-random class=seeded-random)" % [
-		runs, seed_base, max_level])
-	var agg: Dictionary = run_probe(runs, seed_base, max_level)
+	print("BOT RUN (runs=%d seed_base=%d max_level=%d votes=seeded-random class=seeded-random log=%s)" % [
+		runs, seed_base, max_level, "yes" if log_runs else "no"])
+	var agg: Dictionary = run_probe(runs, seed_base, max_level, log_runs, log_dir)
 	if not bool(agg.get("ok", false)):
 		print("BOT_RUN FAIL (content boot refused: %s)" % " / ".join(agg.get("boot_errors", [])))
 		quit(1)
@@ -1083,12 +1098,18 @@ func _init() -> void:
 
 
 static func _parse_args(user_args: PackedStringArray) -> Dictionary:
-	var out := {"runs": RUNS_DEFAULT, "seed_base": SEED_BASE, "max_level": MAX_LEVEL_DEFAULT, "trace": false}
+	var out := {"runs": RUNS_DEFAULT, "seed_base": SEED_BASE, "max_level": MAX_LEVEL_DEFAULT,
+			"trace": false, "log": false, "log_dir": ""}
 	var i := 0
 	while i < user_args.size():
 		var a := str(user_args[i])
 		if a == "--dodge":
 			pass  # the one dodge policy there is; accepted explicitly (T-060 spec)
+		elif a == "--log":
+			out["log"] = true   # T-081: one T-080 run log per run
+		elif a == "--log-dir" and i + 1 < user_args.size():
+			out["log_dir"] = str(user_args[i + 1])
+			i += 1
 		elif a == "--runs" and i + 1 < user_args.size():
 			out["runs"] = int(user_args[i + 1])
 			i += 1
