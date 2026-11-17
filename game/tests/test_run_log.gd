@@ -25,7 +25,7 @@ const SimScript := preload("res://sim/sim.gd")
 const HashScript := preload("res://sim/state_hash.gd")
 const InputScript := preload("res://sim/input.gd")
 const EnemyRuntimeScript := preload("res://sim/enemy_runtime.gd")
-const BotScript := preload("res://tools/bot_run.gd")
+const IntermissionScript := preload("res://sim/intermission.gd")
 const LogScript := preload("res://app/run_log.gd")
 const ContentApiScript := preload("res://core/content_api.gd")
 
@@ -39,7 +39,7 @@ const CHECK_EVERY := 60
 
 func run() -> Array[String]:
 	var failures: Array[String] = []
-	failures.append_array(_bot_run_pass())
+	failures.append_array(_scripted_run_pass())
 	failures.append_array(_mine_unit_pass())
 	failures.append_array(_voidfall_and_push_pass())
 	failures.append_array(_chain_unit_pass())
@@ -47,20 +47,31 @@ func run() -> Array[String]:
 	return failures
 
 
-# ---- part 1: the scripted 2-level bot run ---------------------------------------------------
 
-func _bot_run_pass() -> Array[String]:
+# ---- part 1: the scripted 2-level run (no bot competence assumed) ---------------------------
+# T-060 MERGED while this ticket was in flight, with the finding that bot_run.gd's bot CANNOT
+# reliably clear level 1 (void falls; the owner's sweep: level 6 in 0/20 runs). The test's
+# premise therefore changed: the run is driven HERE, direct on the sim surface, with
+# test_gifts.gd's idiom - teleport to the slot's tile, one sim step per gift, gold in the gold
+# phase, the beacon entry via beacon.gd's try_enter. Twice. bot_run.gd keeps its p_log wiring
+# (the real-runs path; untested here); this test's coverage never depends on a bot surviving.
+
+func _scripted_run_pass() -> Array[String]:
 	var failures: Array[String] = []
 	var api := ContentApiScript.load()
 	if not bool(api.is_ok()):
 		return ["content api failed to boot"]
 	var lg := LogScript.new()
 	lg.run_started(RUN_SEED, "dasher", 0)
-	var res: Dictionary = BotScript.play_run(api, RUN_SEED, 2, lg)
+	var ledger := {"votes": {}, "curses": {}, "stacks": {}, "purse": 0, "tithes": 0,
+			"hunger": 0, "last_vote": "", "class": "dasher"}
+	# the pre-run lobby + one lobby after level 1 (the schedule's E+U row); level 2 follows
+	for completed in [0, 1]:
+		_lobby(lg, api, ledger, completed)
+		if not _level(lg, ledger, completed + 1, failures):
+			break
+	lg.run_finished(2, int(ledger["purse"]))
 	lg.close()
-	if str(res.get("outcome", "")) != "complete" or int(res.get("entered", 0)) < 2:
-		failures.append("the fixed seed must CLEAR both levels for this test: outcome=%s entered=%s"
-				% [str(res.get("outcome", "?")), str(res.get("entered", "?"))])
 	var records: Array = _parse(lg.path, failures)
 
 	# type coverage (the types a 2-level run can produce) + record shape + order
@@ -111,7 +122,7 @@ func _bot_run_pass() -> Array[String]:
 		if str(rec.get("type", "")) == "charge_restored":
 			var pl2: Dictionary = rec.get("payload", {})
 			restored_gains += int(pl2.get("after", 0)) - int(pl2.get("before", 0))
-	var pips_lost := 2 - int(res.get("charges", 0))   # DESIGN.md 3.1: a new run holds 2
+	var pips_lost := 2 - int(ledger.get("charges", 2))   # DESIGN.md 3.1: a new run holds 2
 	if spent - restored_gains != pips_lost:
 		failures.append("pip equation failed: %d spent - %d restored != %d pips lost"
 				% [spent, restored_gains, pips_lost])
@@ -149,10 +160,154 @@ func _bot_run_pass() -> Array[String]:
 		if n != 2:
 			failures.append("expected 2 %s records, got %d" % [ty, n])
 	if records.size() > 0:
-		print("RUNLOG %d records, %d types, ledger charges %s"
-				% [records.size(), seen.size(), str(res.get("charges", "?"))])
+		print("RUNLOG %d records, %d types, ledger charges %s, purse %d"
+				% [records.size(), seen.size(), str(ledger.get("charges", "?")),
+				str(ledger.get("purse", "?"))])
 	_clean(lg.path)
 	return failures
+
+
+# ---- the scripted single-level + lobby drivers -----------------------------------------------
+
+## One lobby: offers recorded per presented bay, then every unresolved mandatory bay
+## (CLASS / E / C) resolved by its FIRST offer altar - deterministic, no bot judgment.
+## U / REST bays are never touched (nothing is bought). The ledgers carry in place.
+func _lobby(lg, api, ledger: Dictionary, completed: int) -> void:
+	lg.lobby_entered(completed)
+	var lb = IntermissionScript.create(api, completed, int(ledger["purse"]),
+			VoidRngScript.mix(RUN_SEED, 5000 + completed),
+			ledger["votes"], ledger["curses"], ledger["stacks"],
+			str(ledger["class"]), int(ledger["tithes"]), int(ledger["hunger"]),
+			str(ledger["last_vote"]))
+	for bay in lb.bays:
+		var bd: Dictionary = bay
+		if bool(bd.get("resolved", false)):
+			continue
+		var bay_ids: Array = []
+		for a in bd.get("altars", []):
+			bay_ids.append(str((a as Dictionary).get("id", "")))
+		lg.offer_shown(str(bd.get("kind", "")), bay_ids)
+	var rng := VoidRngScript.new(VoidRngScript.mix(VoidRngScript.mix(RUN_SEED, 0xB07),
+			completed + 1))
+	var sel_events: Array = []
+	for _i in range(80):
+		if bool(lb.gate_open()):
+			break
+		var table: Array = lb.altar_table()
+		var picks: Array[int] = []
+		var tithes: Array[int] = []
+		for i in table.size():
+			var entry: Dictionary = table[i]
+			var bay: Dictionary = lb.bays[int(entry["bay_index"])]
+			if bool(bay.get("resolved", false)):
+				continue
+			var kind := str(entry["kind"])
+			var bay_kind := str(bay["kind"])
+			if kind == "offer" and (bay_kind == "CLASS" or bay_kind == "E" or bay_kind == "C"):
+				picks.append(i)
+			elif kind == "tithe" and bay_kind == "C":
+				tithes.append(i)
+		if not picks.is_empty():
+			sel_events = []
+			lb.apply_select(0, picks[rng.urange(picks.size())], sel_events)
+			lg.feed_lobby(sel_events)
+		elif not tithes.is_empty():
+			# the only mandatory bay left is an empty C draw: pass it with the tithe
+			sel_events = []
+			if not bool(lb.apply_select(0, tithes[0], sel_events)):
+				break
+			lg.feed_lobby(sel_events)
+		else:
+			break
+	ledger["votes"] = lb.votes
+	ledger["curses"] = lb.curses_held
+	ledger["stacks"] = lb.upgrade_stacks
+	ledger["purse"] = int(lb.purse)
+	ledger["tithes"] = int(lb.tithes)
+	ledger["hunger"] = int(lb.hunger)
+	ledger["last_vote"] = str(lb.last_vote)
+	if str(lb.class_chosen) != "":
+		ledger["class"] = str(lb.class_chosen)
+	lg.lobby_left()
+
+
+## One level, the test_gifts.gd way: teleport to every real black gift (one sim step each),
+## the level 1-2 seeds roll no mines so nothing can intervene, then one gold gift at the
+## same slot, then the beacon entry. The log rides the sim events.
+func _level(lg, ledger: Dictionary, level: int, failures: Array[String]) -> bool:
+	var L: Dictionary = VoidGenScript.generate(RUN_SEED, level, 1, 0)
+	if L.is_empty():
+		failures.append("level %d: the generator returned an empty level" % level)
+		return false
+	var slots_n := 0
+	var real_n := 0
+	var mine_n := 0
+	for s in (L["gifts"] as Array):
+		var sd: Dictionary = s
+		if int(sd["occ"]) == 0:
+			real_n += 1
+		elif int(sd["occ"]) == 1:
+			mine_n += 1
+		slots_n += 1
+	var votes_n := 0
+	for id in (ledger["votes"] as Dictionary).keys():
+		if int(ledger["votes"][id]) > 0:
+			votes_n += int(ledger["votes"][id])
+	lg.level_started(level, slots_n, real_n, mine_n, votes_n)
+	var rs: RefCounted = RunStateScript.new_run(RUN_SEED, 1, [])
+	rs.load_level(L, level)
+	var lv: RefCounted = rs.level
+	var g: RefCounted = lv.gifts
+	var ctl = ControllerScript.new()
+	ctl.setup(str(ledger["class"]), ControllerScript.load_constants())
+	if ledger.has("charges"):
+		ctl.charges = mini(int(ledger["charges"]), int(ctl.charge_cap))   # D-063 carry-over
+	var real_ids: Array = []
+	for i in g.slots.size():
+		if g.is_real(i):
+			real_ids.append(i)
+	if real_ids.is_empty():
+		failures.append("level %d: no real gifts to walk to" % level)
+		return false
+	for idx in real_ids.size():
+		_teleport(lv, ctl, g.slot_pos(real_ids[idx]))
+		lg.feed_tick(SimScript.step(rs, [InputScript.neutral()]))
+	if not lv.beacon.is_open():
+		failures.append("level %d: the beacon did not open at the last real black gift" % level)
+		return false
+	# the gold phase: one gold gift at the first slot (same id, same position), then the door
+	_teleport(lv, ctl, g.slot_pos(real_ids[0]))
+	lg.feed_tick(SimScript.step(rs, [InputScript.neutral()]))
+	var ev: Array = []
+	# the beacon's own centre: no slot-hover compensation (the beacon floor IS base_y)
+	_teleport(lv, ctl, Vector3(lv.beacon.cx, lv.beacon.base_y + 0.5, lv.beacon.cz), false)
+	if not lv.beacon.try_enter(ctl, lv.tick, 0, ev):
+		failures.append("level %d: the beacon entry was refused" % level)
+	lg.feed_tick(ev)
+	# the restore: exactly +1, capped (DESIGN.md 3.1) - the log's charge_restored record
+	# must read before -> after over this exact pair
+	var want := mini(int(ledger.get("charges", 2)) + 1, int(ctl.charge_cap))
+	if int(ctl.charges) != want:
+		failures.append("level %d: the beacon entry left %d charges, want %d"
+				% [level, int(ctl.charges), want])
+	ledger["charges"] = int(ctl.charges)
+	return true
+
+
+## The test_gifts.gd idiom: feet on the tile top (the gift hovers 1.0 u over it, so the
+## 1.0 u comes off), pickup centre 0.9 u up, both on the placeholder sim row and the real
+## controller. hover_comp=false gives the exact position (the beacon's own floor).
+func _teleport(lv, ctl, pos: Vector3, hover_comp: bool = true) -> void:
+	var py: float = pos.y - 1.0 if hover_comp else pos.y
+	var p: Dictionary = lv.players[0]
+	p["x"] = pos.x
+	p["y"] = py
+	p["z"] = pos.z
+	p["vy"] = 0.0
+	p["grounded"] = true
+	ctl.x = pos.x
+	ctl.y = py
+	ctl.z = pos.z
 
 
 func _parse(p_path: String, failures: Array[String]) -> Array:

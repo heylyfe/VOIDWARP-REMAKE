@@ -4727,6 +4727,20 @@ plausibly the +2 the brief's "20" counts. The LIST is the contract: 18 types bui
 owner meant 20, the two extra ones are theirs to name. Not PARKED (no two documents
 conflict; the ticket's own list is self-consistent) - recorded here and in the response.
 
+### D-T080-9 - The 2-level driver in the test does not use the bot (the post-merge red gate)
+T-060 merged while this ticket was in flight with the finding that bot_run.gd's bot cannot
+reliably clear level 1 (void falls; the owner's sweep: level 6 in 0/20 runs, every run dead
+on levels 1-3). The test_run_log.gd run of my hand leaned on the bot clearing 2 levels; after
+the merge it went red ("the fixed seed must CLEAR both levels: outcome=dead entered=1").
+Fix, test-design only (no check weakened): the 2-level run is driven DIRECT on the sim
+surface inside the test - the test_gifts.gd idiom (teleport to each real black gift's tile,
+one sim step per gift; one gold gift; the beacon entry via beacon.gd try_enter), twice,
+through the real pre-run + E+U lobbies (offers/picks ride the log). bot_run.gd KEEPS its
+p_log wiring (the real-runs path; D-T080-7's vendored file is now merged main, the p_log
+params its only T-080 delta). Any record type the 2-level scripted drive cannot produce
+(all the mine types - levels 1-2 roll zero mines) is covered by the direct units, exactly
+as before.
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
@@ -4958,3 +4972,9 @@ conflict; the ticket's own list is self-consistent) - recorded here and in the r
   closed list) and level-timing equations all asserted. TESTS 49 passed 0 failed. D-T080-1..8
   appended (two [CONTESTABLE] readings: the run-wide tick clock, the 24 u on-screen proxy; the
   20-vs-18 type count noted D-T080-8). No PARKED rows. No push.
+- 2026-11-17 GLM 5.3 (T-080, 2nd session, post-rebase red gate): the test's 2-level driver was
+  re-based off bot_run.gd after T-060's merge (the bot cannot clear level 1: 0/20 reach
+  level 6, dead on 1-3) - the run is now driven direct on the sim surface (test_gifts.gd
+  idiom, levels 1-2, real lobbies; D-T080-9); bot_run.gd KEEPS the p_log wiring; the units
+  and the replay-hash comparison unchanged; the log itself untouched. Gate: GATE OK (10 ran,
+  0 skipped), TESTS 50 passed 0 failed. No PARKED rows. No push.
