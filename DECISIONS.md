@@ -3971,6 +3971,56 @@ meant to test against), or (c) amend section 12.3 to carry the row and accept th
 platform_light becomes near-white/near-black by hue-preserving constraints, or (d) the #FF4FD8
 tell changes per-biome (contradicts three canon passages). NO THRESHOLD WAS MOVED.
 
+### D-T055-1 - [CONTESTABLE] Placeholder cues land at `game/assets/audio/enemies/<id>/<cue>.wav`, not section 3's `content/enemies/<id>/audio/` (T-055).
+
+DECISION (T-055): the synthesized placeholders are written to
+`game/assets/audio/enemies/<id>/<cue>.wav`. WHY: research/fable-tickets.md
+section 3 states the file name as `content/enemies/<id>/audio/<cue>.wav`, but
+every merged view-layer audio hook loads from `res://assets/audio/enemies/<id>/<cue>.wav`
+(seal_audio.gd, kiwi_cat_audio.gd, gift_larper_audio.gd, claude_audio.gd DIR constants)
+and the TBD.md T-030/T-031/T-036/T-038/T-039 rows all name that same
+`assets/audio/enemies/<id>/<cue>.wav` path as the T-055 landing spot; the path
+is the contract the code already speaks, so section 3's path is read as
+superseded by the merged code (its addendum itself says section 3 is
+"superseded in detail by T-087"). The file name = cue name contract is
+unchanged. T-087 (the binding-timing ticket) decides the final layout; if it
+keeps this path, no file moves.
+
+### D-T055-2 - [CONTESTABLE] Isagi and nuke enemy.json files name NO audio cues; the repo's TBD hook names were synthesized anyway (T-055).
+
+DECISION (T-055): isagi's `enemy.json` lists no `audio_cues` / `stats.audio`
+(the ticket note claiming all twelve do is wrong for isagi and nuke), and
+nuke's `enemy.json` lists none either. Rather than stall or invent cue names,
+the cues the repo DOES name were synthesized: Isagi's T-033 TBD rows
+(`isagi_voice_direct_shot`, `isagi_shoot_sae_math_final_shot`, `isagi_gunshot`)
+and nuke's `sprites.json` TBD audio hooks (`lock_on_beep`, `rocket_booster_roar`,
+`impact_boom`), each mapped onto its section 3 brief (windup 1.2 s whoosh;
+shot 0.12 s noise burst + 150 Hz thump; 1200 Hz square blip; falling-cutoff
+booster roar; 45 Hz impact boom) plus a formant "final shot" yell for the
+sae-math line. `enemy.json` was NOT edited (T-087 owns the cue lists); the
+extras are routed through an explicit `EXTRA_CUES` table in
+`tools/synth_audio.py`, not silently merged into the scan. T-087 must wire
+these (or rename them) into isagi's and nuke's `enemy.json`.
+
+### D-T055-3 - [CONTESTABLE] All synth recipes and lengths are placeholder stand-ins; the cue-name contract is the deliverable (T-055).
+
+DECISION (T-055): every recipe in `tools/synth_audio.py` is a deterministic
+stdlib (`wave` + `math`) synthesis - sines, odd-harmonic saws, exponential
+decays, LCG noise (fixed seeds, byte-stable rebuilds), peak-normalised to 0.89,
+44.1 kHz mono 16-bit - and is `[CONTESTABLE]` per section 3's own "Synthesis
+recipes are [CONTESTABLE] placeholders for a later real sound pass". Lengths
+follow section 3's rows where a 1:1 mapping exists (e.g. `meow` 0.35 s,
+`rumble_build` 5.0 s, `bark` 0.25 s, `thicc_ben_chime` 0.5 s); where no
+section 3 row exists for the enemy.json-named cue (e.g. `claude/ui_chime` ->
+the `drum_hit` row's 0.2 s, `gift_larper/explosion` -> the `mine_blast` row's
+0.8 s, `keystroke_tick` 0.08 s), the nearest section 3 row's length was used.
+The summoning of the three named recordings (thicc ben chime, Isagi voice/
+gunshot, Roblox tripmine blast) as synthesized stand-ins is the TBD FALLBACK
+path, marked `tbd_audio: true` in the relevant enemy.json stats already and
+listed as TBD + all-placeholder in TBD.md section 8. Cue timings are never
+driven by audio length - the sim's telegraph events own timing; T-087 owns
+binding lengths and per-cue tick offsets.
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
@@ -4159,3 +4209,5 @@ tell changes per-biome (contradicts three canon passages). NO THRESHOLD WAS MOVE
   NEXT: owner go-ahead, commit, then FLEET_PACK.md from T-001. Nothing committed since ab471d8.
 - 2026-11-16 GLM 4.6 (T-012): player controller and classes DONE on t3/94aebde7 - sim/collision.gd (AABB 0.4/1.8 vs slabs/ramps/props, step-up 0.5), sim/controller.gd (kits, void charges, 8-tile safe ring, Last Light, pads), tests envelope/classes/charges/last_light all green (TESTS 5 passed 0 failed), D-T012-1..4 appended; gate run pending in this session.
 - 2026-11-17 T-052 (inkling-2-small-free, this session): the upgrade declarative proof landed on t3/upgrades-declarative-proof - game/tests/test_upgrades_decl.gd (every script:false upgrade through the real modifier path; stat deltas from the DESIGN.md section 8 rows; the pinned script:false/script:true partition; Athletic x1.5 speed / x1.3 air-jump height wired through the real Yearn for Speed card into controller.gd; the R4 centi-gold floor rule over the whole catalog and all 46 bounties via an exact integer dyadic oracle, plus to_centi(2.675) = 267) - insulation.json mul 0.5 -> add 0.1 (D-T052-3) - DECISIONS D-T052-1..3 appended. TESTS 42 passed 0 failed. No content ids added (counts stay 12/99). No PARKED rows. No push.
+
+- 2026-11-17 T-055 (Inkling, this session): tools/synth_audio.py + game/assets/audio/enemies/<id>/<cue>.wav for the 24 cues referenced by the twelve enemy.json files (stats.audio_cues + stats.audio) plus the 6 Isagi/nuke TBD-hook cues (D-T055-2); all recipes/lengths [CONTESTABLE] placeholders (D-T055-3); landing path per merged view hooks (D-T055-1). TBD.md section 8 lists ALL enemy audio as placeholder. python tools/synth_audio.py [--check] re-synthesises / verifies; every enemy.json cue resolves to a file. Gate run at end of session; enemy.json untouched; T-087 owns binding lengths, cue offsets and the check.
