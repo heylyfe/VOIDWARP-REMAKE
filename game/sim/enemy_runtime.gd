@@ -123,6 +123,23 @@ class Api:
 	func arbiter_gate(pending: Array = []) -> Dictionary:
 		return rt.arbiter_evaluate(row.get("cfg", {}), row.get("target_player", 0), pending)
 
+	# T-032: a non-killing eject (DESIGN.md 5.3). Appends the chain_reset announcement
+	# and the screen_blur announcement to the runtime's events; never kills, never damages.
+	# `why` is DATA (the economy break_events whitelist); blur_ticks is data-owned too.
+	func eject_player(player, why: String, blur_ticks: int) -> void:
+		rt.eject_player(row, player, why, blur_ticks)
+
+	# T-032: the toucher-ben ring cleanse (DESIGN.md 5.8). Removes glitched tiles whose
+	# tile centre is within r u (horizontal) of pos; returns the count removed.
+	func cleanse_glitched_within(pos: Vector3, r: float) -> int:
+		return rt.cleanse_glitched_within(row, pos, r)
+
+	# T-032: re-sync this row's body mirror (world["enemies"]) after an instant
+	# reposition (the teleport) - the mirror is otherwise written once at spawn and
+	# goes stale for anything that jumps (movers update the row, not the mirror).
+	func sync_body() -> void:
+		rt.sync_body_mirror(row)
+
 	func rng() -> RefCounted:
 		return row["rng"]
 
@@ -456,6 +473,9 @@ func step(dt: float) -> Array:
 ##   >= 25 u from the spawn point. Never within 25 u of the player; farthest-from-the-player
 ##   first; the within-60 u preference applies at (a)/(b) only; tie-break lowest anchor index
 ##   ((a)/(b)) or lowest tile index ((c)). Copies of one chaser spread >= 30 u (SR-3).
+##   preferred_kind "none" (DESIGN.md section 5's `none` rows) skips BOTH (a) and (b): the
+##   enemy's initial position is fallback (c). "" keeps T-027's merged semantics (skips (a),
+##   still runs (b)); see PARKED.md row 5.
 func _spawn_planned() -> void:
 	var queue: Array = planned
 	planned = []
@@ -508,7 +528,9 @@ func _spawn_one(plan_row: Dictionary, spot: Dictionary, copy_index: int, copies:
 	if cfg.has("base_speed"):
 		row["float"] = FloatBody.from_cfg(cfg)
 	enemies.append(row)
-	world["enemies"].append({"x": row["x"], "y": row["y"], "z": row["z"], "r": row["diameter_u"] * 0.5})
+	var mirror := {"x": row["x"], "y": row["y"], "z": row["z"], "r": row["diameter_u"] * 0.5}
+	row["body_mirror"] = mirror
+	world["enemies"].append(mirror)
 	var api := Api.new()
 	api.rt = self
 	api.row = row
@@ -521,13 +543,18 @@ func _spawn_one(plan_row: Dictionary, spot: Dictionary, copy_index: int, copies:
 
 
 ## The D-056 fallback order, pure function of the level dict + the player position.
-## preferred_kind: "" skips steps (a)/(b) entirely (the `none` rows of the section 5 table).
+## preferred_kind: "" keeps T-027's merged semantics (skip (a), still run (b)); "none"
+## skips (a) AND (b) so the initial position is fallback (c) - DESIGN.md section 5's
+## `none` rows (thicc ben's initial position is fallback (c)); see PARKED.md row 5.
 ## exclude: positions (Vector3) already used by this enemy's copies (SR-3), min_sep apart.
 ## Returns {"x","y","z","kind","anchor_index" | "tile_index"} or null when nothing qualifies
 ## (the caller retries next tick - D-T027-4).
 static func pick_spawn_tile(lv: Dictionary, preferred_kind: String, player_pos: Vector3,
 		exclude: Array = [], min_sep: float = 0.0) -> Variant:
 	var anchors: Array = lv.get("anchors", [])
+	if preferred_kind == "none":
+		# DESIGN.md section 5: `none` skips (a) and (b) - straight to (c).
+		return _pick_round_trip(lv, player_pos, exclude, min_sep)
 	# candidates at steps (a)/(b): anchors of the kind, >= 25 u from the player, >= min_sep
 	# from excluded positions; farthest from the player first, then the lowest anchor index.
 	if preferred_kind != "" and KIND_IDS.has(preferred_kind):
@@ -540,6 +567,11 @@ static func pick_spawn_tile(lv: Dictionary, preferred_kind: String, player_pos: 
 	# step (c): any round-trip tile >= 25 u from the spawn point and >= 25 u from the player;
 	# the within-60 u preference is dropped here (D-056). Farthest from the player first, then
 	# the lowest tile index in the level's tile order.
+	return _pick_round_trip(lv, player_pos, exclude, min_sep)
+
+
+static func _pick_round_trip(lv: Dictionary, player_pos: Vector3,
+		exclude: Array, min_sep: float) -> Variant:
 	var rts := round_trip_set(lv)
 	var tiles: Array = lv.get("tiles", [])
 	var spawn_pt: Array = lv["spawns"][0] if not lv.get("spawns", []).is_empty() else [0, 0, 1]
@@ -710,6 +742,69 @@ func lock_abilities(player, ticks: int) -> void:
 	# T-072: the controller's data-driven entry (player.json, ability_lock.lock_effect)
 	# carries which class abilities the window disables - the dispatch lives there
 	ctl.lock_abilities(int(ticks))
+
+
+func _player_index(p) -> int:
+	if p is int:
+		var i := int(p)
+		return i if i >= 0 and i < controllers.size() else -1
+	for i in range(controllers.size()):
+		if controllers[i] == p:
+			return i
+	return -1
+
+
+## T-032: keep this row's mirror entry (world["enemies"]) in sync after an instant
+## reposition. The mirror is otherwise written once at spawn; movers update the row
+## only, so anything that TELEPORTS must call this or the safe-tile / dais-push
+## distance checks (which read the mirror) see the stale point.
+func sync_body_mirror(row: Dictionary) -> void:
+	var m: Variant = row.get("body_mirror", null)
+	if not (m is Dictionary):
+		return
+	m["x"] = float(row["x"])
+	m["y"] = float(row["y"])
+	m["z"] = float(row["z"])
+	m["r"] = float(row["diameter_u"]) * 0.5
+
+
+## T-032: a non-killing eject (DESIGN.md 5.3, section 5.0 KILL RULE's third listed
+## non-killing effect). Appends the two events the engine caller consumes - the
+## chain_reset (economy.break_chain(why)) and the HUD blur announcement. `why` is
+## DATA (the economy break_events whitelist); nothing else may reset the chain.
+func eject_player(source_row: Dictionary, player, why: String, blur_ticks: int) -> void:
+	var idx := _player_index(player)
+	if idx < 0:
+		return
+	events.append({"e": "chain_reset", "why": str(why), "tick": tick, "player": idx})
+	events.append({"e": "screen_blur", "ticks": int(blur_ticks), "tick": tick,
+			"player": idx, "source": str(source_row.get("id", ""))})
+
+
+## T-032: the toucher-ben ring cleanse (DESIGN.md 5.8: "thicc ben's ring cleanses
+## glitched tiles within 8 u"; T-083 anim block attack_ring expands the ring to
+## 8 u in 18 ticks). D-T-032-3: horizontal (XZ) distance from the tile centre.
+func cleanse_glitched_within(source_row: Dictionary, pos: Vector3, r: float) -> int:
+	if world.is_empty():
+		return 0
+	var g: Dictionary = world.get("glitched", {})
+	var dead: Array = []
+	for key in g.keys():
+		var parts: PackedStringArray = str(key).split(",")
+		if parts.size() < 2:
+			continue
+		var tx := float(int(parts[0])) + 0.5
+		var tz := float(int(parts[1])) + 0.5
+		var dx := tx - pos.x
+		var dz := tz - pos.z
+		if dx * dx + dz * dz <= r * r:
+			dead.append(key)
+	for key in dead:
+		g.erase(key)
+	events.append({"e": "glitched_cleanse", "count": dead.size(), "r": float(r),
+			"tick": tick, "x": pos.x, "z": pos.z,
+			"source": str(source_row.get("id", ""))})
+	return dead.size()
 
 
 # T-072: this row's declarative scheduling gate - its cfg `arbiter` block (plain DATA:
@@ -907,7 +1002,8 @@ func nearest_player(pos: Vector3) -> Dictionary:
 			continue
 		var d := Vector3(float(ctl.x) - pos.x, float(ctl.y) - pos.y, float(ctl.z) - pos.z).length()
 		if best_d < 0.0 or d < best_d:
-			best = {"index": i, "dist": d, "x": float(ctl.x), "y": float(ctl.y), "z": float(ctl.z)}
+			best = {"index": i, "dist": d, "x": float(ctl.x), "y": float(ctl.y), "z": float(ctl.z),
+					"vx": float(ctl.vx), "vy": float(ctl.vy), "vz": float(ctl.vz)}
 			best_d = d
 	return best
 
