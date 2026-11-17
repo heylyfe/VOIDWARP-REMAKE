@@ -5587,6 +5587,98 @@ WHY: stepping once per frame with DT = 1/60 runs the sim 2x fast on a 120 Hz dis
 on a 30 Hz one; the sim's contract is a fixed 60 Hz tick. [CONTESTABLE] only if a design wants
 variable dt (nothing does today - sim rules are written per 60 Hz tick).
 
+### D-MENU-1 [CONTESTABLE] - Entries PLAY / HOW TO PLAY / QUIT; About and Settings leave the menu; the disclaimer moves to an always-on footer (ticket MENU).
+DECISION: MENU_ENTRIES = ["PLAY", "HOW TO PLAY", "QUIT"], upper case as the owner's ticket writes
+them (supersedes the T-024 list). The About entry is gone, so the ENEMIES.md disclaimer is rendered
+verbatim in a footer line ("VOIDWRAP RUN: " + ABOUT_DISCLAIMER) that is on screen the whole time the
+menu is; ABOUT_TITLE / ABOUT_DISCLAIMER / about_text() stay exactly as they were (test_disclaimer.gd
+untouched apart from the MENU_ENTRIES line). The Settings panel is also gone from the menu: the owner's
+list does not include it. app/settings.gd (the store) is unchanged, but NO menu UI reaches it any more.
+WHY: the owner's entry list is explicit; a footer keeps the hard-rule disclaimer one glance away
+instead of one click. Overrule by re-adding "SETTINGS" to MENU_ENTRIES (the old slider panel is in
+git history at f31fc44:game/app/menu.gd) or by giving the APP-FLOW pause menu a settings page.
+
+### D-MENU-2 [CONTESTABLE] - The menu wears Indigo Trench (act IV) fog and palette, with glow and the open beacon as key light.
+DECISION: the 3D backdrop (app/menu_stage.gd) instances the real view/fog_env.gd configured as
+("indigo_trench", level 19): background #02030F, fog #03061C exponential at 0.014/u, ambient from the
+palette. On top of the game's environment the menu adds glow (intensity 0.7, bloom 0.04, HDR threshold
+1.3) and filmic tonemapping, an OmniLight3D at the beacon (#E8FFFF, energy 2.2, range 24, no shadows)
+and a soft fill (player_fill_light #BFFFF8, 0.8). Tiles, slabs, trim, dais, pillars and spikes use
+resolve_palette() roles and the (x + z) & 1 checker; platform_light keeps its 0.35 emission.
+WHY: the owner's reference screenshot is dark navy with violet, a white beam and gold objects; of the
+five shipped biomes Indigo Trench (navy fog, #4C6BFF platforms) is the closest, and using fog_env.gd
+itself (not copied numbers) keeps the menu's fog identical to the game's for that act. The game has no
+sun (TERRAIN_SPEC 12.2), so the open beacon is the light source. Glow is the only effect the in-game
+environment does not have; without it the beacon column reads as a flat white bar.
+
+### D-MENU-3 [CONTESTABLE] - Roster layout: three terraces, tallest at the back, camera sway never behind.
+DECISION: the roster is discovered from res://content/enemies/*/sprites.json (no content id is named in
+app/menu_stage.gd). Grounded enemies sort by canon world_height descending, ties by id, and fill slots
+back row first, centre-out within a row: back terrace (top 2.0 u, z -5.5) 2 slots, middle (top 1.0,
+z -2.0) 5 slots, front (top 0.0, z 1.6) 4 slots; extras go on the front lip. An enemy with no body row
+(world_height null - the nuke) flies across the sky above the beacon, nose first. The camera looks at
+(0, 1.6, -2) from 19.5 u, pitch 15 deg, swaying +/-16 deg in yaw over 48 s (plus slow pitch/distance
+breathing), FOV 50, h_offset -4.2 so the island sits right of the menu column. It never orbits.
+The scene is the gold phase: beacon open, gold gifts on slots, one tripmine with its #FF4FD8 sparks
+(the only pink), 13 dark floating shards with #7CFFF4 edges, distant motes.
+WHY: the acceptance test is "the player can name several enemies from the menu alone"; a full orbit
+would put the beacon or another enemy in front of each one in turn, so the arrangement is a stable
+amphitheatre and the camera only drifts. Height ordering keeps small enemies in front of big ones.
+
+### D-MENU-4 [CONTESTABLE] - Menu display heights compress the canon body range.
+DECISION: in the menu only, a body's shown height = lerp(1.2, 3.4, (canon - 0.6) / (4.0 - 0.6)),
+clamped (seal 0.6 -> 1.2 u, thicc ben 4.0 -> 3.4 u); the flying nuke is 1.3 u. Order is preserved.
+WHY: at the menu camera distance the canon 0.6 u seal is a few pixels at 1152x648; compressing keeps
+every enemy nameable while the size order still tells the truth. Gameplay sizes are untouched.
+
+### D-MENU-5 [CONTESTABLE] - Version tag "v0.1.0-alpha.1 pre-release".
+DECISION: app/menu.gd VERSION_TAG, bottom-left. WHY: AUDIT.md names v0.1.0-alpha.1 as the alpha tag
+and records that it was NOT created; "pre-release" says exactly that. Change the constant when the tag
+is cut (no build step stamps it).
+
+### D-MENU-6 [CONTESTABLE] - Roster caption: the in-game danger lines, one enemy at a time.
+DECISION: every 3.2 s the next roster enemy shows its spawn line (view/hud/danger_text.gd
+spawn_line(), e.g. "THE SEAL SHALL BARK") above its head in #FF2A2A with a black outline: 0.35 s fade
+in, 2.3 s hold, 0.35 s fade out. WHY: it names the enemies in the game's own diegetic voice (DESIGN.md
+section 14), reusing the shipped table rather than inventing labels; one at a time keeps red rare.
+
+### D-MENU-7 - HOW TO PLAY is written from the code; three doc/code disagreements, code wins.
+DECISION: app/menu_howto.gd reads every number it prints at runtime from the files the simulation reads
+(controller.load_constants() over data/player.json, beacon.RADIUS, mines.CONTACT_R, economy.gd over
+data/economy.json, enemy_runtime overtime constants, data/bindings.json). Where docs and code disagree:
+(a) DESIGN.md 3.1 says Field Dressing makes one fall per level free; sim/controller.gd _void_fall()
+always spends the charge (PARKED.md #3) - the panel does not mention Field Dressing.
+(b) DESIGN.md 3.2's gold economy is implemented in sim/economy.gd but nothing in sim/sim.gd calls it in
+this checkout (the per-tick wiring belongs to APP-FLOW's world.gd); the panel states economy.gd's rules
+because that is the shipped implementation.
+(c) "every body contact kills" is not true of the whole roster: thicc ben and address me have
+contact_kill false (D-065), so the panel says "Most enemies kill on contact - instantly".
+WHY: the ticket rule - the code wins for this panel, and the disagreement is recorded.
+
+### D-MENU-8 - The menu lifts each billboard by 2 x body_feet_shift (compensates PARKED.md #20).
+DECISION: view/billboard.gd places the sprite with Sprite3D.offset.y = h/2 - (body bottom px), which in
+Godot 4 moves the image DOWN (offset +y is up), so the body hangs 2 x |body_feet_shift| below the node
+(measured: thicc ben's AABB spans y -5.06 .. +0.06 before scale). view/ is not this ticket's to edit;
+menu_stage.gd drives each billboard itself (its _process disabled) and sets position.y =
+-2 x body_feet_shift after every frame change; test_menu.gd asserts every body bottom is within 0.03 u
+of its platform before and after animating. WHY: without it the roster stands inside the island.
+Remove the lift when billboard.gd is fixed (the test will then fail loudly, which is the point).
+
+### D-MENU-9 [CONTESTABLE] - Typography, selection feedback and input.
+DECISION: no font ships in game/assets/, so the menu uses Godot's built-in fallback font (Open Sans
+SemiBold) through FontVariation: the wordmark emboldened 0.85 with 10 px tracking (scaled), "VOIDWRAP" in
+beacon white #E8FFFF over "RUN" in gift gold #FFC83D, a short gold rule under it. A SystemFont would
+differ per machine; the fallback ships inside every export and its wide-tracked heavy caps read cold and
+architectural, not playful or glossy. Selection = four simultaneous cues so nobody guesses: gold text vs
+muted #8B9EB7, a 4 px gold bar on the left, a 10 % gold tint behind the row, the text indented 16 px; all
+eased over ~0.1 s; a one-line hint under the entries says what the selected entry does. Input comes
+from data/bindings.json only: move_forward / move_back select (wrap), jump OR interact confirm, pause
+closes the panel; gamepad: the bound jump / interact buttons confirm, the left stick selects. Added
+beyond the bindings file, because it has no gamepad navigation entries: d-pad up/down select and START
+backs out. Entries take no keyboard focus, so Enter (ui_accept) does nothing - confirm is the game's
+binding. Mouse: hover selects, click activates. UI sizes scale with min(h / 720, w / 1280).
+WHY: the ticket's readability and input rules; everything else is taste, hence contestable.
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
