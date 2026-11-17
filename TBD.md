@@ -63,3 +63,18 @@ synthesized stand-in under the TBD rule, marked `"tbd_audio": true` (T-087).
 | # | ticket | what is TBD | why | owner action |
 |---|---|---|---|---|
 | 21 | T-025 | HUD curse/upgrade/enemy-roster icons - synthesized hash-hue squares with the item id's initials (game/view/hud/icon_placeholder.gd) | no curse, upgrade or enemy icon assets exist anywhere in the repo | commission 40 px icon art per curse/upgrade/enemy; swap icon_placeholder.gd for a texture loader |
+
+## 4. T-083 animation-block TBD rows (this ticket, enemies 7-12)
+
+T-016 produced TBD placeholders for all 12 enemies, so every T-083 anim block names the files that
+exist, not the names the section 1.x tables use (section 1.0 pre-authorizes the rename here). The
+class of placeholder is the same; the rows are split per enemy for owner action.
+
+| # | ticket | what is TBD | why | owner action |
+|---|---|---|---|---|
+| 22 | T-083 | gift Larper: spec frames `larper_00..04` are referenced as `sprites/cycle_00..04.png`; timings unchanged | T-016 TBD placeholder names differ from the spec's names | drop the real tripine frames in keeping the cycle names, or rebuild the pipeline to emit the spec names |
+| 23 | T-083 | toucher: spec `toucher_00..02` referenced as `sprites/cycle_00..02.png`, spec `glitchfloor_00..04` as `sprites/floor_00..04.png` | same T-016 placeholder naming | drop the real toucher.jpeg / glitchedground.jpeg derivatives in |
+| 24 | T-083 | seal: spec `seal_01` (mouth open) and `seal_02/03` (flippers up/down) DO NOT EXIST in the TBD sheet. The anim block holds `idle_00.png` for idle (at the table's 9 ticks/frame) and telegraph (45 ticks held), and alternates `dash_00/dash_01.png` at the table's 4 ticks per frame for the 60-tick dash. Frame set cannot express the table's flap overlay | T-016 produced only `idle_00` and `dash_00/01` | drop the real babehseal derivatives in (mouth-open, flippers up/down); the anim block then names them and the frame-count gap closes |
+| 25 | T-083 | address me: spec `addressme_00/01` referenced as `sprites/cycle_00/01.png`; the spec's explode frame (Image 14 composited over the elephant at 30% alpha) is unbuilt - both frames are identical placeholder art | same T-016 placeholder | drop the real address-me-elephant.png / explosionsffect.jpg derivatives in and rebuild |
+| 26 | T-083 | claude: spec `claude_00` referenced as `sprites/idle_00.png`; spec `plushie_00..02` DO NOT EXIST - `plushie_idle` loops the three TBD logo frames at the table's 6 fps / 10 ticks per frame (the only 3-frame set in the sheet) | clawd Crab plushie sprite was never fetched (ENEMIES.md points at github.com/xyc/plushie) | fetch the clawd Crab sprite, rebuild the pipeline, point `plushie_idle` at the real plushie_00..02 |
+| 27 | T-083 | gin: spec frames `gin_idle_00`/`gin_launch_00` happen to match the TBD names (`idle_00.png`/`launch_00.png`); no mismatch, but the art is still the TBD placeholder | T-016 TBD placeholder | drop the real gin idle.png / ginsword.png derivatives in |
