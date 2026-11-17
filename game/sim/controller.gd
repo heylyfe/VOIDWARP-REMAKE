@@ -703,6 +703,48 @@ func apply_lock(duration: float) -> void:
 		lock = duration
 
 
+# ---- the lock's per-class effect list (T-072: read from data, never invented here) ----
+
+# Effect-vocabulary fallback for a lock applied with no data file present (or a block
+# a future schema change removed): the full SR-6 reading, per class. data/player.json
+# (ability_lock.lock_effect) wins for every key it carries.
+const LOCK_EFFECT_FALLBACK := {
+	"dasher": ["dash_disabled"],
+	"glider": ["glide_disabled"],
+	"athletic": ["class_multipliers_off"],
+}
+
+
+# The lock's per-class effect names, from data/player.json (ability_lock.lock_effect):
+# dash_disabled / glide_disabled / class_multipliers_off. An empty or missing read falls
+# back to LOCK_EFFECT_FALLBACK, so a lock can never be a silent no-op.
+static func lock_effects(kit_id: String) -> Array:
+	var f := FileAccess.open("res://data/player.json", FileAccess.READ)
+	if f != null:
+		var parsed: Variant = JSON.parse_string(f.get_as_text())
+		f.close()
+		if parsed is Dictionary:
+			var al: Dictionary = (parsed as Dictionary).get("ability_lock", {})
+			var le: Dictionary = al.get("lock_effect", {})
+			var v: Variant = le.get(kit_id, null)
+			if v is Array and not (v as Array).is_empty():
+				return v
+	return LOCK_EFFECT_FALLBACK.get(kit_id, [])
+
+
+# One ability lock from an enemy (the Arbiter's Api.lock_abilities caller; whole 60 Hz
+# ticks - the window runs for ticks / 60 s). Which class abilities the lock disables
+# comes from data/player.json via lock_effects: the dash start and its cooldown tick are
+# gated by step() and the regen branch while lock > 0; the glide engage by the same gate;
+# the class multipliers by run_speed() and the air-jump height - all read
+# ability_locked() every tick.
+func lock_abilities(ticks: int) -> void:
+	apply_lock(float(maxi(int(ticks), 0)) / 60.0)
+	var eff: Array = lock_effects(kit)
+	if eff.has("glide_disabled"):
+		gliding = false   # an active glide ends when the lock lands
+
+
 # Hungry Void (D-052): charge cap becomes 1. Held charges above the new cap are lost
 # so the HUD pip count stays exact.
 func set_charge_cap(cap: int) -> void:
