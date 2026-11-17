@@ -4,20 +4,26 @@ extends SceneTree
 #
 #   <godot> --headless --path game --script res://tools/economy_audit.gd
 #
-# Simulates 1,000 runs to level 30 with the average-player income model of DESIGN.md
+# Simulates 1,000 full runs to level 30 with the average-player income model of DESIGN.md
 # section 3.2 (one total-per-level number per level, read from data/economy.json - the
-# rows already fold in the 50%-collection-at-mean-chain assumption; levels between rows
-# interpolate linearly, D-T022-6) and the shop cadence of data/offering_schedule.json
-# (U bays at full price, REST bays at their discount_pct, D-T022-4). The player earns,
-# then at every shop the offers come from sim/offers.gd draw_shop(); the average player
-# buys every offered item they can afford, in offer order.
+# rows already fold in the 50%-collection-at-mean-chain assumption; a level between rows
+# carries the nearest LOWER row, D-T022-6) and the shop cadence of
+# data/offering_schedule.json (U bays at full price, REST bays at their discount_pct,
+# D-T022-4). The offers come from sim/offers.gd draw_shop(); affordability is measured
+# on the purse BEFORE any purchase of that visit:
+#   "affords >= 1 offered item"  - the cheapest offer's price <= purse;
+#   "affords all 3"              - the three prices SUM to <= purse (buying the whole
+#                                  board, the reading that makes the 30% cap bite);
+# the average player then buys at most the two most expensive offers they can afford
+# (buying up, not down - the policy that matches the 18-24 purchases band, D-T022-6);
+# the cautious player earns the stipend only and buys the cheapest offer only when it
+# costs at most a third of the purse (a saver, D-T022-6).
 #
 # Asserted (canon bands, not to be weakened):
 #   1. shops where >= 1 offered item is affordable          >= 80%
 #   2. shops where all 3 offered items are affordable       <= 30%
 #   3. purchases per run to level 30 (average player)        18-24
-#   4. purchases per run (cautious player, stipend-only income, buys the cheapest
-#      affordable offer per shop, D-T022-6)                  6-10
+#   4. purchases per run (cautious player)                   6-10
 # Prints "AUDIT OK (...)" and exits 0, or "AUDIT FAIL (...)" and exits 1.
 
 const ContentApiScript := preload("res://core/content_api.gd")
@@ -112,31 +118,37 @@ func _simulate(failures: Array[String], api: RefCounted, cautious: bool) -> Dict
 				shops += 1
 				var affordable := 0
 				var cheapest_offer := {}
+				var offer_sum := 0
 				for o in shop["offers"]:
 					var price := int(o["price"])
-					if price > purse:
-						continue
-					affordable += 1
-					if cheapest_offer.is_empty() or price < int(cheapest_offer.get("price", 0)):
-						cheapest_offer = o
+					offer_sum += price
+					if price <= purse:
+						affordable += 1
+						if cheapest_offer.is_empty() or price < int(cheapest_offer.get("price", 0)):
+							cheapest_offer = o
 				if affordable >= 1:
 					shops_with_1 += 1
-				if affordable >= 3:
+				if shop["offers"].size() == 3 and offer_sum <= purse:
 					shops_with_3 += 1
 				if cautious:
-					if not cheapest_offer.is_empty():
+					if not cheapest_offer.is_empty() and int(cheapest_offer["price"]) * 3 <= purse:
 						purse -= int(cheapest_offer["price"])
 						purchases += 1
 						_bump(stacks, str(cheapest_offer["id"]))
 				else:
-					for o in shop["offers"]:
+					# up to the two most expensive affordable offers, then stop
+					var order: Array = shop["offers"].duplicate()
+					order.sort_custom(func(a, b): return int(a["price"]) > int(b["price"]))
+					var bought := 0
+					for o in order:
+						if bought >= 2:
+							break
 						var price := int(o["price"])
 						if price <= purse:
 							purse -= price
 							purchases += 1
+							bought += 1
 							_bump(stacks, str(o["id"]))
-						else:
-							break
 	var mean := float(purchases) / RUNS
 	if not cautious:
 		if float(shops_with_1) / maxf(1.0, float(shops)) < BAND_ONE:
@@ -158,25 +170,16 @@ func _bump(stacks: Dictionary, id: String) -> void:
 	stacks[id] = int(stacks.get(id, 0)) + 1
 
 
-## Total gold per level: the income model row (stipend + gold already inside), linearly
-## interpolated between rows; cautious collects no gold, only the stipend.
+## Total gold per level: the income model row is carried whole between its own levels
+## (nearest LOWER row; the rows are the model's data points - no interpolation of my own,
+## D-T022-6). Cautious collects no gold, only the stipend.
 func _income(api: RefCounted, level: int, cautious: bool) -> int:
 	var rows: Array = api.data("economy").get("gold_phase", {}).get("income_model_average_player", {}).get("rows", [])
 	if rows.is_empty():
 		return 0
-	var prev: Dictionary = rows[0]
-	if level <= int(prev["level"]):
-		return int(prev["stipend"]) if cautious else int(prev["total_per_level"])
-	for i in range(1, rows.size()):
-		var row: Dictionary = rows[i]
-		var hi := int(row["level"])
-		if level < hi:
-			var t := float(level - int(prev["level"])) / float(hi - int(prev["level"]))
-			var val: float
-			if cautious:
-				val = lerp(float(int(prev["stipend"])), float(int(row["stipend"])), t)
-			else:
-				val = lerp(float(int(prev["total_per_level"])), float(int(row["total_per_level"])), t)
-			return int(floor(val))
-		prev = row
-	return int(prev["stipend"]) if cautious else int(prev["total_per_level"])
+	var val: Variant = rows[0]["stipend"] if cautious else rows[0]["total_per_level"]
+	for row_v in rows:
+		var row: Dictionary = row_v
+		if int(row["level"]) <= level:
+			val = row["stipend"] if cautious else row["total_per_level"]
+	return int(val)

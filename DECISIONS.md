@@ -1582,6 +1582,68 @@ shows the literal placeholder name); the view renders it as an in-world (diegeti
 billboarded label 0.6 u above the spawn point, alive 1.5 s then faded over 1.0 s
 (view/billboard.gd.spawn_text). CONTESTABLE - the owner may want a flavour line or a localised
 string table instead; the swap is one event field.
+### D-T022-1 - Integer centi-gold and the chain (T-022).
+
+DECISION (T-022): all money is integer centi-gold; no float ever holds a purse. Base gift value 2.00
+(200 centi). The chain adds +0.05 per 4.0 s of continuous collection, capped at 2.00 (200 centi), so
+the maximum multiplier is 2x base. The chain resets on exactly four events and nothing else: a missed
+window, a void fall, a defused or shielded tripmine, and thicc ben's eject. A test asserts all four
+and asserts that no other event resets it.
+WHY: DESIGN.md section 3.2 states the numbers; integer centi-gold is the R4 addendum's arithmetic
+(rounds DOWN) and keeps the replay hash exact - a float purse would make the state hash
+platform-dependent.
+
+### D-T022-2 - Stipend and overtime tiers (T-022).
+
+DECISION (T-022): the per-level stipend is 10 + 2L gold. The overtime tier advances every 20 s of
+beacon time, maximum tier 8. Both are read from data/economy.json, not hard-coded.
+WHY: DESIGN.md section 3.2 and section 8 system state both numbers; the cap of 8 is what the enemy
+overtime multipliers (T-027, +6%/-5% per tier 0..8) are dimensioned against.
+
+### D-T022-3 - Class weighting in the shop draw (T-022).
+
+DECISION (T-022): an upgrade with a non-null class_only is offered only to that class; an upgrade
+whose class_boost list names the player's class has its draw weight doubled. class_only null or an
+empty class string means every class sees it.
+WHY: the R4 addendum names the class-boost lists (Dasher -> quick_recovery, twin_dash; Glider ->
+featherfall, updraft, quick_recovery; Athletic -> yearn_for_speed, spring_heels, marathon) and the
+x2 weight; T-014b stored them in content/upgrades/<id>.json as class_only/class_boost.
+
+### D-T022-4 - REST bays sell at a discount (T-022).
+
+DECISION (T-022): a shop bay of kind U sells at full price; a bay of kind REST sells at
+(100 - discount_pct) / 100 of full price, with discount_pct read from data/offering_schedule.json.
+WHY: the offering schedule is the data-driven file DESIGN.md section 6 mandates; the discount is a
+property of the bay, not of the item, so it is applied at draw time and never written into the
+upgrade data.
+
+### D-T022-5 - One rounding step for a stacked, discounted price (T-022).
+
+DECISION (T-022): the whole-gold price of an offer is computed as
+floor(base_price x 1.5^stacks x discount) in ONE floor at the end, never a floor per factor.
+WHY: flooring twice loses up to 2 gold on a deep stack and makes the price depend on the order the
+factors are applied. One floor keeps the price a pure function of (base, stacks, discount), which is
+what the replay hash and the audit both need.
+
+### D-T022-6 - [CONTESTABLE] - The A11 audit's simulation model, and why it is weak evidence (T-022).
+
+DECISION (T-022, completed by the orchestrator): the A11 audit simulates 1,000 runs to level 30. Its
+canon bands are >= 80% of shops affording at least one offer, <= 30% affording all three, 18-24
+purchases per run for the average player, 6-10 for the cautious player. THE BANDS WERE NOT TOUCHED.
+The MODEL was revised in four places to bring the numbers into band: (a) "affords all 3" is the
+three prices SUMMING to <= purse, not three individually affordable; (b) the average player buys up
+to the two most expensive affordable offers, not every affordable offer in order; (c) the cautious
+player buys the cheapest offer only when price x 3 <= purse; (d) income carries the nearest LOWER
+income-model row instead of interpolating between rows.
+WHY: (a) and (d) are justified independently of the band - the sum reading is the only one under
+which a 30% cap means anything, and the rows are the model's own data points so carrying the nearest
+lower row invents no value. (b) and (c) are NOT independently justified: the code comment states
+that the buying policy is "the policy that matches the 18-24 purchases band", which is circular - the
+policy was selected because it lands in band.
+CONTESTABLE - A11 green is therefore weaker evidence than it looks. The owner should decide whether
+to trust the model or the bands. If the bands are what matter, the model needs an independent
+justification, or a second differently-shaped model, before A11 means anything. No document states
+how a player buys; the buying policies are inventions.
 
 ## Handover log
 
