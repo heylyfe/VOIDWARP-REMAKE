@@ -6350,3 +6350,58 @@ bottom at the origin like every other frame. ENEMIES.md / DESIGN.md unchanged.
 - 2026-11-17 ART-FIX-SEAL (owner ruling: "seal also needs to have its PNG replaced with this"): `assets_src/enemies/babehseal.png` (transparent harp-seal pup render, committed in a4835c7) is now the seal's only source - the webp is gone for good; `game/tools/art/seal.gd` rewritten (alpha channel IS the matte; tight crop; 512x512 bottom-anchored; no flood fill, no defringe, no feather - the edge was already a ~10 px feather) and re-emits all seven frames with one distinct pose per anim-block state (telegraph = crouched wind-up sy 0.88 + mouth gape; dash_00 = lunge sx 1.16 / sy 0.74 / -5 deg shear / mouth gape; dash_01 = the alternate lunge; recover = +6% vstretch). The dash axis is NOT in the anim block or enemy.json (enemy.gd computes dash_dx/dy/dz at telegraph start), so the lunge is a fixed forward lunge (ticket fallback). anim tick ranges/loops/fps/effect params/frame counts untouched; world_height stays 0.6; body_rect re-synced to the printed tight alpha>16 bboxes; sprite_pipeline.gd's stale seal source reference updated to the png. b82621a. validate SPRITES OK 515 checks (fog ratio 4.65-5.95 per frame); FOGCHECK OK (550 checks over 5 biomes; seal rows 6.85-9.54 vs the five fogs @40 u). D-ART-SEAL-3 (the ticket asked for D-ART-SEAL-2 - taken by the JSON round-trip entry). TBD.md rows 9/12/24, SOURCES.md, seal_view.gd comments updated. Gate: GATE OK (9 ran, 0 skipped, 230 s), TESTS 56 passed 0 failed, zero SCRIPT ERROR lines. No PARKED rows. No push.
 
 - 2026-11-17 LOADING-RECHECK: seal gag re-staged for the new belly-down harp-seal pup (no flip, belly scoot, box over the whole head; D-LOAD-10), speech-bubble text only drawn at full size (loading_stage.gd). Other four gags re-rendered, unchanged. Tips re-checked against the build: none changed. Worktree already level with main (c10e618), no rebase conflict. Gate: GATE OK (9 ran, 0 skipped, 227 s), TESTS 58 passed 0 failed, zero SCRIPT ERROR lines. (A first gate failed test_boundaries because a gag COMMENT named the seal and 'you'; comments carry no exemption - reworded.)
+
+### D-KIWI-SLOW-1 - FINAL - THE KIWI CAT IS A SLOW, LAZY FOLLOWER (owner ruling 2026-11-17)
+DECISION (2026-11-17, TICKET KIWI-SLOW; owner ruling, intent relayed verbatim): "THE KIWI CAT
+MUST BE SLOW. It is meant to be 'pretty slow and just kinda there, like Mart in Nullscape', not
+hawking the player down." ENEMIES.md's own frozen sentence says "slowly follow the player,
+death on contact". The shipped numbers - base_speed 5.6 u/s, pursuit_ceiling 0.80, cap
+7.2 u/s against the player's 9.0 base run (62% of run speed) - contradicted that frozen
+sentence. The owner ruled on 2026-11-17 that this is a SPEC ERROR being corrected, NOT a
+threshold move and NOT a difficulty tune: no other enemy changes, no criterion changes, no
+check is weakened, ENEMIES.md is not edited. Evidence the ruling matters: FIX-A3's bot probe
+found roughly 14 of 30 level-1 bot deaths are kiwi cat deaths.
+
+THE NUMBERS (with WHY):
+- base_speed 5.6 -> **3.0 u/s** (33% of base run; inside the owner's suggested 2.5-3.0 band).
+  WHY that band: it is clearly slower than a 9.0 u/s run, still hurdle-able (the jump apex
+  2.25 u clears its 1.5 u reach - unchanged), still lethal on contact, and still a follower,
+  not a statue: at 3.0 u/s it closes ~3 u per second and reaches the player on any long
+  approach. 3.0 was picked as an exact third of base run speed - the largest, most legible
+  value in the owner's band, so "the cat is a third of a run" is teachable.
+- pursuit_ceiling (SR-5) 0.80 -> **0.40** of base run: absolute cap **3.6 u/s**
+  (0.40 x 9.0). WHY: SCALED DOWN with the base so the cap stays proportionate to the new
+  base (1.2x it, mirroring the old cap being 1.29x the old base). Overflow still becomes
+  tempo (SR-5), keyed to BASE run speed, so speed upgrades still gain ground and no curse
+  can invert the race.
+- burst_ceiling (Zoomies) 1.00 -> **0.55** of base run: absolute bound **4.95 u/s**
+  (0.55 x 9.0). WHY: the burst stays a SHORT BOUNDED sprint - it is 1.65x the new base
+  (a real sprint), it stays at/above Zoomies' own +60% raw (3.0 x 1.6 = 4.8 u/s, so the
+  curse works exactly as its rule sentence reads and is not clamped by the ceiling), and it
+  can NEVER exceed 1.00 x base run (9.0 u/s) - 4.95 is barely half that bound. Bounded to
+  3.0 s (BURST_MAX_TICKS, unchanged). This is the direct analogue of the old ceiling, which
+  sat just above the old +60% raw (8.96 < 9.00).
+- The Litter scales with its cat - a kitten may NOT be faster than its cat. Kitten base
+  4.5 -> **2.4 u/s** (0.8x the cat's new base, the same 4.5/5.6 ratio as before),
+  pursuit_ceiling 0.70 -> **0.30**: absolute cap **2.7 u/s** - below the cat's 3.0 u/s base
+  AND below its 3.6 u/s cap, so no reading of "faster" survives. Kitten burst scales to
+  0.55 x 0.6 = 0.33 -> **2.97 u/s**, also below the cat. The "always trails its cat"
+  property stays true: the trail was guaranteed by the cat being faster (3.0 > 2.4), the same
+  way (5.6 > 4.5) before.
+- The hurdle counter-play arithmetic is RECOMPUTED, not copied: closing speed is
+  9.0 + 3.0 = **12.0 u/s**; the body overlap (0.9 u cat body + 2 x 0.4 u player half-width =
+  1.7 u) is 1.7 / 12.0 = **~0.14 s** (was 0.12 s at 14.6 u/s). The 0.16 s -> 0.59 s jump
+  window and the 0.43 s window are UNCHANGED - jump physics, the 2.25 u apex and the 1.5 u
+  reach are untouched.
+
+SUPERSEDES (the old numbers, by name): the kiwi cat row of D-068 (SR-5 pursuit ceilings;
+"kiwi cat 0.80 -> 7.2 u/s") and the older restated lists (the SR-5 summary list circa the
+section carrying "kiwi cat 0.80" and the D-T073-1 paragraph, which also quotes "kitten 0.70").
+Those entries stay in place as the historical record; this entry supersedes them for the
+kiwi cat and the kitten ONLY. No other body's numbers change; no FINAL elsewhere moves;
+FLEET_PACK.md's T-030 row is a historical ticket text and is not edited; ENEMIES.md is not
+edited. Zoomies' rule sentence ("+60% speed") is unchanged - the curse's own text stays true,
+only the cat's ceiling and bound move. DESIGN.md's SR-5 prose bound ("may reach 1.00 x base
+run speed") stays as the global burst bound; the cat's own burst ceiling (0.55) sits under it.
+WHY record before code: this entry is committed before any line that implements it, so the
+diff order shows the ruling first.
