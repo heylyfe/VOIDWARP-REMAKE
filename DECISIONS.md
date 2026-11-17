@@ -1315,6 +1315,34 @@ contrast must be >= 3.0. The lerp-in-sRGB reading would score the same magenta h
 2.59 against the same near-black fog where the linear reading gives 3.83; the linear reading
 is recorded here so T-011 (fog readability for the palette roles) applies 12.3 one way.
 
+### D-T015-1 - One mesh per model; open/closed state is engine-side (T-015)
+Every T-015 model exports as ONE .glb containing ONE Blender mesh whose vertices carry the
+closed-state palette colours. The state changes the DESIGN describes (beacon closed #3A4A55 ->
+open #E8FFFF emission x4.0, descent-gate door sliding) are engine-side: the door ships as its
+own node `descent_gate_door` inside `descent_gate.glb` so the view layer can slide or recolour
+it, and the beacon's head is ordinary mesh geometry. No open-state variant geometry is baked.
+RGBA is exported as COLOR_0 float32 (Blender FLOAT_COLOR attribute, componentType 5126); the
+exact palette byte is recovered with round(c * 255). BYTE_COLOR was rejected: its uint16
+normalization truncates a full byte step on some channels in the Godot import.
+PROOF: game/tools/check_models.gd loads all 11 .glb files headless in Godot, prints each name
+and triangle count (60-252, all under the 2,000 budget), and exits 0.
+
+### D-T015-2 - Tripmine hexagram is three crossing bars, boxes only (T-015)
+DESIGN.md section 3.3 wants a "six-pointed star centre" on the mine box. Built as three thin
+boxes (0.46 x 0.055 x 0.02 u) at 0/60/120 degrees lying on the top plate, in the mine-tell
+pink #FF4FD8 (palette role tripmine_particles), over platform_dark top/bottom plates inside
+the black_gift_body frame. Keeps box-and-wedge style (no rotated-only geometry, no curves).
+
+### D-T015-3 - Palette role map for every model part (T-015)
+All colours come from game/data/palette.json roles, no new hexes: black/gold gift = body
+black_gift_body, ribbon/bow/knot black_gift_rim; tripmine box = black_gift_body frame +
+platform_dark panels + tripmine_particles star; beacon = beacon_closed (engine adds
+beacon_open emission on open); altar plinth = prop_block + slab_trim band + hub_dais top
+plate + sigil_hex star inlay; urn/barrel/tall jar/launch pad/player figure = prop_block body
++ slab_trim bands (launch-pad top launch_pad, sides slab_side, posts prop_block). Change
+minimally: any palette edit re-skins every model with no script change.
+
+
 ---
 
 ### D-T011-1 - [CONTESTABLE] - The fog-readability check runs in linear radiance, not on raw sRGB bytes (T-011, tools/fog_check.gd).
