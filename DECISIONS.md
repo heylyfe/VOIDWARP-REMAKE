@@ -2229,9 +2229,108 @@ WHY: the section 12 contract says the enemy api carries the target, not the gate
 document states a multi-player mapping. [CONTESTABLE] until the roster's targeting pass
 lands.
 
+### D-T083-1 - The anim block schema in sprites.json, and the TBD frame_map for the spec frame names (T-083).
+
+DECISION (T-083): each enemy's content/enemies/<id>/sprites.json gains one "anim" block. It
+carries: "section" (the fable-tickets.md 1.x table it implements), "frame_map" (spec frame name
+-> the file that exists on disk, relative to the enemy folder), and "states" - one entry per
+table row, keyed by a snake_case state id, each with: "row" (the exact table row label),
+"spec_frames" (the section 1.x frame names, in table order), "frames" (the on-disk files, one
+entry per spec frame, REPEATS ALLOWED for TBD placeholders), "loop", "total_ticks",
+"ticks_per_frame", "tick_ranges" (state-local, inclusive [frame, first_tick, last_tick]), and
+"effect" { "name", "params" }. Timings are 60 Hz ticks; the sim drives frame selection from
+ticks_in_state (fable-tickets.md 1.0), never a wall clock. Effects never change body_rect.
+
+WHY: every enemy's sources were missing at T-016, so every frame today is a TBD placeholder
+("tbd": true) and the spec frame names (kiwicat_00, coil_00..04, isagi_idle_00/isagi_shoot_00/
+isagi_ball_00, nuke_00..03, you_00..04, thiccben_00) do NOT exist on disk. The ticket's TBD
+fallback applies: every state uses the TBD frame(s) and the timings stay exactly as the table
+says. The mapping: coil_NN -> cycle_NN, nuke_NN -> cycle_NN, you_NN -> cycle_NN (1:1, the
+pipeline's height progression matches squash->extend for coil); kiwicat_00 -> cycle_00,
+thiccben_00 -> cycle_00 (single placeholders); isagi gets fire_00 for isagi_idle_00, fire_02
+(the last frame of the fire strip, read as the most-extended shoot pose) for isagi_shoot_00,
+and shot_00 for isagi_ball_00; fire_01 exists on disk but is unreferenced.
+[CONTESTABLE]: the isagi assignment is a placeholder guess and so is the coil/you/nuke order
+(both are just "the frames the pipeline made"); when real art lands, only frame_map and
+"frames" change - spec_frames, loops, ranges and tick counts are the frozen spec.
+
+### D-T083-2 - Tick conventions for the anim blocks (T-083).
+
+DECISION (T-083): 60 Hz ticks throughout. fps <-> ticks_per_frame: 8 fps = 7.5 ticks per frame
+(the table's "7-8 ticks per frame", alternating), 16 fps = 3.75, 12 fps = 5, 10 fps = 6,
+20 fps = 3, 15 fps = 4, 6 fps = 10. Explicit tick_ranges are state-local and INCLUSIVE, and
+appear only where the table gives explicit ranges (coil telegraph [0-11/12-23/24-35], coil
+flight [0-20 / 21-144 / 145-164], isagi attack held [0-30 local]). total_ticks carries the
+table's duration when the table bounds one (spawn 30, coil telegraph 36, ben telegraph 75,
+isagi wind-up 72 / cooldown 150, nuke tracking 150 / locked 90 / descent 90 / explosion 24 /
+recover 300, you telegraph 90 / recover 240, address-me-style 12/18/24 rows for the other
+half), and null where the table bounds no duration. isagi's attack total_ticks 30 is DERIVED
+from binding numbers (shown from tick 72, held until tick 102) - marked as derived in the
+isagi block's effect note; tick_ranges are stored state-local (0 = global tick 72) and the
+block also records release_ticks global [72, 81, 90] and local [0, 9, 18]. The attack frame
+lands on the tick its kill resolves: telegraph animations fill their cues exactly and the
+attack states are resolve-tick entries (see D-T083-3), so no invented hold exists.
+
+### D-T083-3 - States whose frame lands on a resolve tick carry total_ticks: null (T-083).
+
+DECISION (T-083): a state the table shows on exactly the tick a kill/resolution lands -
+coil attack_landing (tick 165, the landing kill and the shockwave), thicc_ben attack_arrival
+(tick 75, the lock resolves), you attack (tick 90, the ring starts expanding 9 u/s to 14 u),
+isagi attack shows from tick 72 and is held until 102 (bounded, D-T083-2), and the kiwi/thicc
+ben attack rows (contact kills on the overlap tick) - carries total_ticks: null and a note
+naming the tick, rather than an invented hold duration. WHY: a number no document states is a
+SPEC GAP and must not be invented; the sim/view wiring shows the attack frame on the tick the
+attack resolves and leaves it until the behavior leaves the state. [CONTESTABLE] only in that
+the owner may prefer an explicit one-tick "resolve frame" encoding; the note already carries
+the tick, so such a change is a data edit, not a redesign.
+
+### D-T083-4 - game/tools/check_anim_data.gd (it did not exist) - what it proves and how (T-083).
+
+DECISION (T-083): new headless tool. Usage: godot --headless --path game --script
+res://tools/check_anim_data.gd -- [enemy_id ...]; no arguments = the whole roster. It
+hardcodes BOTH halves' section 1.x tables (the binding numbers: frames in table order, loop
+flags, ticks_per_frame / tick_ranges / total_ticks, repeat_every_ticks and fps where the
+tables state them) and never reads the markdown, so a spec edit fails loudly here instead of
+silently re-passing. For each enemy it proves: the JSON parses, the anim block exists with the
+right section, every state of the table exists with the table's frames (by spec name, in
+order), loop flag and tick counts, NO unexpected states (one entry per table row), every
+referenced frame file exists on disk (one frames entry per spec frame, repeats allowed for TBD
+placeholders), frame_map values exist when present, and every effect has a non-empty name and
+a params dictionary. Output is one PASS/FAIL line per enemy plus a final
+"ANIM-DATA <p> passed <f> failed"; exit code 1 iff any enemy fails (verified 1 on a bad id,
+0 on a full pass). WHY hardcoding: the file is the enforcement of "the animation tables ARE
+the spec" - parsing the markdown at check time would make the check as fragile as the prose it
+guards. Cost: the table numbers live in two places (the markdown and this file); if either
+changes, the same commit must update both.
+
+### D-T083-5 - No contradictions against ENEMIES.md / DESIGN.md FINAL rows in sections 1.1-1.6; no PARKED.md rows (T-083).
+
+DECISION (T-083): the six animation tables were cross-read against ENEMIES.md (behavior
+sentences), DESIGN.md section 5.1-5.6 (cue timings) and the FINAL system rules (D-064 volley
+and salvo limits, D-066 shockwave, D-070 ability lock). No contradiction was found in the six:
+the telegraph fills each cue exactly and the attack frame lands on the resolution tick,
+DESIGN.md's 0.6 s pre-jump + 2.75 s flight = 3.35 s of cue stands, DESIGN.md's 2.5 s track +
+1.5 s locked stands, Isagi's 1.2 s wind-up + volley stands (D-064 volley structure is sim-side,
+not anim data). The table's own [CONTESTABLE] rows (the common spawn fade: alpha 0->1 over
+30 ticks, scale 0.8->1.0; kiwi's ±0.08 u 1.0 Hz bob) are carried as [CONTESTABLE] in the data,
+not re-litigated. The Zoomies curse reading of the kiwi meow row (two pulses 12 ticks apart,
+then a red outline for the 180-tick sprint) is encoded verbatim in the kiwi_cat telegraph's
+effect params. No PARKED.md rows were added.
+
+### D-T083-6 - check_anim_data.gd's other half is expected to fail until the other ticket lands (T-083).
+
+DECISION (T-083): running the checker with no arguments today prints
+"PASS" x6 for kiwi_cat, coil, thicc_ben, isagi, nuke, you and
+"FAIL <id>: no 'anim' block (T-083) in sprites.json" x6 for gift_larper, toucher, seal,
+address_me, claude, gin (ANIM-DATA 6 passed 6 failed, exit 1). That is a correct intermediate
+state: the other half of T-083 is in flight on the same spec; the checker is its gate too.
+Mine are done and green: ANIM-DATA 6 passed 0 failed, exit 0 (see the response file for the
+full command output).
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
+- 2026-11-17 T-083-enemies 1-6 (Anim/PNG animation specs, inkling-2-small-free): anim blocks added to the six T-016 sprites.json (kiwi_cat, coil, thicc_ben, isagi, nuke, you) - one entry per section 1.x table row, spec_frames + on-disk TBD frames, binding 60 Hz tick counts; new game/tools/check_anim_data.gd proves all 12 roster tables (hardcoded, CLI id list); DECISIONS D-T083-1..6 appended. Gate green (GATE OK, 9 ran, TESTS 27 passed 0 failed); ANIM-DATA 6 passed 0 failed. The other six report "no 'anim' block" until their half lands. No PARKED rows; no push, branch t3/enemies-1-6-anim-data.
 - 2026-11-17 T-074 (spawn, GLM): the D-074 offer draw is live. sim/offers.gd draw_enemy_bay
   rebuilt (NEW / REPEAT / FREE slots + "slot" field on altars, per-enemy caps via enemy_gate,
   chaser ceiling 6 with 0.5 kittens under The Litter - weights in offering_schedule.json's
