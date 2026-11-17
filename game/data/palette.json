@@ -8,7 +8,7 @@
     "fog": { "hex": "#021416", "note": "exponential depth fog, density 0.012 per u" },
     "platform_light": { "hex": "#2FB7B0", "emission": 0.35, "note": "emission 0.35 x albedo" },
     "platform_dark": { "hex": "#0A2E30" },
-    "walkway_light": { "hex": "#2A5BFF", "emission": 0.35, "note": "emission 0.35 x albedo" },
+    "walkway_light": { "hex": "#3A74FF", "emission": 0.35, "note": "emission 0.35 x albedo; TERRAIN_SPEC section 12.2 states #2A5BFF, which fails the section 12.3 fog check at 60 u (2.737 < 3.0) - see DECISIONS D-T011-6" },
     "walkway_dark": { "hex": "#0B1A66" },
     "dead_end_light": { "hex": "#8FE8E0", "note": "paler = something is here" },
     "slab_side": { "hex": "#0E3F42", "note": "1 u tall" },
