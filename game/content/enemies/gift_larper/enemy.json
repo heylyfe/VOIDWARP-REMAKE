@@ -6,14 +6,31 @@
   "vote_effect": "extra_mines += 3",
   "anchor_kinds": [],
   "stats": {
+    "world_height": 1.0,
+    "body_height": 1.0,
+    "hit_diameter": 0.8,
+    "base_speed": 0.0,
+    "pursuit_ceiling": 0.0,
+    "burst_ceiling": 0.0,
     "contact_radius": 0.9,
     "tell_distance": 12.0,
     "blast_radius": 3.0,
     "rotation_period": 4.0,
+    "rotation_ticks": 240,
+    "frame_ticks": 48,
     "frames": 5,
     "particles_color": "#FF4FD8",
-    "death_code": "D-MINE"
+    "particles_per_second": 12,
+    "contact_kill": false,
+    "death_code": "D-MINE",
+    "detonation_ticks": 18,
+    "defused_ticks": 24,
+    "defuse_drop_u": 0.5,
+    "audio_cues": ["explosion", "pff"]
   },
+  "behavior": "Stationary: it lives in gift slots as the tripmine. 5-frame rotation cycle, one revolution per 4.0 s. Contact at any height detonates it (D-MINE) - the walkable bypass is the only way past.",
+  "counter_play": "Look for the star and the pink sparkles within 12 u - the tell is a black gift with a six-pointed star. Walk around it, never over or through it (jumping does not clear it).",
+  "tell": "Black framed box, six-pointed star centre, constant pink particles inside 12 u; beyond 12 u it reads as an ordinary black gift's rim glow.",
   "sprites": "res://content/enemies/gift_larper/sprites.json",
   "script": true
 }

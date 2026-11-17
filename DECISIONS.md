@@ -3010,6 +3010,105 @@ change). VOIDWRAP is single-player today (DESIGN.md section 13), so the behavior
 as built; when multiplayer lands, the ring needs the same fan-out the frame already gets.
 
 
+### D-T-036-1 - gift Larper's world body height is 1.0 u / hit diameter 0.8 u [CONTESTABLE] (T-036)
+SPEC GAP: DESIGN.md section 5 (SR-2) gives gift Larper no world row - "The nuke has no body; gift
+Larper occupies gift slots as the tripmine (section 3.3) - the roster's other rows carry no world
+size" - so no document states a body height, and none was invented elsewhere. The billboard needs
+one to scale the PNG (billboard.gd's scale divides by the frame height at 0.01 u/px, and the lobby
+exhibit multiplies by it), so `sprites.json`'s top-level `world_height` moves `null` -> `1.0` (the
+T-016 documented null for the absent SR-2 row is retired for this enemy only; its `_doc` note is
+updated). The row stands at the section 6.7 occupancy height (`y*0.5 + 1.0`, sim/mines.gd's box
+point) - a ~1 u box is the only number in play. HITBOXES: hit cylinder = 0.8 x body width; at
+1.0 u tall the TBD sheet's square 80 px body (of the 256 px frame) is 1.0 u wide, so the hit
+diameter is 0.8 u, pinned in cfg (`hit_diameter`, the D-T030-2 pattern - the art derivation and
+the pin agree). The 1.0 u value is [CONTESTABLE]: the owner may re-pin any height without touching
+the behavior; SR-2 stands untouched otherwise, and the real kill volume is the section 3.3 0.9 u
+ANY-height trigger, not this cylinder. WHY [gameplay reason]: without a world height the PNG cannot
+render or be exhibited at all; 1.0 u matches the occupancy-height lift and reads correctly on the
+lobby plinth (exhibit scales to 1.6 u from it).
+
+### D-T-036-2 - [CONTESTABLE] gift Larper's pursuit ceiling and burst ceiling are 0.0 (T-036)
+SPEC GAP: the ticket asks for the keys; a stationary slot hazard has no pursuit. Built:
+`base_speed` 0.0, `pursuit_ceiling` 0.0, `burst_ceiling` 0.0. Any multiplier product with a 0
+base speed clamps to 0 (FloatBody), so no overtime tier, curse or burst can give a mine motion -
+SR-5 is honoured vacuously rather than by a hidden "stationary" flag. WHY [gameplay reason]: a
+non-zero ceiling would imply a reachable pursuit speed for a mine and invite "mines speed up
+at high tiers" readings no document supports; 0.0 is the only value that cannot mislead.
+
+### D-T-036-3 - the runtime body-contact path is DISABLED for this row; the section 3.3 ladder is the only kill path (T-036)
+cfg carries `contact_kill: false`. `sim/mines.gd` owns contact for slot occupants: the player's
+centre within 0.9 u HORIZONTAL of the box point at ANY height triggers the fixed ladder (defuse
+roll -> Subspacial Barrier -> Last Light -> D-MINE, D-058), and a reached death blasts 3 u.
+`enemy_runtime.gd`'s plain `_contact_kills` would kill without the defuse roll and without
+consuming the barrier - a bypass of the FINAL resolution order - so the row is spawnable through
+`spawn_at` (the drop-in shape) but inert against players; only the ladder kills. The test asserts
+both directions (the ladder kills D-MINE with Last Light spent, including from jump-apex height;
+the runtime step never kills on overlap). WHY [gameplay reason]: a mine that killed through two
+paths at once would silently refund defuse stacks' worth of survivability differently per
+prediction, and D-051's deterministic roll would be unauditable.
+
+### D-T-036-4 - view tell: particles inside the 12 u ramp; no telegraph animation exists (T-036)
+`game/view/gift_larper_view.gd` (the D-T030-7 pattern): the `spawn` state renders NOTHING ("present
+from level start - no fade, no scaling", the T-083 anim block); `idle` steps the 5-frame cycle
+(48 ticks per frame; 240 ticks = 1 revolution per 4.0 s, the section 3.3 binding turn); the
+`telegraph` state renders NO animation ("its tell is the look, within 12 u"). The tell is a
+distance read (`sync(eye)`): inside `TELL_DISTANCE` (12.0 u, boundary inclusive, D-T021-6) the
+constant pink emitter (#FF4FD8) shows; beyond it the emitter is off and the body reads as a black
+gift. The rim-glow-beyond-12-u half of the section 3.3 tell is the glb path's job
+(`view/tripmine_view.gd` material_overlay - a Sprite3D cannot additive-overlay itself); the PNG
+sheet keeps the ordinary-gift look. The Method Acting 5-7 u ramp and the Radar Module: Mines 14 u
+outline are anim-block params, recorded and unwired: no upgrade-hook path exists in the view
+layer yet (owner to say where upgrade visuals bind). WHY [gameplay reason]: the 12 u ramp is the
+counter-play window - at run speed it is 1.3 s of reaction - and the tell's honesty is the spec.
+
+### D-T-036-5 - detonation and defused render client-side across the T-083 windows; 24 TOTAL ticks, not per frame (T-036)
+Built in the view: `on_detonation()` runs the `attack_detonation` state's 18 TOTAL ticks - a
+white flash (full-white modulate for the first ~4 ticks, then back) plus a sphere burst expanding
+0 -> `burst_radius_u` (3.0 u), lerping `#FF4FD8` -> `#000000` while fading out; the audio hook
+plays `explosion`. `on_defused()` runs the `defused` state's 24 TOTAL ticks - modulate greys out,
+the sprite drops `drop_u` (0.5 u) while fading to alpha 0, a one-shot grey 'pff' puff fires at the
+end, the `pff` audio hook fires, NO blast (the anim block's `no_blast`). The white flash is a
+modulate, not a texture swap - the art is the T-016 TBD placeholder. WHY [gameplay reason]: the
+18-tick detonation is the kill's visual confirmation (it must be unmistakable and client-local);
+the 24-tick defuse is the "you were saved" read - grey, low, gone.
+
+### D-T-036-6 - audio cues `explosion` (ENEMIES.md) + `pff` (the T-083 defused effect) as no-op-silent placeholders (T-036)
+ENEMIES.md "New sound" (verbatim): "Roblox tripmine explosion sound effect." - cue `explosion`,
+file `assets/audio/enemies/gift_larper/explosion.wav` (T-055's cue = file name contract); TBD.md
+section 2 already lists the missing recording as the synthesized blast. A second cue `pff` is
+named by the T-083 anim block's own `defused` effect name - a deliberate, tiny defuse puff; it is
+NOT an ENEMIES.md addition and stays TBD until synthesised. Both hooks no-op SILENTLY while the
+files are absent (the kiwi cat pattern; T-055 owns the files) and both are TBD.md rows 30/31.
+WHY [gameplay reason]: the explosion is the punishment cue; the defuse puff is the relief cue -
+and a missing wav can never drift the sim.
+
+### D-T-036-7 - gift Larper carries NO arbiter block (T-036)
+The behavior needs no scheduling gate: gift Larper never "appears" - it is a slot occupant from
+level start ("present from level start; no fade, no scaling"), and SR-4/D-067 gate address me and
+gin ichimaru only. `anchor_kinds` stays `[]` (the section 5 preferred-kind table: `none` - "it
+lives in gift slots"); nothing about the mineset is deferrable by another enemy.
+WHY [gameplay reason]: an arbiter entry for a mine would let another enemy's schedule silence the
+mines - no document grants or hints at that.
+
+### D-T-036-8 - enemy.json gains the lobby-panel keys (D-T030-6 pattern); content counts unchanged (T-036)
+`behavior` / `counter_play` / `tell` top-level strings (the altar panel path,
+`antechamber.gd` lines) - counter-play "walk around it, never over it - the star and the pink
+sparkles inside 12 u give it away"; tell "black framed box, six-pointed star, pink particles
+inside 12 u; rim glow like an ordinary black gift beyond it". `test_content.gd` does NOT bump:
+gift_larper's enemy.json already counted (2 enemies / 89 content_ids before this ticket).
+WHY [gameplay reason]: the panel is the only place the player learns the counter-play before the
+level starts.
+
+### D-T-036-9 - the answer window is asserted as geometry + arithmetic, never as motion (T-036)
+FLEET_PACK's T-036 answer window: "look and walk around it - at run speed 12 u = 1.3 s of the
+star/particle tell inside the 12 u ramp (0.67 s under Method Acting); D-026 guarantees a walkable
+bypass around every mine". The mine never moves, so the test asserts statics with +/-1 tick room
+on the timings: tell radius 12.0 u (inclusive boundary), the 0.9 u horizontal ANY-height trigger
+(the jump-over case kills at jump apex), the 3.0 u blast, the +3-mines-per-vote curve (clamp 15),
+and the reaction arithmetic (12.0 u at 9.0 u/s run speed = 80 ticks = 1.33 s of warning).
+WHY [gameplay reason]: the counter-play is looking and walking around - a motion assertion would
+test a mine that does not exist.
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
