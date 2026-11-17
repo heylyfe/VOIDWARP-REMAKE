@@ -277,6 +277,11 @@ func _str_or_empty(v: Variant) -> String:
 	return str(v)
 
 
+# JSON null -> "" (Godot's str(null) is "<null>", which must never read as a parked reason)
+func _str_nullable(v: Variant) -> String:
+	return "" if v == null else str(v)
+
+
 # ---- per-enemy checks (assertions 1, 2, 3 + coverage) --------------------------
 func _check_enemy(root: String, s3: Dictionary, id: String, doc: Dictionary) -> Array[String]:
 	var fails: Array[String] = []
@@ -411,8 +416,8 @@ func _check_enemy(root: String, s3: Dictionary, id: String, doc: Dictionary) -> 
 			# assertion 3 (exempt: loop, or a documented parked row)
 			if bool(entry.get("loop", false)):
 				_loop_lines.append("LOOP %s/%s: binding cue is a loop; assertion 3 not applicable (D-T087-2)" % [id, cue])
-			elif str(entry.get("parked", "")) != "":
-				_parked_lines.append("PARKED %s/%s: assertion 3 exempted (%s)" % [id, cue, str(entry.get("parked"))])
+			elif _str_nullable(entry.get("parked")) != "":
+				_parked_lines.append("PARKED %s/%s: assertion 3 exempted (%s)" % [id, cue, _str_nullable(entry.get("parked"))])
 			elif wavs.has(cue):
 				var end_ticks := off + float(wavs[cue]["frames"]) / SAMPLES_PER_TICK
 				if absf(end_ticks - aoff) > ATTACK_TICK_TOLERANCE + 1e-6:
@@ -439,7 +444,7 @@ func _check_enemy(root: String, s3: Dictionary, id: String, doc: Dictionary) -> 
 			continue
 		var bcue: Variant = atk.get("binding_cue")
 		if bcue == null or str(bcue) == "":
-			var parked := str(atk.get("parked", ""))
+			var parked := _str_nullable(atk.get("parked"))
 			if parked == "":
 				if is_lethal:
 					fails.append("lethal attack '%s' (%s): no binding cue and no parked reason - uncovered" % [atk_id, code])
