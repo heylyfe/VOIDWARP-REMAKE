@@ -70,6 +70,7 @@ const GiftsScript := preload("res://sim/gifts.gd")
 const MinesScript := preload("res://sim/mines.gd")
 const EnemyRuntime := preload("res://sim/enemy_runtime.gd")
 const RunLogScript := preload("res://app/run_log.gd")
+const HashScript := preload("res://sim/state_hash.gd")
 
 const E_ADDRESS_ME := preload("res://content/enemies/address_me/enemy.gd")
 const E_CLAUDE := preload("res://content/enemies/claude/enemy.gd")
@@ -87,6 +88,7 @@ const E_YOU := preload("res://content/enemies/you/enemy.gd")
 const DT := 1.0 / 60.0
 const SEED_BASE := 60717          # run i uses SEED_BASE + i; fixed, so 200 runs reproduce
 const MAX_TICKS_PER_LEVEL := 18000  # 5 min of sim per level; a run past it is "stuck"
+const REPLAY_CHECK_EVERY := 60    # checkpoint cadence for the A4 replay proof (every 60 ticks)
 const REPLAN_TICKS := 45          # route refresh cadence (also on collect / phase flip)
 const REACT_TICKS := 15           # 250 ms at 60 Hz (DESIGN.md section 9)
 const FOOT_INFLATE := 0.45        # body radius applied to telegraph footprints
@@ -173,8 +175,22 @@ static func run_probe(runs: int, seed_base: int, max_level: int = MAX_LEVEL_DEFA
 # ---------------------------------------------------------------- one run, one level --
 
 ## One full probe run. Returns {"reached_6","reached_12","reached_18","outcome","entered","class"}
-## outcome: "dead" | "stuck" | "timeout" | "complete" (reached max_level).
-static func play_run(api: RefCounted, seed: int, max_level: int, p_log = null) -> Dictionary:
+## outcome: "dead" | "stuck" | "timeout" | "complete" | "cut".
+##
+## p_rec (optional, A4 replay proof; FIX-A4): when non-empty, the run is RECORDED or REPLAYED
+## instead of merely played:
+##   record   {"record": true, "max_ticks": N, ...} - every tick's bot input dict is appended to
+##             p_rec["inputs"]; a 60-tick checkpoint hash (state_hash.gd over the level's RunState)
+##             is appended to p_rec["hashes"] at every 60th GLOBAL tick of the run; the run stops
+##             at max_ticks total ticks (0 = no cap) and returns with outcome "cut".
+##   playback {"playback": [input dicts], "playback_cursor": 0, ...} - the recorded input stream
+##             is fed tick-for-tick instead of the bot's brain; everything else (lobbies, level
+##             gen, enemy runtime, gifts/mines/beacon) runs identically, so the checkpoints must
+##             equal the recording's. p_rec["playback_short"] is set if the stream runs dry.
+## The RunState the bot drives carries the player's x/y/z/vx/vz as before, plus vy / grounded /
+## prev_buttons (additive; nothing reads them), so state_hash.gd captures the kinematic state.
+static func play_run(api: RefCounted, seed: int, max_level: int, p_log = null,
+		p_rec: Dictionary = {}) -> Dictionary:
 	var ledger := {
 		"votes": {}, "curses": {}, "stacks": {}, "purse": 0, "tithes": 0,
 		"hunger": 0, "last_vote": "", "class": "",
@@ -194,7 +210,7 @@ static func play_run(api: RefCounted, seed: int, max_level: int, p_log = null) -
 	var death_killer := ""
 	var death_code := ""
 	while entered <= max_level:
-		var result: Dictionary = _play_level(api, ledger, seed, entered, p_log)
+		var result: Dictionary = _play_level(api, ledger, seed, entered, p_log, p_rec)
 		var res := str(result.get("result", "dead"))
 		if res == "complete":
 			if entered >= max_level:
@@ -374,9 +390,10 @@ static func _path_to(parent: PackedInt32Array, start: int, goal: int) -> Array[i
 	return out
 
 
-## Play one level. Returns {"result": "complete" | "dead" | "stuck" | "timeout"}.
+## Play one level. Returns {"result": "complete" | "dead" | "stuck" | "timeout" | "cut"}.
+## p_rec: see play_run - record or playback bookkeeping, threaded to the tick loop.
 static func _play_level(api: RefCounted, ledger: Dictionary, seed: int, level: int,
-		p_log = null) -> Dictionary:
+		p_log = null, p_rec: Dictionary = {}) -> Dictionary:
 	var votes: Dictionary = ledger["votes"]
 	var curses: Dictionary = ledger["curses"]
 	var extra: int = E_GIFT_LARPER.extra_mines(int(votes.get("gift_larper", 0)))
@@ -443,7 +460,20 @@ static func _play_level(api: RefCounted, ledger: Dictionary, seed: int, level: i
 	var mem := _fresh_mem()
 	mem["slot_tiles"] = slot_tiles
 	while lv.tick < MAX_TICKS_PER_LEVEL:
-		var a_in: Dictionary = _bot_input(mem, lv, rt, ctl, w, w2, gtiles, adj, L)
+		var a_in: Dictionary
+		if p_rec.has("playback"):
+			var cursor: int = int(p_rec.get("playback_cursor", 0))
+			var stream: Array = p_rec["playback"]
+			if cursor < stream.size():
+				a_in = stream[cursor]
+			else:
+				p_rec["playback_short"] = true
+				a_in = {"move_x": 0, "move_z": 0, "buttons": 0, "aim_x": 0.0, "aim_z": 1.0}
+			p_rec["playback_cursor"] = cursor + 1
+		else:
+			a_in = _bot_input(mem, lv, rt, ctl, w, w2, gtiles, adj, L)
+			if bool(p_rec.get("record", false)):
+				(p_rec["inputs"] as Array).append(a_in.duplicate(true))
 		var ev: Array = []
 		for e in ctl.step(DT, a_in, w):
 			ev.append(e)
@@ -453,6 +483,9 @@ static func _play_level(api: RefCounted, ledger: Dictionary, seed: int, level: i
 		p0["z"] = ctl.z
 		p0["vx"] = ctl.vx
 		p0["vz"] = ctl.vz
+		p0["vy"] = ctl.vy
+		p0["grounded"] = ctl.grounded
+		p0["prev_buttons"] = int(a_in["buttons"])
 		lv.tick += 1
 		GiftsScript.tick(lv, 0, ev)
 		var minev: Array = []
@@ -474,6 +507,20 @@ static func _play_level(api: RefCounted, ledger: Dictionary, seed: int, level: i
 			print("POS t=%d x=%.2f y=%.2f z=%.2f grounded=%s cur=%d gifts=%d charges=%d" % [
 				lv.tick, ctl.x, ctl.y, ctl.z, ctl.grounded, _tile_under(w, ctl),
 				lv.gifts.remaining(), ctl.charges])
+		# A4 replay proof bookkeeping: one global tick counter across levels; a checkpoint
+		# hash at every REPLAY_CHECK_EVERY-th tick, taken after the tick's full event stream
+		# so controller + gifts + mines + beacon + enemies are all reflected.
+		if not p_rec.is_empty():
+			var total: int = int(p_rec.get("total_ticks", 0)) + 1
+			p_rec["total_ticks"] = total
+			if total % REPLAY_CHECK_EVERY == 0:
+				(p_rec["hashes"] as Array).append(HashScript.sha256(rs))
+			var cap: int = int(p_rec.get("max_ticks", 0))
+			if cap > 0 and total >= cap:
+				p_rec["cut"] = true
+				ledger["charges"] = int(ctl.charges)
+				ledger["last_light_spent"] = bool(ctl.last_light_spent)
+				return {"result": "cut"}
 		if ctl.dead:
 			ledger["charges"] = int(ctl.charges)
 			ledger["last_light_spent"] = bool(ctl.last_light_spent)

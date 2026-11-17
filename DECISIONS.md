@@ -5430,6 +5430,40 @@ a display detail, not a sim or gameplay number, and nothing moves a check. The E
 paragraph (game/app/menu.gd ABOUT_DISCLAIMER) is a different wording by design (PARKED.md #2)
 and is unchanged by this ticket.
 
+### D-FIX-A4-1 - the A4 bot-run length and seed set (FIX-A4) [CONTESTABLE]
+FLEET_PACK.md section 5 A4 states exactly this: "10 recorded bot runs replay with
+identical state hashes at every checkpoint", measured by game/tests/test_replay.gd. It does
+NOT state a run length, a seed set, or which seeds, and the checkpoint cadence (every
+60 ticks) is inherited from the existing random-input run, not from the criterion. Those
+are numbers no document states, so they are written down here as [CONTESTABLE] with the
+gameplay reason:
+- The ten recorded runs are played by the T-060 bot (game/tools/bot_run.gd, grown a
+  record/playback mode: play_run(..., p_rec)) through the real sim surface - controller.gd
+  + gifts/mines/beacon + enemy runtime inside a RunState - and the checkpoint hash is
+  sim/state_hash.gd over that RunState. Only ADDITIVE state surfacing was added to the bot
+  path (vy / grounded / prev_buttons on the level's player dict; nothing reads them); no
+  behavior, bot tuning, threshold or spec number was moved.
+- The replay feeds the recorded input stream tick-for-tick (playback: the bot's brain is
+  bypassed, lobbies/level-gen/enemies identical) - so the artifact that replays is the
+  recorded run itself, not merely a re-run of a deterministic bot. A run that dies on
+  level 1 is still a recorded run; the criterion measures replay determinism, not bot
+  competence (bot competence is A3's gap, PARKED.md #4 / T-026).
+- BOT_TICKS = 1000 per recorded run, one level (max_level = 1), ten distinct seeds
+  {101..1001}. WHY 1000: measured on this machine - baseline run_all = 126 s
+  (TESTS 55 passed 0 failed); ten full 3,600-tick recordings added ~184-190 s (per-seed
+  record pass 7.6-27.1 s; replay passes ~0.1-0.5 s each because playback skips the bot
+  brain) - run_all reached ~310-316 s, OVER the gate's 300 s step-3 timeout
+  (tools/gate.ps1 -StepTimeoutSec default 300), so the plain gate command would be killed
+  before printing its verdict. At 1000 ticks every seed still yields >= 1 checkpoint
+  (minimum death 653 ticks, seed 404) and run_all lands ~240 s. The ten seeds are
+  arbitrary distinct seeds, not tuned to any outcome; the COUNT (10) and the 60-tick
+  checkpoint cadence are NOT reduced, per the ticket.
+- Gameplay reason: the proof needs the bot's REAL input stream over a real level slice;
+  1000 ticks is 16.7 s of sim, past the first 60-tick checkpoints and into mid-level play,
+  which exercises controller, gifts, mines, beacon and enemies through state_hash.gd.
+Owner to rule: raise the gate step-3 budget (~316 s measured need) to lift BOT_TICKS back
+to 3600, or accept the 1000-tick recorded runs as the A4 evidence.
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)

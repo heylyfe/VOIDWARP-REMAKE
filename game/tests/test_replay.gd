@@ -8,7 +8,12 @@ extends RefCounted
 #      60th tick (60 checkpoints);
 #   3. replay a deliberately perturbed input list (one input changed at tick 1201): every
 #      checkpoint at or after the perturbation must differ.
-# Everything is driven through the public sim surface: run_state.gd, sim.gd step, state_hash.gd.
+#   4. A4 (FLEET_PACK.md section 5): TEN distinct-seed bot runs (BOT_SEEDS), each recorded
+#      through the real sim surface via tools/bot_run.gd (controller.gd + gifts/mines/beacon +
+#      enemy runtime inside a RunState) and replayed tick-for-tick from the recorded input
+#      stream; the state hash must be identical at every 60th tick of each run.
+# Everything is driven through the public sim surface: run_state.gd, sim.gd step, state_hash.gd
+# (the random-input run), and bot_run.gd's record/playback mode (the bot runs).
 
 const VoidGenScript := preload("res://terrain/voidgen.gd")
 const VoidRngScript := preload("res://terrain/void_rng.gd")
@@ -17,6 +22,8 @@ const SimScript := preload("res://sim/sim.gd")
 const HashScript := preload("res://sim/state_hash.gd")
 const InputScript := preload("res://sim/input.gd")
 const EventsScript := preload("res://sim/events.gd")
+const BotRunScript := preload("res://tools/bot_run.gd")
+const ContentApiScript := preload("res://core/content_api.gd")
 
 const TICKS := 3600
 const CHECK_EVERY := 60
@@ -25,6 +32,16 @@ const INPUT_SEED := 777
 # The perturbation: tick index 1200 (0-based; the 1201st input) gets move axes shifted and the
 # JUMP bit flipped — a guaranteed-visible single-input change per D-T010-2's axis contract.
 const PERTURB_AT := 1200
+# A4 (FLEET_PACK.md section 5): TEN recorded bot runs, ten distinct seeds, replayed with
+# identical state hashes at every checkpoint. The driver is bot_run.gd (the real sim surface:
+# controller.gd + gifts/mines/beacon + enemy runtime inside a RunState); each recorded run is
+# capped at BOT_TICKS ticks and ONE level - a run that dies on level 1 is still a recorded run
+# and still proves determinism. The replay feeds the recorded input stream tick-for-tick.
+# BOT_TICKS is a BUDGET, not a spec number (D-FIX-A4-1, [CONTESTABLE]): full-length bot
+# recordings measured +188 s on top of a 126 s run_all, blowing the gate's 300 s step timeout;
+# 1000 ticks keeps every seed producing >= 1 checkpoint (min death tick 653) under the budget.
+const BOT_SEEDS := [101, 202, 303, 404, 505, 606, 707, 808, 909, 1001]
+const BOT_TICKS := 1000
 
 
 func run() -> Array[String]:
@@ -73,7 +90,66 @@ func run() -> Array[String]:
 		failures.append("recorded run produced no jump events (input generator or sim broken)")
 	if not _saw_event(RUN_SEED, inputs, EventsScript.EV_LAND):
 		failures.append("recorded run produced no land events (input generator or sim broken)")
+
+	# A4: TEN recorded bot runs, ten distinct seeds, identical hashes at every checkpoint.
+	_bot_runs(failures)
 	return failures
+
+
+## A4 (FLEET_PACK.md section 5): ten distinct-seed bot runs, recorded then replayed, identical
+## state hash at every 60th tick. Recording pass = the bot plays (inputs captured per tick);
+## replay pass = the same seeds re-run with the recorded stream fed tick-for-tick (the bot's
+## brain is bypassed, everything else identical). A run that dies on level 1 is still a
+## recorded run. Fails loudly if a seed is recorded twice, a run yields no checkpoint, or any
+## checkpoint diverges.
+func _bot_runs(f: Array[String]) -> void:
+	var seen := {}
+	for seed in BOT_SEEDS:
+		seen[int(seed)] = true
+	if seen.size() != BOT_SEEDS.size():
+		f.append("BOT_SEEDS contains duplicates: %s" % str(BOT_SEEDS))
+		return
+	var api := ContentApiScript.load()
+	if not bool(api.is_ok()):
+		f.append("content boot refused: %s" % " / ".join(api.boot_errors()))
+		return
+	var total_checkpoints := 0
+	for seed in BOT_SEEDS:
+		var rec := {"record": true, "inputs": [], "hashes": [], "total_ticks": 0,
+				"max_ticks": BOT_TICKS}
+		var row_a: Dictionary = BotRunScript.play_run(api, int(seed), 1, null, rec)
+		var inputs: Array = rec["inputs"]
+		var hashes_a: Array = rec["hashes"]
+		var replay := {"playback": inputs, "playback_cursor": 0, "hashes": [],
+				"total_ticks": 0, "max_ticks": BOT_TICKS}
+		var row_b: Dictionary = BotRunScript.play_run(api, int(seed), 1, null, replay)
+		var hashes_b: Array = replay["hashes"]
+		if inputs.is_empty():
+			f.append("bot seed %d recorded 0 ticks - not a recorded run" % int(seed))
+			continue
+		if bool(replay.get("playback_short", false)):
+			f.append("bot seed %d: replay ran dry of recorded inputs (%d recorded)" % [int(seed), inputs.size()])
+		if hashes_a.is_empty():
+			f.append("bot seed %d: no 60-tick checkpoint reached (run lasted %d ticks) - cannot prove determinism" % [int(seed), int(rec["total_ticks"])])
+			continue
+		if hashes_a.size() != hashes_b.size():
+			f.append("bot seed %d: checkpoint count differs: record %d vs replay %d" % [int(seed), hashes_a.size(), hashes_b.size()])
+			continue
+		if int(rec["total_ticks"]) != int(replay["total_ticks"]):
+			f.append("bot seed %d: tick count differs: record %d vs replay %d" % [int(seed), int(rec["total_ticks"]), int(replay["total_ticks"])])
+		if str(row_a.get("outcome", "")) != str(row_b.get("outcome", "")):
+			f.append("bot seed %d: outcome differs: record %s vs replay %s" % [int(seed), str(row_a.get("outcome")), str(row_b.get("outcome"))])
+		var mism := 0
+		for c in hashes_a.size():
+			if hashes_a[c] != hashes_b[c]:
+				mism += 1
+				f.append("bot seed %d checkpoint %d (tick %d): hashes differ between record and replay (%s vs %s)"
+						% [int(seed), c, (c + 1) * CHECK_EVERY, hashes_a[c], hashes_b[c]])
+		total_checkpoints += hashes_a.size()
+		if mism == 0:
+			print("REPLAY-BOT seed=%d outcome=%s ticks=%d checkpoints=%d identical record/replay" % [
+					int(seed), str(row_a.get("outcome")), int(rec["total_ticks"]), hashes_a.size()])
+	print("REPLAY-BOT %d recorded bot runs (cap %d ticks), %d checkpoints identical between record and replay" % [BOT_SEEDS.size(), BOT_TICKS, total_checkpoints])
 
 
 ## Deterministic bot-input generator: hold a move heading for 15..45 ticks, press JUMP for
