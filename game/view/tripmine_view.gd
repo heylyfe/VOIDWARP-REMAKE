@@ -21,6 +21,8 @@ const GiftsViewScript := preload("res://view/gifts_view.gd")
 const MinesScript := preload("res://sim/mines.gd")
 
 const MODEL := "res://assets/models/tripmine_box.glb"
+## The tell radius (DESIGN.md section 3.3): the sim constant, mirrored here.
+const TELL_DISTANCE: float = MinesScript.TELL_DISTANCE
 ## The turn: one full revolution per 4.0 s (DESIGN.md section 3.3 cycle).
 const TURN_PERIOD := 4.0
 const TAU_F := 6.283185307179586

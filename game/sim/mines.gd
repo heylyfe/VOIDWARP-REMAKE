@@ -137,7 +137,7 @@ static func defuse_roll(p_run_seed: int, p_level: int, slot_id: int, stacks: int
 ##   ctls:   one controller per player index (or a null entry to skip that
 ##           player - the T-010 placeholder rows pass nulls);
 ##   stacks: defuse stacks per player index (the Defuse Kit purchase count).
-static func tick(lv: RefCounted, ctls: Array, w: Dictionary, stacks: Array, tick: int,
+static func tick(lv, ctls: Array, w: Dictionary, stacks: Array, tick: int,
 		events: Array) -> void:
 	var mines: RefCounted = lv.mines
 	if mines == null or mines.count() == 0:
@@ -156,7 +156,7 @@ static func tick(lv: RefCounted, ctls: Array, w: Dictionary, stacks: Array, tick
 
 
 ## The contact ladder for player i on mine slot (the fixed order of D-058).
-static func _contact(lv: RefCounted, ctls: Array, w: Dictionary, i: int, ctl,
+static func _contact(lv, ctls: Array, w: Dictionary, i: int, ctl,
 		slot: int, stacks: int, tick: int, events: Array) -> String:
 	var mines: RefCounted = lv.mines
 	# the contact itself (radar / HUD surface; the ladder decides the outcome)
@@ -186,7 +186,6 @@ static func _contact(lv: RefCounted, ctls: Array, w: Dictionary, i: int, ctl,
 	# D-MINE otherwise. The mine is consumed in both branches (section 3.3).
 	var saved: bool = ctl.try_kill(DeathScript.MINE_CODE, DeathScript.CODES[DeathScript.MINE_CODE],
 			w, events)
-	events.append(EventsScript.make(EV_MINE_DETONATED, tick, i))
 	var ev3 := EventsScript.make(EV_MINE_DETONATED, tick, i)
 	ev3["slot"] = slot
 	ev3["blast_radius"] = BLAST_RADIUS
@@ -216,7 +215,7 @@ static func _contact(lv: RefCounted, ctls: Array, w: Dictionary, i: int, ctl,
 
 
 ## Steps 2..4 of the ladder for a blast victim (no defuse re-roll, D-T021-4).
-static func _blast_victim(lv: RefCounted, w: Dictionary, j: int, ctl, tick: int,
+static func _blast_victim(lv, w: Dictionary, j: int, ctl, tick: int,
 		events: Array) -> void:
 	var beacon: RefCounted = lv.beacon
 	if beacon != null and bool(beacon.consume_barrier(j)):
