@@ -24,6 +24,12 @@ extends Node3D
 # the sky instead of standing. A missing frame PNG becomes the TBD placeholder (ENEMIES.md TBD
 # FALLBACK): the scene never waits on an asset.
 #
+# Photo cards (MENU-RECHECK, D-MENU-10): an enemy whose pose frame is a full opaque rectangle (a
+# photo that keeps its own background, by owner ruling) would read as a flat bright picture
+# pasted onto the island. The menu detects it from the pixels (no id), grades it a little toward
+# the act's cool light and stands it in a doorway frame of the island's own materials, with a
+# soft inner vignette, so it reads as a lit room in the void rather than a sticker.
+#
 # No Tween, no timer node: every motion is a pure function of the stage clock advanced in
 # _process (or by advance() in tests), so it runs identically in and out of the scene tree.
 
@@ -57,6 +63,17 @@ const CANON_H_MAX := 4.0
 const SHOW_H_MIN := 1.2
 const SHOW_H_MAX := 3.4
 const FLYER_H := 1.3      # the sky enemy's body height (no canon row exists for it)
+
+## Photo cards (D-MENU-10). Opaque share of the pose frame's body_rect (alpha > 16) at or above
+## which the frame is a photo card. Measured on the shipped roster: the photo 1.000, the densest
+## cut-out 0.801 - the gap is wide on purpose, so a cut-out never gets a doorway.
+const CARD_COVERAGE_MIN := 0.97
+const CARD_GRADE := Color(0.80, 0.83, 0.95)  # about -18 % value, a little cooler: the act's indigo light
+const CARD_FRAME_W := 0.16    # doorway post / lintel thickness (u)
+const CARD_FRAME_D := 0.26    # doorway depth (u)
+const CARD_SILL_H := 0.05     # threshold strip in front of the photo's bottom edge (u)
+const CARD_VIGNETTE_A := 0.7  # void-coloured inner shadow alpha at the photo's edges
+const CARD_VIGNETTE_EDGE := 0.22  # share of the width / height the inner shadow fades over
 
 ## Terraces (D-MENU-3). Rows fill back to front; each row's slots fill centre-out.
 const ROWS: Array = [
@@ -98,7 +115,7 @@ var palette: Dictionary = {}
 var camera: Camera3D
 var env_node: WorldEnvironment
 var beacon: Node3D
-var roster: Array = []          # [{id, name, height, show_h, flying, holder, sprite, caption}]
+var roster: Array = []          # [{id, name, height, show_h, flying, holder, sprite, caption, card}]
 var clock := 0.0
 
 var _sky_holder: Node3D = null
@@ -396,7 +413,7 @@ func _build_props() -> void:
 	if gold_ps != null:
 		var gold_mat := GiftsViewScript.emission_material(GiftsViewScript.GOLD_FACTOR)
 		# in the gaps between front-row enemies, never in front of one
-		for gxz in [Vector2(0.0, 3.2), Vector2(3.1, 3.0), Vector2(7.6, -0.4),
+		for gxz in [Vector2(0.0, 3.2), Vector2(2.7, 3.3), Vector2(7.6, -0.4),
 				Vector2(3.4, -5.2), Vector2(-3.2, -5.4)]:
 			var gp := _on_tile(gxz)
 			if is_nan(gp.y):
@@ -731,11 +748,140 @@ func _add_enemy(e: Dictionary, show_h: float, pos: Vector3, flying: bool) -> voi
 		if tex != null and tex.get_height() > 0:
 			w = show_h * float(tex.get_width()) / float(tex.get_height())
 		holder.add_child(_shadow_blob(clampf(w * 0.42, 0.45, 2.4)))
+	var card: Node3D = null
+	if not flying and is_photo_card(sprite):
+		sprite.modulate = CARD_GRADE
+		card = _card_frame(sprite)
+		holder.add_child(card)
 	var caption := _make_caption(e, show_h)
 	holder.add_child(caption)
 	roster.append({"id": str(e["id"]), "name": str(e["name"]), "height": float(e["height"]),
 			"show_h": show_h, "flying": flying, "holder": holder, "sprite": sprite,
-			"caption": caption, "base": pos})
+			"caption": caption, "base": pos, "card": card})
+
+
+# ---- photo cards (D-MENU-10) -------------------------------------------------------------------
+
+## The current frame's body_rect [x, y, w, h] in texture pixels ([] when none).
+static func _body_rect(sprite: Sprite3D) -> Array:
+	var a: Dictionary = sprite._current_anim()
+	if a.is_empty():
+		return []
+	var brs: Array = a["body_rect"]
+	if brs.is_empty():
+		return []
+	return brs[mini(int(sprite.frame_i), brs.size() - 1)]
+
+
+## Share of the current frame's body_rect that is opaque (alpha > 16/255), sampled every 4 px.
+## 0.0 when there is no readable texture.
+static func opaque_coverage(sprite: Sprite3D) -> float:
+	var br: Array = _body_rect(sprite)
+	if sprite.texture == null or br.size() < 4:
+		return 0.0
+	var img: Image = sprite.texture.get_image()
+	if img == null or img.is_empty():
+		return 0.0
+	if img.is_compressed():
+		img.decompress()
+	var x0: int = clampi(int(br[0]), 0, img.get_width() - 1)
+	var y0: int = clampi(int(br[1]), 0, img.get_height() - 1)
+	var x1: int = clampi(int(br[0]) + int(br[2]), x0 + 1, img.get_width())
+	var y1: int = clampi(int(br[1]) + int(br[3]), y0 + 1, img.get_height())
+	var n := 0
+	var tot := 0
+	for y in range(y0, y1, 4):
+		for x in range(x0, x1, 4):
+			tot += 1
+			if img.get_pixel(x, y).a > 16.0 / 255.0:
+				n += 1
+	return float(n) / float(maxi(tot, 1))
+
+
+static func is_photo_card(sprite: Sprite3D) -> bool:
+	return opaque_coverage(sprite) >= CARD_COVERAGE_MIN
+
+
+## The visible body as a rectangle in the holder's un-rotated plane: position.x = left edge,
+## position.y = bottom, size = width x height, all in u.
+static func card_rect(sprite: Sprite3D) -> Rect2:
+	var br: Array = _body_rect(sprite)
+	if sprite.texture == null or br.size() < 4:
+		return Rect2()
+	var k: float = sprite.scale.x * sprite.pixel_size
+	var tex_w: float = float(sprite.texture.get_width())
+	var left: float = sprite.position.x + (float(br[0]) - tex_w * 0.5 + sprite.offset.x) * k
+	return Rect2(left, body_bottom(sprite), float(br[2]) * k, float(br[3]) * k)
+
+
+## A doorway around the photo: two posts and a lintel in the pillars' prop_block with a
+## slab_trim cap, a trim threshold strip, and a void-coloured radial vignette just in front of
+## the photo. Shaded (the beacon lights it), so the flat photo sits inside a lit 3D object.
+## advance() turns it with the billboard every frame.
+func _card_frame(sprite: Sprite3D) -> Node3D:
+	var root := Node3D.new()
+	root.name = "CardFrame"
+	var r: Rect2 = card_rect(sprite)
+	if r.size.x <= 0.0 or r.size.y <= 0.0:
+		return root
+	var fw: float = CARD_FRAME_W
+	var cx: float = r.position.x + r.size.x * 0.5
+	var top: float = r.position.y + r.size.y
+	var post_h: float = r.size.y + fw
+	var block := role("prop_block")
+	var trim := role("slab_trim")
+	# [size, centre, colour]
+	var parts: Array = [
+		[Vector3(fw, post_h, CARD_FRAME_D), Vector3(r.position.x - fw * 0.5, r.position.y + post_h * 0.5, 0.0), block],
+		[Vector3(fw, post_h, CARD_FRAME_D), Vector3(r.end.x + fw * 0.5, r.position.y + post_h * 0.5, 0.0), block],
+		[Vector3(r.size.x + fw * 2.0, fw, CARD_FRAME_D), Vector3(cx, top + fw * 0.5, 0.0), block],
+		[Vector3(r.size.x + fw * 2.0 + 0.06, TRIM, CARD_FRAME_D + 0.06), Vector3(cx, top + fw + TRIM * 0.5, 0.0), trim],
+		[Vector3(r.size.x + fw * 2.0, CARD_SILL_H, CARD_FRAME_D * 0.5), Vector3(cx, r.position.y + CARD_SILL_H * 0.5, CARD_FRAME_D * 0.25), trim],
+	]
+	for part in parts:
+		var pa: Array = part
+		var box := BoxMesh.new()
+		box.size = pa[0]
+		var mi := MeshInstance3D.new()
+		mi.mesh = box
+		var m := StandardMaterial3D.new()
+		m.albedo_color = pa[2]
+		m.roughness = 0.9
+		mi.material_override = m
+		mi.position = pa[1]
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		root.add_child(mi)
+	var q := QuadMesh.new()
+	q.size = r.size
+	var vm := StandardMaterial3D.new()
+	vm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	vm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	vm.albedo_texture = ImageTexture.create_from_image(vignette_image(64))
+	var vi := MeshInstance3D.new()
+	vi.name = "Vignette"
+	vi.mesh = q
+	vi.material_override = vm
+	vi.position = Vector3(cx, r.position.y + r.size.y * 0.5, 0.02)
+	vi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(vi)
+	return root
+
+
+## The doorway's inner shadow: void colour, alpha CARD_VIGNETTE_A at the edges falling to 0 over
+## CARD_VIGNETTE_EDGE of the width / height (smoothstep), darkest in the corners, clear in the
+## middle. Built pixel by pixel (no GradientTexture2D: its deferred update leaves it empty when
+## nothing has drawn a frame yet).
+static func vignette_image(size: int) -> Image:
+	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
+	var void_c := Color(VOID_HEX)
+	for y in size:
+		for x in size:
+			var u: float = (float(x) + 0.5) / float(size)
+			var v: float = (float(y) + 0.5) / float(size)
+			var sx: float = smoothstep(0.0, CARD_VIGNETTE_EDGE, minf(u, 1.0 - u))
+			var sy: float = smoothstep(0.0, CARD_VIGNETTE_EDGE, minf(v, 1.0 - v))
+			img.set_pixel(x, y, Color(void_c.r, void_c.g, void_c.b, CARD_VIGNETTE_A * (1.0 - sx * sy)))
+	return img
 
 
 # ---- floating shards + void motes --------------------------------------------------------------
@@ -896,6 +1042,9 @@ func advance(delta: float) -> void:
 			sprite.face_camera(cam_pos)
 		else:
 			sprite.face_camera(cam_pos - holder.position)
+		var card: Variant = r.get("card", null)
+		if card is Node3D:
+			(card as Node3D).rotation.y = sprite.rotation.y
 	for s in _shards:
 		var node: Node3D = s[0]
 		var spin: Vector3 = s[1]

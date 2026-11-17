@@ -5780,6 +5780,35 @@ backs out. Entries take no keyboard focus, so Enter (ui_accept) does nothing - c
 binding. Mouse: hover selects, click activates. UI sizes scale with min(h / 720, w / 1280).
 WHY: the ticket's readability and input rules; everything else is taste, hence contestable.
 
+### D-MENU-10 [CONTESTABLE] - A photo-card sprite stands in a doorway on the menu island (MENU-RECHECK).
+DECISION: app/menu_stage.gd treats a roster sprite as a "photo card" when its pose frame's body_rect is
+>= 97 % opaque (alpha > 16, sampled every 4 px; measured on the shipped roster: address me's office
+photo 1.000, the densest cut-out 0.801, so no cut-out is anywhere near). Detection is from pixels, never
+by id (FIX-A14 boundary). A photo card is (1) graded: Sprite3D.modulate #CCD4F2 (about -18 % value and a
+little cooler, the act's indigo light); (2) set in a doorway of the island's own materials: two
+prop_block posts and a lintel 0.16 u thick, 0.26 u deep, a slab_trim cap and a slab_trim threshold
+strip, shaded so the beacon lights them; (3) given an inner shadow: a void-coloured (#02030F) quad 0.02 u
+in front of the photo, alpha 0.7 at the edges falling to 0 over 22 % of the width / height (corners
+darkest; measured on a close-up: corner luminance 191 -> 114, centre untouched). The doorway turns with
+the billboard every frame (advance()); test_menu.gd pins detection (synthetic opaque vs cut-out
+textures), the grade, the doorway's facing before and after the camera moves, and that no cut-out is
+framed or graded. The photo itself is never cropped, keyed or masked: the owner's ruling keeps the
+office background, and every pixel of it is still drawn. Also: the front-row gold gift moved from
+(3.1, 3.0) to (2.7, 3.3) - the new seal lies flat and wide, and the old spot put the gift's glow over
+its face from the default camera.
+WHY: unframed, the full-background photo read as a bright flat rectangle pasted onto the island (the
+only hard-edged rectangle in the scene). In a lit doorway it reads as a room in the void - an elephant
+standing in an office you can see into - which keeps the owner's photo intact and makes it belong.
+[CONTESTABLE]: the doorway is taste; overrule by setting CARD_COVERAGE_MIN above 1.0 (no card is ever
+detected; the photo then shows exactly as before).
+
+### D-MENU-11 - The menu no longer lifts billboards; supersedes D-MENU-8.
+DECISION: FIX-BILLBOARD fixed the feet-offset sign in view/billboard.gd (D-FIX-BILLBOARD-1), so the
+menu's local compensation (`_plant()`, position.y = -2 x body_feet_shift) was removed in c10e618.
+test_menu.gd still asserts every body bottom within 0.03 u of its platform before and after animating,
+now against billboard.gd's own placement. PARKED.md #21 is resolved.
+WHY: D-MENU-8 said to remove the lift once billboard.gd was fixed; leaving it would double-correct.
+
 ### D-LOAD-1 [CONTESTABLE] - The loading screen is a flat 2D stage, deliberately NOT the 3D void (TICKET LOADING)
 DECISION: `app/loading_screen.gd` now builds a 2D scene: a vertical indigo-to-black gradient backdrop
 (`#1A1238` -> `#05050F`), drifting cyan / pink / white confetti dots, a cyan-lipped floor slab with
