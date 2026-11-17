@@ -108,3 +108,9 @@ class of placeholder is the same; the rows are split per enemy for owner action.
 | # | ticket | what is TBD | why | owner action |
 |---|---|---|---|---|
 | 32 | T-039 | the placeholder audio cue hooks `spawn_trumpet` (elephant trumpet on spawn), `rumble_build` (low rumbling build-up over the 5 s), `explode_boom` (massive boom on the explode frame) - the ENEMIES.md "New sound" line. Named in `enemy.json` (`stats.audio_cues`); synthesised at runtime in `game/view/audio/address_me_audio.gd`; no .wav files exist yet | T-055 (placeholder audio synth) runs the whole roster and has not landed; the file stem is the hook name | run T-055 (file names = cue names); keep the hook names stable |
+
+## 7. T-037 toucher placeholder rows
+
+| # | ticket | what is TBD | why | owner action |
+|---|---|---|---|---|
+| 33 | T-037 | toucher: placeholder audio cue hook `toucher_squelch` (the ENEMIES.md New sound line: corrupted squelch - wet glitch gurgle and digital distortion - fired only on ticks where new glitched tiles appear). Named in `enemy.json` (`stats.audio_cues`); no .wav exists yet | T-055 (placeholder audio synth) runs the whole roster and has not landed; the file stem is the hook name | run T-055 (file names = cue names); keep the hook name stable |
