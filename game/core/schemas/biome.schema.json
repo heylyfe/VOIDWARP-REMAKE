@@ -1,0 +1,29 @@
+{
+  "$comment": "Biome JSON schema - content/biomes/<id>.json (DESIGN.md sections 12 and 10, TERRAIN_SPEC section 12.2; ticket T-013). A biome sets the act's palette roles + fog density; roles it omits inherit from data/palette.json (no biome file restates them). Levels are the inclusive [min, max] span.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "name", "act", "levels", "fog_density", "palette"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+    "name": {"type": "string"},
+    "act": {"type": "string", "enum": ["I", "II", "III", "IV", "V"]},
+    "levels": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "integer", "minimum": 1}},
+    "fog_density": {"type": "number", "minimum": 0.0},
+    "palette": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["platform_light", "platform_dark", "walkway_light", "walkway_dark", "fog", "void"],
+      "properties": {
+        "platform_light": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
+        "platform_dark": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
+        "walkway_light": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
+        "walkway_dark": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
+        "fog": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
+        "void": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"}
+      }
+    },
+    "inherits": {"type": "string"},
+    "source": {"type": "string"},
+    "_doc": {"type": "string"}
+  }
+}

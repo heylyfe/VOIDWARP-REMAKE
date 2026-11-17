@@ -1,0 +1,16 @@
+{
+  "$comment": "data/player.json schema (DESIGN.md sections 3.1 and 4; ticket T-013). The top-level sections are pinned; the nested constants are free-shaped so T-012 can evolve them without a schema change (the values are spec numbers, all cited to their sections inside the file).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["units", "shared_kit", "classes", "void_charges", "last_light", "beacon_entry", "ability_lock"],
+  "properties": {
+    "_doc": {"type": "string"},
+    "units": {"type": "object"},
+    "shared_kit": {"type": "object"},
+    "classes": {"type": "object"},
+    "void_charges": {"type": "object"},
+    "last_light": {"type": "object"},
+    "beacon_entry": {"type": "object"},
+    "ability_lock": {"type": "object"}
+  }
+}

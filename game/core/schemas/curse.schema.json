@@ -1,0 +1,33 @@
+{
+  "$comment": "Curse JSON schema (DESIGN.md sections 12 and 7; ticket T-013). Ids, stats and hooks are closed lists; severity is the lowercase full word per D-T014a-1 (accepted by T-013, see D-T013-2).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "name", "severity", "min_level", "requires_enemy", "max_stacks", "modifiers", "hooks"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+    "name": {"type": "string"},
+    "severity": {"type": "string", "enum": ["mild", "harsh", "brutal"]},
+    "min_level": {"type": "integer", "minimum": 1},
+    "requires_enemy": {"type": ["string", "null"], "enum": [null, "kiwi_cat", "coil", "thicc_ben", "isagi", "nuke", "you", "gift_larper", "toucher", "seal", "address_me", "claude", "gin_ichimaru"]},
+    "max_stacks": {"type": "integer", "minimum": 1},
+    "rule": {"type": "string"},
+    "counter_play": {"type": "string"},
+    "script": {"type": "boolean"},
+    "modifiers": {"type": "array", "items": {"$ref": "modifier"}},
+    "hooks": {"type": "array", "items": {"$ref": "hook"}}
+  },
+  "definitions": {
+    "modifier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stat", "op", "value"],
+      "properties": {
+        "stat": {"type": "string", "enum": ["barrier_shields", "chain_cap", "chain_window", "defuse_chance", "enemy_speed_mul", "fill_light_range", "fog_density", "glitch_slow_mul", "gold_value", "overtime_period", "pickup_radius", "respawn_delay", "respawn_invuln", "run_speed", "shop_price_mul", "stipend_flat", "telegraph_mul", "void_charges_max", "void_fall_charge_cost"]},
+        "op": {"type": "string", "enum": ["add", "mul", "set"]},
+        "value": {"type": "number"},
+        "when": {"type": "string", "enum": ["always", "black_phase", "gold_phase", "class:dasher", "class:glider", "class:athletic"]}
+      }
+    },
+    "hook": {"type": "string", "enum": ["on_level_start", "on_gift_collected", "on_beacon_open", "on_beacon_enter", "on_void_fall", "on_charge_spent", "on_charge_restored", "on_mine_contact", "on_mine_defused", "on_barrier_absorbed", "on_player_death", "on_enemy_spawn", "on_tick", "on_shop_draw", "on_curse_draw"]}
+  }
+}

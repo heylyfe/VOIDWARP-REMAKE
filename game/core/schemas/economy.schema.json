@@ -1,0 +1,14 @@
+{
+  "$comment": "data/economy.json schema (DESIGN.md sections 3.2, 7 system, 8 system, R4 addendum; ticket T-013). Top-level sections pinned; nested numbers free-shaped (T-014b owns their values and cites every source in _doc).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["currency", "gold_arithmetic", "gold_phase", "curse_bay", "shop"],
+  "properties": {
+    "_doc": {"type": "string"},
+    "currency": {"type": "string"},
+    "gold_arithmetic": {"type": "object"},
+    "gold_phase": {"type": "object"},
+    "curse_bay": {"type": "object"},
+    "shop": {"type": "object"}
+  }
+}

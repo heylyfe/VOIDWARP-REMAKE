@@ -1,0 +1,29 @@
+{
+  "$comment": "data/offering_schedule.json schema (DESIGN.md section 6; ticket T-013). Keys of levels are the level just completed as a numeric string. Bays: E enemy vote, C curse, U upgrade shop, REST discounted shop, CLASS pre-run class altars.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["mode", "repeat_from", "repeat_to", "levels"],
+  "properties": {
+    "_doc": {"type": "string"},
+    "mode": {"type": "string"},
+    "repeat_from": {"type": "integer", "minimum": 1},
+    "repeat_to": {"type": "integer", "minimum": 1},
+    "levels": {
+      "type": "object",
+      "additionalProperties": {"type": "array", "minItems": 1, "items": {"$ref": "bay"}}
+    }
+  },
+  "definitions": {
+    "bay": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bay"],
+      "properties": {
+        "bay": {"type": "string", "enum": ["E", "C", "U", "REST", "CLASS"]},
+        "count": {"type": "integer", "minimum": 1},
+        "pool": {"type": "string"},
+        "discount_pct": {"type": "integer", "minimum": 0, "maximum": 100}
+      }
+    }
+  }
+}
