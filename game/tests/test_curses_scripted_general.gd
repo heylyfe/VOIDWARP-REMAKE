@@ -491,7 +491,7 @@ func _t_module_contract(f: Array[String]) -> void:
 		if not src.contains(rule):
 			f.append("module contract: %s.gd does not quote its rule sentence verbatim" % id)
 		# ... and every hook the module handles IS in core/hooks.gd's closed list.
-		for m in mod.get_script().get_script_method_list():
+		for m in mod.get_script_method_list():
 			var name := str(m["name"])
 			if name.begins_with("on_") and not HooksScript.HOOKS.has(name):
 				f.append("module contract: %s handles unknown hook '%s'" % [id, name])
