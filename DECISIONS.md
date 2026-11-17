@@ -5464,6 +5464,45 @@ gameplay reason:
 Owner to rule: raise the gate step-3 budget (~316 s measured need) to lift BOT_TICKS back
 to 3600, or accept the 1000-tick recorded runs as the A4 evidence.
 
+### D-FIX-A14-1 - the boundary scan derives its content ids from the content tree at test time
+KNOWN_CONTENT_IDS is gone as a hand-maintained array: tests/test_boundaries.gd now scans
+res://content/enemies/ (folder names), res://content/curses/, res://content/upgrades/ and
+res://content/biomes/ (*.json file names) and builds the list itself. A literal list in the
+test would rot with the next added content file and the test would become the thing it tests.
+Matching is case-sensitive whole-word (an id bounded by non-word characters or a file edge),
+applied to every *.gd and *.json found recursively under res://terrain, res://sim, res://core
+(which includes res://core/schemas/) and res://app/. .gd files keep the pre-existing
+FORBIDDEN_STRINGS engine-surface scan and the import-prefix scan; .json files are scanned for
+content ids only. Comments are included, as before: the rule is that no core/sim/terrain/app
+file may leak an engine API or a content name, whatever the line type (T-001). English prose
+in comments that collides with an id (e.g. "more", "you") is reworded, never allowlisted.
+
+### D-FIX-A14-2 - enemy.json gains spawn_line / death_name; the roster read goes through core/roster.gd
+The 12 spawn lines (research/fable-tickets.md T-027 row) and the 12 run-over display names
+(DESIGN.md section 3.1) were hardcoded in the view HUD and sim/death.gd. They now ship as two
+OPTIONAL enemy.json fields: "spawn_line" (the diegetic danger line) and "death_name" (the
+run-over display name; defaults to "name" - only gift_larper overrides, to DESIGN.md 3.1's
+"gift Larper (Tripmine)"). Death codes keep living in stats.death_code (T-021, D-T030-1).
+New game/core/roster.gd scans res://content/enemies/ once and serves: code -> death_name,
+id -> death_name, id -> spawn_line, and the biome act order (biomes sorted by levels[0];
+DESIGN.md section 10's one-act-per-6-levels table, D-T014c-1's 31+ cycle preserved).
+sim/death.gd, view/hud/run_over.gd, view/hud/danger_text.gd and view/fog_env.gd all read
+through it; no roster literal remains in any of them. Two name collisions between role/event
+vocabularies and upgrade ids are renamed rather than allowlisted: the sim role key
+"cartographer" becomes "footprint_map" (sim/upgrades.gd, content/upgrades/cartographer.gd),
+and the glider rise event "updraft" becomes "updraft_rise" (sim/controller.gd; consumed by
+tests only, D-T053-6's numbers unchanged). Adding a 13th enemy or a 6th biome is now a pure
+content drop-in: one folder/file, zero code edits.
+
+### D-FIX-A14-3 - curse requires_enemy is validated against the registry, not an enum
+core/schemas/curse.schema.json hardcoded all 12 enemy ids in requires_enemy's enum - a core
+file naming the roster, and the reason a stale id ("gin_ichimaru") validated. The enum is
+dropped; requires_enemy is pattern-checked (^[a-z][a-z0-9_]*$) and validated at load by
+core/registry.gd against the scanned enemy ids: an unknown requires_enemy is a boot error
+naming the offending file. game/tests/test_curse_requires.gd asserts the same over every
+shipped curse. twin_fangs.json's requires_enemy is corrected "gin_ichimaru" -> "gin" (the
+enemy id; ENEMIES.md's gin ichimaru section), so the curse can be offered again.
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
