@@ -38,6 +38,14 @@ owns its frames (the pipeline skips enemies with an art module) - all 5 cycle fr
 (squash -> extend, 512x512 bottom-anchored, `"tbd": false`), the anim block and tick ranges are
 unchanged, and fog contrast is ~8.4 at 40 u. thicc ben (row 3) and kiwi cat (row 1, T-ART-KIWI_CAT) are the others.
 
+Isagi's three sources are no longer missing: `game/tools/art/isagi.gd` (the T-016 art module; the
+shared pipeline skips any enemy with `tools/art/<id>.gd`) removed the backgrounds, derived the
+anim-block frames per state (spawn/idle/telegraph/attack/recover) and flipped isagi's `tbd` to
+false on 2026-11-17. Isagi's rows below say REAL ART; the other fourteen remain MISSING -> TBD.
+Isagi's T-083 anim block named the TBD placeholder files, not the spec names - those references are
+now the real frames (frame_map isagi_idle_00/isagi_shoot_00/isagi_ball_00); the tick counts, loop
+flags, tick ranges and effect params are untouched.
+
 | # | enemy | expected filename | state |
 |---|---|---|---|
 | 1 | kiwi cat | `kiwicat.png` | PRESENT -> real art (T-ART-KIWI_CAT; frames `cycle_00`, `spawn_00`, `idle_chase_00`, `telegraph_00`; `tbd: false`) |
