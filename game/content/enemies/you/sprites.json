@@ -3,38 +3,13 @@
 	"animations": [
 		{
 			"body_rect": [
-				[
-					16,
-					16,
-					224,
-					224
-				],
-				[
-					16,
-					16,
-					224,
-					224
-				],
-				[
-					16,
-					16,
-					224,
-					224
-				],
-				[
-					16,
-					16,
-					224,
-					224
-				],
-				[
-					16,
-					16,
-					224,
-					224
-				]
+				[108, 36, 296, 460],
+				[103, 70, 307, 432],
+				[121, 8, 281, 480],
+				[97, 68, 311, 435],
+				[114, 5, 285, 483]
 			],
-			"fps": 10,
+			"fps": 8,
 			"frames": [
 				"sprites/cycle_00.png",
 				"sprites/cycle_01.png",
@@ -44,6 +19,85 @@
 			],
 			"loop": true,
 			"name": "cycle"
+		},
+		{
+			"body_rect": [
+				[108, 9, 296, 487]
+			],
+			"fps": 8,
+			"frames": [
+				"sprites/you_spawn_00.png"
+			],
+			"loop": false,
+			"name": "spawn"
+		},
+		{
+			"body_rect": [
+				[108, 36, 296, 460],
+				[103, 70, 307, 432],
+				[121, 8, 281, 480],
+				[97, 68, 311, 435],
+				[114, 5, 285, 483]
+			],
+			"fps": 8,
+			"frames": [
+				"sprites/you_idle_00.png",
+				"sprites/you_idle_01.png",
+				"sprites/you_idle_02.png",
+				"sprites/you_idle_03.png",
+				"sprites/you_idle_04.png"
+			],
+			"loop": true,
+			"name": "idle_chase"
+		},
+		{
+			"body_rect": [
+				[107, 36, 298, 460],
+				[106, 36, 300, 460],
+				[105, 36, 302, 460],
+				[104, 36, 304, 460],
+				[102, 36, 308, 460]
+			],
+			"fps": 16,
+			"frames": [
+				"sprites/you_telegraph_00.png",
+				"sprites/you_telegraph_01.png",
+				"sprites/you_telegraph_02.png",
+				"sprites/you_telegraph_03.png",
+				"sprites/you_telegraph_04.png"
+			],
+			"loop": true,
+			"name": "telegraph"
+		},
+		{
+			"body_rect": [
+				[108, 4, 296, 492]
+			],
+			"fps": 8,
+			"frames": [
+				"sprites/you_attack_00.png"
+			],
+			"loop": false,
+			"name": "attack"
+		},
+		{
+			"body_rect": [
+				[108, 36, 296, 460],
+				[108, 36, 296, 460],
+				[108, 36, 296, 460],
+				[108, 36, 296, 460],
+				[108, 36, 296, 460]
+			],
+			"fps": 8,
+			"frames": [
+				"sprites/you_recover_00.png",
+				"sprites/you_recover_01.png",
+				"sprites/you_recover_02.png",
+				"sprites/you_recover_03.png",
+				"sprites/you_recover_04.png"
+			],
+			"loop": true,
+			"name": "recover"
 		}
 	],
 	"id": "you",
@@ -57,7 +111,7 @@
 			"state": "MISSING -> TBD"
 		}
 	],
-	"tbd": true,
+	"tbd": false,
 	"world_height": 1.8,
 	"anim": {
 		"_doc": "T-083. Spec: research/fable-tickets.md section 1.6 (the 1.x tables are the spec; ENEMIES.md behavior sentences are frozen per D-040). One entry per table row, keyed by a snake_case state id; 'row' repeats the exact table row label. spec_frames are the section 1.6 frame names in table order; frames are the files that exist on disk, relative to this folder (T-016 produced TBD placeholders - you_NN maps 1:1 onto cycle_NN, see frame_map and DECISIONS D-T083-1/D-T083-2). Timings are in 60 Hz ticks and are binding; the attack frame lands on the tick the ring resolves. Effects are shader/transform effects on the billboard and never change body_rect.",
@@ -73,7 +127,7 @@
 			"spawn": {
 				"row": "spawn",
 				"spec_frames": ["you_00"],
-				"frames": ["sprites/cycle_00.png"],
+				"frames": ["sprites/you_spawn_00.png"],
 				"loop": false,
 				"total_ticks": 30,
 				"ticks_per_frame": 30,
@@ -83,7 +137,7 @@
 			"idle_chase": {
 				"row": "idle / chase",
 				"spec_frames": ["you_00", "you_01", "you_02", "you_03", "you_04"],
-				"frames": ["sprites/cycle_00.png", "sprites/cycle_01.png", "sprites/cycle_02.png", "sprites/cycle_03.png", "sprites/cycle_04.png"],
+				"frames": ["sprites/you_idle_00.png", "sprites/you_idle_01.png", "sprites/you_idle_02.png", "sprites/you_idle_03.png", "sprites/you_idle_04.png"],
 				"loop": true,
 				"total_ticks": null,
 				"ticks_per_frame": 7.5,
@@ -94,7 +148,7 @@
 			"telegraph": {
 				"row": "telegraph (rumble)",
 				"spec_frames": ["you_00", "you_01", "you_02", "you_03", "you_04"],
-				"frames": ["sprites/cycle_00.png", "sprites/cycle_01.png", "sprites/cycle_02.png", "sprites/cycle_03.png", "sprites/cycle_04.png"],
+				"frames": ["sprites/you_telegraph_00.png", "sprites/you_telegraph_01.png", "sprites/you_telegraph_02.png", "sprites/you_telegraph_03.png", "sprites/you_telegraph_04.png"],
 				"loop": true,
 				"total_ticks": 90,
 				"ticks_per_frame": 3.75,
@@ -105,7 +159,7 @@
 			"attack": {
 				"row": "attack (ring release)",
 				"spec_frames": ["you_04"],
-				"frames": ["sprites/cycle_04.png"],
+				"frames": ["sprites/you_attack_00.png"],
 				"loop": false,
 				"total_ticks": null,
 				"ticks_per_frame": null,
@@ -115,7 +169,7 @@
 			"recover": {
 				"row": "recover",
 				"spec_frames": ["you_00", "you_01", "you_02", "you_03", "you_04"],
-				"frames": ["sprites/cycle_00.png", "sprites/cycle_01.png", "sprites/cycle_02.png", "sprites/cycle_03.png", "sprites/cycle_04.png"],
+				"frames": ["sprites/you_recover_00.png", "sprites/you_recover_01.png", "sprites/you_recover_02.png", "sprites/you_recover_03.png", "sprites/you_recover_04.png"],
 				"loop": true,
 				"total_ticks": 240,
 				"ticks_per_frame": 7.5,
