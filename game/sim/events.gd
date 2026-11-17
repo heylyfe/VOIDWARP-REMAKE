@@ -14,6 +14,12 @@ const EV_GIFT_COLLECTED := "gift_collected"  # + slot: int, phase: "black"|"gold
 const EV_BEACON_OPENED := "beacon_opened"    # player -1: a world event
 const EV_BEACON_ENTER := "beacon_enter"      # + charges: int (after the restore)
 const EV_LEVEL_COMPLETE := "level_complete"
+# T-023 (the intermission lobby):
+const EV_ALTAR_SELECTED := "altar_selected"  # + bay: String ("E"|"C"|"U"|"REST"|"CLASS"),
+                                             #   kind: String ("enemy"|"curse"|"upgrade"|"class"|
+                                             #   "hunger"|"tithe"|"reroll"), id: String,
+                                             #   cost: int (gold spent; bounty = negative cost)
+const EV_GATE_OPENED := "gate_opened"        # player -1: every mandatory bay is resolved
 
 
 static func make(p_type: String, p_tick: int, p_player: int) -> Dictionary:

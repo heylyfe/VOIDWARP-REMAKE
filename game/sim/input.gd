@@ -16,16 +16,24 @@ const BUTTON_INTERACT := 4
 const AXIS_MIN := -127
 const AXIS_MAX := 127
 
+## T-023 (DESIGN.md section 13 rule 2): a lobby choice - `Select {altar_index}` - is an input,
+## not a UI callback. select indexes the intermission's flat altar table (sim/intermission.gd
+## altar_table()); NO_SELECT = no choice this tick. The view's antechamber fires one Select per
+## confirmed F-hold (0.35 s), so the hold never enters the sim.
+const NO_SELECT := -1
+
 
 var move_x: int = 0
 var move_z: int = 0
 var buttons: int = 0
+var select: int = NO_SELECT
 
 
-func _init(p_move_x: int = 0, p_move_z: int = 0, p_buttons: int = 0) -> void:
+func _init(p_move_x: int = 0, p_move_z: int = 0, p_buttons: int = 0, p_select: int = NO_SELECT) -> void:
 	move_x = clampi(p_move_x, AXIS_MIN, AXIS_MAX)
 	move_z = clampi(p_move_z, AXIS_MIN, AXIS_MAX)
 	buttons = p_buttons
+	select = p_select
 
 
 ## Neutral input: standing still, no buttons. The sim substitutes this when an input is missing.
