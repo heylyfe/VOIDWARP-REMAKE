@@ -18,6 +18,16 @@ extends Node3D
 #     bot's rule. For level 1 this replays the pre-run lobby (CLASS + the one starter
 #     E bay). Class comes from the CLASS bay the same way; "dasher" when unset.
 #   - the HUD is a CanvasLayer child (a Control cannot render under a Node3D).
+#   - the LevelState owner decision landed (APP-LOOP): step() now builds and owns
+#     the sim LevelState (gifts / mines / beacon) exactly the way tools/bot_run.gd
+#     ticks it - controller -> player-row sync -> lv.tick++ -> GiftsScript.tick ->
+#     MinesScript.tick -> beacon try_enter -> enemy_runtime. The economy (chain /
+#     purse) is ticked on the same pass: beacon open begins the gold phase,
+#     tick_gold(dt) advances the window, gold gift pickups pay collect_gold_gift,
+#     chain_reset events break the chain, beacon entry pays the stipend. A signal
+#     (level_completed) reports the completion so app.gd can advance.
+#   - curse sim knobs (the time-of-day curse family and friends) are NOT applied to the
+#     controller or the runtime; only class + enemy votes ride the resolved lobbies.
 #
 # The run seed reaches the controller and the camera unchanged; the ENEMY runtime gets the
 # same run seed (spawn stream), the intermissions are seeded mix(seed, 5000 + lobby) /
@@ -29,14 +39,11 @@ extends Node3D
 #   func step(dt: float) -> void                     # one sim tick + view pass
 #   func teardown() -> void
 #   func level_number() -> int
+#   func is_complete() -> bool                       # true once the beacon was entered (APP-LOOP)
 #
-# Known gaps, on purpose (logged in DECISIONS.md D-APPFLOW-4, D-APPFLOW-5):
-#   - step() ticks exactly controller + enemy_runtime + billboards + camera rig (the
-#     ticket's step spec). gifts / mines / beacon are NOT ticked: that needs a LevelState
-#     owner decision (gift collection drives the beacon-open path); the HUD gift counter
-#     therefore shows 0/0 until then.
-#   - curse sim knobs (the time-of-day curse family and friends) are NOT applied to the
-#     controller or the runtime; only class + enemy votes ride the resolved lobbies.
+# signal level_completed()  - emitted exactly once, at the end of the tick in which
+# the beacon is entered (the sim's level_complete event fires on the same tick).
+# (The APP-LOOP tick order lives in step()'s own doc comment below.)
 
 const VoidGenScript := preload("res://terrain/voidgen.gd")
 const CollisionScript := preload("res://sim/collision.gd")
@@ -51,6 +58,14 @@ const ContentApiScript := preload("res://core/content_api.gd")
 const IntermissionScript := preload("res://sim/intermission.gd")
 const VoidRngScript := preload("res://terrain/void_rng.gd")
 const InputCaptureScript := preload("res://app/input_capture.gd")
+# APP-LOOP: the sim LevelState (gifts / mines / beacon), the gift + mine ticks and the
+# gold-phase economy - the same pieces tools/bot_run.gd ticks on the reference surface.
+const LevelStateScript := preload("res://sim/level_state.gd")
+const GiftsScript := preload("res://sim/gifts.gd")
+const MinesScript := preload("res://sim/mines.gd")
+const EconomyScript := preload("res://sim/economy.gd")
+
+signal level_completed()
 
 const DT := 1.0 / 60.0
 const FALLBACK_CLASS := "dasher"   # D-APPFLOW-6 when the CLASS bay somehow resolved to ""
@@ -64,6 +79,11 @@ var camera: Camera3D = null
 var fog: WorldEnvironment = null
 var hud: Control = null
 var boards: Array = []          # EnemyRuntime enemies index -> billboard node (or null)
+var lstate: RefCounted = null   # the sim LevelState (gifts / mines / beacon); bot_run.gd's lv
+
+var _economy: RefCounted = null   # the gold-phase economy (purse / chain); no upgrade stats yet
+var _gold_began := false          # beacon open -> begin_gold_phase + rt.on_beacon_open fire once
+var _completed_emitted := false   # level_completed fires once
 
 var _hud_layer: CanvasLayer = null
 var _mesh_instances: Array = []
@@ -95,6 +115,9 @@ func build(seed_value: int, level: int) -> bool:
 		push_warning("world: voidgen.generate(%d, %d) returned {}" % [seed_value, level])
 		return false
 	w = CollisionScript.make_world(lv["tiles"], lv["props"], lv["pads"], {"dais": lv["beacon"]})
+	# The sim LevelState: one level's slice of the state tree (players + gifts + mines +
+	# beacon). Built from the same Level dict; the run seed feeds the Defuse Kit roll.
+	lstate = LevelStateScript.build(lv, level, 1, seed_value)
 
 	# The run's own seeded plan for this level: replay the lobbies before it.
 	_api = ContentApiScript.load()
@@ -106,6 +129,10 @@ func build(seed_value: int, level: int) -> bool:
 	if plan.is_empty():
 		teardown()
 		return false
+
+	# The gold-phase economy: base stats (the app has no upgrade ledger yet, so no
+	# chain/stipend modifiers), tuned by data/economy.json through the content api.
+	_economy = EconomyScript.create({}, _api)
 
 	var kit := str(plan.get("class", ""))
 	if kit == "":
@@ -168,17 +195,81 @@ func build(seed_value: int, level: int) -> bool:
 	return true
 
 
-## One sim tick (controller + enemy runtime) plus the view pass (billboards, camera rig,
-## HUD sync). dt is the fixed 60 Hz step; headless callers drive it directly.
+## One sim tick plus the view pass. dt is the fixed 60 Hz step; headless callers drive it
+## directly. The sim half mirrors tools/bot_run.gd's per-tick order exactly:
+##   controller -> player-row sync -> lv.tick++ -> gifts -> mines -> beacon ->
+##   (beacon open: rt.on_beacon_open + the gold phase) -> enemy runtime.
+## Mines carry defuse stacks [0] (the app has no Defuse Kit ledger yet, exactly the bot's
+## hardcoded stack); the last-light/respawn path rides ctl.step itself. The completion
+## signal fires at the end of the tick that entered the beacon.
 func step(dt: float) -> void:
-	if ctl == null or rt == null:
+	if ctl == null or rt == null or lstate == null:
 		return
-	ctl.step(dt, _capture_input(), w)
-	rt.step(dt)
+	var a_in: Dictionary = _capture_input()
+	var ev: Array = ctl.step(dt, a_in, w)
+	# The LevelState's player row mirrors the controller (gifts/mines read lv.players).
+	var p0: Dictionary = lstate.players[0]
+	p0["x"] = ctl.x
+	p0["y"] = ctl.y
+	p0["z"] = ctl.z
+	p0["vx"] = ctl.vx
+	p0["vy"] = ctl.vy
+	p0["vz"] = ctl.vz
+	p0["grounded"] = ctl.grounded
+	p0["prev_buttons"] = int(a_in.get("buttons", 0))
+	lstate.tick += 1
+	GiftsScript.tick(lstate, 0, ev)
+	var minev: Array = []
+	MinesScript.tick(lstate, [ctl], w, [0], lstate.tick, minev)
+	for e in minev:
+		ev.append(e)
+	lstate.beacon.try_enter(ctl, lstate.tick, 0, ev)
+	if lstate.beacon.is_open() and not _gold_began:
+		_gold_began = true
+		rt.on_beacon_open()
+		if _economy != null:
+			_economy.begin_gold_phase()
+	if _economy != null and bool(_economy.gold_phase):
+		_economy.tick_gold(dt)
+	for e in rt.step(dt):
+		ev.append(e)
+	_economy_pass(ev)
 	if rig != null:
 		rig.update_rig(Vector3(float(ctl.x), float(ctl.y), float(ctl.z)), dt)
 	_billboard_pass(dt)
 	_sync_hud()
+	if not _completed_emitted and lstate.beacon != null and bool(lstate.beacon.completed):
+		_completed_emitted = true
+		level_completed.emit()
+
+
+## Read sim -> economy mapping over this tick's event list (both event shapes: sim events
+## key on "type", controller/mine/enemy raw dicts on "e"). Data-driven: no upgrade or
+## curse id is named here. The chain_reset -> break reason map covers the two mine-ladder
+## reasons (economy's whitelist calls that one reason "defused_or_shielded_tripmine");
+## whatever else arrives is handed to break_chain verbatim, which refuses strings that are
+## not on the canon whitelist (thicc ben's eject rides through unchanged).
+func _economy_pass(ev: Array) -> void:
+	if _economy == null:
+		return
+	for e in ev:
+		var kind := str(e.get("e", e.get("type", "")))
+		if kind == "gift_collected":
+			if str(e.get("phase", "")) == "gold":
+				_economy.collect_gold_gift()
+		elif kind == "chain_reset":
+			var why := str(e.get("why", ""))
+			if why == "defused_mine" or why == "shielded_mine":
+				why = "defused_or_shielded_tripmine"
+			_economy.break_chain(why)
+		elif kind == "beacon_enter":
+			_economy.enter_beacon(_level_number)
+
+
+## True once the beacon has been entered (the level is complete). Convenience for
+## callers that poll; the level_completed signal is the push channel.
+func is_complete() -> bool:
+	return lstate != null and lstate.beacon != null and bool(lstate.beacon.completed)
 
 
 ## Free everything build() created and reset the sim references. Safe to call twice; the
@@ -196,6 +287,10 @@ func teardown() -> void:
 	fog = null
 	hud = null
 	_hud_layer = null
+	lstate = null
+	_economy = null
+	_gold_began = false
+	_completed_emitted = false
 	lv = {}
 	w = {}
 	_level_number = 0
@@ -406,16 +501,28 @@ func _make_board(e: Dictionary):
 	return bd
 
 
-## HUD snapshot. gifts are 0/0 until a LevelState owner ticks sim/gifts.gd (D-APPFLOW-5);
+## HUD snapshot. gifts / purse / chain come from the LevelState and the economy this
+## node owns (gifts_collected = total_real - remaining(), the sim's own definition);
 ## the roster is the resolved vote plan (static for the level).
 func _sync_hud() -> void:
 	if hud == null or ctl == null or rt == null:
 		return
+	var total := 0
+	var collected := 0
+	if lstate != null and lstate.gifts != null:
+		var g: RefCounted = lstate.gifts
+		total = int(g.total_real)
+		collected = total - int(g.remaining())
+	var purse := 0
+	var chain := 1.0
+	if _economy != null:
+		purse = int(_economy.purse_centi)
+		chain = float(_economy.chain_display())
 	hud.sync({
-		"gifts_collected": 0,
-		"gifts_total": 0,
-		"purse_centi": 0,
-		"chain": 1.0,
+		"gifts_collected": collected,
+		"gifts_total": total,
+		"purse_centi": purse,
+		"chain": chain,
 		"charges": int(ctl.charges),
 		"charge_cap": int(ctl.charge_cap),
 		"last_light": str(ctl.hud_last_light()),

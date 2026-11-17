@@ -6469,3 +6469,92 @@ diff order shows the ruling first.
 - 2026-11-17 FIX-A3 (zai-glm-5-3-flash, this session): bot edge discipline + enemy-awareness in game/tools/bot_run.gd ONLY; A3 measured 56/100 level-1 completions (was 1/10), median 43.4 s of completions, GATE OK (9 ran, 0 skipped, 210 s) TESTS 55 passed 0 failed; A3 remains FAIL - parked PARKED.md #20; DECISIONS.md D-FIX-A3-1..3; next: owner lever per T-060 ordering (deeper chaser-intercept competence or enemy tuning).
 
 - 2026-11-17 FIX-A3 re-measure (zai-glm-5-3-flash, this session): rebased onto KIWI-SLOW main (64e3332); pinned sweep re-measured 82/100 level-1 completions (was 56/100 with the fast kiwi), median 43.4 s of completions; failures 18: D-KIWI 8, D-VOID 4, stuck 4, timeout 1, D-COIL 1. A3 still FAIL - PARKED.md #24 updated; GATE OK (9 ran, 0 skipped, 233 s) TESTS 58 passed 0 failed; no threshold/criterion/enemy number touched.
+
+- 2026-11-17 APP-LOOP (this session): the shipped app level loop is wired - world.step() now
+  ticks the sim LevelState exactly the way tools/bot_run.gd does, and the app advances on
+  completion. D-APP-LOOP-1..7 below; handback gate lines are in the closing log entry.
+
+### D-APP-LOOP-1 - step() mirrors bot_run.gd's per-tick order (APP-LOOP)
+DECISION (APP-LOOP): game/app/world.gd now builds a sim LevelState (sim/level_state.gd,
+  same Level dict, run seed as p_run_seed) and its step() ticks: controller -> player-row
+  sync (lv.players[0], incl. prev_buttons) -> lv.tick++ -> GiftsScript.tick -> MinesScript.tick
+  -> beacon.try_enter -> (on beacon open: rt.on_beacon_open + begin_gold_phase) ->
+  tick_gold -> enemy_runtime -> rig/billboards/HUD. Mines carry defuse stacks [0] (hardcoded,
+  exactly the bot's stack; the app has no Defuse Kit ledger). The last-light / void-fall /
+  respawn path is NOT separately ticked because bot_run ticks it through ctl.step itself and
+  world.gd already calls ctl.step.
+WHY: the ticket mandates porting the proven reference, not inventing a new design; the
+  T-099 audit proved the app cannot complete a level without it. The enemy runtime seed is
+  deliberately left as world.gd's run seed (NOT bot_run's rs.rng["enemy_ai"] mix stream):
+  changing the spawn stream is a behaviour change beyond the ticket's scope.
+  Status: the tick ORDER is not contestable; the enemy-seed keeping is [CONTESTABLE].
+
+### D-APP-LOOP-2 [CONTESTABLE] - the gold-phase economy is ticked in world.step() (APP-LOOP)
+DECISION (APP-LOOP): beyond the bot_run port, world.step() also wires sim/economy.gd:
+  begin_gold_phase() fires once when the beacon opens (same tick rt.on_beacon_open fires),
+  tick_gold(dt) advances the chain window / overtime every tick, gold gift_collected events pay
+  collect_gold_gift(), chain_reset events are mapped (defused_mine/shielded_mine ->
+  defused_or_shielded_tripmine; everything else passed verbatim to break_chain, which refuses
+  non-whitelist strings), and beacon entry pays enter_beacon(level) (the clear stipend).
+  The HUD purse/chain now read the live economy instead of 0.00 / 1.00x.
+WHY: the APP-LOOP ticket item 1 names "the chain multiplier, the economy credit" as part of the
+  gifts tick, and view/hud/purse_chain.gd is dead UI otherwise. bot_run.gd does NOT tick the
+  economy today (a LevelState-owner decision the bot never made), so this is an addition on top
+  of a strict port, not a copy of it. Final_band is hardcoded false (Last Call needs upgrade
+  state; no upgrade ledger exists in the app yet). The purse is level-local: it dies with the
+  level because the app has no run ledger to carry it into the intermission.
+WHY not blocked: leaving purse/chain hardcoded at 0.00/1.00x would ship a lying HUD one field
+  away from the gift counter the ticket explicitly fixes.
+
+### D-APP-LOOP-3 [CONTESTABLE] - economy stats are base; no upgrade modifiers (APP-LOOP)
+DECISION (APP-LOOP): EconomyScript.create({}, _api) - base stats (chain window 4.0 s, cap x2.00,
+  gold value 1.0, stipend as data/economy.json), tuned by the content api. No chain_window /
+  chain_cap / gold_value / stipend_flat modifiers, no Skeleton Key quota (LevelState.build gets
+  no upgrade_roles), no pickup radius override, no defuse stacks > 0.
+WHY: aggregating upgrade stacks into stats needs the id -> role aggregation and the owned-stack
+  ledger (T-013/T-053 territory), which the app does not have yet; inventing one is ahead of the
+  intermission lobby ticket that owns the shop. Empty stats is the canon base, not a tuning.
+
+### D-APP-LOOP-4 [CONTESTABLE] - completion seam: signal level_completed + is_complete(); app returns to MENU (APP-LOOP)
+DECISION (APP-LOOP): world.gd emits `signal level_completed()` exactly once, at the end of the
+  tick in which the beacon is entered (guarded by _completed_emitted, reset in teardown()), and
+  also exposes `func is_complete() -> bool` for pollers. app.gd connects level_completed ->
+  _on_level_completed(), which returns to the menu through the same teardown ESC uses
+  (world.teardown + free + show menu). The _process accumulator loop re-checks _world == null
+  after each tick for exactly this teardown path. NO next-level flow is built and NO level
+  counter is added to app.gd.
+WHY: the intermission lobby that a level completion should flow into does not exist in the app
+  (A9 finding: unreachable; PARKED.md #23; DESIGN.md section 11 unbuilt), and starting level 2
+  with fresh charges/purse would silently corrupt run state rather than honestly advance. The
+  smallest honest advance is back to the menu. NO FINAL spec is contradicted - this is a missing
+  flow, recorded here rather than invented in an APP-LOOP ticket.
+WHY signal+bool and not a return value: step() is void by contract and the view callers rely on
+  it; a signal lets app.gd push-react, the bool lets tests poll without connecting.
+
+### D-APP-LOOP-5 - HUD gift counter reads the sim (total_real - remaining()); gold flip resets to 0/total (APP-LOOP)
+DECISION (APP-LOOP): _sync_hud() passes gifts_collected = total_real - gifts.remaining() and
+  gifts_total = total_real, the exact definition view/hud/gift_counter.gd documents. During the
+  gold phase the counter resets to 0 / total and counts gold pickups.
+WHY: that is the sim's own definition (remaining() only walks real slots); inventing a
+  black+gold cumulative counter would be a new design. Recorded so the owner knows the gold
+  flip reads 0/N again - a view question, not a wiring bug.
+
+### D-APP-LOOP-6 [CONTESTABLE] - mine defuse roll seeds from the run seed, same as bot_run; no other sim change (APP-LOOP)
+DECISION (APP-LOOP): the Defuse Kit roll inputs are (run_seed, level, slot) exactly as
+  LevelState.build receives them - the same values bot_run feeds via RunState.load_level.
+  No sim / terrain / core / view file was changed for APP-LOOP; the wiring lives entirely in
+  game/app/world.gd + the minimum in game/app/app.gd (signal connect + the _world == null
+  re-check + the handler).
+WHY: the hard rules fence off sim behaviour; the two call sites (build-time LevelState and the
+  per-tick calls) compose the existing tested sim without modification.
+
+### D-APP-LOOP-7 [CONTESTABLE] - test drives gifts by teleport, like test_gifts.gd; mine leg uses seed 0 level 5 (APP-LOOP)
+DECISION (APP-LOOP): game/tests/test_app_loop.gd collects gifts by pinning ctl to each slot and
+  stepping (the sim-surface idiom of test_gifts.gd) rather than playing a path - a full
+  playthrough is minutes per seed and hostile to a 300 s gate budget. The mine leg uses
+  (seed 0, level 5), measured 3 mine slots, to run the contact ladder (Last Light save + mine
+  consumed); the void-fall leg reuses that world to prove the charge spend. The test fails if
+  step() stops ticking gifts (counter + remaining + phase asserts), the beacon (open / entry /
+  signal / is_complete asserts), or mines (consumption + last_light asserts).
+WHY: honest coverage of the loop at a cost the gate can afford; the bot owns end-to-end
+  playthrough measurement (A3), not this test.

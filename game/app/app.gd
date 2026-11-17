@@ -12,6 +12,8 @@ extends Node
 #   _process         -> the loading screen self-drives from its own _process; the app does NOT
 #                       call advance() (D-APPFLOW-2, PARKED.md #20)
 #   loading_finished -> free the loading screen, add the world, start stepping it
+#   world.level_completed -> the world tears itself down; the app returns to MENU
+#                            (the intermission lobby / next-level flow does not exist yet)
 #   quit_requested   -> get_tree().quit()
 #   ESC / the pause binding -> back to MENU from LOADING or WORLD (world/loading freed)
 #
@@ -63,9 +65,13 @@ func _process(delta: float) -> void:
 		var ticks := 0
 		while _step_acc >= DT and ticks < 5:
 			_world.step(DT)
+			if _world == null:
+				break   # the completion handler tore the world down mid-tick
 			_step_acc -= DT
 			ticks += 1
-		if ticks == 5:
+		if _world == null:
+			_step_acc = 0.0
+		elif ticks == 5:
 			_step_acc = 0.0
 
 
@@ -114,6 +120,7 @@ func _begin_run() -> void:
 	_state = STATE_LOADING
 	# Build the world in the same frame the loading screen appears (the ticket's contract).
 	_world = WorldScript.new()
+	_world.level_completed.connect(_on_level_completed)
 	if not _world.build(_seed, FIRST_LEVEL):
 		# Generator/content failure: never trap the player on the loading screen.
 		push_warning("app: world.build(%d, %d) failed; back to menu" % [_seed, FIRST_LEVEL])
@@ -140,6 +147,14 @@ func _on_loading_finished() -> void:
 
 func _on_quit_requested() -> void:
 	get_tree().quit()
+
+
+## The world entered its beacon (APP-LOOP). The intermission lobby and the next-level
+## flow do not exist in this app yet, so the honest advance is back to the menu - the
+## same teardown ESC uses. The world frees itself inside the step that completed the
+## level; the _process loop re-checks _world for exactly this reason.
+func _on_level_completed() -> void:
+	_return_to_menu()
 
 
 # ---- pause (ESC / the pause binding) -----------------------------------------------------------
