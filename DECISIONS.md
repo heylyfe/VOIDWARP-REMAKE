@@ -4979,6 +4979,92 @@ section 4 carries no kiwi row (the T-083 block names the files that exist, and t
 real art). ENEMIES.md is unchanged (frozen, D-040); the ENEMIES.md "1 base PNG" rows describe the
 SOURCE count, not the frame sheet.
 
+### D-ART-ISAGI-1 - Isagi's real-art derivation recipe (T-016 art module, tools/art/isagi.gd)
+The T-016 pipeline could not strip Isagi's opaque-white photo/logo sources (its corner flood
+fill at colour tolerance 24/255 reports "NO BODY AFTER BACKGROUND REMOVAL -> TBD"), so the
+isagi frames are owned by `game/tools/art/isagi.gd` instead; the pipeline now SKIPS any enemy
+with `tools/art/<id>.gd` (its own skip rule, read at sprite_pipeline.gd's skip branch - the
+pipeline file itself is untouched). The art-derivation numbers below are stated NOWHERE in
+the documents and are recorded here BEFORE the code that uses them; each is [CONTESTABLE].
+The spec's own binding numbers (anim-block tick ranges, loop flags, effect names and
+params, world_height 1.8 / shot 0.5) are NOT touched; the derived frames feed the effects,
+never replace them.
+
+Recipe (deterministic; no randomness at all):
+- background removal, `isagi_idle.jpeg` / `ISAGI_SHOOT.webp` (opaque white): reference colour
+  = mean of the four corners; flood fill from every border pixel with euclidean distance
+  < 72/255 from the reference; filled pixels' alpha set to 0. [CONTESTABLE - 72/255; chosen
+  so JPEG noise/anti-aliasing (background pixels up to ~230 in-channel) is caught while the
+  manga-grayscale face (~#D9D9D9, distance ~66) stays enclosed by dark hair/clothes outlines;
+  the flood fill is border-connected so enclosed light regions can never be eaten]
+- `blueballprojectile.webp` (corners already alpha 0): its alpha channel is used as-is;
+  pixels with a <= 16/255 are pinned to a = 0. [CONTESTABLE - reuses the validator's alpha > 16
+  body threshold; no colour flood at all]
+- tight crop to alpha > 16/255 (the validator's body rule, verbatim); transparent margin
+  MARGIN = 8 px on every side, so no opaque pixel touches the canvas edge and the 1-px opaque
+  border check can never trip. [CONTESTABLE - 8 px; smallest margin that keeps the 2 px red
+  telegraph rim fully inside the canvas]
+- canvas: each side the smallest power of two >= body + 2*MARGIN, capped at 512 (body
+  downscaled with LANCZOS only when larger, never upscaled); body frames bottom-anchored
+  (feet on the node origin, matching billboard.gd's feet rule), ball centred. Rectangular
+  POT canvases allowed by the brief ("power-of-two canvas no larger than 512"). [CONTESTABLE
+  - canvas shape/anchor; bottom-anchor keeps the stretch variants' feet planted]
+- `fire_01.png` (the one the T-083 block leaves unreferenced): squash sy 0.90 / sx 1.06,
+  LANCZOS, bottom-anchored. [CONTESTABLE - squash factors]
+- `spawn_00.png`: brightness x1.30 then 35% lerp toward #BFFFF8 (the palette player_fill_light
+  cyan-white), alpha untouched - a materialize look layered under the binding common_fade
+  (alpha 0 -> 1, scale 0.8 -> 1.0 are runtime effects and stay untouched). [CONTESTABLE -
+  1.30 and 0.35; the effect timings are binding, the baked look is not]
+- `telegraph_00.png`: red rim baked around the silhouette - Chebyshev 2 px ring, #FF2A2A
+  (the palette danger hex), alpha 0.85 (1 px ring) / 0.45 (2 px ring). The binding red_rim_flash
+  timing (periods 24 -> 12 -> 6) and the aim line remain runtime view effects. [CONTESTABLE -
+  ring width 2 and alphas 0.85/0.45; the anim-block periods are binding and untouched]
+- `recover_00.png`: brightness x0.70, matching the binding recover effect (sprite at 70%
+  brightness = "cannot fire", 150 ticks). [CONTESTABLE - 0.70 is stated by the anim block's
+  dim effect; baking it is the distinct-frame requirement]
+- `shot_00.png`: the projectile ball, art as-is (white/navy ball, dark-blue panels). The 720 deg/s
+  spin and the 1.0 u width stay runtime values.
+- `fire_00.png` = the idle art, `fire_02.png` = the shoot art (the legacy `fire` animation,
+  animations[0], keeps its name/order/frames; real art replaces the TBD placeholders).
+- animations[] gains five APPENDED entries, after the existing `fire` and `shot`:
+  `idle`, `spawn`, `telegraph`, `attack` (points at shoot_00.png), `recover`. Existing
+  entries are not reordered or renamed (views/tests read animations[0] by index and name).
+- body_rect of every listed frame = the tight bbox of alpha > 16/255 on the final canvas,
+  the validator's rule verbatim; `tbd` flips to false only because every listed frame is real art.
+
+Fog contrast at 40 u (validate_sprites.gd A8, threshold 3.0, never moved): the idle is
+grayscale manga art and the ball is white - both pass with room; the shoot (navy jersey) and
+the x0.70 recover frame were measured with SPRITE_DEBUG=1 and, if either lands under 3.0,
+the ART gets lightened (never the threshold) - see D-ART-ISAGI-2 when it lands.
+
+### D-ART-ISAGI-2 - Isagi's bodies are lerp-toward-white lifted to clear the fog check (art lightened, never the threshold)
+D-ART-ISAGI-1 promised: if the shoot (navy) or the x0.70 recover frame lands under the fog
+contrast of 3.0 at 40 u, the ART gets lightened - never the A8 threshold. Measurement with
+SPRITE_DEBUG=1 (validate_sprites.gd):
+
+| art state | mean opaque colour | ratio vs fog @40 u |
+|---|---|---|
+| idle/fire_00 (grayscale manga) | 0.3218 | 1.88 FAIL |
+| fire_01 (squash) | 0.3225 | 1.88 FAIL |
+| fire_02/shoot_00 (navy jersey) | (0.306, 0.290, 0.411) | 1.77 FAIL |
+| telegraph_00 (red rim baked) | (0.355, 0.314, 0.314) | 1.88 FAIL |
+| recover_00 (x0.70 dim) | 0.2241 | 1.39 FAIL |
+| spawn_00 (brightened + cyan lerp) | (0.512, 0.601, 0.589) | 4.25 pass |
+| shot_00 (ball, white/navy) | (0.733, 0.755, 0.807) | 6.81 pass |
+
+A pow(c, p) gamma lift was tried first: p=0.30 gave the idle 3.30 but recover stayed at 2.04;
+p=0.24 gave recover 2.17; p=0.17 gave recover 2.36 - the curve flattens too fast for this dark
+mass. Replaced with a lerp toward white, c' = c + (1-c)*s (stronger on darks, highlights
+compressed): idle/fire bodies and the telegraph rim derive from an idle lifted with s=0.55,
+the shoot body with s=0.45, ball untouched. Recover stays the binding x0.70 dim of the lifted
+idle (the 0.70 factor itself is the anim block's binding effect number and is not touched).
+Measured after the change: SPRITES OK 340 checks over 12 sprites.json - every isagi frame
+passes the four corners / opaque border / 15% transparent / fog contrast / body_rect checks.
+The sprites now read as deliberately bleached (manga ink on near-white); the cost is art fidelity,
+the alternative reading (a brighter recover that would not be the binding 70% brightness) was
+rejected. [CONTESTABLE - the 0.55 / 0.45 lift strengths; the art-fidelity trade-off; a real
+artist pass could rebalance with a designed light rim instead of a global lift]
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
@@ -5226,3 +5312,15 @@ SOURCE count, not the frame sheet.
   test_enemy_thicc_ben PASS; run_all 49 passed / 5 failed - the 5 (claude, coil, toucher, you,
   vfx) fail identically on the pristine base: this checkout has no game/.godot import cache, so
   ResourceLoader.load of any PNG fails; not this ticket's to fix. No PARKED rows. No push.
+
+- 2026-11-17 T-016 art module (Inkling, this session): isagi real art DONE on
+  t3/isagi-real-art-frames - game/tools/art/isagi.gd owns the frames (the shared pipeline skips
+  isagi; corner flood fill could not strip the opaque-white sources); 9 frames written
+  (idle/spawn/telegraph/shoot/recover/shot + legacy fire_00/01/02 revamped to the new art), all
+  distinct per state; frame_map rebound (isagi_idle_00/isagi_shoot_00/isagi_ball_00), anim block
+  timings/loops/effects untouched; animations[] appended (idle/spawn/telegraph/attack/recover),
+  fire/shot entries kept in place; tbd -> false; sources[] -> OK. Fog contrast forced a lerp
+  toward white on the two photo/logo bodies (D-ART-ISAGI-2, POW curve measured and rejected).
+  Checks: SPRITES OK 340 checks; FOGCHECK OK (280 checks over 5 biomes); ANIM-DATA isagi PASS;
+  TESTS 54 passed 0 failed, 0 SCRIPT ERROR lines (after a --import pass generated the import
+  cache this worktree lacked; game/.godot not committed). No PARKED rows. No push.

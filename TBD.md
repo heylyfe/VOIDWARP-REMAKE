@@ -8,7 +8,7 @@ wired in full, the entry is marked `"tbd": true` in its JSON, and the row appear
 | 1 | T-016 | kiwi cat sprites - REAL (T-ART-KIWI_CAT); `tools/art/kiwi_cat.gd` owns them | Image 1 `assets_src/enemies/kiwicat.png` present since the art wave | nothing - drop the module's rebuild output (`--script res://tools/art/kiwi_cat.gd`) if the source changes |
 | 2 | T-016 | coil sprites - REAL ART (tools/art/coil.gd, 2026-11-17) | Image 2 `springer.png` present; opaque near-white checkerboard corners needed a per-enemy background removal (the shared 24/255 corner fill empties it) | done; rebuild = rerun `tools/godot/godot.exe --headless --path game --script res://tools/art/coil.gd` |
 | 3 | T-016 | thicc ben sprites - REAL ART since 2026-11-17 | Image 3 `thiccben.png` present; cut out and graded by `game/tools/art/thicc_ben.gd` (art module owns the frames); distinct frame per T-083 anim-block state | none - done; rebuild via the art module, not the pipeline |
-| 4 | T-016 | Isagi sprites - all frames TBD | Images 4/5/6 (`isagi_idle.jpeg`, `ISAGI_SHOOT.webp`, `blueballprojectile.webp`) absent | drop all three PNGs in, rebuild |
+| 4 | T-016 | Isagi sprites - REAL ART (`tools/art/isagi.gd`, 2026-11-17) | Images 4/5/6 present since the art wave; the module removes the backgrounds and derives one frame per anim-block state | none - done; rebuild = rerun `tools/godot/godot.exe --headless --path game --script res://tools/art/isagi.gd` |
 | 5 | T-016 | nuke sprites - real art (4/4 attack_descent frames) | `NUKE.jpeg` was present but the shared flood-fill pipeline could not eat its opaque white background; `game/tools/art/nuke.gd` (T-083 art pass) removes it with a border flood fill on distance-from-white and derives the four `attack_descent` burn-cycle frames from the base body | done; re-run `game/tools/art/nuke.gd` to regenerate; states with no frames in the T-083 block stay empty |
 | 6 | T-016 | YOU?! sprites - all frames TBD | Image 8 `character to be corrupted.png` absent | drop the PNG in, rebuild |
 | 7 | T-016 | gift Larper sprites - all frames TBD | Image 9 `tripine.png` absent | drop the PNG in, rebuild |
@@ -26,7 +26,7 @@ wired in full, the entry is marked `"tbd": true` in its JSON, and the row appear
 | 2 | T-033 | isagi: `isagi_shoot_sae_math_final_shot` - the shoot line per release (ENEMIES.md Isagi "New sound": Isagi shoot sae math final shot gun-shot sound) | no audio files exist yet | drop the hook file in, view wires it |
 | 3 | T-033 | isagi: `isagi_gunshot` - per ball release, layered under the shoot line | no audio files exist yet | drop the hook file in, view wires it |
 
-## 1. The 17 enemy images - 13 MISSING (coil, thicc ben and kiwi cat are real art since 2026-11-17)
+## 1. The 17 enemy images - 12 MISSING (coil, thicc ben, kiwi cat and isagi are real art since 2026-11-17)
 
 Enemy sprites are normally produced by `game/tools/sprite_pipeline.gd` (T-016): missing, unreadable, or
 validation-failing sources become `game/tools/make_tbd_png.gd` placeholder frames, `"tbd": true`
@@ -38,14 +38,22 @@ owns its frames (the pipeline skips enemies with an art module) - all 5 cycle fr
 (squash -> extend, 512x512 bottom-anchored, `"tbd": false`), the anim block and tick ranges are
 unchanged, and fog contrast is ~8.4 at 40 u. thicc ben (row 3) and kiwi cat (row 1, T-ART-KIWI_CAT) are the others.
 
+Isagi's three sources are no longer missing: `game/tools/art/isagi.gd` (the T-016 art module; the
+shared pipeline skips any enemy with `tools/art/<id>.gd`) removed the backgrounds, derived the
+anim-block frames per state (spawn/idle/telegraph/attack/recover) and flipped isagi's `tbd` to
+false on 2026-11-17. Isagi's rows below say REAL ART; the other fourteen remain MISSING -> TBD.
+Isagi's T-083 anim block named the TBD placeholder files, not the spec names - those references are
+now the real frames (frame_map isagi_idle_00/isagi_shoot_00/isagi_ball_00); the tick counts, loop
+flags, tick ranges and effect params are untouched.
+
 | # | enemy | expected filename | state |
 |---|---|---|---|
 | 1 | kiwi cat | `kiwicat.png` | PRESENT -> real art (T-ART-KIWI_CAT; frames `cycle_00`, `spawn_00`, `idle_chase_00`, `telegraph_00`; `tbd: false`) |
 | 2 | coil | `springer.png` | REAL ART (2026-11-17, `game/tools/art/coil.gd`) |
 | 3 | thicc ben | `thiccben.png` | REAL ART - `game/tools/art/thicc_ben.gd` (2026-11-17); `cycle/spawn/attack_arrival/attack_ring/recover_00.png`; `tbd: false`; validate: SPRITES OK |
-| 4 | Isagi | `isagi_idle.jpeg` | MISSING -> TBD |
-| 5 | Isagi (shoot) | `ISAGI_SHOOT.webp` | MISSING -> TBD |
-| 6 | Isagi (projectile) | `blueballprojectile.webp` | MISSING -> TBD |
+| 4 | Isagi | `isagi_idle.jpeg` | REAL ART - `game/tools/art/isagi.gd` (2026-11-17); frames `idle_00`, `spawn_00`, `telegraph_00`, `shoot_00`, `recover_00`, `fire_00..02`, `shot_00`; `tbd: false` |
+| 5 | Isagi (shoot) | `ISAGI_SHOOT.webp` | REAL ART - the `attack` state frame `shoot_00.png` (`game/tools/art/isagi.gd`) |
+| 6 | Isagi (projectile) | `blueballprojectile.webp` | REAL ART - the `shot` state frame `shot_00.png` (`game/tools/art/isagi.gd`) |
 | 7 | nuke | `NUKE.jpeg` | REAL - base art + the four `attack_descent` frames (cycle_00..03.png, 512x128 POT, alpha-keyed background, tight body_rect); the other five T-083 states carry no sprite frames by the binding anim block (billboard-level effects) and stay empty | none for art; rebuild via `game/tools/art/nuke.gd` |
 | 8 | YOU?! | `character to be corrupted.png` | MISSING -> TBD |
 | 9 | gift Larper | `tripine.png` | MISSING -> TBD |
