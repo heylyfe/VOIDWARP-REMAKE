@@ -5238,6 +5238,54 @@ in game/tools/art/gift_larper.gd (re-run it, then re-paste the printed body_rect
 sprites.json and re-check both thresholds). The cycle names, frame count, the anim block's tick
 ranges, the pinned world_height 1.0 / body_height 1.0 / hit_diameter 0.8 and every FINAL marker
 stay untouched.
+
+### D-ART-SEAL-1 - the seal's real art: cutout recipe and frame derivation (owner ticket, babehseal.webp)
+`assets_src/enemies/babehseal.webp` is an OPAQUE PHOTO (white harp-seal pup on a blue-grey
+gradient snowfield) that the shared pipeline's corner flood fill cannot cut out (its corners
+are opaque, and the gradient eats any tolerance). `game/tools/art/seal.gd` owns the enemy's
+frames and sprite pipeline skips it by design. The recipe, committed because the constants
+are art-internal [CONTESTABLE - none of these numbers is gameplay, none is an ENEMIES.md
+number, and every one of them is wrong for another enemy]: background estimated per COLUMN
+as a vertical lerp of the top/bottom border rows; a pixel is body when its max channel
+distance to that model is >= 33 (BG_DIST) and its luminance is > 100 (LUM_MIN); binary OPEN
+with radius 4 (erode then dilate, CLOSE_R) drops snowfield speckle; the largest connected
+component is the body; holes enclosed by the body are filled. The cutout keeps the body's
+own fur colours; the missing fur rim is a SYNTHESIZED fluff fringe (two octaves of
+seeded value noise, alpha falling off over 14 px outward, tinted from the brightest 15% of
+body pixels). Canvas: 512 x 512 (max power of two), body scaled to 448 px, bottom-anchored
+(the seal lies on the ground) with a 12 px transparent bottom margin. Frames: idle_00 = the
+base; idle_01 = flap-lean (-5 deg shear about the bottom edge, +7% brightness); spawn_00 =
+base (the fade is the view's job); telegraph_00 = spec seal_01, the mouth-open gape
+(dark ellipse + gummy lower lip under the nose, nose located at abs (177,251)); dash_00 =
+lunch-lunge (-5 deg shear, +22% brightness) = the attack pose; dash_01 = upright (+10%);
+recover_00 = base stretched +6% vertically, +6% brightness. body_rect in sprites.json is the
+tight bbox of alpha > 16 per frame, computed by the tool itself. Deterministic: the only
+noise is the seeded fringe/value-noise hash (seeds 11/29/47); a rebuild is byte-stable.
+The T-083 anim block is satisfied with exactly the binding frame count per state
+(one entry per spec frame - the validator's contract): spawn -> spawn_00; idle_flap ->
+[idle_00, idle_01] (9 ticks/frame, loop); telegraph -> [telegraph_00] (45 ticks held);
+attack -> [dash_00] (the checker pins frames == spec_frames; the flap alternates in the
+'dash' animation clip at fps 10); recover -> [recover_00] (45 ticks). frame_map:
+seal_00 -> idle_00.png, seal_01 -> telegraph_00.png, seal_02 -> idle_01.png,
+seal_03 -> idle_00.png. The view (`game/view/seal_view.gd`) was edited MINIMALLY: the
+telegraph holds the telegraph state's frame (telegraph_00, the mouth-open), the recover
+state holds recover_00 - both loaded from the block, same as before; its attack state now
+holds dash_00 (the lunged pose) instead of ending on a single TBD frame; the header comment
+reflects the real art. No sim, threshold, or binding tick changed. Validation: SPRITES OK
+240 checks over 12 sprites.json; FOGCHECK OK 275 checks over 5 biomes; TESTS 54 passed
+0 failed, zero SCRIPT ERROR lines (the gate's criterion); ANIM-DATA seal PASS. [CONTESTABLE]
+on the art constants only - nothing gameplay-facing.
+
+### D-ART-SEAL-2 - sprites.json round trip normalises JSON number types
+Rewriting sprites.json via JSON.parse + stringify turns every number into a float
+(Godot 4 JSON.parse_string has one number type), so e.g. `"total_ticks": 30` becomes 30.0
+and body_rect arrays become float arrays; the two pre-existing entries ("idle", "dash")
+are rewritten in the same shape. Every consumer in-repo (validate_sprites.gd,
+check_anim_data.gd, enemy_anim.gd, billboard.gd, test_enemy_seal.gd, seal_view.gd) reads
+numbers via float()/int() and passes unchanged (SPRITES/TESTS/ANIM-DATA all green), and the
+2-space indent of the original file is kept. Accepted rather than text-patching the JSON,
+because the block gains a frame_map and four animation entries; noted so a future diff
+review does not hunt a phantom content change.
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)

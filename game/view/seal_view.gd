@@ -5,20 +5,18 @@ extends Node3D
 # bark telegraph ticks), never writes sim state; every effect is driven by the sim tick
 # counter the caller passes to step(), never by a wall clock.
 #
-# Wired to the anim block (sprites.json -> anim):
+# Wired to the anim block (sprites.json -> anim). Frames are REAL art derived procedurally
+# from babehseal.webp by game/tools/art/seal.gd (D-ART-SEAL-1, 2026-11-17):
 #   spawn     30-tick fade: alpha 0 -> 1, scale 0.8 -> 1.0 (spawn_blocks_contact_ticks = 30)
-#   idle_flap the base frame held; the flipper-flap audio cadence is the table's 9 ticks per
-#             frame (TBD stand-in: the sheet holds only idle_00 - TBD.md row 24)
-#   telegraph "dash_line": the mouth-open frame held (TBD: idle_00) for 45 ticks and the
-#             dashed red 3D line (#FF2A2A, dash_segment_u 0.5) drawn along the fixed dash
-#             line, brightening across the 45 ticks; flipper-flap audio at the block's
-#             flap_audio_hz (6.6 Hz, i.e. every 9 ticks)
-#   attack    the flap overlay: dash_00 <-> dash_01 at 4 ticks per frame for the 60-tick
-#             dash (the block's fps 15.0), the mouth-open frame held under it (TBD: dash
-#             frames stand in for spec seal_01 - TBD.md row 24); the bark plays on tick 0
-#   recover   idle_00 held for 45 ticks
-# The frame set is the T-016 TBD placeholder for the real babehseal.webp (TBD.md rows 9/12/24);
-# dropping the real art in changes nothing here.
+#   idle_flap idle_00 <-> idle_01 at the table's 9 ticks per frame (seal_02/03)
+#   telegraph "dash_line": the mouth-open frame held (telegraph_00 = spec seal_01) for
+#             45 ticks and the dashed red 3D line (#FF2A2A, dash_segment_u 0.5) drawn along
+#             the fixed dash line, brightening across the 45 ticks; flipper-flap audio at
+#             the block's flap_audio_hz (6.6 Hz, i.e. every 9 ticks)
+#   attack    dash_00 held (spec seal_01 mouth-open, lunged pose); the bark plays on tick 0
+#   recover   recover_00 held for 45 ticks
+# Frames are real art derived from babehseal.webp (game/tools/art/seal.gd, D-ART-SEAL-1);
+# the anim block in sprites.json is the frame source of truth.
 
 const BillboardScript := preload("res://view/billboard.gd")
 const SealAudio := preload("res://view/audio/seal_audio.gd")
@@ -63,6 +61,8 @@ func setup(folder_dir: String = "res://content/enemies/seal") -> void:
 	_attack_ticks_per_frame = float((states.get("attack", {})).get("ticks_per_frame", 4.0))
 	_attack_textures = _load_frames(folder_dir, (states.get("attack", {})).get("frames", []))
 	_spawn_tex = _load_frames(folder_dir, (states.get("idle_flap", {})).get("frames", ["sprites/idle_00.png"]))
+	_telegraph_tex = _load_frames(folder_dir, (states.get("telegraph", {})).get("frames", ["sprites/telegraph_00.png"]))
+	_recover_tex = _load_frames(folder_dir, (states.get("recover", {})).get("frames", ["sprites/recover_00.png"]))
 	billboard = BillboardScript.new()
 	add_child(billboard)
 	billboard.setup_from_sheet(doc, folder_dir)
@@ -70,8 +70,10 @@ func setup(folder_dir: String = "res://content/enemies/seal") -> void:
 	_base_scale = billboard.scale
 
 
-var _attack_textures: Array = []   # attack frames (dash_00/dash_01), loaded from the block
-var _spawn_tex: Array = []          # idle/telegraph/recover frames (TBD: idle_00 held)
+var _attack_textures: Array = []   # attack frames (dash_00), loaded from the block
+var _spawn_tex: Array = []          # idle frames (idle_00 base held)
+var _telegraph_tex: Array = []      # telegraph frames (telegraph_00 = spec seal_01 mouth open)
+var _recover_tex: Array = []        # recover frames (recover_00, the stretched seal_00)
 
 
 func _load_frames(folder_dir: String, frames: Array) -> Array:
@@ -97,8 +99,7 @@ func on_telegraph(kind: String, ticks: int = -1, shape: Dictionary = {}) -> void
 			_state = "telegraph"
 			_state_left = ticks if ticks > 0 else _line_total
 			_start_line(shape.get("dash_line", []))
-			# telegraph holds the mouth-open frame (TBD: idle_00) - the billboard's first
-			# texture is already it; make sure we are on it
+			# telegraph holds the mouth-open frame (telegraph_00 = spec seal_01)
 			_hold_first_frame()
 		"bark":
 			_state = "attack"
@@ -169,9 +170,16 @@ func _apply_attack_frame() -> void:
 
 
 func _hold_first_frame() -> void:
-	if _spawn_tex.is_empty() or billboard == null:
+	if billboard == null:
 		return
-	billboard.texture = _spawn_tex[0]
+	var held := _spawn_tex
+	if _state == "telegraph":
+		held = _telegraph_tex
+	elif _state == "recover":
+		held = _recover_tex
+	if held.is_empty() or held[0] == null:
+		return
+	billboard.texture = held[0]
 
 
 ## Builds the dashed red 3D telegraph line: dashes of SEG_U spaced GAP_U apart along the
