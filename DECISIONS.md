@@ -958,6 +958,52 @@ ceiling (6.75 u/s) could erase the 0.45 u/s margin a glitched player needs, so t
 
 ---
 
+### D-T082-1 [CONTESTABLE] — Third-person orbit camera: pivot-orbit rig and its numbers (T-082).
+No document before T-082 states ANY camera (research/fable-tickets.md §4, T-012 row: "Out of scope
+here — see T-082"; FABLE_HANDOFF confirms). Chosen reading, all [CONTESTABLE] with gameplay reason:
+the camera orbits a **pivot 2.5 u above the player's feet** on a sphere of **radius 7.0 u** —
+`offset = R_y(yaw) · R_x(pitch) · (0, 0, 7.0)`, look target = the pivot — so "7.0 behind / 2.5
+above" is the rest geometry and "default pitch −18°" is the pitch the rest pose ships at (the
+camera looks down 18°); pitch clamps −60°…+30°; **FOV 75°** (matches the T-011 shot-camera FOV so
+the audit screenshots and gameplay agree); **mouse 0.12°/px** default (Godot convention: mouse
+right = yaw decreases, mouse down = pitch decreases); **no camera collision** — there is nothing
+but void to clip, and a collision sweep would fight the fog; the camera's height
+follows the player's feet through an **exponential spring of 0.12 s** (`y += (target − y)(1 −
+e^(−dt/0.12))`) so the 0.5 u auto step-up eases instead of jolting — 0.12 s ≈ 7 sim ticks is under
+the 0.10 s jump-buffer window, so a step-up never delays an input reaction. Why a pivot orbit over
+"a camera docked at (0, 2.5, 7.0)": one number per concept (radius ≠ height) and the look target
+at chest height keeps the player readable against fill light at every pitch in the clamp.
+
+### D-T082-2 [CONTESTABLE] — Bindings and capture semantics: data/bindings.json, Held-bit buttons, diagonal normalization, HUD/pause are app-level (T-082).
+DESIGN.md §13 rule 2 fixes the PlayerInput fields but no document says which DEVICE produces them.
+Chosen: bindings live in `game/data/bindings.json` — keyboard W/A/S/D move, **Space jump, Left Shift
+(Godot 4 KEY_SHIFT, the only Shift the Key enum has) class ability, F interact, Tab HUD-row toggle, Esc pause**; gamepad **left
+stick move (stick_up = −1 forward), A jump (button 0), X ability (button 2), Y interact (button
+3)**. Buttons are HELD bits (button_press is edge-detected by the sim from state's prev_buttons):
+hold Space = glide / variable-jump fuel, release = jump cut — the controller reads OVER TIME what
+capture reports per tick. The **INTERACT** bit is likewise the raw hold; the **0.35 s
+hold-to-confirm tally at altars is altar-view logic** (DESIGN.md §11), not capture. Tab and Esc
+are NOT sim bits: they come back as app-level flags — HUD/ pause are modal overlays on the view,
+and putting them in the wire format would leak view state into replays. The combined keyboard +
+stick move vector is **normalized to magnitude ≤ 1** before rotation (a diagonal never exceeds
+run speed), rotated by the camera yaw (yaw 0 = world forward −z), scaled by 127 and ROUNDED to
+int8 (D-T010-2); exactness of "rotated by exactly the yaw difference" therefore holds exactly at
+90° multiples and the 45° set, and to within int8 rounding (~0.5°) elsewhere — pinned by
+test_input.gd. capture() is a pure function of device state + camera yaw (no engine `Input`
+singleton inside it) so headless tests exercise the same code the app main scene will.
+
+### D-T082-3 [CONTESTABLE] — Settings: user://settings.json, clamp-not-reject on load (T-082, the T-024 addendum made concrete).
+The T-024 addendum fixes the fields and ranges (master volume 0–100 default 80, mouse sensitivity
+0.02–0.30 °/px default 0.12, FOV 60–90° default 75, fullscreen off; stored in `user://settings.json`)
+but not the failure behavior. Chosen: on boot the file is read and **every field is clamped into
+range and defaulted when missing, corrupt or wrongly typed — settings can never fail to boot**
+and the file is only written back through the explicit save path. Gameplay reason: a settings
+file this small is user data from ONE older build at most; blocking a run over `fov: "wide"` is
+strictly worse than clamping. `app/settings.gd` takes a path parameter so tests write to their
+own file and never clobber the player's real `user://settings.json`.
+
+---
+
 ## C. Process
 
 ### D-030 — Thresholds are stated before measurement and each carries its gameplay rationale.
