@@ -64,29 +64,30 @@ func _body_within_twelve(f: Array[String]) -> void:
 	var cfg := _stop_cfg()
 	for spec in [[10.0, 0.0], [3.0, 4.0], [8.0, 8.8]]:
 		var p: PStub = PStub.new()
-		var bd: Array = [[spec[0], 0.0, spec[1]]]
+		# body rows in the world mirror's own shape ({"x", "y", "z"} per body)
 		var w := Util.world_from_tiles([[0, 0, 0]])
+		w["enemies"] = [{"x": spec[0], "y": 0.0, "z": spec[1], "r": 0.3}]
 		var got: Dictionary = ArbiterScript.evaluate(cfg, p, w, [])
 		if got["may_appear"]:
 			f.append("gate: from a body at %.1f/%.1f (d=%.4f < 12)" % [spec[0], spec[1],
 					Vector3(spec[0] - 0.5, 0.0, spec[1] - 0.5).length()])
 			return
-	var far: Array = [[15.0, 0.0, 0.0]]
 	var w2 := Util.world_from_tiles([[0, 0, 0]])
+	w2["enemies"] = [{"x": 15.0, "y": 0.0, "z": 0.0, "r": 0.3}]
 	var p2: PStub = PStub.new()
 	if not ArbiterScript.evaluate(_stop_cfg(), p2, w2, [])["may_appear"]:
 		f.append("gate: 15.0 u away still blocked a clean appearance")
 	# exactly at the bound is clear (strictly-within reading, D-T072-1)
 	var w3 := Util.world_from_tiles([[0, 0, 0]])
-	if not ArbiterScript.evaluate(_stop_cfg(), PStub.new(),
-			{"glitched": {}, "enemies": [[12.0, 0.0, 0.0]]}, [])["may_appear"]:
+	w3["enemies"] = [{"x": 12.0, "y": 0.0, "z": 0.0, "r": 0.3}]
+	if not ArbiterScript.evaluate(_stop_cfg(), PStub.new(), w3, [])["may_appear"]:
 		f.append("gate: a body exactly at 12.0 u blocked (within = strictly inside, D-T072-1).")
 	# a body above the player still blocks (3D distance, not XZ-only)
 	var w4 := Util.world_from_tiles([[0, 0, 0]])
+	w4["enemies"] = [{"x": 0.5, "y": 9.0, "z": 0.5, "r": 0.3}]
 	var pa: PStub = PStub.new()
 	pa.y = 6.0
-	if ArbiterScript.evaluate(_stop_cfg(), pa,
-			{"glitched": {}, "enemies": [[0.5, 9.0, 0.5]]}, [])["may_appear"]:
+	if ArbiterScript.evaluate(_stop_cfg(), pa, w4, [])["may_appear"]:
 		f.append("gate: a body 3.0 u above the player read XZ-only (3D distance required)")
 
 

@@ -52,9 +52,10 @@ func _stride_lock(f: Array[String], extra_upg: float) -> void:
 		f.append("lock: ability_locked false while the lock window holds")
 
 
-# On the glitched floor: 8.28 u/s unlocked (9 x 1.15 x 0.8), exactly 7.2 when locked - the
-# same floor speed as the other two classes (SR-6). The toucher-style floor lock shows up
-# here the way the sim sees it live: a tile key under the world's glitched map, and the
+# On the glitched floor the class mult never applies (D-051: the toucher's slow stays
+# -20%, no extra slow); 9 x 0.8 = 7.2 flat, whether the window is open or not - identical
+# to every other class standing there (SR-6). The toucher-style floor lock shows up here
+# the way the sim sees it live: a tile key under the world's glitched map, and the
 # controller's current-tile key on it.
 func _stride_lock_glitched(f: Array[String]) -> void:
 	var pair: Array = _placed("athletic")
@@ -63,14 +64,14 @@ func _stride_lock_glitched(f: Array[String]) -> void:
 	ctl.cur_key = "1,0,0"
 	w["glitched"]["1,0,0"] = true
 	Util.run_ticks(ctl, w, 40, func(_c, _i): return Util.mk_in(1, 0))
-	if absf(ctl.vx - 8.28) > 0.02:
-		f.append("lock: unlocked run speed on the glitched floor %.4f, want 8.28" % ctl.vx)
+	if absf(ctl.vx - 7.2) > 0.02:
+		f.append("lock: unlocked run speed on the glitched floor %.4f, want 7.2 flat" % ctl.vx)
 	ctl.lock_abilities(LOCK_TICKS)
 	Util.run_ticks(ctl, w, 40, func(_c, _i): return Util.mk_in(1, 0))
 	if absf(ctl.vx - 7.2) > 0.02:
 		f.append("lock: locked run speed on the glitched floor %.4f, want exactly 7.2" % ctl.vx)
-	# the glitched floor's own slow (x0.8) sits on top of the suspended class mult - and
-	# can never stack it back (run_speed composes, never multiplies the lock in)
+	# the floor's own x0.8 composes on top of the suspended class mult - never stacks it
+	# back (run_speed composes, never multiplies the lock in)
 
 
 # A purchased speed upgrade counts x1.0 while the lock holds (its x1.5 class boost is off).
@@ -93,19 +94,21 @@ func _dasher_cooldown_does_not_tick(f: Array[String]) -> void:
 	var pair: Array = _placed("dasher")
 	var ctl = pair[0]
 	var w: Dictionary = pair[1]
-	# spend the dash (12 dash ticks), then lock while the dasher's 3.0 s regen is mid-run
+	# spend the dash (12 dash ticks): the 3.0 s regen runs one tick, then the window lands
 	Util.run_ticks(ctl, w, 1, func(_c, _i): return Util.mk_in(0, 0, Util.ControllerScript.BTN_ABILITY))
 	Util.run_ticks(ctl, w, 1, func(_c, _i): return Util.mk_in(0, 0))
 	if ctl.dash_ready:
 		f.append("lock: the dasher was ready before the window opened")
+	var cd_at := float(ctl.dash_cd)
 	ctl.lock_abilities(LOCK_TICKS)
 	for i in range(LOCK_TICKS):
 		Util.run_ticks(ctl, w, 1, func(_c, _i): return Util.mk_in(0, 0,
 				Util.ControllerScript.BTN_ABILITY))
 	if ctl.dash_ticks > 0:
 		f.append("lock: a dash started inside the window")
-	if absf(ctl.dash_cd - 2.0) > 1e-9:
-		f.append("lock: dash cooldown ticked inside the window (%.4f, want 2.0)" % ctl.dash_cd)
+	if absf(ctl.dash_cd - cd_at) > 1e-9:
+		f.append("lock: dash cooldown ticked inside the window (%.4f, want %.4f)"
+				% [ctl.dash_cd, cd_at])
 	if ctl.dash_ready:
 		f.append("lock: dash_ready true inside the window")
 	# the window over, one 3.0 s regen resumes at once
@@ -159,6 +162,7 @@ func _lock_expires(f: Array[String]) -> void:
 	if not (eff3.has("class_multipliers_off") and eff3.size() == 1):
 		f.append("lock: the athletic's lock_effect %s is not exactly [class_multipliers_off]"
 				% str(eff3))
-	# an unknown class id falls back to no effects (a lock can never be a no-op)
-	if not Util.ControllerScript.lock_effects("no_such_kit").has("glide_disabled"):
-		f.append("lock: an unknown class id read as an empty effect list")
+	# an unknown class id reads no effects (no per-class data behind it - the dispatch
+	# reads player.json and finds nothing to disable); the lock itself never dies
+	if not Util.ControllerScript.lock_effects("no_such_kit").is_empty():
+		f.append("lock: an unknown class id read effects")

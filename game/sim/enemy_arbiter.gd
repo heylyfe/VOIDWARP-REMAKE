@@ -24,6 +24,9 @@ extends RefCounted
 # Distance requirement form: 3D, from the body's row origin to the player's feet point
 # (D-T072-1). A y band on a shape applies only when the shape carries one.
 
+# Distance requirement form: 3D, from the body's row origin to the player's feet point
+# (D-T072-1). A y band on a shape applies only when the shape carries one.
+
 const REQ_BODY_WITHIN := "no_enemy_body_within"
 const REQ_NO_TELEGRAPH := "no_targeted_telegraph"
 const REQ_GROUNDED := "player_grounded"
@@ -115,23 +118,32 @@ static func on_glitched_floor(player, w: Dictionary) -> bool:
 # a never-met requirement never drifts into an unconditional yes (an absent key would be
 # a spelling error, not an allowance).
 static func meets_requirement(req: Dictionary, player, w: Dictionary, tgr: Array) -> bool:
-	if req.has(REQ_BODY_WITHIN):
-		var lim := float(req[REQ_BODY_WITHIN])
-		for b in bodies_arg(w):
-			var dx3 := float(b[0]) - float(player.x)
-			var dy3 := float(b[1]) - float(player.y)
-			var dz3 := float(b[2]) - float(player.z)
-			if dx3 * dx3 + dy3 * dy3 + dz3 * dz3 < lim * lim:
+	if player == null:
+		return false
+	for key in req.keys():
+		if key == REQ_BODY_WITHIN:
+			var lim := float(req[REQ_BODY_WITHIN])
+			for b in bodies_arg(w):
+				var dx3 := float(b[0]) - float(player.x)
+				var dy3 := float(b[1]) - float(player.y)
+				var dz3 := float(b[2]) - float(player.z)
+				if dx3 * dx3 + dy3 * dy3 + dz3 * dz3 < lim * lim:
+					return false
+		elif key == REQ_NO_TELEGRAPH and bool(req.get(key, false)):
+			if telegraph_on_player(tgr, player):
 				return false
-	elif req.has(REQ_NO_TELEGRAPH) and bool(req.get(REQ_NO_TELEGRAPH, false)):
-		if telegraph_on_player(tgr, player):
-			return false
-	elif req.has(REQ_GROUNDED) and bool(req.get(REQ_GROUNDED, false)):
-		if player == null or not bool(player.grounded):
-			return false
-	elif req.has(REQ_OFF_GLITCHED) and bool(req.get(REQ_OFF_GLITCHED, false)):
-		if on_glitched_floor(player, w):
-			return false
+		elif key == REQ_GROUNDED and bool(req.get(key, false)):
+			if not bool(player.grounded):
+				return false
+		elif key == REQ_OFF_GLITCHED and bool(req.get(key, false)):
+			if on_glitched_floor(player, w):
+				return false
+		elif key == REQ_BODY_WITHIN or key == REQ_NO_TELEGRAPH \
+				or key == REQ_GROUNDED or key == REQ_OFF_GLITCHED:
+			# a false-valued entry holds; the requirement itself was evaluated above
+			continue
+		else:
+			return false   # vocabulary this gate does not know: never a silent yes
 	return true
 
 
