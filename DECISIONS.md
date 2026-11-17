@@ -956,6 +956,71 @@ and the §7 10% budget loses its meaning; extra slowing stacked on top of the to
 ceiling (6.75 u/s) could erase the 0.45 u/s margin a glitched player needs, so the slow is pinned at
 20% and Wet Floor adds only slipperiness.
 
+### D-T012-1 — [CONTESTABLE] Terminal fall speed is 40 u/s.
+DECISION (T-012): the controller caps the fall speed at 40 u/s. No document states the number.
+At 60 Hz that is 0.67 u per tick, under the 1 u slab thickness, so the swept collision can never
+tunnel a slab; the void below the kill plane is where long falls end anyway, so a higher cap has no
+gameplay effect — while a lower one makes falls floaty. Lives in `data/player.json` as
+`terminal_fall`. [CONTESTABLE]: the owner may prefer another number; nothing else depends on it.
+WHY: the vertical step at the tick rate must stay inside the collision geometry it is resolved
+against, or kinematic sweeps (D-047) need sub-stepping everywhere for one cosmetic number.
+
+### D-T012-2 — The envelope proof's jump script implements the x0.9 safety as a 10%-early takeoff.
+DECISION (T-012): `tests/test_envelope.gd` scripts one jump per row of TERRAIN_SPEC section 5.1:
+run at full speed toward the gap and press jump exactly when the player's centre crosses
+`edge − 0.1 × raw reach` (raw reach = 9 × t2, `t2 = (12 + sqrt(144 − 64·dy))/32`, dy in u). Each
+row clears the VALIDATOR gap and fails at gap+2, and a tile +5 HU (2.5 u) is never landed on
+(apex 2.25 u, step-up 0.5 u). >= +4 HU stays unreachable as the table states.
+WHY: retro section 4e — the envelope proof must bind the GENERATOR guarantee to the actual
+controller, not to a formula: the jump runs through the real sim code (collision, gravity, buffer,
+coyote). The 0.9 table factor decomposes exactly into "take off 10% of the reach early"; with a
+fully optimal edge-takeoff jump the flat row's gap+2 (7 cells = 6.2 u needed for 6.6 u available)
+would still be physically reachable and the "must fail" half of the test would prove nothing.
+
+### D-T012-3 — [CONTESTABLE] Upgrade-strength composition, and Hungry Void clamp reading.
+DECISION (T-012): (a) run speed composes ADDITIVELY on base: `run = base * (class_mult + raw
+upgrade pcts)`, where the Athletic class mult is +15% (1.15), a purchased +10% speed card counts
+x1.5 on Athletic (1.15 + 0.15 = 1.30 → 11.70 u/s), under an ability lock or on glitched floor the
+class mult is off and purchased cards work at normal strength (D-070), and the glitched floor then
+applies its fixed x0.8 (D-075). (b) A double-jump upgrade's air-jump velocity is
+`jump_velocity * card_height * (1.3 on Athletic while not locked)`. (c) When Hungry Void lowers the
+cap to 1 (D-052) while 2 charges are held, the held charges are clamped down to 1 so the HUD's
+"one pip per holdable charge" invariant stays exact; nothing spills on restore (beacon at cap gives
+back 0). The controller exposes `apply_speed_upgrade(pct)`, `apply_double_jump(card_height)`,
+`apply_lock(duration)` and `set_charge_cap(cap)` for the content layer until T-013's stat hooks
+exist. All three readings are [CONTESTABLE] (clone the readings if the owner rules otherwise).
+WHY: the documents state each strength factor but not their composition; identical readings for
+every implementer of T-013/T-050's sum checks need the arithmetic pinned; the pip invariant is the
+one thing D-050 states outright and it decides (c).
+
+### D-T012-4 — Simulation notes: integration order, dash ticks, pad ballistics, aim fields, safe-tile distances, ring membership.
+DECISION (T-012):
+- Gravity is applied BEFORE the move (semi-implicit Euler): the takeoff tick moves at exactly
+  jump velocity 12, and the discrete trajectory lands 16·T·dt shorter than the continuous envelope
+  — inside every validator margin of T-012-2's script (checked per row). The jump/cut/coyote/
+  buffer constants stay exactly as DESIGN section 4 states them.
+- The dash is an INTEGER tick counter (0.20 s = 12 ticks at 60 Hz), not a float timer: the span is
+  exactly 6.0 u with no float residue; walls clip it and horizontal control resumes from 0.
+- A launch pad computes its ballistic at launch: `t2 = (v0 + sqrt(v0^2 − 64·dy))/32` (descending
+  branch, v0 = 16, g = 32) and aims the horizontal velocity at the target tile's centre; input
+  control is suspended until landing (air control, glide, air jumps and dashes cannot deflect it),
+  which is what makes "land on the pad's target tile" a guarantee for every jump-over.
+- The per-tick input carries `aim_x`/`aim_z` (the dash fallback direction, camera-forward,
+  defaulting to +z) alongside T-010's `move_x`/`move_z`/`buttons` shape; T-082 owns mapping them.
+- Safe-tile distances (D-059) are 3D Euclidean from the tile's top-centre to every enemy body /
+  projectile centre, >= 6.0 u; hazard footprints arrive as live state (circle / ring / box, each
+  optionally y-banded) fed by the enemy runtime.
+- The safe-tile ring stores tiles the player stood on for >= 0.5 s; round-trip reachability is
+  guaranteed upstream (H6 forbids soft-lock tiles, and the level dict carries no rt-set), so sim
+  re-validates at teleport time with the four live filters (solid, not glitched, outside hazards,
+  6 u clearance) and falls back to the dais spawn tile.
+- `data/player.json` is owned by T-014c and merged during the run (nested schema);
+  `controller.load_constants()` maps `shared_kit` / `classes.*` / `void_charges.*` /
+  `last_light.*` onto the controller's flat keys, keeps flat-key overlay support, and
+  falls back in code for the numbers the file does not carry: half_width 0.4 / height
+  1.8 (DESIGN section 4), accel 90 (addendum R4), terminal_fall 40 (D-T012-1),
+  kill_plane_y −40 and pad_launch_vel 16 (TERRAIN_SPEC section 4).
+
 ---
 
 ### D-T082-1 [CONTESTABLE] — Third-person orbit camera: pivot-orbit rig and its numbers (T-082).
@@ -1263,3 +1328,4 @@ silently reshaped here.
   tail is geometric (ratio about 0.45), so H15 will fail roughly once per 30,000 levels. Fix after the
   run in the generator (cheaper acceptance of elevation/path-share), never by raising the limit.
   NEXT: owner go-ahead, commit, then FLEET_PACK.md from T-001. Nothing committed since ab471d8.
+- 2026-11-16 GLM 4.6 (T-012): player controller and classes DONE on t3/94aebde7 - sim/collision.gd (AABB 0.4/1.8 vs slabs/ramps/props, step-up 0.5), sim/controller.gd (kits, void charges, 8-tile safe ring, Last Light, pads), tests envelope/classes/charges/last_light all green (TESTS 5 passed 0 failed), D-T012-1..4 appended; gate run pending in this session.
