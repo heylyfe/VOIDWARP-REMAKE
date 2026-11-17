@@ -242,8 +242,8 @@ func _sync_decals(row: Dictionary) -> void:
 				continue
 			_decals[key] = d2
 		var sprite: Sprite3D = d2["sprite"]
-		var tex_i: int = _tile_offset(entry)
-		sprite.texture = _decal_texts[tex_i] if tex_i < _decals_texts_count() else null
+		var frame_i: int = _decal_frame(entry, age)
+		sprite.texture = _decal_texts[frame_i] if frame_i < _decals_texts_count() else null
 		_age_decal(sprite, age, float(life), now, born)
 
 
@@ -297,6 +297,17 @@ func _tile_offset(entry: Dictionary) -> int:
 	var gx := int(floor(float(entry.get("x", 0.0)) - 0.5))
 	var gz := int(floor(float(entry.get("z", 0.0)) - 0.5))
 	return posmod(gx + gz, 5)
+
+
+## The decal frame: the 5-frame cycle at 8 fps (7.5 ticks per frame, section 2.2
+## "7-8 ticks per frame"), each tile offset by (x + z) mod 5 frames so neighbours
+## do not flash in unison.
+func _decal_frame(entry: Dictionary, age: float) -> int:
+	var n: int = _decals_texts_count()
+	if n <= 0:
+		return 0
+	var step: int = int(age / (60.0 / maxf(_floor_fps(), 0.01)))
+	return posmod(_tile_offset(entry) + step, n)
 
 
 func _make_decal(entry: Dictionary) -> Variant:
