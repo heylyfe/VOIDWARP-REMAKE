@@ -52,6 +52,11 @@ change. Exception: `gin`'s two sources are opaque (near-white), so `game/tools/a
 (T-ART-GIN) produces its frames instead of the pipeline, which skips the enemy. Every frame is
 validated by `game/tools/validate_sprites.gd` (fog contrast, transparency,
 body_rect).
+unchanged, and fog contrast is ~8.4 at 40 u. gift Larper is the same kind of exception since
+2026-11-17: `tripine.png` needed its own module (`game/tools/art/gift_larper.gd`) because the
+near-black body is 1.0 contrast vs fog as shipped - 6 real frames (5 distinct idle cycle frames
++ a defused pose), 512x512 bottom-anchored, `"tbd": false`, the anim block and tick ranges are
+unchanged, fog contrast 3.05-3.87 at 40 u (palette fog; per-biome 4.3+).
 
 | # | enemy | expected filename | state |
 |---|---|---|---|
