@@ -67,8 +67,7 @@ func _init() -> void:
 		exp.convert(Image.FORMAT_RGBA8)
 	# The elephant frame is the FULL photo, graded - no mask, no cutout (owner ruling).
 	var ele_body := _grade(ele)
-	var exp_mask: Array = _explosion_mask(exp)
-	var exp_body := _cutout(exp, exp_mask[0], exp_mask[1])
+	var exp_body := _cutout(exp, _explosion_mask(exp))
 	var cycle_00 := _fit_canvas(ele_body, 1.0, 1.0)
 	var cycle_01 := _composite_attack(ele_body, exp_body)
 	var spawn_00 := _fit_canvas(_brightness(ele_body, 1.16), 1.0, 1.0)
@@ -215,7 +214,7 @@ func _fill_holes(fg: PackedByteArray, w: int, h: int) -> PackedByteArray:
 # The explosion: global rule "warm (r > b + 10) or bright (max >= 175)"; the cat's
 # neutral-dark pixels fail it, so a cat-silhouette polygon protects them; largest
 # component wins, enclosed islands refilled.
-func _explosion_mask(img: Image) -> Array:
+func _explosion_mask(img: Image) -> PackedByteArray:
 	var w := img.get_width()
 	var h := img.get_height()
 	var d := img.get_data()
@@ -236,13 +235,12 @@ func _explosion_mask(img: Image) -> Array:
 		fg[i] = 1 if (warm or bright or cat[i] == 1) else 0
 	fg = _largest_component(fg, w, h)
 	fg = _fill_holes(fg, w, h)
-	var empty := PackedByteArray()
-	empty.resize(w * h)
-	return [fg, empty]
+	return fg
 
 
-# Tight crop of the source to the mask (alpha > 16), alpha from the mask.
-func _cutout(img: Image, mask: PackedByteArray, paint := PackedByteArray()) -> Image:
+# Tight crop of the source to the mask (alpha > 16), alpha from the mask. Only the
+# explosion uses this (the elephant is never cut out).
+func _cutout(img: Image, mask: PackedByteArray) -> Image:
 	var w := img.get_width()
 	var h := img.get_height()
 	var x0 := w
