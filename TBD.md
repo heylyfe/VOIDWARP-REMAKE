@@ -18,6 +18,14 @@ wired in full, the entry is marked `"tbd": true` in its JSON, and the row appear
 | 11 | T-016 | Claude sprites - all frames TBD | Image 15 `claudelogo.png` absent (clawd Crab plushie source unfetched -> TBD) | drop the PNG in, rebuild |
 | 12 | T-016 | gin ichimaru sprites - all frames TBD | Images 16/17 (`gin idle.png`, `ginsword.png`) absent | drop both PNGs in, rebuild |
 
+## 2. Placeholder audio hooks (T-033)
+
+| # | ticket | what is TBD | why | owner action |
+|---|---|---|---|---|
+| 1 | T-033 | isagi: `isagi_voice_direct_shot` - each burst's audio cue (ENEMIES.md Isagi "New sound": direct shot voice lines) | no audio files exist yet in the build | drop the hook file in, view wires it |
+| 2 | T-033 | isagi: `isagi_shoot_sae_math_final_shot` - the shoot line per release (ENEMIES.md Isagi "New sound": Isagi shoot sae math final shot gun-shot sound) | no audio files exist yet | drop the hook file in, view wires it |
+| 3 | T-033 | isagi: `isagi_gunshot` - per ball release, layered under the shoot line | no audio files exist yet | drop the hook file in, view wires it |
+
 ## 1. The 17 enemy images - ALL MISSING
 
 Enemy sprites are produced by `game/tools/sprite_pipeline.gd` (T-016): missing, unreadable, or
