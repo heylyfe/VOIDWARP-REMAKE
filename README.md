@@ -7,6 +7,8 @@ the end of the run. The world is serious. The enemies are not.
 
 **VOIDWRAP RUN is a personal, non-commercial project — no money is involved, and it is not affiliated with, endorsed by, or connected to any person, brand, character, or IP referenced or depicted in the game.**
 
+ENEMIES.md DISCLAIMER (verbatim, required in README + about screen): this is a personal, non-commercial project with no money involved. It is not affiliated with, endorsed by, or connected to any person, brand, character, or IP referenced or depicted in the game.
+
 ## Where things are
 
 | file | what |

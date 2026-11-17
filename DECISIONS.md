@@ -1712,10 +1712,105 @@ over flat ground ends at y in [-1, 0]).
 CONTESTABLE - no document names the event; the view needs the detonation point for the
 explosion flash, and tests need to observe "detonates on the pad" without guessing
 positions.
+### D-T024-1 - Loading screen timing model and the testable clock (T-024).
+
+DECISION (T-024): `app/loading_screen.gd` drives everything from an injected `advance(delta)`
+step instead of `_process`/wall time. Tests step it in fixed increments; no test ever sleeps in
+real time. The minimum display is a named constant `MIN_DISPLAY_SECONDS := 5.0` (DESIGN.md
+section 2 [CANON] row "loading screen on initial load and on run start | >= 5.0 s" and section
+14). Completion predicate: `elapsed >= MIN_DISPLAY_SECONDS and load_fraction() >= 1.0`. A load
+that finishes faster than 5.0 s therefore completes on the first step at/after 5.0 s (a fast 1.0 s
+load completes at exactly 5.0 s, to float accumulation error); a load slower than 5.0 s completes
+at the load's own duration, with the real fraction shown the whole time. Progress displayed is
+NEVER a fake fraction: the bar shows the real reported (or simulated) fraction; for a fast load it
+simply pins at 1.0 during the hold.
+WHY: the spec's "holds at 5s if load is faster, shows real progress if slower" is exactly this
+predicate, and a stepped clock is the only way a headless test can assert "exactly at least 5.0 s"
+and "a simulated 7 s load takes 7 s" without a 12 s sleep in the gate.
+
+### D-T024-2 - Simulated load duration vs real loader progress (T-024).
+
+DECISION (T-024): the screen accepts a simulated load duration at start (`start(seed, simulated_load_seconds)`;
+using -1 to disable) which yields fraction = clamp(elapsed / duration, 0, 1), and an external
+`set_load_progress(p)` for the real boot path (initial load / run start) to report the actual
+fraction from the loader. The first `set_load_progress` call permanently switches the fraction
+source to the reported value (the simulated estimate is only a floor model, never overriding a
+real report). The ticket's "simulated 7 s load" test uses the simulated duration only.
+WHY: at the moment the screen is created the real total cost of asset/level loading is unknown;
+pretending a fraction is known would violate the spec's "real progress" clause. The override rule
+(never let the estimate beat a real report) is what keeps the honest reading honest when both are
+available. The real caller wiring is out of scope here (no boot scene exists yet).
+
+### D-T024-3 - Tip rotation: every 5 s, seeded weighted draw, hazard_tell x3 (T-024).
+
+DECISION (T-024): tips come from `data/tips.json` (18 tips, 11 tagged hazard_tell, written by
+T-014c; unchanged). The draw pool is an expanded index array with each hazard_tell tip present
+HAZARD_TELL_WEIGHT := 3 times and every other tip present once (40 entries). The rotation is a
+seeded shuffle of that pool (RandomNumberGenerator with the run seed), cycled; when the cycle is
+exhausted the pool is reshuffled with the same stream and cycled again - so no cycle repeats the
+previous one's order and long loads never run dry. The visible tip changes exactly at multiples of
+5.0 s of elapsed display time: tip_step = floor(elapsed / 5.0). A 5.0 s fast-loading screen shows
+exactly one tip. hazard_tell tips therefore appear at ~3x the rate of the other 7 tips, which is
+"prioritizing gift-vs-hazard tells" without editing the data file.
+WHY: DESIGN.md section 14 ("tips tagged hazard_tell are weighted x3, rotating every 5 s") and the
+owner spec ("rotating, data-driven tip pool (15+ tips, prioritizing gift-vs-hazard tells)"). The
+weights live in the draw, not in the JSON, so T-014c's data contract is untouched.
+
+### D-T024-4 - [CONTESTABLE] - The About disclaimer is the ENEMIES.md paragraph VERBATIM; README keeps both wordings (T-024).
+
+DECISION (T-024): DESIGN.md section 14 states its own verbatim line ("VOIDWRAP RUN is a personal,
+non-commercial project — no money is involved, and ..."); ENEMIES.md's hard rule states a different
+verbatim paragraph ("this is a personal, non-commercial project with no money involved. It is not
+affiliated with, endorsed by, or connected to any person, brand, character, or IP referenced or
+depicted in the game."). The T-024 ticket and the orchestrator's addendum both name ENEMIES.md:
+"About text = the disclaimer verbatim" and "The About text must be the disclaimer VERBATIM". The
+About screen (game/app/menu.gd) therefore carries the ENEMIES.md paragraph exactly, and
+tests/test_disclaimer.gd pins that exact byte string. README.md carried ONLY the DESIGN.md section
+14 wording (verified by findstr: line 8, count 1 - the orchestrator's note that "README.md already
+carries it" is true for the DESIGN.md wording, false for the ENEMIES.md one). Rather than remove or
+rewrite the T-001-verified line, README.md now carries the ENEMIES.md paragraph verbatim as an
+additional line; both wordings coexist until the owner rules. PARKED.md row 2 records the conflict.
+CONTESTABLE - if the owner rules DESIGN.md section 14's wording canonical, the fix is one constant
+in menu.gd, one line in README.md and one string constant in test_disclaimer.gd.
+WHY: the ticket is explicit, ENEMIES.md marks its paragraph "required in README + about screen",
+and deleting or rewriting verified prior work to reconcile two documents the ticket never asked me
+to reconcile is not mine to do.
+
+### D-T024-5 - [CONTESTABLE] - Rotation boundary and first tip are not specified anywhere (T-024).
+
+DECISION (T-024): no document states (a) the tip shown before the first 5.0 s elapses, (b) whether
+the rotation boundary is aligned to screen entry or to first frame, or (c) whether the first tip is
+random. Built: tip_step = floor(elapsed / 5.0) with elapsed counted from screen entry (not from
+first painted frame), and the sequence is a seeded shuffle - the first tip is the first entry of
+the shuffled weighted pool, not tips.json order. A fast 5.0 s load shows exactly one tip, index 0
+of the shuffled pool.
+CONTESTABLE - the owner may want the first tip to always be a hazard_tell tell, or the rotation
+aligned to first paint; the change is one line either way.
+WHY: any choice unmentioned in every document is contestable by definition; floor(elapsed / 5.0) is
+the literal reading of "rotating every 5 s".
+
+### D-T024-6 - test_disclaimer.gd pins both locations; the gate proves it by failing on edit (T-024).
+
+DECISION (T-024): tests/test_disclaimer.gd asserts the ENEMIES.md verbatim paragraph appears in
+(a) the About text produced by app/menu.gd (`about_text()` / the ABOUT_DISCLAIMER constant the
+About panel renders) and (b) README.md at the repository root, resolved relative to
+`res://` (res:// is game/, so `ProjectSettings.globalize_path("res://") + "../README.md"`). The
+string is a constant in the test itself, so editing either location away fails the test; the test
+never reads the menu source with a regex, it calls the same function the panel uses.
+WHY: A15 (FLEET_PACK.md T-024) is "the disclaimer appears verbatim" - a pinned constant is the
+only reading that "must fail if either is edited away".
 
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
+- 2026-11-17 T-024 (spawn, inkling-2-small-free): app/loading_screen.gd (min 5.0 s hold, real
+  progress beyond, tips from data/tips.json, hazard_tell x3 weighted seeded rotation every 5.0 s),
+  app/menu.gd (Play/Settings/About/Quit; About = ENEMIES.md disclaimer verbatim; Settings bound to
+  app/settings.gd), tests/test_loading.gd + tests/test_disclaimer.gd (A15; README gained the
+  ENEMIES.md verbatim line alongside the T-001 DESIGN.md section 14 line). TESTS 19 passed 0 failed;
+  GATE OK (9 ran, 0 skipped, 43 s). PARKED row 2 (DESIGN.md section 14 vs ENEMIES.md disclaimer
+  wording). DECISIONS D-T024-1..6. Boot-scene wiring (set_load_progress from the real loader,
+  play_requested consumer) is unassigned.
 - 2026-11-17 T-011 (spawn, GLM): view/level_mesher.gd, view/fog_env.gd, tools/shot.gd, tools/fog_check.gd,
   tests/test_mesh.gd, 12 screenshots in game/shots/. run_all green (TESTS 4 passed 0 failed; 7@30 =
   3,662 tris, 11 ms mesh). Gate: 5 OK, 1 RED at fog readability - the reference Deepwater palette
