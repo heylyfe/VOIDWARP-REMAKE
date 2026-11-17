@@ -277,8 +277,8 @@ invert the race):
 
 | body | base speed (u/s) | ceiling | ceiling in u/s |
 |---|---|---|---|
-| kiwi cat | 5.6 | 0.80 | 7.2 |
-| kitten (The Litter) | 4.5 | 0.70 | 6.3 |
+| kiwi cat | 3.0 | 0.40 | 3.6 |
+| kitten (The Litter) | 2.4 | 0.30 | 2.7 |
 | YOU?! | 3.4 | 0.55 | 4.95 |
 | toucher | 6.75 | 0.75 | 6.75 |
 | seal (flapping; the dash is an attack, not pursuit) | 4.0 | 0.60 | 5.4 |
@@ -316,15 +316,15 @@ when locked, and to 7.2 u/s on glitched floor — identical to the other two cla
 Starter pool (pre-run and level-1 votes): kiwi cat, coil, thicc ben, seal.
 
 ### 5.1 kiwi cat — Image 1 = "kiwicat.png"
-Floats toward the nearest player at **5.6 u/s** (62% of run speed; pursuit ceiling 0.80 → never above
-7.2 u/s after multipliers, SR-5). Contact = **kill**. Meows every 3 s while within 14 u. Feet ease
+Floats toward the nearest player at **3.0 u/s** (33% of run speed; pursuit ceiling 0.40 → never above
+3.6 u/s after multipliers, SR-5). Contact = **kill**. Meows every 3 s while within 14 u. Feet ease
 toward the target's feet at 2.0 u/s (SR-1). 1 PNG.
 *Pressure on the loop:* a slow clock that never stops; lingering in the gold phase lets it arrive.
 *Where terrain makes it shine:* it cuts straight across the void while you must follow the walkways —
 dead ends (`nook` platforms) and long detours turn a slow cat into a trap. Spawns at `nook`.
 *Answer:* open ground — walk away. Thin path or dead end — **hurdle it** as it arrives: a jump
-exceeds its 1.5 u reach from 0.16 s to 0.59 s of the jump, a 0.43 s window over a 0.12 s overlap
-(closing speed 14.6 u/s, SR-2).
+exceeds its 1.5 u reach from 0.16 s to 0.59 s of the jump, a 0.43 s window over a 0.14 s overlap
+(closing speed 12.0 u/s, SR-2).
 
 ### 5.2 coil — Image 2 = "springer.png"
 Cycle: idle 3.0 s → pre-jump cue 0.6 s ("boing", squash frames, a ring of radius 3 u drawn at the
@@ -604,8 +604,8 @@ Severity: M = Mild, H = Harsh, B = Brutal. "st" = max stacks.
 
 | id | name | needs | min lvl | sev | st | rule | counter-play |
 |---|---|---|---|---|---|---|---|
-| zoomies | Zoomies | kiwi cat | 3 | M | 2 | every 12 s each cat sprints at +60% speed for 3 s after a double meow | a burst is bounded: ≤ 1.00 × base run (9.0 u/s) for ≤ 3.0 s, then back under its 0.80 ceiling (SR-5) — gain height (it rises 2.0 u/s, SR-1) or hurdle it as it arrives |
-| litter | The Litter | kiwi cat | 8 | H | 1 | each cat is followed by a kitten (60% size, 4.5 u/s, kills on contact) 6 u behind | a kitten's ceiling is 0.70 (6.3 u/s, SR-5) — it always trails its cat: hurdle cat then kitten in one rhythm, or kite them into a line and cross |
+| zoomies | Zoomies | kiwi cat | 3 | M | 2 | every 12 s each cat sprints at +60% speed for 3 s after a double meow | a burst is bounded: ≤ 0.55 × base run (4.95 u/s) for ≤ 3.0 s, then back under its 0.40 ceiling (SR-5) — gain height (it rises 2.0 u/s, SR-1) or hurdle it as it arrives |
+| litter | The Litter | kiwi cat | 8 | H | 1 | each cat is followed by a kitten (60% size, 2.4 u/s, kills on contact) 6 u behind | a kitten's ceiling is 0.30 (2.7 u/s, SR-5) — it always trails its cat: hurdle cat then kitten in one rhythm, or kite them into a line and cross |
 | overwound | Overwound | coil | 2 | M | 2 | coil idle time 3.0 → 2.0 s (then 1.5 s) | leave the ring and be airborne or > 6 u away at landing (§5.2); the shove decays over 0.5 s and never kills |
 | aftershock | Aftershock | coil | 9 | H | 1 | landing sends a second shockwave 0.5 s later, radius 9 u | double jump |
 | quarter_chimes | Quarter Chimes | thicc ben | 4 | M | 1 | ben's teleport interval 13.35 → 9 s | keep moving |

@@ -13,9 +13,9 @@
     "world_height": 1.0,
     "body_height": 1.0,
     "hit_diameter": 0.9,
-    "base_speed": 5.6,
-    "pursuit_ceiling": 0.8,
-    "burst_ceiling": 1.0,
+    "base_speed": 3.0,
+    "pursuit_ceiling": 0.4,
+    "burst_ceiling": 0.55,
     "climb_u_per_s": 2.0,
     "meow_period_ticks": 180,
     "meow_range_u": 14.0,
@@ -65,8 +65,8 @@
       }
     ]
   },
-  "behavior": "Floats toward the nearest player at 5.6 u/s (pursuit ceiling 0.80 - never above 7.2 u/s after multipliers); contact kills. Meows every 3 s while within 14 u.",
-  "counter_play": "open ground — walk away. Thin path or dead end — hurdle it as it arrives: a jump exceeds its 1.5 u reach from 0.16 s to 0.59 s of the jump, a 0.43 s window over a 0.12 s overlap (closing speed 14.6 u/s, SR-2).",
+  "behavior": "Floats toward the nearest player at 3.0 u/s (pursuit ceiling 0.40 - never above 3.6 u/s after multipliers); contact kills. Meows every 3 s while within 14 u.",
+  "counter_play": "open ground — walk away. Thin path or dead end — hurdle it as it arrives: a jump exceeds its 1.5 u reach from 0.16 s to 0.59 s of the jump, a 0.43 s window over a 0.14 s overlap (closing speed 12.0 u/s, SR-2).",
   "tell": "Meows every 3 s while within 14 u.",
   "sprites": "res://content/enemies/kiwi_cat/sprites.json",
   "script": true

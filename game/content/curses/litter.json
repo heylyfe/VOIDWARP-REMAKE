@@ -5,8 +5,8 @@
   "min_level": 8,
   "requires_enemy": "kiwi_cat",
   "max_stacks": 1,
-  "rule": "each cat is followed by a kitten (60% size, 4.5 u/s, kills on contact) 6 u behind",
-  "counter_play": "a kitten's ceiling is 0.70 (6.3 u/s, SR-5) — it always trails its cat: hurdle cat then kitten in one rhythm, or kite them into a line and cross",
+  "rule": "each cat is followed by a kitten (60% size, 2.4 u/s, kills on contact) 6 u behind",
+  "counter_play": "a kitten's ceiling is 0.30 (2.7 u/s, SR-5) — it always trails its cat: hurdle cat then kitten in one rhythm, or kite them into a line and cross",
   "modifiers": [],
   "script": true,
   "hooks": []

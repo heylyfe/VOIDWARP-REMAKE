@@ -53,6 +53,7 @@ const DirectShot := preload("res://content/curses/direct_shot.gd")
 const DoubleRing := preload("res://content/curses/double_ring.gd")
 const Egoist := preload("res://content/curses/egoist.gd")
 const Litter := preload("res://content/curses/litter.gd")
+const KiwiScript := preload("res://content/enemies/kiwi_cat/enemy.gd")
 const LongToll := preload("res://content/curses/long_toll.gd")
 const LongerSpeech := preload("res://content/curses/longer_speech.gd")
 const MethodActing := preload("res://content/curses/method_acting.gd")
@@ -548,21 +549,33 @@ func _t_egoist(f: Array[String]) -> void:
 			"egoist: a not-held run stamped the row")
 
 
-## "each cat is followed by a kitten (60% size, 4.5 u/s, kills on contact) 6 u behind"
+## "each cat is followed by a kitten (60% size, 2.4 u/s, kills on contact) 6 u behind"
 func _t_litter(f: Array[String]) -> void:
 	_eqf(f, Litter.KITTEN_SIZE, 0.6, "litter: the kitten is not 60% of the cat")
-	_eqf(f, Litter.KITTEN_SPEED, 4.5, "litter: the kitten speed is not 4.5 u/s")
-	_eqf(f, Litter.KITTEN_CEILING, 0.70, "litter: the kitten's SR-5 ceiling is not 0.70")
+	_eqf(f, Litter.KITTEN_SPEED, 2.4, "litter: the kitten speed is not 2.4 u/s")
+	_eqf(f, Litter.KITTEN_CEILING, 0.30, "litter: the kitten's SR-5 ceiling is not 0.30")
+	# D-KIWI-SLOW-1: a kitten may NEVER be faster than its cat - base, absolute cap, or burst
+	_check(f, Litter.KITTEN_SPEED < KiwiScript.BASE_SPEED,
+			"litter: the kitten's base is not below its cat's (2.4 < 3.0)")
+	_check(f, Litter.KITTEN_CEILING * 9.0 < KiwiScript.PURSUIT_CEILING * 9.0,
+			"litter: the kitten's absolute cap is not below its cat's (2.7 < 3.6)")
+	_check(f, KiwiScript.BURST_CEILING * 0.6 * 9.0 < KiwiScript.BURST_CEILING * 9.0,
+			"litter: the kitten's scaled burst is not below its cat's (2.97 < 4.95)")
+	_eqf(f, KiwiScript.BASE_SPEED, 3.0, "litter-harness: the cat's base moved off 3.0 u/s")
+	_eqf(f, KiwiScript.PURSUIT_CEILING * 9.0, 3.6, "litter-harness: the cat's cap moved off 3.6 u/s")
+	_eqf(f, KiwiScript.BURST_CEILING * 9.0, 4.95, "litter-harness: the cat's burst moved off 4.95 u/s")
 	_eqf(f, Litter.TRAIL_U, 6.0, "litter: the kitten does not trail 6 u behind")
 	_eqs(f, str(Litter.DEATH_CODE), "D-KIWI", "litter: the kitten is not still a kiwi cat")
 	# the kitten's cfg: scaled body, own speed, SR-5 ceiling, contact kill ON, no meow
-	var kc: Dictionary = Litter.kitten_cfg({"burst_ceiling": 1.0, "climb_u_per_s": 2.0,
+	# (D-KIWI-SLOW-1: the cat's cfg carries burst_ceiling 0.55, so the kitten's scales to 0.33)
+	var kc: Dictionary = Litter.kitten_cfg({"burst_ceiling": 0.55, "climb_u_per_s": 2.0,
 			"world_height": 1.0, "body_height": 1.0, "hit_diameter": 0.9,
 			"preferred_kind": "nook", "meow_period_ticks": 300, "meow_range_u": 25.0,
 			"frame_w": 256, "frame_h": 256})
-	_eqf(f, float(kc["base_speed"]), 4.5, "litter: the kitten cfg speed is not 4.5 u/s")
-	_eqf(f, float(kc["pursuit_ceiling"]), 0.70, "litter: the kitten cfg ceiling is not 0.70")
-	_eqf(f, float(kc["burst_ceiling"]), 0.6, "litter: the kitten burst ceiling did not scale to 60%")
+	_eqf(f, float(kc["base_speed"]), 2.4, "litter: the kitten cfg speed is not 2.4 u/s")
+	_eqf(f, float(kc["pursuit_ceiling"]), 0.30, "litter: the kitten cfg ceiling is not 0.30")
+	_eqf(f, float(kc["burst_ceiling"]), 0.33, "litter: the kitten burst ceiling did not scale to 60% of 0.55")
+	_eqf(f, float(kc["burst_ceiling"]) * 9.0, 2.97, "litter: the kitten burst in u/s is not 2.97")
 	_eqf(f, float(kc["world_height"]), 0.6, "litter: the kitten world_height did not scale")
 	_eqf(f, float(kc["body_height"]), 0.6, "litter: the kitten body_height did not scale")
 	_eqf(f, float(kc["hit_diameter"]), 0.54, "litter: the kitten hit diameter did not scale")
@@ -593,7 +606,7 @@ func _t_litter(f: Array[String]) -> void:
 		_eqs(f, str(def["id"]), "kiwi_cat", "litter: the kitten is not a real kiwi_cat row id")
 		_eqs(f, str(def["name"]), "kitten", "litter: the kitten row is not named kitten")
 		_eqf(f, float(def["x"]), 16.0, "litter: the kitten did not spawn 6 u behind")
-		_eqf(f, float(def["cfg"]["base_speed"]), 4.5, "litter: the spawned kitten cfg speed moved")
+		_eqf(f, float(def["cfg"]["base_speed"]), 2.4, "litter: the spawned kitten cfg speed moved")
 		_eqi(f, int(def["cfg"]["contact_kill"]) if def["cfg"].has("contact_kill") else 1,
 				1, "litter: the spawned kitten cfg does not kill on contact")
 	# a second tick spawns nothing more (one kitten per cat, the marker lives in curse_st)
