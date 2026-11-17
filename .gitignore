@@ -24,3 +24,6 @@ game/shots/*.import
 
 # WAV import sidecars: T-055's synthesized placeholder cues get the same treatment.
 *.wav.import
+
+# gate and run logs: local evidence, never committed
+*.log

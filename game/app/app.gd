@@ -7,10 +7,10 @@ extends Node
 # Flow:
 #   _ready           -> show res://app/menu.gd (a Control), connect play_requested/quit_requested
 #   play_requested   -> hide the menu, instantiate res://app/loading_screen.gd, add it,
-#                       start(seed, -1.0), connect loading_finished, build the world THIS
-#                       frame (world.build(seed, 1)), then set_load_progress(1.0)
-#   _process         -> loading.advance(delta) while in LOADING (the loading screen also
-#                       advances itself from its own _process - see D-APPFLOW-2)
+#                       start(seed, -1.0, first_launch), connect loading_finished, build the
+#                       world THIS frame (world.build(seed, 1)), then set_load_progress(1.0)
+#   _process         -> the loading screen self-drives from its own _process; the app does NOT
+#                       call advance() (D-APPFLOW-2, PARKED.md #20)
 #   loading_finished -> free the loading screen, add the world, start stepping it
 #   quit_requested   -> get_tree().quit()
 #   ESC / the pause binding -> back to MENU from LOADING or WORLD (world/loading freed)
@@ -42,6 +42,7 @@ var _menu: Control = null
 var _loading: Control = null
 var _world: Node3D = null
 var _step_acc := 0.0
+var _first_launch := true   # the two-duration law: 5 s on the session's first launch, 2.0 s after
 var _pause_codes: Array[int] = []   # KEY_* codes bound to "pause" (data/bindings.json), else ESC
 
 
@@ -51,11 +52,11 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
-	if _state == STATE_LOADING and _loading != null:
-		# The loading screen emits loading_finished from inside advance(); the handler
-		# frees _loading and moves us to WORLD.
-		_loading.advance(delta)
-	elif _state == STATE_WORLD and _world != null:
+	# The loading screen drives its own clock from its own _process (T-024, D-T024-1), so the
+	# app must NOT also call advance(): doing both accrues elapsed at 2x and the hold elapses
+	# in half the wall time (D-APPFLOW-2, PARKED.md #20). The screen emits loading_finished
+	# from inside its own advance(); _on_loading_finished frees it and moves us to WORLD.
+	if _state == STATE_WORLD and _world != null:
 		# Fixed 60 Hz sim accumulator (the sim's contract), decoupled from the render rate:
 		# at 120+ Hz the world must not run 2x fast. Spiral-of-death clamp: 5 ticks/frame.
 		_step_acc += delta
@@ -107,7 +108,8 @@ func _begin_run() -> void:
 		_menu.hide()
 	_loading = LoadingScreenScript.new()
 	add_child(_loading)
-	_loading.start(_seed, -1.0)
+	_loading.start(_seed, -1.0, _first_launch)
+	_first_launch = false
 	_loading.loading_finished.connect(_on_loading_finished)
 	_state = STATE_LOADING
 	# Build the world in the same frame the loading screen appears (the ticket's contract).
