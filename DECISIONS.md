@@ -4351,7 +4351,84 @@ ring filling over exactly 180 ticks — are carried by `view/hud/radar_arrows.gd
 are view-layer facts, pinned by test_upgrades_script.gd's widget tests reading the widgets' models,
 not by any sim change.
 
+### D-T051-1 - The curse script contract: handler modules, the state surface, hooks-only (T-051)
+
+DECISION (T-051): every `script: true` curse of the GENERAL family (requires_enemy null:
+cold_start, crowded_dais, crumbling, curfew, dull_gifts, early_bird, leaky_purse, no_refunds,
+rearguard, slow_door, unmarked - 11) ships one `content/curses/<id>.gd` module. Contract:
+- each module is a RefCounted with `const CURSE_ID := "<id>"`; handlers are functions named
+  after the CLOSED hook list of core/hooks.gd, signature `handler(state, api)`;
+- `state` is a Dictionary; the documented keys are "players" (T-012 controllers),
+  "enemy_runtime" (sim/enemy_runtime.gd), "economy" (sim/economy.gd), "beacon"
+  (sim/beacon.gd), "enemies" (the world mirror rows), "spawn_plan" (the runtime's
+  planned[] rows), "tick" (the level's 60 Hz tick), "events" (event sink),
+  "curses_held" ({curse_id: stacks}), and "curse_st" (the per-curse slot tree,
+  state["curse_st"][<id>]);
+- world changes go ONLY through documented state keys (controller constants, the runtime's
+  spawn delay, the economy's purse/tiers) or the api's allowed surfaces ("add gold",
+  "spawn entity" - api.add_gold / api.spawn_enemy, duck-typed with has_method and a
+  documented fallback);
+- every mutating handler self-guards on its own held stacks (curse not held -> no-op), so a
+  future dispatcher can call handlers unconditionally in id order;
+- read-only curses (unmarked, no_refunds, dull_gifts, crowded_dais, slow_door's gate)
+  expose pure rule helpers; the sim/view callers consult them.
+No curse JSON was edited (T-050 owns the batch; the JSONs' hooks arrays stay []). The hook
+dispatcher in sim/ does not exist yet (the same wiring gap PARKED.md row 3 records for
+Field Dressing's on_void_fall): the modules are the content-layer half, ready to dispatch.
+Boundary scan clean: the .gd modules live under content/ (never scanned in the forbidden
+string scan's layers); sim//core/ still name no content id.
+
+### D-T051-2 - Dull Gifts pins the rim glow at 20 u; the gifts' values untouched (T-051)
+
+DECISION (T-051): Dull Gifts ("black gift rim glow visible only within 20 u") is a
+render-gate curse: content/curses/dull_gifts.gd's rim_glow_visible(state, ...) is the
+single read the gift view consults - glow only within 20.0 u of the player's feet point
+(3D distance, gift body centre), and an unmodulated always-visible answer at 0 stacks.
+The curse does NOT touch gift values, counts or pickups (the JSON carries no modifier);
+the -20% gold sentence family stays with tarnish. The 20 u is the table's own number,
+not a new one.
+
+### D-T051-3 - [CONTESTABLE] Cold Start's per-class mapping: dasher regen x1.25, glider 0 start energy, athletic coyote -0.05 s (T-051)
+
+DECISION (T-051): the rule sentence "class ability starts each level on cooldown and
+recharges 25% slower (Athletic: coyote time −0.05 s instead)" binds each kit by its own
+ability mechanic: dasher = dash starts ON cooldown (dash_ready false, dash_cd at the
+scaled regen) with the regen DURATION x1.25 (3.0 -> 3.75 s - "recharges 25% slower" is a
+longer regen, the controller's own countdown law untouched); glider = the ability starts
+on cooldown mapped onto its only energy law: 0 glide energy at level start, the
+landing-refill law unchanged (no numeric value is invented; the sentence has no number a
+landing-time refill could multiply); athletic = the D-062 substitute, coyote time −0.05 s,
+never below 0. The section 7 safety rule holds: Cold Start never touches jump velocity,
+gravity or run speed (asserted in the test). [CONTESTABLE] because the glider mapping
+("on cooldown" = 0 energy) is the implementer's reading of a sentence written for a
+cooldown-meter ability; the dasher duration x1.25 is the only numeric reading the sentence
+states.
+
+### D-T051-4 - Slow Door = continuous presence; Crowded Dais = 3D, inclusive at exactly 8 u (T-051)
+
+DECISION (T-051): two gate readings pinned. Slow Door's "3.0 s of standing in it" is
+CONTINUOUS presence inside the OPEN beacon's trigger cylinder (sim/beacon.gd contains()):
+any tick outside resets that player's dwell to zero, 180 whole ticks (3.0 s) opens the
+door, entry_ready() answers the entry caller. Crowded Dais' "within 8 u" is the 3D
+distance from the enemy row to the beacon's axis point (cx, base_y, cz) - the same metric
+as the arbiter's no_enemy_body_within (D-T072-1) and the safe-tile 6 u rule (DESIGN.md
+section 3.1) - INCLUSIVE at exactly 8.0 u ("within" keeps its boundary), and it never
+blocks a CLOSED beacon's rules (the gate is entry-blocking only). Both gates are pure
+reads; the beacon's try_enter path consults them once the hook dispatcher wires content
+gates (the wiring gap below). Crumbling's schedule (fall after 72 ticks, return 300
+later, first-schedule-wins) is D-T051-1's module shape with the 1-wide/stepped-on tile
+READING owned by the future dispatcher (collision.gd's support_at is sim-surface).
+
 ## Handover log
+
+- 2026-11-17 GLM (T-051): scripted curses, GENERAL family (the 11 `script: true` /
+  `requires_enemy: null` curses: cold_start, crowded_dais, crumbling, curfew, dull_gifts,
+  early_bird, leaky_purse, no_refunds, rearguard, slow_door, unmarked). One
+  content/curses/<id>.gd module per curse (hook handlers over (state, api), the contract
+  in D-T051-1) + tests/test_curses_scripted_general.gd (one test per curse asserting the
+  JSON's rule sentence + the family contract check). TESTS 42 passed 0 failed; gate green
+  in the session (GATE OK). Module contract pinned in D-T051-1; readings D-T051-2..4.
+  No PARKED rows; JSON curse files untouched (T-050 owns them).
 
 (append one line per session: date, who, what is finished, what is next)
 - 2026-11-17 T-054 (spawn, inkling-2-small-free): act -> biome wiring
