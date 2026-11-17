@@ -1,0 +1,41 @@
+﻿{
+  "id": "coil",
+  "name": "coil",
+  "min_level": 1,
+  "max_votes": 3,
+  "vote_effect": "+1 coil",
+  "anchor_kinds": ["lane"],
+  "stats": {
+    "world_height": 1.0,
+    "extended_height_u": 2.0,
+    "squashed_height_u": 1.0,
+    "hit_diameter_u": 0.9,
+    "pursuit_ceiling": 0.0,
+    "burst_ceiling": 1.0,
+    "idle_s": 3.0,
+    "cue_s": 0.6,
+    "flight_s": 2.75,
+    "cue_ticks": 36,
+    "flight_ticks": 165,
+    "recover_ticks": 24,
+    "cycle_ticks": 405,
+    "landing_kill_radius_u": 1.2,
+    "shockwave_radius_u": 6.0,
+    "shockwave_push_u_s": 8.0,
+    "shockwave_decay_s": 0.5,
+    "shockwave_travel_u": 2.0,
+    "ability_lock_s": 2.0,
+    "ability_lock_ticks": 120,
+    "ring_radius_u": 3.0,
+    "apex_u": 4.0,
+    "death_code": "D-COIL",
+    "counter_play_line": "leave the 3 u landing ring and be airborne or > 6 u from your last grounded tile when it lands; the shove decays over 0.5 s and never kills; an idle coil (1.0 u squashed) is hurdle-able",
+    "tell_line": "the boing + squash frames and a red 3 u ring drawn at your last grounded tile, 0.6 s before it lands",
+    "audio": {
+      "jump_cue": "coil_boing",
+      "landing": "coil_landing_twang"
+    }
+  },
+  "sprites": "res://content/enemies/coil/sprites.json",
+  "script": true
+}

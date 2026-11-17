@@ -2534,6 +2534,185 @@ jump the engine never produces and would fail on correct code; the spec numbers 
 "the same arc, tick-quantized". The gameplay content (hurdle the cat during the jump) is
 unchanged. [CONTESTABLE]: the owner may instead ask the integrator (gravity after position) to
 match continuous physics more closely; that is a controller change (T-012), outside this ticket.
+### D-T-031-1 - coil ships NO pursuit or burst speed; ceilings recorded as 0.0 / 1.0 (T-031).
+
+DECISION (T-031): no document states a horizontal pursuit speed or a burst speed for coil -
+and none should, because coil never walks: every metre it crosses, it crosses inside a
+telegraphed arc at the end of a 0.6 s cue + 2.75 s flight. The enemy.json stats therefore
+record `pursuit_ceiling: 0.0` (a fraction of base run speed that clamps any ground-pursuit
+multiplier to zero: overtime, curses and Hunger have nothing to multiply, by construction,
+not by a new rule) and `burst_ceiling: 1.0` (the SR-5 universal bound for a telegraphed
+sprint; coil has no burst of its own, but if a future Zoomies-class effect ever names it,
+it is bounded at 1.00 x base run speed and 3.0 s like every body). [CONTESTABLE]: the
+numbers are stated nowhere; the reading is that coil is not a floater and the SR-5 table
+(which covers kiwi cat / kitten / YOU?! / toucher / seal / Claude) deliberately has no coil
+row. Gameplay reason: coil's threat is the ring it draws, never a chase; a pursuit speed
+would turn the most telegraphed enemy in the game into a tracking one.
+WHY: the SR-5 ceiling mechanism exists so no stack can outrun the player's own legs; coil
+is answered by leaving the ring, and any ground speed at all would undercut that answer.
+
+### D-T-031-2 - [CONTESTABLE] The coil arc apex is 4.0 u above the chord (T-031).
+
+DECISION (T-031): no document states the apex of the 2.75 s arc. The flight is a parabola:
+horizontal position lerps straight from the launch point to the locked landing zone; feet
+height follows `chord + 4 * APEX * t * (1 - t)` with `APEX = 4.0 u` (8 HU) - the apex sits
+exactly halfway through the flight, above the midpoint of the two end heights.
+[CONTESTABLE]: the number is stated nowhere. Gameplay reason: 4.0 u clears any bastion-class
+wall the generator builds (8 HU, the generator's tall-step ceiling), is readable from across
+a level as "the coil is coming down THERE" (the jump IS the tell), and never reads as a
+teleport; a flatter arc would skip intervening walkway slabs it should visibly clear, and a
+taller one would waste the 2.75 s the player needs to leave the ring.
+WHY: the landing zone moves straight-line horizontally while rising twice the JUMP apex -
+a coil arc must clear platforms it launched from, or every jump would clip the slab it left.
+
+### D-T-031-3 - [CONTESTABLE] "Airborne at landing avoids the shockwave" is read as a 1 HU y-band on the landing plane (T-031).
+
+DECISION (T-031): the shockwave (6 u, 8 u/s decaying linearly to 0 over 0.5 s, 2.0 u travel,
+locks class abilities 2.0 s, never kills) applies only to a player whose feet sit within
+0.5 u (1 HU, the terrain quantum) of the landing tile's top plane; a player higher than
+that at the landing tick - a jump at 2.25 u apex, or a ledge a HU or more above the landing
+zone - is immune, push-free and lock-free. No grounded flag is readable through the section
+12 API (`nearest_player` returns index/dist/x/y/z only), so a feet-band is the only in-API
+signal of "airborne". [CONTESTABLE]: the reading is mine. Gameplay reason: the shockwave is
+a ground ring; the spec's own answer line ("leave the ring (1.2 u) and be airborne or > 6 u
+from the last grounded tile") only makes sense if "airborne at landing" literally dodges it,
+and 1 HU excludes a standing player on the plane by exactly zero - a standing player's feet
+ARE the plane.
+WHY: every alternative (unconditional 6 u hit, or an estimated grounded flag) either punishes
+the jump the spec explicitly rewards, or invents sim state the content layer cannot read.
+
+### D-T-031-4 - [CONTESTABLE] The landing kill is a horizontal circle r = 1.2 u with no y band (T-031).
+
+DECISION (T-031): at the landing tick every player whose horizontal distance from the locked
+landing zone is <= 1.2 u is killed (`api.kill`, code `D-COIL`), regardless of feet height.
+Being airborne inside the 1.2 u ring does NOT save the player. DESIGN.md section 5.2 says
+"Landing on a player (within 1.2 u) = kill" and then states airborne immunity ONLY for the
+shockwave ("A jump timed so the player is airborne at landing avoids the shockwave");
+DESIGN's own answer line makes leaving the 1.2 u ring mandatory and airborne the answer to
+the shove, not to the kill. [CONTESTABLE]: the no-y-band reading is mine; the alternative
+(same cylinder rule as body contact) would make a full jump apex dodge the one number the
+spec calls "leave the ring". Gameplay reason: one ring to leave, one shove to jump - the
+answers must stay distinct or the enemy teaches the wrong lesson.
+Ordering: a player inside 1.2 u is killed and receives NO shockwave (dead bodies take no
+shove); a player between 1.2 u and 6.0 u on the landing plane takes the shove + lock.
+WHY: the 1.2 u kill ring and the 6 u shockwave are two radii with two answers; collapsing
+them would either delete the jump answer (y band on the kill) or make the shove lethal
+(bonus kills), both forbidden by the spec's own "does not kill" and airborne sentences.
+
+### D-T-031-5 - coil's landing ring is an arbiter-visible telegraph that the coil ages itself (T-031).
+
+DECISION (T-031): at cue start the behavior announces one telegraph through the section 12
+API: kind `coil_ring`, shape
+`{"shape":"circle","cx":<zone x>,"cz":<zone z>,"r":3.0,"y0":<zone y>,"y1":<zone y>}`,
+ticks = 201 (cue 36 + flight 165 - the T-083 anim block, telegraph effect, "visible for the
+whole cue and the flight"; the landing ring, radius 3 u, DESIGN.md section 5.2). The `y0`/`y1`
+band pins the ring to the landing tile's top plane, so `no_targeted_telegraph` (SR-4, for
+address me) reads a ring on a ledge correctly and does not read a ring through five floors.
+The runtime never decrements telegraph ticks, so entry lifetime is the caller's (D-T072-4):
+each tick the behavior ages its own coil_ring entries (ticks -= dt_ticks, floored at 0), so
+at the landing tick the entry reads 0 and the SR-4 gate sees no live ring afterwards.
+Reaching `api.rt.telegraphs` to age its own entries is the one sanctioned-by-D-T072-4 caller
+duty; no world state is read or written through it, and no other entry is touched.
+WHY: an eternal ring would lock address me out of the level forever after the first coil
+jump; the 201-tick countdown is the exact cue+flight window the telegraph exists for.
+
+### D-T-031-6 - coil emits "audio" and "coil_land" events into rt.events (T-031).
+
+DECISION (T-031): the behavior appends plain dictionaries to the runtime's per-step events
+array - the same channel `api.telegraph` and `enemy_spawn` already use; appending an event
+never mutates world state. Two cues, named exactly per the ENEMIES.md "New sound" line (the
+classic spring boing before every jump; the metallic twang on landing), carried as
+`{"e":"audio","cue":"coil_boing", ...}` at cue start and `{"e":"coil_land",
+"cue":"coil_landing_twang","x":..,"y":..,"z":..}` at the landing tick; the impact event also
+carries the landing point for the view's shockwave VFX. No .wav exists yet: T-055 synthesises
+every cue from the names in `stats.audio` (`coil_boing`, `coil_landing_twang`); TBD.md row 28
+records both as placeholders. Replay hashes state, not the event list, so determinism is
+untouched.
+WHY: a hook with no event is dead code, and inventing a parallel notification channel would
+fork the one the T-027 spawn/death events already ride.
+
+### D-T-031-7 - SR-2 numbers are enforced on the row at on_spawn; the placeholder body_rect derives 1.6 u (T-031).
+
+DECISION (T-031): DESIGN.md (SR-2, D-065 FINAL) pins coil at height 1.0 squashed / 2.0
+extended, hit diameter 0.9. The T-016 TBD placeholder frames cannot derive that pair (the
+squashed frame's body_rect at 1.0 u height derives a 1.6 u diameter), so `on_spawn` pins
+`row["diameter_u"] = 0.9` and `row["height_u"] = 1.0` outright, and the behavior switches
+`row["height_u"]` 1.0 / 2.0 by state (1.0 in spawn/idle/cue/landing/recover, 2.0 in flight;
+diameter constant). The `world["enemies"]` r mirror stays the spawn-time derivation, which is
+harmless: the arbiter reads body positions only, never r. If real art lands with a matching
+rect, the derived cylinder equals these numbers and the pin changes nothing.
+WHY: SR-2 is the FINAL spec for the coil hitbox; the pipeline's placeholder rect is not a
+reason to ship a 1.6 u cylinder for an enemy whose spec says 0.9.
+
+### D-T-031-8 - coil needs NO arbiter block; the anxiety is the ring, which is data (T-031).
+
+DECISION (T-031): coil declares no `arbiter` block in enemy.json - no document gates coil's
+appearance, and T-072's ruling is that every other row omits the block (absent = no gate).
+Coil's only scheduling surface is the `coil_ring` telegraph of D-T-031-5: address me's
+`no_targeted_telegraph` requirement and gin's deferral see it as data, with no coil-specific
+code anywhere. No appear_requires are invented.
+WHY: SR-4 schedules two specific enemies; giving coil a gate would invent a rule the spec
+never wrote, and spec gaps are DECISIONS entries, not silent content.
+
+### D-T-031-9 - [CONTESTABLE] coil copy staggering: first cue delay staggered by CYCLE/n, never mid-cue spawn (T-031).
+
+DECISION (T-031): SR-3 (D-065) is applied to the first attack, not to spawn position: copy k
+of n computes `phase = stack_phase(CYCLE_TICKS, k, n)` (CYCLE_TICKS = 405 = 180 idle + 36 cue
++ 165 flight + 24 recover) and its first cue fires at tick `180 + (CYCLE - phase)` for k > 0
+(copy 0: tick 180), so copies attack every CYCLE/n, perfectly spaced, and no copy ever spawns
+into a live telegraph or mid-flight. Copies in the same level still spawn >= 30 u apart
+(SR-3 / D-056, unchanged). [CONTESTABLE]: DESIGN does not state how SR-3 offsets a non-floater
+with a multi-segment cycle; wrapping a spawned copy into a mid-cue origin (the literal
+reading) would spawn a body whose telegraph began before it existed. Gameplay reason: three
+coils land 135 ticks apart, not at once and not one-full-cycle late.
+WHY: the rhythm is the readable answer for every roster enemy; an unstaggered wave deletes
+the telegraph's teaching value.
+
+### D-T-031-10 - coil landing resolution targets the row's target player (player index 0) (T-031).
+
+DECISION (T-031): the landing kill (D-T-031-4) and the shockwave (push + 120-tick ability
+lock) resolve against `api.nearest_player` - the row's target, player 0 in the single-player
+sim (D-T072-5 precedent). The section 12 API exposes no enumeration of players, and coil has
+no line where DESIGN names a multi-player behaviour. [CONTESTABLE] until the roster's
+targeting pass lands: a second player standing in the 1.2 u ring or the 6 u band is resolved
+by the body-contact rule (which the runtime applies to every controller) but not by the
+landing-specific rules. Gameplay reason: in the shipped single-player game there is exactly
+one player, and the target is always at the landing zone's home tile, which is where the
+ring is drawn - the rule resolves the one player the ring was drawn for.
+WHY: the alternative (unlistable API reach into `rt.controllers`) is exactly the "no other
+access" wall the section 12 contract exists to hold.
+
+### D-T-031-11 - coil's shockwave is applied as a 30-tick per-tick api.push with linear decay (T-031).
+
+DECISION (T-031): on the landing tick, for the targeted player outside the kill ring but on
+the landing plane and within 6 u, the behavior stores `row["shock"] = {"ticks": 30, "dir":
+<horizontal outward unit vector from the landing zone>, "index": <target player index>}` and
+every tick thereafter calls `api.push(player, dir, 8.0 * ticks_left / 30.0)` (30 -> 1),
+yielding the spec's linear decay from 8 u/s to ~0.27 u/s and ~2.07 u of ideal travel (the
+continuous spec value: 8 * 0.25 = 2.0 u; discrete application differs by 0.07 u, far inside
+the 2.0 u D-066 guarantee that a shove clears a 1-wide path from its centre). The push API is
+the only push channel the content layer has: a single 8 u/s push would decay inside the
+controller's 90 u/s^2 accel to ~0.4 u of travel, which would quietly delete D-066's geometry
+promise. Realized travel measured through the shared controller friction is ~1.3-2.1 u
+(step-order dependent); the test asserts the D-066 floor (>= 0.9 u, the 1-wide path from its
+centre) and an upper bound (<= 2.6 u), never the continuous 2.0 u figure as-is. Side effect, acknowledged: `api.push` zeroes horizontal-dir vy each tick, so a
+grounded recipient's vy is held at 0 for the 30 ticks - harmless for a grounded player, and
+airborne players are immune by D-T-031-3 and never enter the window. The player is not
+re-eligible for a second shock in the same landing (the source entry is one-shot by
+construction) and the shock never stacks with the kill path.
+WHY: D-066's 2.0 u of travel is the load-bearing number (it is what makes the shove
+survivable on a platform >= 5 wide); it must be produced by the effect itself, not by the
+controller's friction constants, which it does not survive.
+
+### D-T-031-12 - coil's idle time is data (`idle_s`, default 3.0) for Overwound (T-031).
+
+DECISION (T-031): the behavior reads the idle segment length from cfg `idle_s` (default
+3.0 s, DESIGN section 5.2) instead of a bare constant, so the scripted Overwound curse
+(`requires_enemy: "coil"`, 3.0 -> 2.0 -> 1.5 s, max stacks 2) can shorten it at the content
+layer when that curse's ticket lands, without a behavior edit. The cue (36) and flight
+(165) stay constants: no document permits lengthening or shortening them.
+WHY: a curse that edits a behavior constant would break the moment the curse shipped;
+a curse that edits cfg is the data pass working as designed.
 
 ## Handover log
 
