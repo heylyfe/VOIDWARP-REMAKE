@@ -1,0 +1,19 @@
+{
+  "id": "bargain",
+  "name": "Bargain",
+  "tier": "T2",
+  "price": 120,
+  "max_stacks": 2,
+  "class_only": null,
+  "class_boost": [],
+  "effect": "shop prices −10% per stack",
+  "modifiers": [
+    {
+      "stat": "shop_price_mul",
+      "op": "mul",
+      "value": 0.9
+    }
+  ],
+  "hooks": [],
+  "script": false
+}

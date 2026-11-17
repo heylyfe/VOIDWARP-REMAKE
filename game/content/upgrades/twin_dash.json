@@ -1,0 +1,15 @@
+{
+  "id": "twin_dash",
+  "name": "Twin Dash",
+  "tier": "T3",
+  "price": 340,
+  "max_stacks": 1,
+  "class_only": "dasher",
+  "class_boost": [
+    "dasher"
+  ],
+  "effect": "Dasher only: 2 dash charges",
+  "modifiers": [],
+  "hooks": [],
+  "script": true
+}

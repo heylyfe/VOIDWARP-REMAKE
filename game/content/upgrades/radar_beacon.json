@@ -1,0 +1,13 @@
+{
+  "id": "radar_beacon",
+  "name": "Radar Module: Beacon",
+  "tier": "T1",
+  "price": 40,
+  "max_stacks": 1,
+  "class_only": null,
+  "class_boost": [],
+  "effect": "HUD compass and distance to the beacon",
+  "modifiers": [],
+  "hooks": [],
+  "script": true
+}

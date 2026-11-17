@@ -1,0 +1,24 @@
+{
+  "id": "sure_foot",
+  "name": "Sure Foot",
+  "tier": "T1",
+  "price": 70,
+  "max_stacks": 2,
+  "class_only": null,
+  "class_boost": [],
+  "effect": "void-fall respawn delay −0.4 s per stack (0.8 → 0.4 → 0.0 s) and respawn invulnerability +1.0 s per stack (1.0 → 2.0 → 3.0 s)",
+  "modifiers": [
+    {
+      "stat": "respawn_delay",
+      "op": "add",
+      "value": -0.4
+    },
+    {
+      "stat": "respawn_invuln",
+      "op": "add",
+      "value": 1.0
+    }
+  ],
+  "hooks": [],
+  "script": false
+}

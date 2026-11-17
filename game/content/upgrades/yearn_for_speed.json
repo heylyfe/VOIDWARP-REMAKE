@@ -1,0 +1,21 @@
+{
+  "id": "yearn_for_speed",
+  "name": "Yearn for Speed",
+  "tier": "T1",
+  "price": 60,
+  "max_stacks": 4,
+  "class_only": null,
+  "class_boost": [
+    "athletic"
+  ],
+  "effect": "+10% run speed per stack (Athletic +15%) [CANON]",
+  "modifiers": [
+    {
+      "stat": "run_speed",
+      "op": "mul",
+      "value": 1.1
+    }
+  ],
+  "hooks": [],
+  "script": false
+}

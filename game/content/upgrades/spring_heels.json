@@ -1,0 +1,15 @@
+{
+  "id": "spring_heels",
+  "name": "Spring Heels",
+  "tier": "T2",
+  "price": 180,
+  "max_stacks": 2,
+  "class_only": null,
+  "class_boost": [
+    "athletic"
+  ],
+  "effect": "+1 air jump per stack at 80% jump height (Athletic: 104%)",
+  "modifiers": [],
+  "hooks": [],
+  "script": true
+}

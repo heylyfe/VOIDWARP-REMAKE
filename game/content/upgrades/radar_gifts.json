@@ -1,0 +1,13 @@
+{
+  "id": "radar_gifts",
+  "name": "Radar Module: Gifts",
+  "tier": "T1",
+  "price": 70,
+  "max_stacks": 2,
+  "class_only": null,
+  "class_boost": [],
+  "effect": "arrow to the nearest real gift within 40 u (80 u at 2)",
+  "modifiers": [],
+  "hooks": [],
+  "script": true
+}

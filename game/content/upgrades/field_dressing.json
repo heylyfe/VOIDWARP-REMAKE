@@ -1,0 +1,15 @@
+{
+  "id": "field_dressing",
+  "name": "Field Dressing",
+  "tier": "T1",
+  "price": 45,
+  "max_stacks": 2,
+  "class_only": null,
+  "class_boost": [],
+  "effect": "once per level per stack, a void fall costs no charge",
+  "modifiers": [],
+  "hooks": [
+    "on_void_fall"
+  ],
+  "script": true
+}

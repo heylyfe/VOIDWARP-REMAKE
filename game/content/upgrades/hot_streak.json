@@ -1,0 +1,19 @@
+{
+  "id": "hot_streak",
+  "name": "Hot Streak",
+  "tier": "T2",
+  "price": 140,
+  "max_stacks": 2,
+  "class_only": null,
+  "class_boost": [],
+  "effect": "chain window +1.0 s per stack",
+  "modifiers": [
+    {
+      "stat": "chain_window",
+      "op": "add",
+      "value": 1.0
+    }
+  ],
+  "hooks": [],
+  "script": false
+}

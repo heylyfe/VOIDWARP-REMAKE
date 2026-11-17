@@ -1059,6 +1059,28 @@ schema: {id, text, tags[], source}; source cites DESIGN.md sections 3.3/5 only, 
 WHY: T-011/T-012 consume palette.json/player.json in parallel right now, so the stable surface is the
 role keys and the constant names; anything not stated in the spec is a layout choice, recorded here so
 the T-013 schema can pin it later.
+### D-T014b-1 — Upgrade/economy JSON schemas for T-014b's (b) half; modifiers are per stack.
+DECISION (T-014b): with no T-013 schemas merged at conversion time (game/core/schemas holds only a
+.gitkeep), the (b) data files use DESIGN.md §12 field names. `content/upgrades/<id>.json`: id, name,
+tier, price, max_stacks, class_only (dasher|glider|athletic|null), class_boost (classes whose draw
+weight is ×2, from the R4 addendum's class-boost lists: Dasher → quick_recovery, twin_dash; Glider →
+featherfall, updraft, quick_recovery; Athletic → yearn_for_speed, spring_heels, marathon), effect
+(verbatim §8 table text, including [CANON] tags), modifiers[] (restricted to the closed stat list
+named in §12; EVERY modifier is per stack — price ×1.5^stacks already prices stacks individually),
+hooks[] (§12 hook names), script (true when the effect is not fully expressible as
+modifiers+hooks). `data/upgrade_pools.json`: mode + brackets[] {bracket, min_level, max_level, ids}
+(max_level null for 26+); level 1 is exactly paycheck, more, yearn_for_speed [CANON]; every later
+bracket lists all upgrades whose tier pool-from level ≤ bracket min_level (T1 at 1, T2 at 4, T3 at 10,
+T4 at 18, T5 at 26). `data/economy.json`: gold_phase, curse_bay, shop, gold_arithmetic (integer
+centi-gold, rounds DOWN; stacked price floor(price × 1.5^stacks); bounty floor(base × (20 + level) /
+20)); percentages are stored as fractions (0.8 = 80%).
+WHY: the ticket assigns (b) "use DESIGN.md section 12 field names" until T-013 merges; the schemas
+are additive to §12 (class_boost has no §12 counterpart — the ×2 class-boost draw rule needed a home,
+and the addendum names the lists). No new gameplay number was invented: every number in the two data
+files traces to DESIGN.md §3.2 / §7 system / §8 system / §8 tier table or the R4 addendum; the
+[CONTESTABLE] marker is not needed because nothing was picked 50/50. If T-013 lands with a different
+schema, these files are re-validated against it by the registry (T-013 owns boot validation), not
+silently reshaped here.
 
 ---
 

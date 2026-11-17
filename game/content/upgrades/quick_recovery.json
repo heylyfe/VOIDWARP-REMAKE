@@ -1,0 +1,16 @@
+{
+  "id": "quick_recovery",
+  "name": "Quick Recovery",
+  "tier": "T2",
+  "price": 160,
+  "max_stacks": 2,
+  "class_only": null,
+  "class_boost": [
+    "dasher",
+    "glider"
+  ],
+  "effect": "class ability cooldown −20% per stack (Athletic: +5% speed instead)",
+  "modifiers": [],
+  "hooks": [],
+  "script": true
+}

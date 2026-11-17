@@ -1,0 +1,19 @@
+{
+  "id": "paycheck",
+  "name": "Paycheck",
+  "tier": "T1",
+  "price": 40,
+  "max_stacks": 3,
+  "class_only": null,
+  "class_boost": [],
+  "effect": "+25 g on beacon entry per stack [CANON]",
+  "modifiers": [
+    {
+      "stat": "stipend_flat",
+      "op": "add",
+      "value": 25
+    }
+  ],
+  "hooks": [],
+  "script": false
+}

@@ -1,0 +1,19 @@
+{
+  "id": "early_warning",
+  "name": "Early Warning",
+  "tier": "T2",
+  "price": 180,
+  "max_stacks": 2,
+  "class_only": null,
+  "class_boost": [],
+  "effect": "enemy telegraphs last 15% longer per stack",
+  "modifiers": [
+    {
+      "stat": "telegraph_mul",
+      "op": "mul",
+      "value": 1.15
+    }
+  ],
+  "hooks": [],
+  "script": false
+}
