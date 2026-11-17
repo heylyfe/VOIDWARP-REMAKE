@@ -28,7 +28,7 @@ extends RefCounted
 #      stacks) - every client computes the same outcome.
 #   2. Subspacial Barrier (D-051): a held shield is consumed, the mine is
 #      consumed with no blast, the chain resets. Tripmines only - nothing
-#      absorbs the nuke.
+#      absorbs the blast.
 #   3. Last Light (DESIGN.md 3.1): unspent + >= 1 charge held -> spent as the
 #      final save (teleport to the beacon dais); the mine is consumed.
 #   4. otherwise killed D-MINE. The blast (radius 3 u, KILLS) then hits every
@@ -247,7 +247,7 @@ static func _contact(lv, ctls: Array, w: Dictionary, i: int, ctl,
 	# 3.+4. Last Light, else death - both live inside controller.try_kill
 	# (D-057): it spends the save when armed (teleport to the dais) and kills
 	# D-MINE otherwise. The mine is consumed in both branches (section 3.3).
-	var saved: bool = ctl.try_kill(DeathScript.MINE_CODE, DeathScript.CODES[DeathScript.MINE_CODE],
+	var saved: bool = ctl.try_kill(DeathScript.MINE_CODE, DeathScript.killer_for(DeathScript.MINE_CODE),
 			w, events)
 	var ev3 := EventsScript.make(EV_MINE_DETONATED, tick, i)
 	ev3["slot"] = slot
@@ -287,7 +287,7 @@ static func _blast_victim(lv, w: Dictionary, j: int, ctl, tick: int,
 		events.append(ev2)
 		_chain_reset(events, tick, j, "shielded_mine")
 		return
-	ctl.try_kill(DeathScript.MINE_CODE, DeathScript.CODES[DeathScript.MINE_CODE], w, events)
+	ctl.try_kill(DeathScript.MINE_CODE, DeathScript.killer_for(DeathScript.MINE_CODE), w, events)
 
 
 ## The chain-breaking events of DESIGN.md section 3.2 (T-022 consumes them).

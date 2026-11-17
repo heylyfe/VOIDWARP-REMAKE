@@ -4,7 +4,7 @@ extends RefCounted
 # Pins, headlessly:
 #   1. biome_id_for_level maps every act boundary level to DESIGN.md section 10's biome and
 #      cycles acts I..V for levels 31+ (density pinned at 0.015, D-T014c-1);
-#   2. BIOME_ORDER is acts I..V;
+#   2. biome_order() is acts I..V (derived from content, sorted by levels[0]);
 #   3. resolve_palette returns each biome file's palette roles (platform/walkway/fog/void) and
 #      fog density VERBATIM - the DESIGN.md section 10 table as shipped in content/biomes/*.json;
 #      deepwater's walkway_light is #3A74FF per D-T011-6 (the spec's #2A5BFF failed its own
@@ -52,10 +52,10 @@ func _check_level_table(failures: Array[String]) -> void:
 
 
 func _check_biome_order(failures: Array[String]) -> void:
-	var order := FogEnvScript.BIOME_ORDER
+	var order := FogEnvScript.biome_order()
 	var want := ["deepwater", "verdigris", "violet_hour", "indigo_trench", "pale_abyss"]
 	if order != want:
-		failures.append("BIOME_ORDER = %s, want %s" % [str(order), str(want)])
+		failures.append("biome_order() = %s, want %s" % [str(order), str(want)])
 
 
 func _check_biome_files(failures: Array[String]) -> void:

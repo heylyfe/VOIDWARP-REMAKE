@@ -5,5 +5,5 @@ extends RefCounted
 # north-up minimap rendering is view/hud/cartographer_map.gd over the sim rows.
 
 const UPGRADE_ID := "cartographer"
-const ROLE := "cartographer"
+const ROLE := "footprint_map"
 const REVEAL_RANGE_U := 40.0

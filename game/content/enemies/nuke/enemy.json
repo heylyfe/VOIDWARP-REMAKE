@@ -1,6 +1,7 @@
 {
   "id": "nuke",
   "name": "nuke",
+  "spawn_line": "THE NUKE SHALL SEEK",
   "min_level": 5,
   "max_votes": 2,
   "vote_effect": "+1 launcher",

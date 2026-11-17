@@ -1,6 +1,7 @@
 {
   "id": "toucher",
   "name": "toucher",
+  "spawn_line": "THE TOUCHER SHALL TOUCH",
   "min_level": 7,
   "max_votes": 2,
   "vote_effect": "+1 toucher",

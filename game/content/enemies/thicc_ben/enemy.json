@@ -1,6 +1,7 @@
 {
   "id": "thicc_ben",
   "name": "thicc ben",
+  "spawn_line": "THICC BEN SHALL TOLL",
   "min_level": 1,
   "max_votes": 2,
   "vote_effect": "+1 ben",

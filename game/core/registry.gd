@@ -61,6 +61,7 @@ static func load_all() -> Dictionary:
 	var schemas := _load_schemas(res)
 	for kind in CONTENT_KINDS:
 		_scan_kind(kind, schemas, res)
+	_check_curse_requires(res)
 	for df in DATA_FILES:
 		_scan_data_file(df, schemas, res)
 	for dir_path in PARSE_ONLY_DIRS:
@@ -128,6 +129,21 @@ static func _read_json(path: String, res: Dictionary) -> Variant:
 		res["errors"].append("%s: is not valid JSON" % path)
 		return null
 	return parsed
+
+
+## FIX-A14 (D-FIX-A14-3): every enemy-linked curse's requires_enemy names a scanned
+## enemy id. A schema must not enumerate the roster (drop-in); the registry is where the
+## kinds meet. A failed boot reports the offending file.
+static func _check_curse_requires(res: Dictionary) -> void:
+	var enemies: Dictionary = res["enemies"]
+	for curse_id in res["curses"]:
+		var c: Dictionary = res["curses"][curse_id]
+		var req: Variant = c.get("requires_enemy")
+		if req == null:
+			continue
+		var req_id := str(req)
+		if not enemies.has(req_id):
+			res["errors"].append("res://content/curses/%s.json: requires_enemy '%s' is not a scanned enemy id" % [curse_id, req_id])
 
 
 # --------------------------------------------------------------------------- the content scan --

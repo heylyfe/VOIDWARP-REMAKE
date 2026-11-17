@@ -11,7 +11,7 @@ extends RefCounted
 #
 # which in the block's units is simply: index = ticks_in_state / ticks_per_frame, or the
 # tick_ranges row containing ticks_in_state when the state declares explicit ranges
-# (e.g. coil's flight: coil_03 0-20, coil_04 21-144, coil_03 145-164). Because the
+# (e.g. the spring flight: cycle_03 0-20, cycle_04 21-144, cycle_03 145-164). Because the
 # advance is a pure function of (state, ticks_in_state), the telegraph animation fills
 # its cue exactly and the attack frame is the frame shown on the tick the attack event
 # fires - 0 ticks of error, no lerping, no catch-up.
@@ -88,7 +88,7 @@ func _build_frame_docs() -> void:
 			var meta := {}
 			if i < rects.size() and rects[i] is Array and (rects[i] as Array).size() == 4:
 				meta["body_rect"] = rects[i]
-			# per-frame world_height (e.g. coil's 1.0 -> 2.0), a scalar for every frame,
+			# per-frame world_height (e.g. 1.0 -> 2.0), a scalar for every frame,
 			# or the doc default
 			if per_frame and i < (wh as Array).size() and ((wh as Array)[i] is float or (wh as Array)[i] is int):
 				meta["world_height"] = float((wh as Array)[i])
@@ -115,7 +115,7 @@ func has_state(p_state: String) -> bool:
 ## tick with 0 ticks of error: state change and frame pick are the same tick).
 func on_state_changed(p_state: String) -> void:
 	if not has_state(p_state):
-		return                       # not this enemy's state (e.g. nuke spawn): keep current
+		return                       # not this enemy's state (e.g. a spawn state): keep current
 	state_id = p_state
 	ticks_in_state = 0
 	_sync_view()
@@ -192,7 +192,7 @@ func ticks_per_frame() -> float:
 
 
 ## The spec frame name currently shown ("" when no frame was ever shown). A state with
-## no frames of its own (kiwi's contact-kill attack, the nuke's explosion) holds the
+## no frames of its own (the contact-kill attack, the big explosion) holds the
 ## last frame shown - a billboard never blanks out.
 func frame_name() -> String:
 	var n := _frame_name_raw()
@@ -219,7 +219,7 @@ func frame_path() -> String:
 
 
 ## The binding tick count of the current state (-1 when the state table has none: the
-## state ends when the SIM ends it, e.g. kiwi's contact-driven attack).
+## state ends when the SIM ends it, e.g. the contact-driven attack).
 func state_total() -> int:
 	var v = spec().get("total_ticks")
 	return -1 if v == null else int(v)
@@ -236,7 +236,7 @@ func body_rect() -> Array:
 
 ## The hit cylinder of the frame SHOWN, in world units. Height = body height, diameter
 ## = 0.8 x body width; the scale is the one billboard.gd derives (body is world_height
-## u tall), so a squashed coil frame has a squashed hitbox. Empty when no frame shows.
+## u tall), so a squashed frame has a squashed hitbox. Empty when no frame shows.
 func hit_shape() -> Dictionary:
 	var br := body_rect()
 	var meta: Dictionary = _frame_docs.get(frame_path(), {})
@@ -371,7 +371,7 @@ func _param(params: Dictionary, key: String, alt: String, fallback: int) -> int:
 
 ## Section 1.0: during the spawn fade the body cannot touch or kill. Blocked for
 ## SPAWN_FADE_TICKS (30) unless the state's fade params state the count explicitly.
-## Only a fade-type spawn blocks (the nuke's spawn state is "no sprite", not a fade;
+## Only a fade-type spawn blocks (a "no sprite" spawn state is not a fade;
 ## gift Larper is present from level start with no fade at all).
 func contact_blocked() -> bool:
 	if state_id != "spawn":

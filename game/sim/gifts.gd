@@ -90,7 +90,7 @@ func slot_pos(i: int) -> Vector3:
 
 
 ## The T-053 readers' name for the same mapping (the radar queries / the
-## cartographer read positions through this wrapper; the slot_pos confinement
+## the footprint map read positions through this wrapper; the slot_pos confinement
 ## scan keeps the section 6.7 formula in this file only).
 func position_of(i: int) -> Vector3:
 	return slot_pos(i)

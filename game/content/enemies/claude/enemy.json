@@ -1,6 +1,7 @@
 {
   "id": "claude",
   "name": "Claude",
+  "spawn_line": "CLAUDE SHALL COMPOSE",
   "min_level": 15,
   "max_votes": 1,
   "vote_effect": "the one Claude",

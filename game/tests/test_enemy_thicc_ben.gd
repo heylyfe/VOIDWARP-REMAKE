@@ -21,6 +21,7 @@
 const EnemyRuntime := preload("res://sim/enemy_runtime.gd")
 const BehaviorScript := preload("res://content/enemies/thicc_ben/enemy.gd")
 const DeathScript := preload("res://sim/death.gd")
+const RosterScript := preload("res://core/roster.gd")
 const ScreenBlurScript := preload("res://view/hud/screen_blur.gd")
 const AntechamberScript := preload("res://view/lobby/antechamber.gd")
 const ContentApiScript := preload("res://core/content_api.gd")
@@ -181,7 +182,7 @@ func _roster_and_scene_data(f: Array[String]) -> void:
 	elif not (res.get("enemies", {}) as Dictionary).has("thicc_ben"):
 		f.append("ben: thicc_ben missing from the registry after boot")
 	# DESIGN.md 3.1: thicc ben has NO death code
-	if (DeathScript.CODES as Dictionary).keys().any(func(c: String) -> bool: return "BEN" in c or "THICC" in c):
+	if (RosterScript.death_names() as Dictionary).keys().any(func(c: String) -> bool: return "BEN" in c or "THICC" in c):
 		f.append("ben: a death code named after ben exists - he cannot kill")
 	# the chain-break reason is the data whitelist string
 	var eco := FileAccess.open("res://data/economy.json", FileAccess.READ)
@@ -392,8 +393,8 @@ func _touch_never_kills(f: Array[String]) -> void:
 			f.append("ben: the player died on tick %d of the overlap soak" % (240 + i))
 			break
 	# the void owns the only fatal read of a ben launch: D-VOID is the controller's own code
-	if (DeathScript.CODES as Dictionary).has("D-THICC_BEN") or (DeathScript.CODES as Dictionary).has("D-BEN"):
-		f.append("ben: a ben death code exists in death.gd - he cannot kill")
+	if (RosterScript.death_names() as Dictionary).has("D-THICC_BEN") or (RosterScript.death_names() as Dictionary).has("D-BEN"):
+		f.append("ben: a ben death code exists in content - he cannot kill")
 
 
 # ---- 6. touch effects: launch, blur, bell, chain_reset -------------------------

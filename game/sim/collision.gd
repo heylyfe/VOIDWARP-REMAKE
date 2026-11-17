@@ -51,7 +51,7 @@ static func make_world(tiles: Array, props: Array, pads: Array, opts: Dictionary
 		"prop_cols": prop_cols,
 		"pads": pad_at,
 		"dais": [dais[0], dais[1], dais[2]],
-		"glitched": {},        # tile keys "x,z,y" -> true (toucher floor); state writes here
+		"glitched": {},        # tile keys "x,z,y" -> true (glitch floor); state writes here
 		"slippery": {},        # extra slippery tile keys (e.g. Wet Floor); friction x0.4
 		"removed": {},         # tiles-modified set: destroyed tile keys are removed
 		"kill_y": -40.0,

@@ -1,5 +1,5 @@
 {
-  "$comment": "data/upgrade_pools.json schema (DESIGN.md section 8 [CANON]; ticket T-013). Level 1 bracket is exactly paycheck, more, yearn_for_speed; each later bracket lists all upgrades whose tier has entered the pool (T1@1, T2@4, T3@10, T4@18, T5@26). max_level null = open-ended last bracket. The membership/set relationships are asserted by test_content.gd, not by the schema.",
+  "$comment": "data/upgrade_pools.json schema (DESIGN.md section 8 [CANON]; ticket T-013). Level 1 bracket is exactly the T1 trio; each later bracket lists all upgrades whose tier has entered the pool (T1@1, T2@4, T3@10, T4@18, T5@26). max_level null = open-ended last bracket. The membership/set relationships are asserted by test_content.gd, not by the schema.",
   "type": "object",
   "additionalProperties": false,
   "required": ["mode", "brackets"],

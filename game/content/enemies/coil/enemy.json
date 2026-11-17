@@ -1,6 +1,7 @@
 {
   "id": "coil",
   "name": "coil",
+  "spawn_line": "THE COIL SHALL SPRING",
   "min_level": 1,
   "max_votes": 3,
   "vote_effect": "+1 coil",

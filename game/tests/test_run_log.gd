@@ -107,7 +107,7 @@ func _scripted_run_pass() -> Array[String]:
 		var code := str(pl.get("code", ""))
 		if str(pl.get("killer", "")) == "":
 			failures.append("a death record without a killer: %s" % str(rec))
-		if not DeathScript.CODES.has(code) and not code.begins_with("D-CURSE:"):
+		if DeathScript.killer_for(code) == code and code != "D-VOID" and not code.begins_with("D-CURSE:"):
 			failures.append("a death code outside the DESIGN.md 3.1 list: %s" % code)
 		for k in ["on_screen", "charges", "last_light"]:
 			if not pl.has(k):

@@ -56,6 +56,10 @@
       "type": "string",
       "pattern": "^[a-z][a-z0-9_]*$"
     },
+    "death_name": {
+      "type": "string",
+      "$comment": "optional run-over display name (FIX-A14); defaults to \"name\" - set only when the DESIGN.md 3.1 kill label differs (the tripmine carrier)"
+    },
     "max_votes": {
       "type": "integer",
       "minimum": 0
@@ -74,6 +78,10 @@
     "script": {
       "type": "boolean",
       "$comment": "true when the behavior needs an enemies/<id>/enemy.gd beyond defaults"
+    },
+    "spawn_line": {
+      "type": "string",
+      "$comment": "optional diegetic danger line, shown at the spawn point for 4 s (FIX-A14; the T-027 fable-tickets row is the authority)"
     },
     "sprites": {
       "type": [

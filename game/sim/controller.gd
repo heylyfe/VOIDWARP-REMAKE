@@ -158,7 +158,7 @@ var bonus_cd := 0.0
 # T-053 Updraft (D-T053-6): glider-only rise of 3.0 u
 # on a re-pressed jump while gliding; apex exactly 3.0 u under gravity 32, once per
 # glide engagement, 6 s cooldown frozen under ability lock like the dash. Granted
-# (ready) ONLY by apply_updraft - the base glider has no updraft.
+# (ready) ONLY by apply_updraft - the base glider has no rise.
 var updraft_ready := false
 var updraft_cd := 0.0
 var updraft_used := false
@@ -273,7 +273,7 @@ func step(dt: float, a_in: Dictionary, w: Dictionary) -> Array:
 			bonus_dashes += 1
 			bonus_cd = 0.0
 	# T-053 Updraft (D-T053-6): 6 s cooldown, frozen under ability lock. The
-	# cooldown only ever runs on a GRANTED updraft (updraft_owned) - an unowned
+	# cooldown only ever runs on a GRANTED rise (updraft_owned) - an unowned
 	# controller (ready=false, cd=0) must not re-arm itself out of the regen math.
 	if updraft_owned and not updraft_ready and lock <= 0.0:
 		updraft_cd -= dt
@@ -380,7 +380,7 @@ func step(dt: float, a_in: Dictionary, w: Dictionary) -> Array:
 		if glide_energy < 0.0:
 			glide_energy = 0.0
 
-	# ---- updraft (Glider, T-053, D-T053-6) -----------------------------------------
+	# ---- the rise (Glider, T-053, D-T053-6) -----------------------------------------
 	# A re-pressed jump while gliding rises exactly 3.0 u: vy = sqrt(2 x g x 3 u)
 	# under gravity 32 (apex = vy^2 / (2 g) = 3.0 u), ends the glide, once per
 	# glide engagement, 6 s cooldown frozen under ability lock like the dash (D-070).
@@ -393,7 +393,7 @@ func step(dt: float, a_in: Dictionary, w: Dictionary) -> Array:
 		updraft_used = true
 		updraft_ready = false
 		updraft_cd = UPDRAFT_CD
-		ev.append({"e": "updraft"})
+		ev.append({"e": "updraft_rise"})
 
 	# ---- horizontal acceleration (addendum R4) --------------------------------------
 	var dashing_move := false
@@ -687,7 +687,7 @@ func _track_ring(dt: float, w: Dictionary, _ev: Array) -> void:
 
 # ---- kills, Last Light, beacon (D-050, D-053, D-057, D-063, D-073) ------------------
 
-# A killing blow lands (enemy, tripmine or nuke — never a void fall, which the step
+# A killing blow lands (enemy, tripmine or bomb — never a void fall, which the step
 # handles itself). Returns true when Last Light saved the player. Respawn
 # invulnerability and Last Light invulnerability suppress kills without spending it.
 # The save teleports to the beacon dais and pushes enemy bodies out to exactly 8 u
@@ -787,7 +787,7 @@ func apply_speed_upgrade(pct: float) -> void:
 
 
 # One double-jump upgrade: +1 air jump; air-jump velocity = jump_velocity *
-# card_height (*1.3 more on Athletic while not locked, D-070).
+# card_height (*1.3 again on Athletic while not locked, D-070).
 func apply_double_jump(card_height: float = 1.0) -> void:
 	air_jumps_max += 1
 	air_jumps = air_jumps_max
@@ -810,7 +810,7 @@ func apply_updraft() -> void:
 	updraft_used = false
 
 
-# Ability lock (D-070, SR-6): the toucher's floor and coil's shockwave call this.
+# Ability lock (D-070, SR-6): the glitched floor and the shockwave call this.
 func apply_lock(duration: float) -> void:
 	if duration > lock:
 		lock = duration

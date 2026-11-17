@@ -1,6 +1,8 @@
 {
   "id": "gift_larper",
   "name": "gift Larper",
+  "spawn_line": "THE GIFT LARPER SHALL PRETEND",
+  "death_name": "gift Larper (Tripmine)",
   "min_level": 5,
   "max_votes": 5,
   "vote_effect": "extra_mines += 3",

@@ -44,7 +44,7 @@ var curses_held: Dictionary = {}  # {curse_id: stacks}
 var upgrade_stacks: Dictionary = {}  # {upgrade_id: stacks}
 var class_chosen: String = ""     # "" until the CLASS bay resolves (pre-run)
 var purse: int = 0                # whole gold; bounties add, tithe/purchases subtract
-var tithes: int = 0               # tithes paid this run (the next tithe costs more)
+var tithes: int = 0               # tithes paid this run (the next tithe costs extra)
 var hunger: int = 0               # Hunger stacks: +5% enemy speed each, repeatable
 var last_vote: String = ""        # the type of the run's previous vote (D-074: the
                                   # REPEAT slot never re-offers it, T-074)

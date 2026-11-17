@@ -34,7 +34,7 @@ var body_feet_shift := 0.0            # world u the sprite must rise so the body
 func setup_from_sheet(doc: Dictionary, folder_dir: String) -> void:
 	sheet = doc
 	# The T-016 schema stores world_height null where the design gives the enemy no body
-	# row (the nuke launcher, SR-2) - null must read as 0.0, not float-crash.
+	# row (the launcher, SR-2) - null must read as 0.0, not float-crash.
 	var wh: Variant = doc.get("world_height", 1.0)
 	world_height = float(wh) if (wh is float or wh is int) else 0.0
 	anims.clear()

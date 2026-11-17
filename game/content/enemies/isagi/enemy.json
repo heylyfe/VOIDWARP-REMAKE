@@ -1,6 +1,7 @@
 {
   "id": "isagi",
   "name": "Isagi",
+  "spawn_line": "ISAGI SHALL SHOOT",
   "min_level": 11,
   "max_votes": 2,
   "vote_effect": "+1 Isagi",

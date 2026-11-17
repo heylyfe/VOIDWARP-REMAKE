@@ -1,6 +1,7 @@
 {
 	"id": "you",
 	"name": "YOU?!",
+	"spawn_line": "YOU SHALL ECHO",
 	"min_level": 3,
 	"max_votes": 2,
 	"vote_effect": "+1 YOU?!",
