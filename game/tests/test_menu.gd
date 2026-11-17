@@ -9,6 +9,7 @@ const MenuScript := preload("res://app/menu.gd")
 const StageScript := preload("res://app/menu_stage.gd")
 const HowToScript := preload("res://app/menu_howto.gd")
 const InputCaptureScript := preload("res://app/input_capture.gd")
+const BillboardScript := preload("res://view/billboard.gd")
 
 const MAIN_SCENE := "res://app/main.tscn"
 
@@ -302,6 +303,60 @@ func _test_roster(f: Array[String], m) -> void:
 		var bb2: float = StageScript.body_bottom(sprites[i])
 		if absf(bb2) > 0.03:
 			f.append("roster: %s drifts %.3f u off its platform once animating" % [str(ids[i]), bb2])
+	_test_photo_cards(f, stage)
+
+
+## D-MENU-10: a pose frame that is a full opaque rectangle (a photo keeping its background) stands
+## in a doorway, graded; a cut-out never does. Detection is from pixels, so it is checked on
+## synthetic textures first, then for consistency over the real roster.
+func _test_photo_cards(f: Array[String], stage) -> void:
+	var solid := Image.create(64, 64, false, Image.FORMAT_RGBA8)
+	solid.fill(Color(0.8, 0.8, 0.8, 1.0))
+	var cut := Image.create(64, 64, false, Image.FORMAT_RGBA8)
+	cut.fill(Color(0, 0, 0, 0))
+	cut.fill_rect(Rect2i(16, 8, 32, 48), Color(1, 1, 1, 1))
+	for tc in [[solid, true, "a fully opaque frame"], [cut, false, "a cut-out frame"]]:
+		var s: Sprite3D = BillboardScript.new()
+		s.texture = ImageTexture.create_from_image(tc[0])
+		s.anims["t"] = {"frames": [s.texture], "fps": 1.0, "loop": true, "body_rect": [[0, 0, 64, 64]]}
+		s.anim_name = "t"
+		if StageScript.is_photo_card(s) != bool(tc[1]):
+			f.append("cards: %s detected as photo card = %s, want %s (coverage %.3f)" % [tc[2],
+					str(StageScript.is_photo_card(s)), str(tc[1]), StageScript.opaque_coverage(s)])
+		s.free()
+	var cards := 0
+	for r in stage.roster:
+		var s: Sprite3D = r["sprite"]
+		var id := str(r["id"])
+		var card: Variant = r.get("card", null)
+		var want: bool = (not bool(r["flying"])) and StageScript.is_photo_card(s)
+		if want != (card is Node3D):
+			f.append("cards: %s photo card %s but doorway %s" % [id, str(want), str(card is Node3D)])
+			continue
+		if not want:
+			if s.modulate != Color(1, 1, 1, 1):
+				f.append("cards: cut-out %s is graded (%s); only photo cards are" % [id, str(s.modulate)])
+			continue
+		cards += 1
+		if s.modulate != StageScript.CARD_GRADE:
+			f.append("cards: photo card %s is not graded" % id)
+		var rect: Rect2 = StageScript.card_rect(s)
+		if rect.size.x <= 0.0 or absf(rect.position.y) > 0.03:
+			f.append("cards: photo card %s rect %s does not stand on its platform" % [id, str(rect)])
+		if absf(wrapf((card as Node3D).rotation.y - s.rotation.y, -PI, PI)) > 1e-4:
+			f.append("cards: %s doorway faces %.4f, its photo %.4f" % [id, (card as Node3D).rotation.y, s.rotation.y])
+		var vig: Node = (card as Node3D).get_node_or_null("Vignette")
+		if vig == null:
+			f.append("cards: %s doorway has no inner shadow" % id)
+	if cards > 0:
+		# the doorway turns with its photo as the camera sways
+		stage.advance(9.0)
+		for r in stage.roster:
+			var card2: Variant = r.get("card", null)
+			if card2 is Node3D:
+				var s2: Sprite3D = r["sprite"]
+				if absf(wrapf((card2 as Node3D).rotation.y - s2.rotation.y, -PI, PI)) > 1e-4:
+					f.append("cards: %s doorway lags its photo after the camera moved" % str(r["id"]))
 
 
 ## The bot's path: a fresh menu, keyboard only, ends in play_requested (the orchestrator then
