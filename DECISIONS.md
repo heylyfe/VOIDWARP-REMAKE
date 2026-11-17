@@ -3698,9 +3698,110 @@ the fade-back's end (not the launch) keeps the promised "walk back in before he
 strikes again" number honest: the player experiences 14 s of gin being unable to
 REOPEN the patch after the tiles return, which is the sentence a player would act on.
 
+### D-T-040-1 - [CONTESTABLE] "Floats at 4 u/s keeping within 20 u" is a leash, not a chase (T-040).
+
+DECISION (T-040): Claude floats toward the nearest player only while FARTHER than 20 u
+(horizontal), and holds position once inside; the leash closes whenever the player gains
+distance and never follows the player inside 20 u. WHY: SR-2's consequence row for Claude is
+"not hurdle-able; KEEPS ITS DISTANCE (within 20 u)" and section 5.11's answer lines all assume
+the DISTANCE IS THE PLAYER'S TO MANAGE ("keep >= 6 u from Claude", "open platforms are bad"),
+neither of which reads true for a body that always pursues. Section 5.11's only distance number
+is 20, so the leash reads: chase while d > 20, hold while d <= 20. Consequence: a player standing
+still at 20 u is outside the drums' 18 u reach but inside strings (24 u) and wind (28 u travel) -
+standing still is still punished, so no escape-by-inaction hole exists. The pursuit ceiling
+0.55 (SR-5, 4.95 u/s) still caps the closing speed; full multipliers clamp exactly like any
+float body (asserted).
+
+### D-T-040-2 - [CONTESTABLE] The drums' ring kill windows adopt D-T-035-1/-2's YOU?! readings (T-040).
+
+DECISION (T-040): the drum ring kills when the player's FEET sit strictly inside
+(ring feet - 1.5 u, ring feet + 1.0 u) and the horizontal distance is within 0.7 u of the
+expanding edge (the 0.6 u band's half-thickness + the player's 0.4 u half-width). WHY: DESIGN.md
+section 5.11 gives the ring's height (1.0 u) and speed (12 u/s) but no thickness and no kill
+window; anim block's attack_drums says the band is "1.0 u tall translucent red band, AS YOU?!'S",
+so the drums inherit YOU?!'s convention wholesale: the vertical window (jump clears at
+feet > ring feet + 1.0; apex 2.25 u - "jump on the beat" holds), the 1.5 u reach below the feet
+plane, and the 0.7 u radial window (the band + the player at 12 u/s crosses a body in
+1.4 / 12 = 0.117 s ~= the answer window's 0.12 s - the only reading that reproduces the stated
+crossing).
+
+### D-T-040-3 - The strings telegraph freezes the sweep's start angle (D-069's fixed-line pattern) (T-040).
+
+DECISION (T-040): on the strings bar's beat 1 the direction from Claude to the player is FROZEN;
+the red 24 u telegraph line draws along it for exactly 1 beat; the beam then lifts off from
+Claude's position at the TELEGRAPH'S END (the body may have drifted) and sweeps from the frozen
+angle. WHY: the anim block's telegraph_strings row draws the line "at the sweep's starting
+angle" - the warning must show the exact bearing the beam will start from (section 5.9's D-069
+reading: a telegraphed line never re-aims); freezing the ORIGIN instead would draw the warning
+at a bearing the beam would not take. The TELEGRAPH duration is exactly 1 beat at the current
+tempo (36 ticks at 100 BPM; 23 at the Deadline's 160 - the anim block's own "shortened by the
+current tempo").
+
+### D-T-040-4 - [CONTESTABLE] The strings beam's sweep sense is counterclockwise; the origin's feet plane is frozen (T-040).
+
+DECISION (T-040): section 5.11 says the beam "sweeps 120 degrees" with no sense named, so the
+direction rotates counterclockwise in the xz plane (the perp (-dz, dx) - the +rotation sense the
+wind homing's rotation also uses); the ray advances by the tangent-chord identity (multiplying
+the unit direction into (1, tan) against its perpendicular) so no trig call ever runs in the sim
+(section 13's "no sin/cos - lookup tables" rule); a scalar degree counter (exact addition) drives
+the DURATION (120 deg over 4 beats, tempo-scaled) and stays within 0.01 deg of the vector's true
+angle over a full sweep. The beam's vertical band (0.5-1.5 u above the origin's feet) and origin
+are FROZEN at lift-off (D-069's never-re-aims reading); the kill rule per tick is: projection
+along the ray inside [0, 24], perpendicular distance <= 0.75 + 0.4 = 1.15 u, body overlapping the
+band, api.los from the band's mid-height to the player's centre clear (blocked by tiles and
+props). Jumpable: feet at/above the band's top (origin feet + 1.5) are safe; the 0.26 s answer
+window reproduces exactly: at the 0.8333 deg/tick sweep rate a body at 10 u sits inside the
+1.15 u half-width for 2 x asin(1.15/10) / 0.8333 deg = 15.9 ticks = 0.265 s.
+
+### D-T040-5 - The wind shot's wall death probes the trailing 0.3 u of its flight path; api.los cannot see a 0.117 u step (T-040).
+
+DECISION (T-040): the shot dies on the FIRST tick whose trailing 0.3 u segment fails api.los.
+WHY: a direct prev->now los call is blind - api.los marches at 0.25 u steps with `n =
+int(seg/0.25) + 1` and a 7 u/s shot's step is only 0.1167 u, so n = 1 and the sample loop is
+EMPTY (the endpoints are also never sampled); EVERY wall would be tunnelled (found by test: a
+shot crossed a 6 u wall and killed behind it). The 0.3 u trailing window is always long enough
+for the march to sample its midpoint every tick, so any wall or prop thicker than ~0.2 u in the
+path is caught; the detection lags the touch by at most ~3 ticks (0.18 u at 7 u/s) and never
+fires early - "dies on touching" stays honest within a shot width. Homing itself is exact: the
+turn toward the player's centre uses the two precomputed 1.5 deg constants (cos/sin of the FIXED
+per-tick step = 90 deg/s at 60 Hz - the section 13 lookup-table rule) and snaps when within one
+step, so the sim never calls sin/cos and the turn rate is exact (asserted per tick).
+
+### D-T040-6 - [CONTESTABLE] Plushie placement: the farthest tile in the 10-25 u band, 2 u apart; pickup at 0.9 u (T-040).
+
+DECISION (T-040): every 25 s (1500 ticks; the clock re-arms only on a real placement - no
+eligible tile this tick retries next tick) a plushie appears on the FARTHEST tile of
+api.tiles_in_radius(player, 25) whose horizontal distance is in [10, 25] u (ties by tile order),
+never within 2 u of an existing plushie; the "round-trip tile" nicety of section 5.11 cannot be
+queried through the section 12 API (no reachability surface), so the farthest-band reading is
+the substitute - on real levels the spawned-in tiles are the level's own walkable tiles. Pickup:
+within 0.9 u horizontally and 2.0 u vertically of the plushie (the gift's 0.4 u pickup radius is
+the nearest stated convention; 0.9u = the gift radius plus the player's 0.4 half-width plus a
+0.1 grace; the spec states no number). Pickup = agitation - 35 floored at 0, the plushie is
+consumed, and the row stamps last_pickup_tick / last_pickup_pos for the squeak-pop hook.
+
+### D-T040-7 - The spawn fade blocks contact by zeroing the row's hit diameter for 30 ticks (T-040).
+
+DECISION (T-040): on_spawn stores diameter_full and sets diameter_u = 0; _tick_one restores it
+at age 31, so the framework's central contact check (which reads only the row's diameter_u)
+cannot kill during the fade - the anim block's spawn row says "the body cannot touch or kill
+until the fade completes" and view/enemy_anim.gd's contact_blocked() (ticks_in_state < 30)
+matches tick for tick. Chosen over duplicating a fade counter inside the behavior because the
+framework owns the KILL RULE; the row's diameter is the one lever the behavior legitimately
+holds (D-T030-2 gave cfg hit_diameter the same role at spawn). The test asserts the overlap is
+harmless through tick 30 and lethal at 31+ with code D-CLAUDE.
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
+- 2026-11-17 T-040 (Claude, this session): content/enemies/claude/enemy.json + enemy.gd (the
+  drums/strings/wind bar cycle at 100 + 0.6 x agitation BPM, the 20 u leash, agitation +2/s with
+  plushie calm -35, the Deadline) + view/claude_view.gd (frames + drum bands + strings line +
+  sweep beam + wind dots + plushie 3-frame idle, driven through view/enemy_anim.gd) +
+  view/audio/claude_audio.gd (ui_chime / keystroke_tick / notification_ping / squeak_pop hooks)
+  + tests/test_enemy_claude.gd (every 5.11 number/timing at +/-1 tick, D-057 kill fixtures; the
+  shot's wall death, drums/strings/wind and contact all D-CLAUDE) + DECISIONS D-T-040-1..7.
+  test_content.gd scoreboard enemies 8 -> 9, content_ids 95 -> 96. No PARKED rows; no push.
 - 2026-11-17 T-035 (spawn, inkling-2-small-free): YOU?! landed - content/enemies/you/enemy.json (min_level 3, 2 votes, open anchor, D-YOU) + enemy.gd (EnemyBehavior; 3.4 u/s pursuit ceiling 0.55, 10 u trigger, 90-tick rumble, 9 u/s ring to 14 u, 240-tick cooldown, feet-window kill rule D-T-035-1) + view/you_view.gd (frames/telegraph/band wired to the T-083 anim block, RGB split + shake + feet ring + translucent red band) + tests/test_enemy_you.gd (D-057-compliant; TESTS 28 passed 0 failed; GATE OK 9 ran 0 skipped 57 s) + DECISIONS D-T-035-1..13, TBD.md row 28. T-073 to read live rings from row["rings"] when the hazard bus lands. No PARKED rows; no push.
 - 2026-11-17 T-083-enemies 1-6 (Anim/PNG animation specs, inkling-2-small-free): anim blocks added to the six T-016 sprites.json (kiwi_cat, coil, thicc_ben, isagi, nuke, you) - one entry per section 1.x table row, spec_frames + on-disk TBD frames, binding 60 Hz tick counts; new game/tools/check_anim_data.gd proves all 12 roster tables (hardcoded, CLI id list); DECISIONS D-T083-1..6 appended. Gate green (GATE OK, 9 ran, TESTS 27 passed 0 failed); ANIM-DATA 6 passed 0 failed. The other six report "no 'anim' block" until their half lands. No PARKED rows; no push, branch t3/enemies-1-6-anim-data.
 - 2026-11-17 T-074 (spawn, GLM): the D-074 offer draw is live. sim/offers.gd draw_enemy_bay
