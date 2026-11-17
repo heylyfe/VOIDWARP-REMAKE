@@ -403,10 +403,7 @@ static func _play_level(api: RefCounted, ledger: Dictionary, seed: int, level: i
 		for e in rt.step(DT):
 			ev.append(e)
 		_track_telegraphs(mem, rt, lv.tick)
-		if TRACE and lv.tick >= 1300 and lv.tick <= 1332:
-			for e in ev:
-				print("EVT-ALL t=%d %s" % [lv.tick, JSON.stringify(e)])
-		if TRACE and (lv.tick % 30 == 0 or (lv.tick >= 1300 and lv.tick <= 1332) or (lv.tick >= 1290 and lv.tick <= 1360) or (lv.tick >= 1960 and lv.tick <= 2040) or (lv.tick >= 1776 and lv.tick <= 1812) or (lv.tick >= 770 and lv.tick <= 835) or (lv.tick >= 1355 and lv.tick <= 1420) or (lv.tick >= 1110 and lv.tick <= 1200)):
+		if TRACE:
 			print("POS t=%d x=%.2f y=%.2f z=%.2f grounded=%s cur=%d gifts=%d charges=%d" % [
 				lv.tick, ctl.x, ctl.y, ctl.z, ctl.grounded, _tile_under(w, ctl),
 				lv.gifts.remaining(), ctl.charges])
@@ -943,7 +940,9 @@ static func _routing(mem: Dictionary, lv, ctl, w, w2, gtiles: Array, adj: Array,
 		mag = float(plan["mag"])
 		var exitp := _cell_exit(ct, dir)
 		var D := exitp.distance_to(wp_pos)
-		var at_exit: bool = pi >= 1 and cur >= 0 and cur == int(path[pi - 1])
+		# the coyote window IS the jump window: the player leaves ground on every
+		# step-down; at_exit is valid for those 0.1 s after leaving the takeoff tile
+		var at_exit: bool = pi >= 1 and float(ctl.coyote) > 0.0
 		var jump := (bool(ctl.grounded) or float(ctl.coyote) > 0.0) and at_exit and int(plan["hold"]) > 0
 		if TRACE:
 			print("PLAN t=%d pi=%d cur=%d wp=%d dy=%d D=%.2f at_exit=%s grounded=%s coyote=%.2f jump=%s" % [
