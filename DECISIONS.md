@@ -4657,6 +4657,90 @@ arrival is ben's own 801-tick cycle away on the fresh lock. A toll never chains 
 third arrival within 95 ticks of the second). The understudies mine-cap done-when stays
 parked with PARKED.md 16.
 
+### D-T080-1 - The log's tick clock is the run-wide accumulated sim tick (T-080) [CONTESTABLE]
+Every record's `t` = the sum of all level ticks so far (the lobby consumes no sim ticks,
+so a level's first tick continues the run's clock). The done-when's "level_clear.total
+equals level_start.t to beacon_enter.t" holds under both readings; the run-wide clock was
+chosen so a report can correlate events ACROSS levels (the fun-audit signals are run-shaped:
+death -> controllable, lobby dwell). Alternative if the owner wants per-level t: reset total_t
+in level_started() - one line. The file name keeps the owner's format: user://runs/<run_seed>_<start_tick>.jsonl
+(start_tick is the accumulated clock at log start, 0 for a fresh run).
+
+### D-T080-2 - "Killer on screen in the last 120 ticks" is a view-free proximity proxy (T-080)
+The headless sim has no camera, so "on screen" cannot be measured literally. Proxy: the
+killer was present within 24 u of the player's centre at some tick in the last 120 - a
+body (the hit cylinder's row) or a live telegraph footprint (the view draws exactly those).
+24 u sits between the fill-light range (18 u) and the Radar: Threats marker range (30 u)
+[CONTESTABLE - the owner may want 18 or 30]. Enriched into the death event by
+sim/enemy_runtime.gd (bodies + telegraphs, keyed by the LIVE rows' cfg death_code - no
+content ids written in sim, the boundary scan stays clean). D-VOID never reads on screen; a
+mine kill reads on screen by construction (the contact happens at the player's centre).
+
+### D-T080-3 - Push attribution reaches the log through a push event, not through sim state
+Owner spec: every void_fall record carries "pushed in last 120 ticks y/n and by which enemy".
+api.push's signature is DESIGN.md section 13 canon; it carries no enemy id. Resolution:
+api.push's implementation (rt.push) gained an OPTIONAL 4th arg (src_row, defaulted, call
+sites unbroken - the DESIGN surface itself is unchanged) that the three pushing enemies pass
+(coil, thicc ben, gin); Api.push passes api.row automatically. rt appends an additive raw
+`push` event {by, tick, player}; ben's eject (api.eject_player) appends the same. The log
+correlates push events against void_fall (within 120 ticks) - never sim state. No behavior
+change: the event is appended after the push's velocity write.
+
+### D-T080-4 - The lobby rows are app-layer events; lobby records carry the level just finished
+`offer` (bay, the three altar ids), `pick` (bay, id, price - a negative price IS the
+bounty), `lobby_enter` / `lobby_exit` are view events (the app presents altars; the sim
+never streams the lobby's state as tick events). A lobby record's `level` = the level just
+completed (0 = the pre-run lobby); phase = "lobby". An Ex2 bay's between-votes redraw is
+not a second offer row. Recorded as D-T080-4 [CONTESTABLE]: the owner may prefer the
+UPCOMING level number on lobby rows.
+
+### D-T080-5 - level_start's "enemies in play" = the enemy vote copies just planned
+DESIGN section 6's column ("enemies in play next level") counts votes; the log's
+level_start payload carries the sum of the driver's planned enemy copies (the same number
+the spawn plan will realize). The slot/real-gift/mine counts ride the Level dict read at
+the app layer (terrain is a pure pre-sim input, DESIGN section 13) - the log module itself
+takes them from the app's level_started() call and never touches sim state.
+
+### D-T080-6 - charge_spent.free is derived from the before/after pair
+"free yes/no" (Field Dressing, DESIGN section 8) has no sim knob yet - the upgrade is
+defined (data + catalog rows) but the controller's void-fall path never wires it. The log
+derives free = (charges_before == charges_after), which is exactly Field Dressing's future
+reading (a free fall spends no pip); today every fall records free=false. When T-0xx wires
+Field Dressing, the log needs no change.
+
+### D-T080-7 - The bot driver is T-060's bot_run.gd vendored verbatim (commit 8a642ef)
+The STANDER briefing said game/tools/bot_run.gd exists on main; at this branch's base
+(t3/telemetry-event-log from the T-061 merge) T-060 is NOT yet merged - the file lives on
+t3/difficulty-band-probe (commit 8a642ef, 984 lines). Vendored VERBATIM (no ticket text
+edited, no behavior edited) with two ADDITIVE knobs: an optional trailing p_log argument
+on play_run / _resolve_lobby / _play_level (null = T-060's own path, byte-identical
+behavior), "charges" added to play_run's return dict, and run_finished fired at the run's
+end. When T-060 merges, git sees identical content for the unchanged parts; the p_log
+params are the merge's only delta. Recorded so the merge conflict is a known, planned one.
+
+### D-T080-8 - The ticket says "20 record types" but its verbatim list has 18 [CONTESTABLE]
+The owner's spec's "Types, exactly:" enumerates 18 (run_start, level_start, gift,
+void_fall, charge_spent, charge_restored, mine_pass, mine_contact, death, last_light,
+beacon_open, beacon_enter, level_clear, offer, pick, lobby_enter, lobby_exit, run_end) -
+headed by "every record: t, level, phase, type, payload", whose four shared fields are
+plausibly the +2 the brief's "20" counts. The LIST is the contract: 18 types built; if the
+owner meant 20, the two extra ones are theirs to name. Not PARKED (no two documents
+conflict; the ticket's own list is self-consistent) - recorded here and in the response.
+
+### D-T080-9 - The 2-level driver in the test does not use the bot (the post-merge red gate)
+T-060 merged while this ticket was in flight with the finding that bot_run.gd's bot cannot
+reliably clear level 1 (void falls; the owner's sweep: level 6 in 0/20 runs, every run dead
+on levels 1-3). The test_run_log.gd run of my hand leaned on the bot clearing 2 levels; after
+the merge it went red ("the fixed seed must CLEAR both levels: outcome=dead entered=1").
+Fix, test-design only (no check weakened): the 2-level run is driven DIRECT on the sim
+surface inside the test - the test_gifts.gd idiom (teleport to each real black gift's tile,
+one sim step per gift; one gold gift; the beacon entry via beacon.gd try_enter), twice,
+through the real pre-run + E+U lobbies (offers/picks ride the log). bot_run.gd KEEPS its
+p_log wiring (the real-runs path; D-T080-7's vendored file is now merged main, the p_log
+params its only T-080 delta). Any record type the 2-level scripted drive cannot produce
+(all the mine types - levels 1-2 roll zero mines) is covered by the direct units, exactly
+as before.
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
@@ -4876,3 +4960,21 @@ parked with PARKED.md 16.
 
 - 2026-11-17 T-055 (Inkling, this session): tools/synth_audio.py + game/assets/audio/enemies/<id>/<cue>.wav for the 24 cues referenced by the twelve enemy.json files (stats.audio_cues + stats.audio) plus the 6 Isagi/nuke TBD-hook cues (D-T055-2); all recipes/lengths [CONTESTABLE] placeholders (D-T055-3); landing path per merged view hooks (D-T055-1). TBD.md section 8 lists ALL enemy audio as placeholder. python tools/synth_audio.py [--check] re-synthesises / verifies; every enemy.json cue resolves to a file. Gate run at end of session; enemy.json untouched; T-087 owns binding lengths, cue offsets and the check.
 - 2026-11-17 T-087 (Inkling, this session): section 3 reconciled (D-T087-1) and completed - 7 new wavs (locked, ring_release, mine_hum, prowl, leaves, beat, string_sweep 3.0 s per D-T087-3; loops at 2.0 s, D-T087-2), flipper_flap regenerated to the 2.0 s bed; enemy.json files gained additively stats.audio_cue_timing + stats.lethal_attacks (D-T087-6) with every cue's sim event + tick offset and the roster's 17-entry ledger (16 lethal attacks + thicc_ben's non-lethal bound arrival); isagi/nuke cue lists wired; the three stand-ins flagged/kept tbd_audio with TBD rows 47-49; tools/check_audio.gd built (three assertions + coverage ledger; negative-tested; the three documents conflicts as PARKED.md #12-15 and SPEC GAPs as D-T087-1..8). Gate green: GATE OK (9 ran, 0 skipped, 52 s), TESTS 44 passed 0 failed.
+- 2026-11-17 GLM 5.3 (T-080, acpRegistry spawn, this session): telemetry event log DONE on
+  t3/telemetry-event-log - app/run_log.gd (events-only JSONL recorder, 18 closed record types,
+  the chain replicated from the event stream, run-wide tick clock D-T080-1); additive sim events
+  with no behavior change (void_fall tile/nearest-enemy/before-charges, deaths carry charges +
+  Last Light state + the on_screen enrichment D-T080-2, beacon_enter charges_before, mines'
+  mine_pass 1.4 u bypass tracker, rt push events D-T080-3, overtime_tier); the bot driver is
+  T-060's vendored bot_run.gd (D-T080-7) with additive p_log params; tests/test_run_log.gd: a
+  2-level scripted bot run covers 12 types + the units cover mines/void-fall/push-window/chain;
+  replay hashes identical with logging on and off; the done-when's pip, death-code (DESIGN 3.1
+  closed list) and level-timing equations all asserted. TESTS 49 passed 0 failed. D-T080-1..8
+  appended (two [CONTESTABLE] readings: the run-wide tick clock, the 24 u on-screen proxy; the
+  20-vs-18 type count noted D-T080-8). No PARKED rows. No push.
+- 2026-11-17 GLM 5.3 (T-080, 2nd session, post-rebase red gate): the test's 2-level driver was
+  re-based off bot_run.gd after T-060's merge (the bot cannot clear level 1: 0/20 reach
+  level 6, dead on 1-3) - the run is now driven direct on the sim surface (test_gifts.gd
+  idiom, levels 1-2, real lobbies; D-T080-9); bot_run.gd KEEPS the p_log wiring; the units
+  and the replay-hash comparison unchanged; the log itself untouched. Gate: GATE OK (10 ran,
+  0 skipped), TESTS 50 passed 0 failed. No PARKED rows. No push.

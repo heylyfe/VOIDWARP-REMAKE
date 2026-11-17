@@ -98,9 +98,13 @@ func try_enter(ctl, tick: int, player_index: int, events: Array) -> bool:
 		return false
 	if not contains(ctl.x, ctl.y, ctl.z):
 		return false
+	# T-080: the before/after pair the charge_restored record needs (the restore is
+	# capped at the charge cap, so before may equal after at a full pip bar).
+	var before: int = int(ctl.charges)
 	ctl.beacon_enter()
 	var ev := EventsScript.make(EventsScript.EV_BEACON_ENTER, tick, player_index)
 	ev["charges"] = int(ctl.charges)
+	ev["charges_before"] = before
 	events.append(ev)
 	barriers[player_index] = true
 	completed = true
