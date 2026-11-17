@@ -4902,6 +4902,83 @@ The owner image (`assets_src/enemies/thiccben.png`, 767x599) is a PHOTO: pure wh
 ### D-ART-THICC_BEN-2 - The derived-pose parameters [CONTESTABLE, art direction]
 One distinct frame per anim-block state, derived procedurally from the base body (deterministic, no randomness): `cycle_00` = the base body (idle, `thiccben_00`); `spawn_00` = squash anticipation (sx 1.14 / sy 0.78, bottom-anchored; the block's common_fade stays a view-side shader effect and is not baked); `attack_arrival_00` = 78% blend toward white (the block's white_flash, baked as the pose); `attack_ring_00` = +8 deg rotation about the feet pivot (== the block's `rock_deg` 8.0, mid-swing of the +/-8 deg twice rock); `recover_00` = 1.07 vertical stretch with x 0.95 and 40% luminance-preserving desaturation. A recover pose DARKENED to read as "spent" was rejected: any multiplicative dim below ~x0.8 drops the mean opaque colour under the 3.0 fog-contrast floor, so recover keeps luminance and changes pose/saturation instead (measured 3.18). Transforms render onto a 2x-padded intermediate and are cropped back to their alpha bbox and bottom-anchored, so every pose keeps the >= 2 px transparent margin and the tight `body_rect` by construction. These numbers are art direction, not gameplay; the owner may retune them. No threshold, tick, loop flag or effect param changed; ENEMIES.md untouched; no PARKED rows.
 
+### D-ART-KIWI_CAT-1 - kiwi_cat background removal uses the source alpha channel; the flood fill is the fallback (T-ART-KIWI_CAT).
+
+`assets_src/enemies/kiwicat.png` (636x769, RGBA8) ships an alpha-channel cut-out with all four
+corners already alpha 0 (sampled: alpha 0.0, colour ~(0.28, 0.44, 0.30)), so NO colour-keying
+is applied - the alpha channel IS the background mask and the tight body crop is the bbox of
+alpha > 16 (443x320 at (92, 284) in source coordinates). `game/tools/art/kiwi_cat.gd` keeps a
+documented fallback for a re-export with opaque corners: sample the border colours (stride 8),
+flood fill inward from every border pixel at per-channel distance <= 24/255, zero what the fill
+reaches. The fallback is skipped for this source; it exists so a source swap degrades to a
+logged path, never to the "NO BODY AFTER BACKGROUND REMOVAL" TBD trap the naive corner fill hit.
+The naive pipeline's 24/255 tolerance stays the reference the fallback copies.
+
+### D-ART-KIWI_CAT-2 - The four frames and the ONE-spec-frame constraint (T-ART-KIWI_CAT).
+
+The section 1.1 table gives all three visual states (spawn, idle / chase, telegraph) the single
+spec frame `kiwicat_00`, so `frame_map` - keyed by spec frame name - can only ever hold ONE
+target. It maps `kiwicat_00` -> `sprites/cycle_00.png` (the base body; byte-identical rebuilds,
+verified by re-running the module and diffing). The per-state art lives in `states[*].frames`
+and in the top-level `animations[]` instead: `sprites/spawn_00.png`, `sprites/idle_chase_00.png`,
+`sprites/telegraph_00.png` are DISTINCT files, all derived deterministically from the base body
+(no RNG, no wall clock, pure functions of the source):
+- `cycle_00.png` - the base body, unaltered (the legacy single-frame "cycle" loop; it stays
+  `animations[0]` with 1 frame, which test_enemy_kiwi_cat.gd pins).
+- `spawn_00.png` - base at 1.25x brightness [CONTESTABLE: the common_fade spec owns alpha and
+  scale, not pigment; the lift exists so the spawn frame is visually distinct and reads as a
+  materialize shimmer. Gameplay reason: the spawn fade is the player's only tell that the 30
+  contact-blocking ticks are running].
+- `idle_chase_00.png` - base squashed to 96% height about the bottom line (LANCZOS) [CONTESTABLE:
+  the bob (+-0.08 u at 1.0 Hz) stays the bob EFFECT; the 4% breathing compression is the frame's
+  own tell. Gameplay reason: the chase frame never leaves the screen, a 4% squash reads as idle
+  breathing without changing the hitbox materially (body_rect 443x307 vs 443x320)].
+- `telegraph_00.png` - base blended 30% toward danger red #FF2A2A at 1.15x brightness [CONTESTABLE:
+  the spec's telegraph effect is the scale_pulse transform; the red blend is pigment so the meow
+  cue reads at a glance. Gameplay reason: ENEMIES.md / section 1.1 make the meow the cat's ONLY
+  telegraph - the danger red is the spec's named telegraph colour; 30% keeps the cat readable
+  while still unmistakably red-shifted].
+`attack` and `recover` list no frames (contact-kill with no wind-up) and stay empty, exactly as
+the table says. The tick counts, loop flags and effect parameters in the anim block were NOT
+touched. The frame fps for the three new sheet rows is 1 (a single held/looping frame; fps is
+not binding for the sheet and check_anim_data.gd does not pin it - the T-083 block is the binding
+table).
+
+### D-ART-KIWI_CAT-3 - The A8 fog-contrast lift is ART, not a threshold change (T-ART-KIWI_CAT).
+
+The first real rebuild (commit 4d884b5, reverted) failed A8: kiwi_cat/cycle_00.png measured fog
+contrast 2.69 < 3.0 at 40 u. Resolution here: a uniform 1.22x brightness lift on every frame
+(BODY_LIFT in tools/art/kiwi_cat.gd), keeping the source's hue (brown-orange kitten) - measured
+after the lift (validate_sprites.gd SPRITE_DEBUG=1, fog #021416, d = 40 u, linear-space lerp per
+D-T016-4): cycle 3.550, spawn 4.948, idle_chase 3.548, telegraph 4.045. No threshold, no palette
+entry, no validator line was moved. The 2 px transparent margin and the >= 15% transparent rule
+hold on every frame (body 443x320 of 512x512 = 73% transparent on cycle; idle_chase 77%).
+
+### D-ART-KIWI_CAT-4 - kiwi_cat_view.gd reads the per-state frames (the enemy's own view, minimal).
+
+Frame display goes through `view/billboard.gd`, which plays `animations[]` by name and never reads
+the anim block's per-state frames; `view/enemy_anim.gd` resolves a shown frame via `frame_map`
+ONLY (its `_frame_docs`/hit shape are keyed by disk path, so every path must be listed in
+animations[] - they are). Neither can show a per-state frame for a state whose spec frame shares
+the single `kiwicat_00` name without a change. Rather than touch the shared player, the
+kiwi cat's own view (game/view/kiwi_cat_view.gd) now swaps the billboard animation with the
+state it already tracks: `spawn` frame on enemy_spawn, `telegraph` frame on the meow cue,
+`idle_chase` otherwise, with the base scale re-captured from each frame's body_rect
+(`_set_anim`). The effect code (spawn fade, bob, pulse) is unchanged; billboard tests and
+test_anim_sync stay green (billboard tests use an inline two-frame sheet; anim_sync reads
+frame_map -> cycle_00.png, which exists and is real art). If a future ticket wants ALL enemies'
+state art shown through the shared anim player, `frame_path()` preferring
+`states[state].frames[frame_index()]` over `frame_map` is the no-op-for-single-spec-frame
+extension - not done here (shared file, not needed for kiwi).
+
+### D-ART-KIWI_CAT-5 - SOURCES.md / TBD.md reconciled; nothing else left TBD for kiwi_cat art.
+
+SOURCES.md now records the art-module path and the lift; TBD.md section 1 (the 17 enemy images)
+and the top table's row 1 record `kiwicat.png` as PRESENT -> real art with `"tbd": false`. TBD.md
+section 4 carries no kiwi row (the T-083 block names the files that exist, and they now exist as
+real art). ENEMIES.md is unchanged (frozen, D-040); the ENEMIES.md "1 base PNG" rows describe the
+SOURCE count, not the frame sheet.
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
