@@ -5287,6 +5287,57 @@ numbers via float()/int() and passes unchanged (SPRITES/TESTS/ANIM-DATA all gree
 because the block gains a frame_map and four animation entries; noted so a future diff
 review does not hunt a phantom content change.
 
+### D-ART-SEAL-3 - the seal's frames are regenerated from the owner's replacement source (babehseal.png); the ticket asked for D-ART-SEAL-2, but that number is taken
+Owner ruling 2026-11-17: "seal also needs to have its PNG replaced with this". The new source is a
+transparent-background 640x480 palette PNG of a harp-seal pup lying on its belly (white fur, big
+round dark eyes, black nose, whiskers, front flippers forward, facing the camera); it is committed
+at `assets_src/enemies/babehseal.png` and the old `assets_src/enemies/babehseal.webp` is REMOVED -
+exactly one source per enemy now (the assets commit a4835c7, which also notes the address-me
+explosion keeps its background). D-ART-SEAL-2 was already taken by the sprites.json round-trip
+normalisation note, so this entry is D-ART-SEAL-3; D-ART-SEAL-1 stays as the record of the webp
+cutout recipe it supersedes.
+Measured on the real image: corners and all four edges alpha 0; body at alpha ~254 (modal), a
+~10 px feathered edge (not hard); 156,080 px at alpha 0; the tight alpha > 16 bbox measures
+(10, 44) 612x339 (tool print; a PIL spot check gives (11, 45) 610x338 - the 8-bit threshold
+rounds differently, both are alpha > 16). Background removal = the source's OWN alpha channel:
+NO flood fill, NO defringe, NO one-pixel feather was applied (the edge needs none). Crop = tight
+alpha > 16 bbox; 512x512 POT canvas, body scaled to 448 px width, bottom-anchored, 12 px bottom
+margin (unchanged layout). The synthesized fluff fringe of D-ART-SEAL-1 is gone - the source
+carries real fur alpha. Frames (same seven files, same anim-block wiring): idle_00 = the base;
+idle_01 = flap-lean (-5 deg shear about the bottom edge, +7% brightness); spawn_00 = the base
+(the fade is the view's alpha job); telegraph_00 = WIND-UP (crouch sy 0.88, sx = 1/sqrt(0.88) width compensation, mouth gape under the nose, +5% brightness) = spec seal_01;
+dash_00 = LUNGE (stretched along the dash axis, body low: sy 0.74, sx 1.16, -5 deg shear lean,
+mouth gape, +18% brightness) held for the 60-tick dash; dash_01 = the alternate lunge phase
+(sy 0.80, sx 1.08, mouth gape, +10% brightness); recover_00 = the base stretched +6% vertically,
++6% brightness. The dash axis is NOT static data: enemy.gd computes dash_dx/dy/dz at telegraph
+start (body centre -> player centre, extended to 20 u, fixed for the dash) and neither the anim
+block nor enemy.json exposes a fixed axis, so the lunge is a FIXED FORWARD lunge (horizontal
+stretch + low body), by the ticket's own fallback. The mouth gape is placed on the measured mouth
+line just under the nose (base crop coords (169,233); rx = 0.056 x crop width, ry = 0.033 x crop
+height; dark fill #0C070A with a gummy lower lip #56282E at dy >= 0.35). body_rect per frame is the
+tight bbox of alpha > 16, recomputed and written into sprites.json by the tool itself (spawn/idle
+[32,252,448,248]; dash_00 [32,342,443,158]; dash_01 [32,316,448,184]; telegraph [32,295,448,205];
+recover [32,237,448,263]). The T-083 anim block is otherwise UNTOUCHED: frame counts, tick ranges,
+loop flags, fps, spec_frames, frame_map and the effect parameters (including length_u 20.0 and
+mouth_open_frame_tbd: false) are byte-identical to before. world_height stays 0.6 (DESIGN.md
+section 5 body-size table, binding; the new silhouette is wider and shorter - ~1.8:1 - but the
+pinned world height is the table's number, not a fit to the photo; nothing in the section makes it
+wrong). The shared pipeline's stale seal source reference (sprite_pipeline.gd) is updated to
+babehseal.png for the one-source rule; the pipeline still skips seal (art module owns it).
+Validation (2026-11-17): SPRITES OK 515 checks over 12 sprites.json (per-frame fog ratios
+validate-formula: idle/spawn 4.65, idle_01 5.18, telegraph 5.01, dash_00 5.95, dash_01 5.39,
+recover 5.12 - all >= 3.0). FOGCHECK OK (550 checks over 5 biomes); the seal's rows vs the five
+biome fogs at 40 u: deepwater 6.85-8.96, indigo_trench 7.29-9.54, pale_abyss 6.92-9.05, verdigris
+6.88-9.00, violet_hour 7.27-9.52 (all >= 3.0; no art-side grade needed - the threshold was not
+moved). The atlas/mean-colour semantics are unchanged.
+[CONTESTABLE] art constants only: the 0.88 crouch, 0.74/1.16 and 0.80/1.08 lunge numbers, the
+-5 deg shears, the 1.05/1.07/1.10/1.18 brightness steps, the mouth-gape placement and sizes, the
+1.06 vstretch, the 448 px body width and 12 px bottom margin. No gameplay-facing number, no
+threshold, no tick, no loop flag and no body_rect semantic moved. The owner may re-tone any of
+these by editing game/tools/art/seal.gd and re-running it, then re-syncing the printed body_rect
+lines. dash_01 vs dash_00 separation (the flap's weight shift) is a judgment call - the table's
+4-tick cadence alternates them regardless.
+
 ### D-ART-claude-1 - The Claude logo's frames are real art derived from claudelogo.png (game/tools/art/claude.gd)
 `claudelogo.png` (2000x2000, FORMAT_RGBA8, ENEMIES.md image 15) is NOT the opaque
 photo the shared pipeline's 24/255 corner flood fill cannot eat: all four corners measure
@@ -6245,3 +6296,5 @@ bottom at the origin like every other frame. ENEMIES.md / DESIGN.md unchanged.
   #20 (DESIGN section 2/14 [CANON] >= 5.0 s vs the 2.0 s restart) and #21 (no loading screen between
   levels vs "every level load"). NEXT: APP-FLOW must pass first_launch=false on restarts; the owner
   updates DESIGN.md section 2/14.
+
+- 2026-11-17 ART-FIX-SEAL (owner ruling: "seal also needs to have its PNG replaced with this"): `assets_src/enemies/babehseal.png` (transparent harp-seal pup render, committed in a4835c7) is now the seal's only source - the webp is gone for good; `game/tools/art/seal.gd` rewritten (alpha channel IS the matte; tight crop; 512x512 bottom-anchored; no flood fill, no defringe, no feather - the edge was already a ~10 px feather) and re-emits all seven frames with one distinct pose per anim-block state (telegraph = crouched wind-up sy 0.88 + mouth gape; dash_00 = lunge sx 1.16 / sy 0.74 / -5 deg shear / mouth gape; dash_01 = the alternate lunge; recover = +6% vstretch). The dash axis is NOT in the anim block or enemy.json (enemy.gd computes dash_dx/dy/dz at telegraph start), so the lunge is a fixed forward lunge (ticket fallback). anim tick ranges/loops/fps/effect params/frame counts untouched; world_height stays 0.6; body_rect re-synced to the printed tight alpha>16 bboxes; sprite_pipeline.gd's stale seal source reference updated to the png. b82621a. validate SPRITES OK 515 checks (fog ratio 4.65-5.95 per frame); FOGCHECK OK (550 checks over 5 biomes; seal rows 6.85-9.54 vs the five fogs @40 u). D-ART-SEAL-3 (the ticket asked for D-ART-SEAL-2 - taken by the JSON round-trip entry). TBD.md rows 9/12/24, SOURCES.md, seal_view.gd comments updated. Gate: GATE OK (9 ran, 0 skipped, 230 s), TESTS 56 passed 0 failed, zero SCRIPT ERROR lines. No PARKED rows. No push.

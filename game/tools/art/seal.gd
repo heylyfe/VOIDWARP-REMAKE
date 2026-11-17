@@ -6,37 +6,58 @@ extends SceneTree
 #
 #   <godot> --headless --path game --script res://tools/art/seal.gd
 #
-# Source: assets_src/enemies/babehseal.webp (a PHOTO: a white harp-seal pup on a
-# blue-grey gradient snowfield - the pipeline's corner flood fill cannot cut it out, so
-# this module owns the cutout). Deterministic: no unseeded randomness, no wall clock.
+# Source: assets_src/enemies/babehseal.png (2026-11-17, owner ruling: "seal also needs to
+# have its PNG replaced with this"). A transparent-background render of a harp-seal pup
+# lying on its belly - white fur, big round dark eyes, black nose, whiskers, front
+# flippers forward, facing the camera. 640x480, palette PNG decoded to RGBA8. Exactly one
+# source per enemy: the old babehseal.webp is REMOVED, do not restore it.
+#
+# Background removal = the source's OWN alpha channel (the corners and all four edges
+# measure alpha 0; the body sits at alpha ~254; the edge is a ~10 px feathered gradient,
+# NOT a hard edge, so no feathering pass is applied - a one-pixel feather was NOT needed).
+# No flood fill is run, and no defringe is applied (the owner's instruction: do not
+# defringe into mush). The cutout is cropped tight to the alpha > 16 bbox.
 #
 # What it does:
 #   1. loads the source with Image.load_from_file (repo-relative path, never res://);
-#   2. estimates the background with a PER-COLUMN vertical gradient (top border row
-#      lerped to the bottom border row) and flags a pixel as body when its channel-wise
-#      distance to that model is >= BG_DIST and its luminance is > LUM_MIN; keeps the
-#      largest connected component; closes 4 px to join soft fur edges; fills holes
-#      (eyes/nose/flipper claws) enclosed by the body;
-#   3. crops tight to the body, grows a synthesized fluff fringe (value-noise spikes,
-#      seeded SEED_FRINGE) outward into the missing fur rim, and pastes the result onto
-#      a 512x512 transparent canvas, bottom-anchored (the seal lies on the ground);
-#   4. writes the per-state frames (see FRAMES below) and a rebuilt sprites.json
-#      (anim frames/frame_map point at the new files, every PNG listed in animations[],
-#      per-frame body_rect = tight bbox of alpha > 16).
+#   2. converts to RGBA8 and crops tight to alpha > 16 (the HITBOXES body definition);
+#   3. derives the per-state frames (see FRAMES in the header notes of each function):
+#        spawn_00     base (the spawn fade is the view's alpha job)
+#        idle_00      base
+#        idle_01      flap-lean: -5 deg shear about the bottom edge, +7% brightness
+#        telegraph_00 WIND-UP: crouched (sy 0.88, sx = 1/sqrt(0.88) width compensation),
+#                     mouth gape under the nose, +5% brightness
+#        dash_00      LUNGE: stretched along the dash axis, low body (sy 0.74, sx 1.16),
+#                     -5 deg shear (lean into the lunge), mouth gape, +18% brightness
+#        dash_01      the alternate lunge phase (sy 0.80, sx 1.08), mouth gape,
+#                     +10% brightness
+#        recover_00   base stretched +6% vertically, +6% brightness
+#      The dash axis is NOT static in the behaviour (enemy.gd computes dash_dx/dy/dz at
+#      telegraph start: body centre -> player centre, fixed for the 20 u line) and the
+#      anim block does NOT expose a fixed axis, so the lunge is a fixed FORWARD lunge
+#      (horizontal stretch + low body), not a data-driven direction.
+#   4. frames the result on a 512x512 transparent canvas, bottom-anchored (the seal lies
+#      on the ground), and writes sprites/*.png;
+#   5. rewrites sprites.json (anim frames/frame_map unchanged in shape, every PNG listed
+#      in animations[], per-frame body_rect = tight bbox of alpha > 16).
+# Deterministic: no unseeded randomness, no wall clock, no noise synthesis - the new
+# source carries real fur alpha, so the synthesized fringe of the webp cutout is gone.
 
-const SRC_REL := "../assets_src/enemies/babehseal.webp"
+const SRC_REL := "../assets_src/enemies/babehseal.png"
 const OUT_DIR_REL := "content/enemies/seal/sprites"
 const JSON_REL := "content/enemies/seal/sprites.json"
 const MAX_CANVAS := 512              # power-of-two cap
 const CANVAS := 512                  # POT canvas used for every frame
 const MARGIN_BOTTOM := 12            # transparent margin between body and canvas bottom
 const COL_W := 448                   # body scaled to this width before framing
-const FR := 16                       # fringe reach (px, pre-scale)
-const BG_DIST := 33                  # channel distance to the column gradient model
-const LUM_MIN := 100.0               # darkest the body may be
-const CLOSE_R := 4                   # closing radius to join fur to the body
 const BODY_ALPHA := 16.0             # alpha > 16 defines the body (HITBOXES)
-const SEED_FRINGE := 11              # value-noise seed for the fluff fringe
+# mouth gape placement on the tight-cropped base (source abs (180,278) - crop offset
+# (11,45) = (169,233)); measured on the real image 2026-11-17: the gape sits on the mouth
+# line just under the nose, centred on the muzzle.
+const MOUTH_X := 169                 # crop-space px (base 610 px wide)
+const MOUTH_Y := 233                 # crop-space px
+const MOUTH_RX_F := 0.056            # rx as a fraction of the crop width
+const MOUTH_RY_F := 0.033            # ry as a fraction of the crop height
 
 var game_dir := ""
 var failures: Array[String] = []
@@ -57,75 +78,27 @@ func _init() -> void:
 	var h := img.get_height()
 	print("SEAL ART source %dx%d" % [w, h])
 
-	# ---- background model: per-column vertical lerp of the top/bottom border rows ----
-	var top := PackedFloat32Array()
-	var bot := PackedFloat32Array()
-	for x in w:
-		var c := img.get_pixel(x, 0)
-		var c2 := img.get_pixel(x, h - 1)
-		top.append(c.r * 255.0); top.append(c.g * 255.0); top.append(c.b * 255.0)
-		bot.append(c2.r * 255.0); bot.append(c2.g * 255.0); bot.append(c2.b * 255.0)
-	var n_px := w * h
-	var fg := PackedByteArray()
-	fg.resize(n_px)
-	print("SEAL ART seg model...")
-	for y in h:
-		var t := float(y) / float(h - 1)
-		for x in w:
-			var c3 := img.get_pixel(x, y)
-			var mr := top[x * 3] + (bot[x * 3] - top[x * 3]) * t
-			var mg := top[x * 3 + 1] + (bot[x * 3 + 1] - top[x * 3 + 1]) * t
-			var mb := top[x * 3 + 2] + (bot[x * 3 + 2] - top[x * 3 + 2]) * t
-			var d: float = absf(c3.r * 255.0 - mr)
-			d = maxf(d, absf(c3.g * 255.0 - mg))
-			d = maxf(d, absf(c3.b * 255.0 - mb))
-			var lum := (c3.r + c3.g + c3.b) * 255.0 / 3.0
-			fg[y * w + x] = 1 if (d >= float(BG_DIST) and lum > LUM_MIN) else 0
-
-	var seg_cnt := 0
-	for p in fg:
-		seg_cnt += p
-	print("SEAL ART seg done fg=%d" % seg_cnt)
-	# ---- binary open (erode then dilate): drops speckle bridging the body to the
-	# snowfield, then largest connected component ----
-	_erode(fg, w, h, CLOSE_R)
-	_dilate(fg, w, h, CLOSE_R)
-	print("SEAL ART open done")
-	var body := _largest_component(fg, w, h)
-	var body_cnt := 0
-	for p in body:
-		body_cnt += p
-	print("SEAL ART largest component px=%d" % body_cnt)
-	print("SEAL ART components done")
-	_fill_holes(body, w, h)
-	print("SEAL ART holes filled")
-
-	# ---- tight bbox, crop with fringe margin ----
-	var bbox := _bbox(body, w, h)
+	# ---- tight crop to alpha > 16 (the source's own alpha is the matte) ----
+	var bbox := _alpha_bbox(img, BODY_ALPHA)
 	if bbox.size == Vector2i.ZERO:
-		print("SEAL ART FAILED: no body after segmentation")
+		print("SEAL ART FAILED: no opaque body in the source")
 		quit(1)
 		return
-	var cx0: int = maxi(0, bbox.position.x - FR)
-	var cy0: int = maxi(0, bbox.position.y - FR)
-	var cx1: int = mini(w - 1, bbox.position.x + bbox.size.x - 1 + FR)
-	var cy1: int = mini(h - 1, bbox.position.y + bbox.size.y - 1 + FR)
-	var cw := cx1 - cx0 + 1
-	var ch := cy1 - cy0 + 1
-	print("SEAL ART body bbox %s  crop %dx%d" % [str(bbox), cw, ch])
-
-	# ---- compose the base body RGBA on the crop (original colours + fringe) ----
-	var base := _compose_base(img, body, w, h, cx0, cy0, cw, ch)
+	print("SEAL ART body bbox %s" % str(bbox))
+	var base: Image = img.get_region(bbox)
+	print("SEAL ART crop %dx%d" % [base.get_width(), base.get_height()])
 
 	# ---- derive the frame set ----
-	var mouth := _mouth_open(base, cx0, cy0)
+	var mouth := _mouth_open(base)
 	var frames := {}
 	frames["idle_00"] = base
 	frames["idle_01"] = _brighten(_shear(base, -5.0), 1.07)
 	frames["spawn_00"] = base.duplicate()
-	frames["telegraph_00"] = mouth
-	frames["dash_00"] = _brighten(_shear(mouth, -5.0), 1.22)
-	frames["dash_01"] = _brighten(mouth, 1.10)
+	# telegraph = wind-up: crouch (body low and compressed), mouth gape, slight lift
+	frames["telegraph_00"] = _brighten(_stretch_sy_sx(mouth, 1.0 / sqrt(0.88), 0.88), 1.05)
+	# dash = lunge: stretched along the (fixed forward) dash axis, body low, lean in
+	frames["dash_00"] = _brighten(_shear(_stretch_sy_sx(mouth, 1.16, 0.74), -5.0), 1.18)
+	frames["dash_01"] = _brighten(_stretch_sy_sx(mouth, 1.08, 0.80), 1.10)
 	frames["recover_00"] = _brighten(_vstretch(base, 106), 1.06)
 
 	# ---- fit on the POT canvas, bottom-anchored, save, collect body_rects ----
@@ -154,263 +127,41 @@ func _init() -> void:
 	quit(1)
 
 
-# ---- morphology --------------------------------------------------------------------------
+# ---- crop / bbox helpers ------------------------------------------------------------------
 
-static func _dilate(mask: PackedByteArray, w: int, h: int, r: int) -> void:
-	for _i in r:
-		var src: PackedByteArray = mask.duplicate()
-		for y in h:
-			for x in w:
-				if src[y * w + x] == 1:
-					mask[y * w + x] = 1
-					if x > 0: mask[y * w + x - 1] = 1
-					if x < w - 1: mask[y * w + x + 1] = 1
-					if y > 0: mask[(y - 1) * w + x] = 1
-					if y < h - 1: mask[(y + 1) * w + x] = 1
-
-
-static func _erode(mask: PackedByteArray, w: int, h: int, r: int) -> void:
-	for _i in r:
-		var src: PackedByteArray = mask.duplicate()
-		for y in h:
-			for x in w:
-				if src[y * w + x] == 0:
-					mask[y * w + x] = 0
-					continue
-				if x == 0 or x == w - 1 or y == 0 or y == h - 1:
-					mask[y * w + x] = 0
-					continue
-				if src[y * w + x - 1] == 0 or src[y * w + x + 1] == 0 \
-						or src[(y - 1) * w + x] == 0 or src[(y + 1) * w + x] == 0:
-					mask[y * w + x] = 0
-
-
-static func _neighbors4(mask: PackedByteArray, w: int, h: int, x: int, y: int) -> Array[int]:
-	var out: Array[int] = []
-	if x > 0: out.append(y * w + x - 1)
-	if x < w - 1: out.append(y * w + x + 1)
-	if y > 0: out.append((y - 1) * w + x)
-	if y < h - 1: out.append((y + 1) * w + x)
-	return out
-
-
-static func _largest_component(mask: PackedByteArray, w: int, h: int) -> PackedByteArray:
-	# label pass: BFS per root with an incrementing label; the largest label wins
-	var label := PackedInt32Array()
-	label.resize(w * h)
-	print("SEAL ART label pass start")
-	var cur_label := 0
-	var best_label := 0
-	var best_size := 0
-	for start in range(w * h):
-		if mask[start] != 1 or label[start] != 0:
-			continue
-		cur_label += 1
-		var stack: Array[int] = [start]
-		label[start] = cur_label
-		var size := 0
-		while not stack.is_empty():
-			var p: int = stack.pop_back()
-			size += 1
-			var py: int = p / w
-			var px: int = p % w
-			if px > 0 and mask[p - 1] == 1 and label[p - 1] == 0:
-				label[p - 1] = cur_label
-				stack.append(p - 1)
-			if px < w - 1 and mask[p + 1] == 1 and label[p + 1] == 0:
-				label[p + 1] = cur_label
-				stack.append(p + 1)
-			if py > 0 and mask[p - w] == 1 and label[p - w] == 0:
-				label[p - w] = cur_label
-				stack.append(p - w)
-			if py < h - 1 and mask[p + w] == 1 and label[p + w] == 0:
-				label[p + w] = cur_label
-				stack.append(p + w)
-		if size > best_size:
-			best_size = size
-			best_label = cur_label
-	print("SEAL ART components labelled=%d best=%d" % [cur_label, best_size])
-	var keep := PackedByteArray()
-	keep.resize(w * h)
-	for i in range(w * h):
-		if label[i] == best_label:
-			keep[i] = 1
-	return keep
-
-
-static func _count(mask: PackedByteArray) -> int:
-	var n := 0
-	for b in mask:
-		if b == 1:
-			n += 1
-	return n
-
-
-static func _fill_holes(body: PackedByteArray, w: int, h: int) -> void:
-	# flood the false pixels from the border; anything unreachable is a hole -> body
-	var outside := PackedByteArray()
-	outside.resize(w * h)
-	var stack: Array[int] = []
-	for x in w:
-		for y in [0, h - 1]:
-			if body[y * w + x] == 0 and outside[y * w + x] == 0:
-				outside[y * w + x] = 1
-				stack.append(y * w + x)
-	for y in h:
-		for x in [0, w - 1]:
-			if body[y * w + x] == 0 and outside[y * w + x] == 0:
-				outside[y * w + x] = 1
-				stack.append(y * w + x)
-	while not stack.is_empty():
-		var p: int = stack.pop_back()
-		var py: int = p / w
-		var px: int = p % w
-		for np in _neighbors4(body, w, h, px, py):
-			if body[np] == 0 and outside[np] == 0:
-				outside[np] = 1
-				stack.append(np)
-	for i in w * h:
-		if body[i] == 0 and outside[i] == 0:
-			body[i] = 1
-
-
-static func _bbox(mask: PackedByteArray, w: int, h: int) -> Rect2i:
+static func _alpha_bbox(img: Image, alpha_thr: float) -> Rect2i:
+	var w := img.get_width()
+	var h := img.get_height()
+	var thr := alpha_thr / 255.0
 	var x0 := w
 	var y0 := h
 	var x1 := -1
 	var y1 := -1
 	for y in h:
 		for x in w:
-			if mask[y * w + x] == 1:
-				x0 = mini(x0, x)
-				x1 = maxi(x1, x)
-				y0 = mini(y0, y)
-				y1 = maxi(y1, y)
+			if img.get_pixel(x, y).a > thr:
+				if x < x0: x0 = x
+				if x > x1: x1 = x
+				if y < y0: y0 = y
+				if y > y1: y1 = y
 	if x1 < 0:
 		return Rect2i()
 	return Rect2i(x0, y0, x1 - x0 + 1, y1 - y0 + 1)
 
 
-# ---- base composition: body photo + synthesized fluff fringe ---------------------------
-
-static func _hash2(x: int, y: int, seed: int) -> float:
-	var hsh: int = (x * 374761393 + y * 668265263 + seed * 2246822519) & 0xFFFFFFFF
-	hsh = ((hsh ^ (hsh >> 13)) * 1274126177) & 0xFFFFFFFF
-	hsh = hsh ^ (hsh >> 16)
-	return float(hsh & 0xFFFFFF) / float(0xFFFFFF)
-
-
-static func _smooth(t: float) -> float:
-	return t * t * (3.0 - 2.0 * t)
-
-
-static func _value_noise(x: float, y: float, scale: float, seed: int) -> float:
-	var gx := x / scale
-	var gy := y / scale
-	var ix := int(floorf(gx))
-	var iy := int(floorf(gy))
-	var fx := _smooth(gx - float(ix))
-	var fy := _smooth(gy - float(iy))
-	var v00 := _hash2(ix, iy, seed)
-	var v10 := _hash2(ix + 1, iy, seed)
-	var v01 := _hash2(ix, iy + 1, seed)
-	var v11 := _hash2(ix + 1, iy + 1, seed)
-	return v00 * (1.0 - fx) * (1.0 - fy) + v10 * fx * (1.0 - fy) \
-			+ v01 * (1.0 - fx) * fy + v11 * fx * fy
-
-
-static func _compose_base(img: Image, body: PackedByteArray, w: int, h: int,
-		cx0: int, cy0: int, cw: int, ch: int) -> Image:
-	# crop RGB + body alpha
-	var base := Image.create_empty(cw, ch, false, Image.FORMAT_RGBA8)
-	for y in ch:
-		for x in cw:
-			var c := img.get_pixel(cx0 + x, cy0 + y)
-			if body[(cy0 + y) * w + cx0 + x] == 1:
-				base.set_pixel(x, y, Color(c.r, c.g, c.b, 1.0))
-			else:
-				base.set_pixel(x, y, Color(c.r, c.g, c.b, 0.0))
-	# mean of the brightest 15% of body pixels -> the fringe tint
-	var samples: Array[float] = []
-	var cols: Array[Color] = []
-	for y in ch:
-		for x in cw:
-			if body[(cy0 + y) * w + cx0 + x] == 1:
-				var c2 := img.get_pixel(cx0 + x, cy0 + y)
-				samples.append((c2.r + c2.g + c2.b) / 3.0)
-				cols.append(c2)
-	samples.sort()
-	var cutoff: float = samples[int(samples.size() * 0.85)] if not samples.is_empty() else 0.5
-	var sr := 0.0
-	var sg := 0.0
-	var sb := 0.0
-	var cnt := 0
-	for i in samples.size():
-		if samples[i] >= cutoff:
-			sr += cols[i].r
-			sg += cols[i].g
-			sb += cols[i].b
-			cnt += 1
-	var fr := Color(244.0 / 255.0, 247.0 / 255.0, 252.0 / 255.0)
-	var tint := Color(sr / cnt, sg / cnt, sb / cnt) if cnt > 0 else Color(0.8, 0.8, 0.8)
-	var fringe := Color(tint.r * 0.35 + fr.r * 0.65, tint.g * 0.35 + fr.g * 0.65, tint.b * 0.35 + fr.b * 0.65)
-	# chamfer distance transform (3-4), outside distance in px (chamfer units / 3)
-	var d := PackedFloat32Array()
-	d.resize(cw * ch)
-	var INF := 1e9
-	for y in ch:
-		for x in cw:
-			if base.get_pixel(x, y).a > 0.0:
-				d[y * cw + x] = 0.0
-				continue
-			var best := INF
-			if x > 0: best = minf(best, d[y * cw + x - 1] + 3.0)
-			if y > 0: best = minf(best, d[(y - 1) * cw + x] + 3.0)
-			if y > 0 and x > 0: best = minf(best, d[(y - 1) * cw + x - 1] + 4.0)
-			if y > 0 and x < cw - 1: best = minf(best, d[(y - 1) * cw + x + 1] + 4.0)
-			d[y * cw + x] = best
-	for yy in range(ch - 1, -1, -1):
-		for xx in range(cw - 1, -1, -1):
-			if d[yy * cw + xx] == 0.0:
-				continue
-			var best2 := d[yy * cw + xx]
-			if xx < cw - 1: best2 = minf(best2, d[yy * cw + xx + 1] + 3.0)
-			if yy < ch - 1: best2 = minf(best2, d[(yy + 1) * cw + xx] + 3.0)
-			if yy < ch - 1 and xx < cw - 1: best2 = minf(best2, d[(yy + 1) * cw + xx + 1] + 4.0)
-			if yy < ch - 1 and xx > 0: best2 = minf(best2, d[(yy + 1) * cw + xx - 1] + 4.0)
-			d[yy * cw + xx] = best2
-	for y in ch:
-		for x in cw:
-			if base.get_pixel(x, y).a > 0.0:
-				continue
-			var dp := d[y * cw + x] / 3.0
-			if dp > 14.0:
-				continue
-			var n := 0.65 * _value_noise(float(x), float(y), 7.0, SEED_FRINGE) \
-					+ 0.35 * _value_noise(float(x), float(y), 3.5, 29)
-			var av := (n - 0.42 - 0.30 * (dp / 14.0)) / 0.30
-			av = clampf(av, 0.0, 1.0)
-			if av <= 0.0:
-				continue
-			var shade := 0.90 + 0.10 * _value_noise(float(x), float(y), 5.0, 47)
-			base.set_pixel(x, y, Color(fringe.r * shade, fringe.g * shade, fringe.b * shade, av * 235.0 / 255.0))
-	return base
-
-
 # ---- frame derivation ----------------------------------------------------------------------
 
-static func _mouth_open(img: Image, cx0: int, cy0: int) -> Image:
-	# spec seal_01: the mouth gapes for the telegraph/dash. Nose at abs (177,251);
-	# the gape sits just under it, centred on the muzzle.
+static func _mouth_open(img: Image) -> Image:
+	# spec seal_01: the mouth gapes for the telegraph/dash. The gape sits on the mouth
+	# line just below the nose, centred on the muzzle (measured on the real source;
+	# see MOUTH_X/MOUTH_Y in the header).
 	var out: Image = img.duplicate()
 	var w := img.get_width()
 	var h := img.get_height()
-	var nx: int = 177 - cx0
-	var ny: int = 251 - cy0
-	var mcx: int = nx - 1
-	var mcy: int = ny + 38
-	var rx: int = maxi(2, int(round(w * 0.088)))
-	var ry: int = maxi(1, int(round(h * 0.034)))
+	var mcx := MOUTH_X
+	var mcy := MOUTH_Y
+	var rx: int = maxi(2, int(round(w * MOUTH_RX_F)))
+	var ry: int = maxi(1, int(round(h * MOUTH_RY_F)))
 	var dark := Color(12.0 / 255.0, 7.0 / 255.0, 10.0 / 255.0, 1.0)
 	var gum := Color(86.0 / 255.0, 40.0 / 255.0, 46.0 / 255.0, 1.0)
 	for y in range(maxi(0, mcy - ry - 1), mini(h, mcy + ry + 2)):
@@ -426,7 +177,7 @@ static func _mouth_open(img: Image, cx0: int, cy0: int) -> Image:
 
 
 static func _shear(img: Image, deg: float) -> Image:
-	# horizontal lean about the bottom edge (the flap/lunge); bilinear, transparent
+	# horizontal lean about the bottom edge (the lunge); bilinear, transparent
 	# where the source has no pixel
 	var w := img.get_width()
 	var h := img.get_height()
@@ -474,6 +225,18 @@ static func _vstretch(img: Image, pct: int) -> Image:
 	var nh := maxi(1, int(round(float(h) * float(pct) / 100.0)))
 	var out: Image = img.duplicate()
 	out.resize(w, nh, Image.INTERPOLATE_LANCZOS)
+	return out
+
+
+static func _stretch_sy_sx(img: Image, sx: float, sy: float) -> Image:
+	# squash/stretch on both axes (the wind-up crouch and the lunge stretch);
+	# bottom-anchored on the canvas afterwards, so the feet stay planted
+	var w := img.get_width()
+	var h := img.get_height()
+	var nw := maxi(1, int(round(float(w) * sx)))
+	var nh := maxi(1, int(round(float(h) * sy)))
+	var out: Image = img.duplicate()
+	out.resize(nw, nh, Image.INTERPOLATE_LANCZOS)
 	return out
 
 
@@ -532,15 +295,18 @@ func _write_json(rects: Dictionary, json_path: String) -> void:
 		return
 	var out: Dictionary = doc
 	out["tbd"] = false
-	# sources[]: the base image is now real
+	# sources[]: one source per enemy - the webp is gone
 	var srcs: Array = out.get("sources", [])
 	for s in srcs:
 		if str(s.get("file", "")) == "babehseal.webp":
-			s["state"] = "OK -> frames derived by game/tools/art/seal.gd (2026-11-17)"
+			s["file"] = "babehseal.png"
+			s["path"] = "assets_src/enemies/babehseal.png"
+		if str(s.get("file", "")) == "babehseal.png":
+			s["state"] = "OK -> frames derived by game/tools/art/seal.gd (2026-11-17, D-ART-SEAL-3)"
 	out["sources"] = srcs
-	# anim block: point every state at the new files, add frame_map
+	# anim block: point every state at the same files, add frame_map
 	var anim: Dictionary = out.get("anim", {})
-	anim["_doc"] = "T-083 (research/fable-tickets.md section 1.9 - the table is the spec; ENEMIES.md frozen, D-040). One entry per state of the section 1.9 table. Frames are file names relative to this folder; they are REAL art derived procedurally from babehseal.webp by game/tools/art/seal.gd (2026-11-17, D-ART-SEAL-1). Driven by the SIM state and its tick counter, never a wall-clock timer."
+	anim["_doc"] = "T-083 (research/fable-tickets.md section 1.9 - the table is the spec; ENEMIES.md frozen, D-040). One entry per state of the section 1.9 table. Frames are file names relative to this folder; they are REAL art derived from babehseal.png by game/tools/art/seal.gd (2026-11-17, D-ART-SEAL-3). Driven by the SIM state and its tick counter, never a wall-clock timer."
 	var states: Dictionary = anim.get("states", {})
 	var spawn: Dictionary = states.get("spawn", {})
 	spawn["frames"] = ["sprites/spawn_00.png"]
@@ -557,16 +323,16 @@ func _write_json(rects: Dictionary, json_path: String) -> void:
 	params["mouth_open_frame_tbd"] = false
 	eff["params"] = params
 	telegraph["effect"] = eff
-	telegraph["timing_note"] = "45 ticks (0.75 s), binding. Table: 'seal_01 (mouth open), held' - telegraph_00.png is that frame (real art). The dashed red line is drawn along the 3D dash line, brightening over the 45 ticks; the seal starts a telegraph only between 4 u and 12 u from its target"
+	telegraph["timing_note"] = "45 ticks (0.75 s), binding. Table: 'seal_01 (mouth open), held' - telegraph_00.png is that frame (real art: crouched wind-up - sy 0.88 squash, sx = 1/sqrt(0.88) width compensation, mouth gape under the nose, +5% brightness). The dashed red line is drawn along the 3D dash line, brightening over the 45 ticks; the seal starts a telegraph only between 4 u and 12 u from its target"
 	states["telegraph"] = telegraph
 	var attack: Dictionary = states.get("attack", {})
 	attack["frames"] = ["sprites/dash_00.png"]
 	var aeff: Dictionary = attack.get("effect", {})
 	var aparams: Dictionary = aeff.get("params", {})
-	aparams["flap_overlay"] = "dash_00 (lunged, +22% brightness) is the attack pose held for the 60-tick dash (one entry per spec frame - seal_01); dash_00 <-> dash_01 alternate in the 'dash' animation entry at the table's 4 ticks per frame; mouth-open = spec seal_01 (telegraph_00.png) also held under it"
+	aparams["flap_overlay"] = "dash_00 (lunge: sx 1.16 horizontal stretch, sy 0.74 body low, -5 deg shear, mouth open, +18% brightness) is the attack pose held for the 60-tick dash (one entry per spec frame - seal_01); dash_00 <-> dash_01 alternate in the 'dash' animation entry at the table's 4 ticks per frame; mouth-open = spec seal_01 (telegraph_00.png) also held under it"
 	aeff["params"] = aparams
 	attack["effect"] = aeff
-	attack["timing_note"] = "60 ticks (1.0 s), binding: 20 u along the fixed 3D line; the bark plays on tick 0 of the dash; dash_00 (lunged mouth-open) held for the dash; the flap pair dash_00/dash_01 alternates in the 'dash' animation entry at 4 ticks per frame"
+	attack["timing_note"] = "60 ticks (1.0 s), binding: 20 u along the fixed 3D line; the bark plays on tick 0 of the dash; dash_00 (lunged mouth-open: sx 1.16 / sy 0.74, -5 deg shear, fixed forward lunge - the anim block exposes no fixed dash axis) held for the dash; the flap pair dash_00/dash_01 alternates in the 'dash' animation entry at 4 ticks per frame"
 	states["attack"] = attack
 	var recover: Dictionary = states.get("recover", {})
 	recover["frames"] = ["sprites/recover_00.png"]
@@ -580,8 +346,7 @@ func _write_json(rects: Dictionary, json_path: String) -> void:
 		"seal_03": "sprites/idle_00.png",
 	}
 	out["anim"] = anim
-	# animations[]: fix the two existing entries' body_rect (frames keep their slots),
-	# append the four new clips
+	# animations[]: fix the body_rect per frame (frames keep their slots)
 	var anims: Array = out.get("animations", [])
 	for a in anims:
 		var nm := str(a.get("name", ""))

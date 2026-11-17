@@ -5,8 +5,8 @@ extends Node3D
 # bark telegraph ticks), never writes sim state; every effect is driven by the sim tick
 # counter the caller passes to step(), never by a wall clock.
 #
-# Wired to the anim block (sprites.json -> anim). Frames are REAL art derived procedurally
-# from babehseal.webp by game/tools/art/seal.gd (D-ART-SEAL-1, 2026-11-17):
+# Wired to the anim block (sprites.json -> anim). Frames are REAL art derived from
+# babehseal.png by game/tools/art/seal.gd (D-ART-SEAL-3, 2026-11-17):
 #   spawn     30-tick fade: alpha 0 -> 1, scale 0.8 -> 1.0 (spawn_blocks_contact_ticks = 30)
 #   idle_flap idle_00 <-> idle_01 at the table's 9 ticks per frame (seal_02/03)
 #   telegraph "dash_line": the mouth-open frame held (telegraph_00 = spec seal_01) for
@@ -15,7 +15,7 @@ extends Node3D
 #             the block's flap_audio_hz (6.6 Hz, i.e. every 9 ticks)
 #   attack    dash_00 held (spec seal_01 mouth-open, lunged pose); the bark plays on tick 0
 #   recover   recover_00 held for 45 ticks
-# Frames are real art derived from babehseal.webp (game/tools/art/seal.gd, D-ART-SEAL-1);
+# Frames are real art derived from babehseal.png (game/tools/art/seal.gd, D-ART-SEAL-3);
 # the anim block in sprites.json is the frame source of truth.
 
 const BillboardScript := preload("res://view/billboard.gd")
