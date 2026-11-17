@@ -56,6 +56,10 @@ static func play_cue(host: Object, cue: String) -> AudioStreamPlayer:
 
 ## The synthesized placeholder stream for a cue. Deterministic: same cue, same
 ## bytes (a fixed LCG, no Math.random anywhere).
+## Call shapes (dispatched by argc):
+##   _render(freq, length_s, amp, decay)                    -> a static-tremolo voice
+##   _render(freq, length_s, amp, hz_from, hz_to)           -> a pitch sweep (no decay)
+##   _render(freq, length_s, amp, decay, hz_from, hz_to)    -> a sweep with a decay
 static func stream_for(cue: String) -> AudioStreamWAV:
 	match cue:
 		"crack_rumble":
@@ -75,3 +79,46 @@ static func stream_for(cue: String) -> AudioStreamWAV:
 			# the tiles fade back: the drop's reverse
 			return _render(90.0, 0.4, 0.6, 220.0)
 	return null
+
+
+# ---- synthesis ---------------------------------------------------------------------------------
+
+
+static func _render(freq: float, length_s: float, amp: float, a4: float,
+		a5: float = -1.0, a6: float = -1.0) -> AudioStreamWAV:
+	var n := int(SAMPLE_RATE * length_s)
+	var data := PackedByteArray()
+	data.resize(n * 2)
+	var hz_from := freq
+	var hz_to := freq
+	var decay := 3.0
+	if a5 < 0.0:
+		decay = a4                       # (freq, len, amp, decay)
+	else:
+		hz_to = a5                        # (freq, len, amp, hz_from, hz_to) - wait:
+		# the 5-arg call shape passes (freq, len, amp, hz_from, hz_to): the freq's
+		# END is a5 and there is no decay; the 6-arg shape passes a decay too.
+		if a6 >= 0.0:
+			decay = a4
+			hz_to = a5
+			a5 = a6
+			hz_to = a6
+	var rng := 987654321                    # fixed LCG seed: the bytes never drift
+	for i in range(n):
+		var t := float(i) / float(SAMPLE_RATE)
+		var env: float = exp(-decay * t)
+		var sweep := lerpf(hz_from, hz_to, clampf(t / length_s, 0.0, 1.0))
+		var trem := 0.75 + 0.25 * sin(TAU * 5.0 * t)
+		var s := sin(TAU * sweep * t) * amp * env * trem
+		if decay > 2.9:
+			rng = (1103515245 * rng + 12345) & 0x7FFFFFFF
+			var noise: float = float(rng % 1000) / 500.0 - 1.0
+			s += noise * 0.12 * env      # the clicks ride on the same envelope
+		s = clampf(s, -1.0, 1.0)
+		data.encode_s16(i * 2, int(round(s * 30000.0)))
+	var wav := AudioStreamWAV.new()
+	wav.format = AudioStreamWAV.FORMAT_16_BITS
+	wav.mix_rate = SAMPLE_RATE
+	wav.stereo = false
+	wav.data = data
+	return wav

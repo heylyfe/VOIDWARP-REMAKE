@@ -15,7 +15,7 @@ extends "res://sim/enemy_runtime.gd".EnemyBehavior
 #     the hub fallback only.
 #   - the mark: the 5x5 tile patch centred on the player's tile, red outline #FF2A2A,
 #     blinking 2 Hz (ticks 0-59) then 4 Hz (ticks 60-119), cracks reach the patch edge
-#     on tick 120 (view layer). Announced through api.telegraph(kind "patch_mark").
+#     on tick 120 (view layer). Announced through api.telegraph(kind "mark").
 #   - tick 120: launch pose; the sword-spears streak to the patch over 18 ticks -
 #     VIEW-LAYER ONLY (ENEMIES.md global note), never simulated, no projectiles.
 #   - tick 120 + 18 = 138: the patch becomes a void zone for 600 ticks (10 s): the
@@ -41,11 +41,8 @@ const SPAWN := "spawn"            # the fade-in, 30 ticks
 const MARK := "mark"              # the 120-tick telegraph
 const LAUNCH := "launch"          # the 18-tick spear flight
 const VOID := "void"              # the 600-tick void zone
-const FADE_BACK := "fade_back"    # the 30-tile fade
+const FADE_BACK := "fade_back"    # the 30-tick fade
 const COOLDOWN := "cooldown"      # 840 - 180 * extra votes, min 300
-
-# anim states - exactly the anim block's state ids (content/enemies/gin/sprites.json)
-const ANIM_TELEGRAPH := "telegraph"
 
 # timings (DESIGN.md 5.12 / the section 1.12 table)
 const SPAWN_TICKS := 30             # 0.5 s fade-in
@@ -68,6 +65,11 @@ const LIFT_SPEED := 6.0             # the fade-back lift impulse, D-T041-4
 const YIELDS_ID := "address_me"     # yields_to - spelled exactly in enemy.json
 
 
+func _init() -> void:
+	id = GIN_ID
+	display_name = "gin ichimaru"
+
+
 func on_spawn(row: Dictionary, _api) -> void:
 	row["phase"] = SPAWN
 	row["phase_t"] = 0
@@ -83,8 +85,7 @@ func on_spawn(row: Dictionary, _api) -> void:
 func tick(row: Dictionary, api, dt_ticks: int) -> void:
 	row["phase_t"] = int(row.get("phase_t", 0)) + dt_ticks
 	row["anim_state_t"] = int(row.get("anim_state_t", 0)) + dt_ticks
-	var phase := str(row.get("phase", SPAWN))
-	match phase:
+	match str(row.get("phase", SPAWN)):
 		SPAWN:
 			if int(row["phase_t"]) >= SPAWN_TICKS:
 				var gate: Dictionary = api.arbiter_gate(_live_pending(api))
@@ -127,6 +128,44 @@ func tick(row: Dictionary, api, dt_ticks: int) -> void:
 				row["anim_state_t"] = 0
 
 
+# ---- the mark + the void zone ------------------------------------------------------------------
+
+
+# The patch: the 5x5 tile block centred on the player's tile, minus the dais cell.
+func _patch(row: Dictionary, api) -> Dictionary:
+	var near: Dictionary = api.nearest_player(Vector3(float(row["x"]), float(row["y"]), float(row["z"])))
+	if near.is_empty():
+		return {"cells": [], "cx": 0, "cz": 0}
+	var cx := int(floor(float(near["x"])))
+	var cz := int(floor(float(near["z"])))
+	var cells: Array = []
+	for dx in range(-PATCH_HALF, PATCH_HALF + 1):
+		for dz in range(-PATCH_HALF, PATCH_HALF + 1):
+			var tx: int = cx + dx
+			var tz: int = cz + dz
+			if _is_dais(api, tx, tz):
+				continue   # never marks the beacon dais (D-T041-3)
+			cells.append([tx, tz])
+	return {"cells": cells, "cx": cx, "cz": cz}
+
+
+# The zone's hazard footprint for the telegraph row (a collision.gd hazard shape;
+# the runtime's shape vocabulary is circle/ring - the square is drawn by the view
+# from the patch cells, never by a collision shape).
+func _patch_shape(row: Dictionary) -> Dictionary:
+	var patch: Dictionary = row.get("patch", {})
+	return {"shape": "circle", "cx": float(patch.get("cx", 0)) + 0.5,
+			"cz": float(patch.get("cz", 0)) + 0.5, "r": float(PATCH_HALF) + 0.5}
+
+
+# ---- the view's cue emitter --------------------------------------------------------------------
+
+
+# The mark's own cue: the deep cracking rumble plays for the whole 120-tick mark.
+func _cue(_host, _cue_name: String) -> void:
+	pass   # the view reads the telegraph row and plays the 5 cues; no sim audio events
+
+
 # ---- the phases --------------------------------------------------------------------------------
 
 
@@ -142,7 +181,6 @@ func _gate_free(gate: Dictionary) -> bool:
 # telegraph), so this behavior reads the roster and passes the id along when one runs.
 func _live_pending(api) -> Array:
 	var out: Array = []
-
 	for e in api.rt.enemies:
 		if str(e.get("id", "")) == YIELDS_ID and int(e.get("countdown_left", 0)) > 0:
 			out.append(YIELDS_ID)

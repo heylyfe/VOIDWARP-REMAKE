@@ -83,6 +83,73 @@ func _json_contract(f: Array[String]) -> void:
 			f.append("json: audio cue '%s' missing" % cue)
 
 
+## One controller for the fixture arena (the runner passes it to rt.setup).
+func _make_ctl(w: Dictionary):
+	var ctl = Util.ControllerScript.new()
+	ctl.setup("dasher", Util.consts())
+	ctl.place(w)
+	return ctl
+
+
+## The kill pass: gin's zone kills an inside player with code D-GIN (Last Light
+## already spent on the controller, D-057 - otherwise the save masks the kill).
+func _void_zone_kills(f: Array[String]) -> void:
+	var rt = _runtime_last_light_spent()
+	var api = _api_of(rt)
+	var row: Dictionary = _gin_row(rt)
+	var w: Dictionary = _arena()
+	rt.setup(w, w, [_ctl(w)], 4242)
+	row["phase"] = GinBehavior.VOID
+	row["phase_t"] = 0
+	row["patch"] = {"cells": [[2, 2], [3, 2]], "cx": 2, "cz": 2}
+	_drive(row, api, ZONE_START_AT - 1)   # 137 ticks of zone-incomming
+	if not api.rt.world["enemies"].is_empty():
+		var ctl = api.rt.world["enemies"][0]
+		# walk the player into the column: tile (2, 2) is inside the patch
+		ctl.x = 2.5
+		ctl.z = 2.5
+		_drive(row, api, 1)
+		var died: Array = rt.events.filter(func(e): return e.get("e") == "player_died")
+		var codes: Array = died.map(func(e): return e.get("code", ""))
+		if not codes.has("D-GIN"):
+			f.append("void zone: kill codes %s, want D-GIN" % str(codes))
+		else:
+			var dcode: String = died[0].get("code", "")
+			if str(dcode) != "D-GIN":
+				f.append("void zone: death code %s, want D-GIN" % dcode)
+
+
+## The lift: a player inside the column is pushed onto the surface when the
+## tiles fade back (a push straight up; the surface is exactly one lift away).
+func _lift_on_fade_back(f: Array[String]) -> void:
+	var rt = _runtime_last_light_spent()
+	var api = _api_of(rt)
+	var row: Dictionary = _gin_row(rt)
+	var w: Dictionary = _arena()
+	rt.setup(w, w, [_ctl(w)], 4242)
+	row["phase"] = GinBehavior.FADE_BACK
+	row["phase_t"] = 0
+	var ctl = api.rt.world["enemies"][0]
+	ctl.x = 2.5
+	ctl.z = 2.5
+	ctl.y = -4.0       # below the vanished floor
+	_drive(row, api, FADE_BACK_START)   # drive to tick 738: the fade-back opens
+	var moved_y: float = float(ctl.y)
+	if moved_y < 0.0:
+		f.append("lift: the player is still below the surface (y %.2f)" % moved_y)
+
+
+## All tick readings come from enemy.json's stats; +/-1 tick is the budget.
+func _tick_ok(f: Array[String], key: String, got: int, want: int) -> void:
+	_tick_budget_ok(f, key, got, want)
+
+
+## One kill event with the given code (the runner asserts the code verbatim).
+func _kill_event(code: String) -> Dictionary:
+	return {"e": "player_died", "code": code, "killer": GinBehavior.GIN_ID}
+
+
+
 # The anim block in sprites.json is the ONLY timing source: the view and the test
 # both read it, neither re-derives a timing from the PNGs or the docs.
 func _anim_block_is_the_source(f: Array[String]) -> void:
@@ -124,7 +191,7 @@ func _anim_block_is_the_source(f: Array[String]) -> void:
 # qualifies, the farthest tile of the spawn hub. The behavior never marks the
 # beacon dais and stands never on the only route home.
 func _spawn_tile_rule(f: Array[String]) -> void:
-	var rt := _runtime_last_light_spent()
+	var rt = _runtime_last_light_spent()
 	var api = _api_of(rt)
 	_smoke_behavior(f, rt, api)
 
@@ -132,7 +199,7 @@ func _spawn_tile_rule(f: Array[String]) -> void:
 # The yields_to deferral: with a LIVE address me countdown, gin's strike start
 # defers (the gate answers deferred=true); once the countdown ends, it does not.
 func _deferral(f: Array[String]) -> void:
-	var rt := _runtime_last_light_spent()
+	var rt = _runtime_last_light_spent()
 	var api = _api_of(rt)
 	var row: Dictionary = _gin_row(rt)
 	if row.is_empty():
@@ -152,17 +219,20 @@ func _deferral(f: Array[String]) -> void:
 
 # A full cycle at 60 Hz, every number within +/-1 tick.
 func _run_cycle(f: Array[String]) -> void:
-	var rt := _runtime_last_light_spent()
+	var rt = _runtime_last_light_spent()
 	var api = _api_of(rt)
 	var row: Dictionary = _gin_row(rt)
-	_drive(row, api, f)
+	_drive(row, api, 180)
 
 
 # The kill tests run with LAST LIGHT ALREADY SPENT (D-057): the save would
 # otherwise mask the kill and the assertion would be worthless.
 func _runtime_last_light_spent():
 	var rt: RefCounted = EnemyRuntime.new()
-	rt.seed_base = 4242
+	rt.setup({}, {}, [], 4242)   # Last Light already spent: no beacon charge to spend
+	for c in rt.controllers:
+		if c != null:
+			c.last_light_spent = true
 	return rt
 
 
@@ -198,6 +268,15 @@ func _smoke_behavior(f: Array[String], rt, api) -> void:
 
 
 # ---- helpers ------------------------------------------------------------------------------------
+
+
+## One controller for the fixture arena (the runner passes it to rt.setup).
+func _ctl(w: Dictionary):
+	var ctl = Util.ControllerScript.new()
+	ctl.setup("dasher", Util.consts())
+	ctl.place(w)
+	ctl.last_light_spent = true   # D-057: the save would otherwise mask every kill
+	return ctl
 
 
 ## A fresh runtime: an 11x11 flat arena, one controller, Last Light already spent.
