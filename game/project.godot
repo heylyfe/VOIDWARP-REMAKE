@@ -4,4 +4,4 @@ config_version=5
 [application]
 
 config/name="VOIDWRAP RUN"
-run/main_scene="res://app/main.tscn"
+run/main_scene="res://app/app.tscn"

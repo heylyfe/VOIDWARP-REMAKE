@@ -5430,6 +5430,90 @@ a display detail, not a sim or gameplay number, and nothing moves a check. The E
 paragraph (game/app/menu.gd ABOUT_DISCLAIMER) is a different wording by design (PARKED.md #2)
 and is unchanged by this ticket.
 
+### D-APPFLOW-1 - The run seed is a fixed default (1); start_run(seed) overrides it (APP-FLOW)
+DECISION (APP-FLOW): the run seed defaults to DEFAULT_SEED = 1 (the ticket's own example).
+`start_run(seed_value)` stores the given seed instead; with no argument path ever built for
+randomness, every unattended boot (tests, headless scene checks) is reproducible. A future
+"New Run" button passes its own seed; until then 1 is the canonical first ever boot.
+WHY: the ticket mandates a fixed default and a D- log entry; nothing in any FINAL spec pins a
+random source or a date-derived seed, and a random default would make every CI/gate rerun a
+different level. [CONTESTABLE] only in the literal value 1.
+
+### D-APPFLOW-2 - The app drives loading_screen.advance() itself, double-ticking the screen (APP-FLOW)
+DECISION (APP-FLOW): app._process calls `_loading.advance(delta)` every frame while in LOADING,
+per the ticket's "Drive the loading screen with advance(delta) from _process". loading_screen.gd
+ALSO self-advances from its own _process (D-T024 files are frozen for this ticket), so in a real
+run elapsed accrues at 2x the frame delta and the >= 5.0 s hold elapses in ~2.5 s of wall time.
+WHY: the ticket line is explicit and newer than the frozen file; the alternative (drop the
+app-side drive) silently ignores the ticket's wording, and editing loading_screen.gd is another
+ticket's fence. The resulting CANON tension (DESIGN.md section 2, "loading screen >= 5.0 s
+shown") is NOT resolved here: it is parked as PARKED.md #20. [CONTESTABLE] - the owner may flip
+to either side; flipping means either deleting the app-side advance (ticket line lost) or
+retiring the screen's self-_process once a host drives (T-024 file change).
+
+### D-APPFLOW-3 - start_run(seed) in MENU starts the run; elsewhere it only re-seeds the next run (APP-FLOW)
+DECISION (APP-FLOW): `start_run(seed_value)` stores the seed; when the current state is MENU it
+also takes the same path as the Play button (_begin_run). In LOADING/WORLD it changes only the
+seed of the next run and has no visible effect (there is no next-run path yet). It is NOT a
+force-restart from WORLD.
+WHY: the ticket freezes only the signature `start_run(seed_value: int) -> void` and pairs it with
+`state()`, so its semantics are mine to pin; the Play button already owns WORLD entry, and a
+silent force-teardown of a live level is the most surprising reading. [CONTESTABLE]
+
+### D-APPFLOW-4 - The level's enemy plan is the run's OWN seeded plan, replayed through the intermissions (APP-FLOW)
+DECISION (APP-FLOW): world.build(seed, level) replays intermissions level_completed = 0..level-1
+with the sim's own Intermission/Offers state machines, seeded exactly the way
+game/tools/bot_run.gd seeds its bot: lobby n is created with mix(seed, 5000 + n), the pick stream
+is VoidRng(mix(mix(seed, 0xB07), n + 1)), every mandatory CLASS/E/C bay is resolved with a uniform
+seeded pick among its unresolved altars, U and REST bays are never touched, an empty mandatory
+C draw is tithe-passed when affordable. The accumulated votes dict is the plan, one planned row
+per vote (copies = votes). For level 1 this replays the pre-run lobby (CLASS + the one starter
+E bay). Class rides the same replay (CLASS bay); the enemy runtime gets the raw run seed as its
+spawn stream. Curse sim knobs (rush_hour / long_night / early_bird / brittle / hungry_void /
+understudies) are NOT applied in this pass - only class and enemy votes cross over.
+WHY: the ticket forbids the probe's hardcoded VOTE_LIST and asks for "the runtime's OWN enemy
+plan for the level"; the only (seed, level) -> plan mapping the game already owns is the lobby
+draw itself ("votes ARE inputs", DESIGN.md section 13 rule 2; the bot plays exactly this way), so
+the world replays it instead of inventing a second one. Applying the curse knobs was left out as
+out of scope with the plan being the deliverable; the gap is noted, not faked. [CONTESTABLE]
+
+### D-APPFLOW-5 - world.step() ticks exactly controller + enemy_runtime + billboards + camera rig + HUD sync (APP-FLOW)
+DECISION (APP-FLOW): step() is the ticket's step spec and nothing more. gifts / tripmines /
+beacon are NOT ticked; the HUD gift counter therefore shows 0/0 and the beacon never opens in
+this build. Closing that needs a LevelState owner decision (GiftsScript.tick on the controller
+events, beacon open -> overtime, run_log feed) which this ticket does not fence-edit.
+WHY: the ticket's step line is explicit and the parallel MENU/LOADING tickets need a stable
+seam, not a half-wired run loop; a silent partial gift path (counter moves, beacon dead, or
+vice versa) is worse than an honest 0/0. [CONTESTABLE] as scope; the wiring itself is not
+contestable once LevelState ownership lands.
+
+### D-APPFLOW-6 - Class falls back to "dasher" when the CLASS bay somehow resolves empty (APP-FLOW)
+DECISION (APP-FLOW): if the CLASS bay replay leaves class_chosen == "" (impossible with today's
+player.json - three classes, altars always drawn), the controller is set up on "dasher"
+(data/player.json's first-listed class, and the probe's pinned KIT).
+WHY: controller.setup on "" is undefined behaviour in the class-table lookup; a documented
+fallback beats a crash, and the situation cannot arise from current content. [CONTESTABLE]
+
+### D-APPFLOW-7 - Pause is app-side _unhandled_input against the pause binding codes, fallback KEY_ESCAPE (APP-FLOW)
+DECISION (APP-FLOW): ESC (or whatever data/bindings.json binds to "pause"; KEY_ESCAPE when the
+file is unreadable) returns to MENU from LOADING or WORLD: the world is torn down and freed
+(world.teardown() + free()), any loading screen is freed, the menu is shown again. The menu's
+own quit path is untouched. loading_finished is connected with queue_free (not free()) for the
+screen because the signal is emitted from inside advance() and a synchronous free would delete
+the object under its own call stack. World meshes are always built (windowed or headless),
+unlike the probe's windowed-only build.
+WHY: the ticket names "ESC / the pause binding" without a delivery mechanism; polling the
+bindings file keeps the binding data-driven (D-T082-2) and the fallback keeps unbound builds
+escepted-but-working. queue_free vs free is a correctness call (D-APPFLOW-2's signal path), not
+a preference. [CONTESTABLE] only on the fallback and the always-mesh call.
+
+### D-APPFLOW-8 - The world steps on a fixed 60 Hz accumulator, decoupled from the render rate (APP-FLOW)
+DECISION (APP-FLOW): app._process feeds the world through an accumulator (delta in, DT =
+1/60 steps out, spiral-of-death clamp of 5 ticks per frame with the remainder dropped).
+WHY: stepping once per frame with DT = 1/60 runs the sim 2x fast on a 120 Hz display and 0.5x
+on a 30 Hz one; the sim's contract is a fixed 60 Hz tick. [CONTESTABLE] only if a design wants
+variable dt (nothing does today - sim rules are written per 60 Hz tick).
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
