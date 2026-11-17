@@ -3396,6 +3396,165 @@ anim blocks are its own transcription of DESIGN.md sections 5.1-5.12 (kiwi 12, c
 isagi 72, nuke 150+90, YOU 90, larper none, toucher 18, seal 45, address me 300, Claude
 strings 36, gin 120) - the blocks were re-proven, not trusted.
 
+### D-T-039-1 [CONTESTABLE] - address me's body contact does NOT kill (D-065 FINAL wins a ticket deliverable) (T-039)
+T-039's deliverable 5 asks for a test asserting "its body contact kills". DESIGN.md §5.2 (SR-2,
+D-065, FINAL) says the opposite, three times: the roster table gives address me height 2.5 and
+diameter "-" with the consequence "no body contact; it is a countdown, not an obstacle", D-065
+restates it verbatim, and DESIGN.md §5.10 (its numbers paragraph) defines exactly one kill: the
+5.0 s expiry. ENEMIES.md's own section grants one kill path too ("if you do not stand still, it
+explodes and kills you") and no other. D-065 is marked FINAL, so per the standing ruling the
+FINAL reading is built instead of the deliverable: `contact_kill` is FALSE in the row (the
+runtime's plain body-contact pass skips it, the thicc ben precedent), the behavior never kills on
+overlap, and the only killing blow is the countdown expiry (D-ADDR via the cfg `death_code`). The
+kill test runs Last Light spent (D-057) all the same. The ticket/FINAL clash itself is logged as
+PARKED.md row 6 for the owner to rule; no other FINAL or ENEMIES.md passage was edited to make
+the ticket's wording pass. WHY [gameplay reason]: a countdown the player must out-wait, not a
+body they must avoid; a contact kill would make the spawn 6 u ahead of a committed player a
+non-answerable coin flip, which the SR-4 gate exists to prevent.
+
+### D-T-039-2 [CONTESTABLE] - stillness is read from the controller snapshot nearest_player returns (T-039)
+DESIGN.md §5.10: the player must show "no movement/jump/ability input and speed < 0.5 u/s on all
+axes, held for 1.5 continuous seconds". The section-12 Enemy API returns, per player, only
+{index, dist, x, y, z, vx, vy, vz} - there is NO button channel a behavior may read, so the
+"no input" clause is not observable as buttons through the API. Built reading: stillness = all
+of |vx|, |vy|, |vz| < 0.5 u/s. This is sufficient in practice because every input the game can
+produce perturbs at least one axis past 0.5 u/s within a tick (jump 12.0 u/s, glide fall cap
+2.0 u/s and glide horizontal 10.0 u/s, dash, 90 u/s^2 ground accel), so a "still" player who
+taps anything is caught within a tick. `still_t` counts continuous still ticks; any failing tick
+resets it to 0; 90 (1.5 s at 60 Hz) wins the episode. WHY [gameplay reason]: the rule must be
+machine-checkable from one deterministic snapshot; inferring intent from buttons would change
+nothing observable and would invent state the API does not carry.
+
+### D-T-039-3 [CONTESTABLE] - the 5.0 s expiry kill has no distance limit (T-039)
+DESIGN.md §5.10: "5.0 s expire first -> explode frame, boom, kill." No radius, range, or
+falloff is stated anywhere for the blast. Built reading: when the countdown expires, the
+targeted player (nearest at the appearance tick, stored on the row) is killed regardless of
+where they are - D-ADDR through `api.kill` with the cfg `death_code` (the runtime passes it
+verbatim). This is deliberately NOT a radius-limited AoE and NOT a "only if still close" rule.
+WHY [gameplay reason]: inventing a radius the documents never state would create an unstated
+escape ("run far enough") the design's whole 1.5 s-stop structure exists to prevent; the
+punishment for failing to stop is exactly the stop's failure - it fires when the countdown ends,
+nowhere else, with no geometry to hide behind.
+
+### D-T-039-4 [CONTESTABLE] - the return cadence: uniform(30,45) s, -5 s per extra vote beyond the first, hard floors (15, 30) s (T-039)
+DESIGN.md §5.10: "Returns every 30-45 s (-5 s per extra vote, min 15-30 s)" and the §5 vote table
+row 10 ("only one exists; each extra vote -5 s on its return interval"). Built reading: on each
+episode resolution the next return waits a row-local timer drawn uniform in ticks
+[1800 - 300 x (votes-1), 2700 - 300 x (votes-1)] clamped below to (900, 1800) - 1 vote [30,45] s,
+2 votes [25,40] s, 3 votes [20,35] s; the "min 15-30 s" clause is the absolute floor and is
+unreachable at the roster cap of 3 votes (kept as an enforced clamp for any future cap raise).
+"extra vote" is read as votes beyond the first. Vote count arrives stamped in cfg["votes"] by the
+engine at plan time (nothing else in the section-12 API carries it; absent, 1). The timer starts
+at the episode RESOLUTION tick (the leaves/attack tick), not at appearance. The first appearance
+never happens before level tick 600 ("never in the first 10 s of a level"). WHY [gameplay
+reason]: the cadence is the pacing knob the owner set for the only enemy that makes you stop;
+clamping to a fixed band keeps every vote tier honest (more votes genuinely returns it sooner)
+without ever breaking the 10 s level-entry promise.
+
+### D-T-039-5 [CONTESTABLE] - between episodes the body is parked at y = 1000.0 u (T-039)
+The arbiter's `no_enemy_body_within` requirement counts EVERY body in `world["enemies"]`,
+including this row's own mirror entry - parking it anywhere near the level could make its own
+gate unsatisfiable forever (the player may camp the spawn tile), and §5.10 promises it still
+returns every 30-45 s. Built reading: on spawn and at every episode end the row (and its
+mirror, via `api.sync_body()`) is moved to AWAY_Y = 1000.0 u; the appearance teleports it 6 u
+"in front of the player" (D-T-039-13) and the aftermath (leaves/attack) plays there before it is
+parked again. 3D distance from any feet point at level heights is therefore always > 12 u;
+`contact_kill` is false so the mirror never bluffs a melee. WHY [gameplay reason]: the gate can
+never veto its own enemy with its own parking spot; 1000 u is far enough that no jump, glide or
+void charge changes the answer.
+
+### D-T-039-6 [CONTESTABLE] - the countdown travels as row state + pending=["address_me"]; yields_to = ["address_me"] (T-039)
+The stillness countdown is this row's own state, never a telegraph (the runtime never prunes its
+telegraph list, so a 300-tick entry registered there would pin `no_targeted_telegraph` for every
+later appearance of this row and for every yielder to `address_me`, forever - brisker is never
+pruned). The row gates itself on every waiting tick with `api.arbiter_gate(pending)` where
+`pending = ["address_me"]` while its own countdown is live, `[]` otherwise; the id is exactly
+"address_me" as the ticket pins for the yields_to contract. `"yields_to": ["address_me"]` in the
+arbiter block: while the countdown is live, a gate re-evaluation reports `deferred: true` (the
+id is live through the pending array) and the appearance call defers to the first free tick
+after the countdown. gin (T-041) yields_to the same id. WHY [gameplay reason]: a countdown must
+be answerable without leaking a footprint; and deferring a gate re-check mid-countdown can only
+ever say "after the countdown" - which is exactly when this row may legally act again.
+
+### D-T-039-7 - "in front of the player" = the player's last nonzero horizontal heading (T-039)
+The section-12 API returns no facing vector, so the row tracks its own `face_x/face_z`: updated
+to the normalized horizontal velocity whenever the player moves at > 0.5 u/s, initialised to the
+controller's own default facing (0, 0, 1). The appearance teleports the row to the player's feet
++ facing x 6.0 u, feet at the player's feet height (SR-1 easing is irrelevant to a teleport;
+contact_kill is false, so no tile requirement applies to an apparition). WHY [gameplay reason]:
+"appears 6 u in front of you" is the stated opening the counter-play is built around; the row
+mushrooming behind the player would answer a spec that names the direction.
+
+### D-T-039-8 - the arbiter block is the D-067 quartet, nothing else (T-039)
+`arbiter.appear_requires`: [{"no_enemy_body_within": 12.0}, {"no_targeted_telegraph": true},
+{"player_grounded": true}, {"not_on_glitched_floor": true}] - the four D-067/SR-4 requirements
+verbatim, DATA in enemy.json, vocabulary untouched in sim/enemy_arbiter.gd. It appears only on a
+tick where all four hold (plus the level-tick-600 and return-timer gates, D-T-039-4/5);
+`yields_to` as D-T-039-6. WHY [gameplay reason]: SR-4 (D-067) is FINAL; the stop-demand must
+never land inside a chaser, a ring, a patch, a jump or a glitched tile.
+
+### D-T-039-9 - enemy.schema.json's arbiter block relaxed to requirement objects (T-039)
+`core/schemas/enemy.schema.json` described `appear_requires` items as `{"type": "string"}`, but
+`sim/enemy_arbiter.gd` (T-072, FINAL-adjacent, pinned by test_arbiter.gd/test_arbiter_api.gd)
+evaluates Dictionary requirements like {"no_enemy_body_within": 12.0} and silently skips anything
+that is not a Dictionary - a string-bodied appear_requires would have gated nothing while looking
+as if it gated. The schema's `items` now accept `["object", "string"]` and its description points
+at the arbiter for the vocabulary; `yields_to` stays strings-of-ids. No enemy folder, the anim
+checker or the enemy anim view were touched; the registry boots again on the real content. WHY
+[gameplay reason]: unknown-vocabulary gate-as-yes is how a scheduling gate becomes a lie.
+
+### D-T-039-10 - audio hooks: spawn_trumpet, rumble_build, explode_boom (T-039)
+ENEMIES.md "New sound" (verbatim): "elephant trumpet on spawn, low rumbling build-up during the
+5 seconds, massive boom on the explode frame." Three hooks, named as the view raises them (view =
+sim-tick-driven transitions, never wall-clock): `spawn_trumpet` (entering the spawn state),
+`rumble_build` (entering the telegraph/countdown state, a 5 s low-rumble synth), `explode_boom`
+(entering the attack state on the kill tick). Synthesis-quality placeholders, file stems = hook
+names (T-055's contract); `tbd_audio: true`; TBD.md row 32. WHY [gameplay reason]: the trumpet is
+the tell; the rumble is the countdown's clock; the boom is the verdict - all three are the
+ENEMIES.md cue design, none can drift the sim.
+
+### D-T-039-11 - the countdown is never registered as a sim telegraph (T-039)
+`api.telegraph` is not called for the stillness countdown: the cue owns no footprint (a 5 u
+rumble covers nothing the telegraph shape language can express without lying) and the runtime
+never prunes `rt.telegraphs` - a 300-tick circle at the caster's plane would sit in the list
+forever, false-blocking this row's later appearances (its own `no_targeted_telegraph`) and
+gatekeeping every yielder to address me forever. The view drives its countdown ring / stillness
+arc off `anim_state` / `anim_state_t` / the row's stillness counter instead; the T-083 anim
+block's telegraph row is rendered as the view's countdown_ring effect and nothing else. WHY
+[gameplay reason]: a telegraph in the shared list is a promise about a footprint; this cue makes
+no footprint, so it must not make the promise.
+
+### D-T-039-12 - the explode kill resolves on the exact tick the countdown expires (T-039)
+The anim block pins `kill_on_tick` = 300 (the tick the rumble ends); the behavior kills on the
+same tick its countdown reaches 0 - `countdown_left` hits 0 -> `api.kill(target_index, ...)`
+which derives `D-ADDR` from the cfg `death_code` verbatim and attributes `"address me"` as the
+killer string - and the 24-tick `attack` state after it is purely presentational (the explode
+frame + 6-tick flash). `leaves` (stillness achieved) resolves the same way minus the kill, puffs,
+parks away (D-T-039-5) and schedules the return cadence (D-T-039-4). WHY [gameplay reason]: the
+boom IS the deadline; any later tick would be the game punishing a player who already answered.
+
+### D-T-039-13 - the appearance teleport honours the fallback order at spawn, the "6 u in front" rule per episode (T-039)
+The D-056 spawn rule still runs at the 6 s spawn tick (`preferred_kind` "none" -> fallback (c)):
+rows spawn far from the player and park at AWAY_Y until the gate opens (D-T-039-5), so the initial
+D-056 position is never a rendering or contact concern. When the gate opens the row teleports to
+the player's feet + facing x 6.0 u (D-T-039-7), `api.sync_body()`, shows the spawn state (12
+ticks) and starts the countdown. The appear rule wins over `preferred_kind` for the actual
+episode, exactly as the spec's preferred-kind table note states for this row ("appears 6 u in
+front of the player"). WHY [gameplay reason]: step (c) exists so every planned body has a legal
+initial slot; this enemy's fight starts when the trumpet sounds, not when the plan executes.
+
+### D-T-039-14 - roster entry shape, the exhibit lines and the content-count bump (T-039)
+min_level 9 / max_votes 3 (the §5 vote table, row 10); `vote_effect` "only one exists; each extra
+vote -5 s on its return interval"; `anchor_kinds` [] and `preferred_kind` "none" (the
+preferred-kind table, both); `contact_kill` false top-level and mirrored in stats (D-T-039-1);
+`behavior` / `counter_play` / `tell` live top-level (the thicc ben precedent - the antechamber's
+panel reads them from the doc root); counter-play "stop at once - do nothing for 1.5 s of the 5.0
+s rumble; it never arrives while a chaser, ring, patch, jump or glitched floor would make
+stillness lethal (SR-4)"; tell "elephant trumpet on appearance; a low rumble building over the
+5 s". test_content.gd bumps enemies 5 -> 6 and content_ids 92 -> 93 (both counts asserted; no
+threshold weakened). WHY [gameplay reason]: the panel is the only place the counter-play is
+taught before the fight; the roster count is what the launch content promises.
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
