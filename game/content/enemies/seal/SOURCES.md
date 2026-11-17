@@ -7,7 +7,7 @@ their sources documented here.
 
 | image | exact filename | path (repo-relative) | pipeline state |
 |---|---|---|---|
-| 12 | `babehseal.webp` | `assets_src/enemies/babehseal.webp` | NO BODY AFTER BACKGROUND REMOVAL -> TBD |
+| 12 | `babehseal.webp` | `assets_src/enemies/babehseal.webp` | MISSING -> TBD |
 
 Pipeline (every source): RGBA convert, background removed by a flood fill from the four
 image corners (colour tolerance 24/255, skipped when the corners are already alpha 0),
