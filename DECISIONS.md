@@ -1254,6 +1254,66 @@ WHY: the pool file is the shop's catalog by DESIGN.md section 8 [CANON] ("the sh
 the full catalog"), so the gate for "drop-in must work" is registration + eligibility reads,
 not shop presence; documenting the boundary now keeps T-020 (shop owner) from wiring around
 the pool file later.
+### D-T016-1 - Enemy ids, the sprites.json schema, and where the fps numbers come from (T-016).
+
+`content/enemies/<id>/` ids: kiwi_cat, coil, thicc_ben, isagi, nuke, you, gift_larper, toucher,
+seal, address_me, claude, gin. Only `kiwi_cat` (T-026 flag) and `gift_larper` (T-021) are pinned
+elsewhere; the rest are the snake_case of the ENEMIES.md roster names, in roster order (enemy
+roster index 1..12, used to seed every derived frame).
+`content/enemies/<id>/sprites.json` schema: id, name, tbd, world_height, animations[],
+sources[]. Each animation row: name, fps, loop, frames[] (paths relative to the enemy folder),
+body_rect[] (the tight bbox of alpha > 16 per frame - the HITBOXES shape from DESIGN.md s5),
+world_height per animation where it differs from the top-level value. Top-level world_height
+comes from the DESIGN.md s5 SR-2 table; where s5 gives the enemy no row the value is null (nuke
+and gift_larper) and the animation rows carry per-frame world heights instead (coil: linear
+between the 1.0 u squashed and 2.0 u extended ends of its cycle, interpolated per frame;
+isagi's "shot" projectile carries 0.5 u from the s5.4 ball radius). fps: the specs name none,
+so these are mine - coil 8, nuke 10, you 10, gift_larper 10, toucher cycle 6 / floor 8, seal
+dash 10, address me 2, Claude 6, isagi fire 8 / shot 20 - each a single number in _frames()
+in game/tools/sprite_pipeline.gd, contestable without touching anything else.
+
+### D-T016-2 - Determinism of the derived frames (T-016).
+
+Every overlay is a pure function of the processed base image plus mix(enemy_index, frame)
+(TERRAIN_SPEC s3 mix, 32-bit) - no RNG, no wall clock - so a rebuild is byte-stable: the same
+sources always yield the same file hashes. The recipes: YOU?! corruption = three horizontal
+bands of 6-18 px height shifted plus or minus 6 px, the red channel 2 px right and the blue
+2 px left, and 2% of the opaque pixels dropped to alpha 0 inside the body only (the outline
+is never touched); nuke = four flame overlays of length 20, 26, 22, 30% of the missile,
+colours from #FFC83D at the nozzle to #FF2A2A at the tail, drawn below the descending body;
+gift Larper = the base horizontal squash in five steps of 100, 70, 30, 70, 100% with the
+light at 60, 80, 100, 80, 60% brightness (the light = a central disc of radius 18% of the
+body width - the one reading that keeps a dimming lamp from sinking the whole body below
+the A8 fog threshold); seal dash = the mouth as a dark ellipse 18% of body width at the
+muzzle (right side) and flippers as the lower 25% of the sprite rotated -/+12 degrees;
+toucher = the corrupted pointing finger (three corruption frames) plus the five corruption
+frames of the glitched floor; address me = Image 14 composited over the elephant at 30%
+alpha; Claude = the plushie idle bob; Isagi = idle, wind-up flash, shoot. All 17 owner
+sources are absent tonight, so every frame is built from the make_tbd_png placeholder body;
+dropping a real PNG in later and rebuilding is a rebuild and nothing else.
+
+### D-T016-3 - TBD source-vs-frames policy (T-016).
+
+Per the TBD FALLBACK hard rule: a missing, unreadable, or post-background-removal-empty
+source never stalls the pipeline. The policy implemented: per-enemy all-or-nothing - if ANY
+of an enemy's role images is missing the WHOLE enemy is built from placeholder bodies for
+that run, "tbd": true goes into its sprites.json, its SOURCES.md records the pipeline state,
+and one row lands in TBD.md. Rationale: T-027's billboard and hitbox code reads one schema
+per enemy and single verdicts per entry; a half-real half-placeholder entry would dodge
+validation exactly where it matters. All-or-nothing is also the cheapest state to re-test:
+re-running the pipeline flips any enemy whose images have all arrived; nothing else changes.
+
+### D-T016-4 - The fog-contrast ratio is computed in LINEAR colour space (T-016, A8).
+
+TERRAIN_SPEC s12.3: visible(d) = exp(-0.012 * d); on-screen colour = lerp(fog, colour,
+visible(d)); "WCAG relative luminance contrast ratio, computed on the fogged colours". The
+lerp runs in LINEAR colour channels (the space Godot mixes fog in), with the palette hexes
+read as sRGB and linearized before the lerp; the WCAG luminance of the on-screen colour is
+taken on those already-linear channels without re-linearizing. validate_sprites.gd computes
+the mean opaque colour per frame and scores it against the palette fog at d = 40 u: the
+contrast must be >= 3.0. The lerp-in-sRGB reading would score the same magenta hand-set at
+2.59 against the same near-black fog where the linear reading gives 3.83; the linear reading
+is recorded here so T-011 (fog readability for the palette roles) applies 12.3 one way.
 
 ---
 
