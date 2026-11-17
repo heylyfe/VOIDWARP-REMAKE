@@ -15,3 +15,5 @@ out/
 # portable Blender (FLEET_PACK section 3: gitignored, installed under the main checkout per R19)
 tools/blender/*
 !tools/blender/VERSION.txt
+# screenshot sidecars: the shots are re-rendered evidence, not imported game assets
+game/shots/*.import
