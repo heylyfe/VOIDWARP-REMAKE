@@ -243,7 +243,7 @@ static func _level(tiles: Array, arch: String, role: int, beacon: Array, props: 
 		"props": props,
 		"edges": [],
 		"gifts": [],
-		"anchors": [[ANCHOR_OPEN, int(beacon[0]), int(beacon[1]), int(beacon[2])]],
+		"anchors": [[ANCHOR_OPEN, int(beacon[0]), int(beacon[1]), int(beacon[2]), 0]],
 		"pads": [],
 	}
 

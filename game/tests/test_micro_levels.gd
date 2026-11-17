@@ -115,7 +115,7 @@ func _stepped_lane_shape(f: Array[String]) -> void:
 	var low := 0
 	var found_step := false
 	for t in tiles:
-		var e: Dictionary = t
+		var e: Array = t
 		var x: int = int(e[0])
 		var z: int = int(e[1])
 		var west = heights.get("%d,%d" % [x - 1, z])
