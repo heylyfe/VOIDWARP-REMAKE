@@ -67,6 +67,60 @@ WHY: seed-only multiplayer sync is a hard requirement. Floats, engine RNGs, hash
 and trig differ across languages/platforms. Integers + a specified 32-bit RNG + insertion-ordered
 iteration make byte-identical output trivial to keep. See TERRAIN_SPEC.md §3.
 
+### D-T010-1 — Float fields enter the state hash as the 16 hex digits of their IEEE-754 64-bit pattern, taken via `StreamPeerBuffer.put_double` (R4 ADDENDUM, T-010).
+The addendum forbids hashing a float's decimal string and prescribes the 64-bit pattern instead, but
+no document says how to get the bits in GDScript. `StreamPeerBuffer.put_double` performs exactly that
+conversion (IEEE-754 binary64, little-endian bytes); `state_hash.gd` formats the 8 bytes
+most-significant-byte first into 16 hex digits. `test_replay.gd` pins the byte order with known
+answers (`1.0 → 3FF0000000000000`, `-2.5 → C004000000000000`), so a wrong endianness assumption fails
+the test, not the night. WHY: bitwise-exact, no trig/log needed, and the conversion is a format
+operation, not float math, so the DESIGN.md §13 rule 5 float restriction is untouched.
+
+### D-T010-2 [CONTESTABLE] — move_x / move_z axis scale: int8 in −127..127 = −1..+1 of RUN_SPEED, clamped; neutral input = (0, 0, 0).
+DESIGN.md §13 rule 2 fixes the PlayerInput fields (`move_x: int8, move_z: int8, world-space,
+pre-rotated`) but no document states the axis scale. Reading chosen: the axes are signed int8 where
+127 = full run speed in that world direction, values are clamped to ±127 on construction, and
+`scaled = axis / 127.0 × RUN_SPEED`. WHY: an int8 axis is the natural wire format for an analog stick
+and 127 is the maximal one-sided value; per-tick velocity (no acceleration) keeps tick 1 identical
+across replays. Alternative readings (−128..127 raw, or a normalized float axis) change only the
+scale constant in `sim.gd`; nothing else in the sim depends on it. Gameplay reason: camera-relative
+steering must be convertible client-side without sim knowledge — world-space int8 is already that
+wire format.
+
+### D-T010-3 [CONTESTABLE] — sim RNG sub-streams are named, per-run, re-seeded per level: `s(mix(mix(run_seed, 900 + id), level_number))`, ids world=1, fx=2, enemy_ai=3, loot=4.
+DESIGN.md §13 rules 1 and 4 say randomness only through Rng streams stored in state and same
+Mulberry32 as terrain, but no document names the sim's streams or their seeds (D-017 names only the
+terrain generation phases PLAN=1..MINE=5). T-010 needs the streams to exist in the hashable state
+even while no gameplay draws from them yet. Chosen: `sim/run_state.gd` owns a fixed insertion-ordered
+table (the numbers 900+ and the four ids are SPEC GAP, gameplay reason: a distinct high base offset
+keeps sim streams from ever colliding with the terrain phase streams 1–5 mixed against the same
+run_seed), re-seeded on every `load_level` so a level boundary cannot leak stream state into the next
+level. The enemy/fx/loot ticket owners re-point their draws at these named streams; renaming or
+adding a stream is a hash-visible change and must come with a replay-test run.
+
+### D-T010-4 — T-010 ships a PLACEHOLDER kinematics inside `sim.gd` step; T-012's `sim/collision.gd` + `sim/controller.gd` supersede it.
+The replay test needs a sim whose state is genuinely input-sensitive, but the controller (AABB vs
+slabs/ramps/props, coyote, jump buffer, step-up, classes, void charges, safe tile) is T-012's
+assignment. T-010's step therefore implements only: per-tick velocity from move axes (D-T010-2),
+gravity 32 u/s², jump-impulse 12 u/s on the JUMP press edge while grounded, vertical integrate, and
+a column lookup ground snap ("top of the highest tile in the current cell", ramps treated as their
+low edge Y×0.5, props ignored, no swept collision, no horizontal OOB clamp, falls past the kill plane
+continue falling — D-043/D-050 logic stays untouched for T-012). Ground height is looked up from a
+column map built once per level from the level's tiles. floor/ceil for world→cell conversion are
+implemented with comparisons only (+ − × ÷), keeping DESIGN.md §13 rule 5 true. WHY of the placeholder
+shape: it exercises every input bit path the hash must see (move, jump edge, prev-button edge state)
+without pre-empting any T-012 decision; T-012 replaces the internals of `sim.gd` step and the
+player-row fields, and `test_replay.gd` keeps passing unchanged.
+
+### D-T010-5 — Events are returned, never stored in state; `sim/events.gd` owns the type constants; fixed event shape {type, tick, player}.
+DESIGN.md §13 says `step(state, inputs) -> events`, so the event list is a fresh Array[Dictionary]
+per step: an event is derived data (view eats it), not state, and hashing never walks it (a repeated
+`step` on the same inputs cannot change the state hash). Shape frozen now so later tickets append
+event kinds, not new shapes: every event is `{"type": String, "tick": int, "player": int}` plus
+type-specific int/float fields, and the type constants live in `sim/events.gd` (T-010 so far:
+"spawn", "jump", "land"). WHY: one fixed shape keeps the future netcode frame trivially
+serializable and keeps the boundary scan free of per-ticket exceptions.
+
 ---
 
 ## B. Terrain (Stage 1)
