@@ -248,9 +248,9 @@ static func _toucher_slip(tt: float, cast: Array[String]) -> Array[Dictionary]:
 
 
 # ---- gag 2: the pup gets its head stuck in a gift box ------------------------------------------
-# The seal art is a harp-seal pup lying on its belly, facing the camera, head at the left of its
+# The art is a white pup lying on its belly, facing the camera, head at the left of its
 # sprite. So it never turns round (a mirror flip would teleport the box across the sprite); it
-# belly-scoots, head first. A: it scoots in looking straight at you, a black gift drops over its face
+# belly-scoots, head first. A: it scoots in looking straight at the camera, a black gift drops over its face
 # (the box is wider than the head), "mfph!". B: it scoots blind back and forth, rates the box, leaves
 # with it on.
 
