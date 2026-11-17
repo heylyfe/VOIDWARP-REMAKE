@@ -13,6 +13,8 @@ const VoidGenScript := preload("res://terrain/voidgen.gd")
 # T-020: gift slots + the beacon state machine, built once from the Level dict.
 const GiftsScript := preload("res://sim/gifts.gd")
 const BeaconScript := preload("res://sim/beacon.gd")
+# T-021: the tripmine entity (occupies the Level.gifts occ == 1 slots).
+const MinesScript := preload("res://sim/mines.gd")
 
 ## Height (world u) of a tile's top surface; HU = 0.5 u (TERRAIN_SPEC.md section 4).
 const HU := 0.5
@@ -30,10 +32,15 @@ var players: Array = []
 ## state machine, both pure functions of the Level dict and the inputs.
 var gifts: RefCounted = null
 var beacon: RefCounted = null
+## T-021: the tripmine set (exactly the occ == 1 slots) + consumed bitset.
+var mines: RefCounted = null
 
 
 ## level_number is 1-based (the run's current level). player_count in 1..8 (TERRAIN_SPEC.md spawns).
-static func build(level: Dictionary, p_level_number: int, p_player_count: int) -> RefCounted:
+## run_seed feeds the defuse roll (D-051); defaults to 0 so existing callers
+## (which have no run to seed from) stay valid.
+static func build(level: Dictionary, p_level_number: int, p_player_count: int,
+		p_run_seed: int = 0) -> RefCounted:
 	var st := new()
 	st.level_dict = level
 	st.level_hash = VoidGenScript.level_hash(level) if not level.is_empty() else ""
@@ -41,6 +48,7 @@ static func build(level: Dictionary, p_level_number: int, p_player_count: int) -
 	_spawn_players(st, level, p_player_count)
 	st.gifts = GiftsScript.create(level)
 	st.beacon = BeaconScript.create(level)
+	st.mines = MinesScript.create(level, p_level_number, p_run_seed)
 	return st
 
 

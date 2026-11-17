@@ -1,0 +1,19 @@
+{
+  "id": "gift_larper",
+  "name": "gift Larper",
+  "min_level": 5,
+  "max_votes": 5,
+  "vote_effect": "extra_mines += 3",
+  "anchor_kinds": [],
+  "stats": {
+    "contact_radius": 0.9,
+    "tell_distance": 12.0,
+    "blast_radius": 3.0,
+    "rotation_period": 4.0,
+    "frames": 5,
+    "particles_color": "#FF4FD8",
+    "death_code": "D-MINE"
+  },
+  "sprites": "res://content/enemies/gift_larper/sprites.json",
+  "script": true
+}

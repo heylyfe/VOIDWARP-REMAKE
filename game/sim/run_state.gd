@@ -48,7 +48,7 @@ func load_level(level_dict: Dictionary, p_level_number: int) -> void:
 	level_number = p_level_number
 	for s in STREAMS:
 		(rng[s[0]] as RefCounted).s = _stream_seed(run_seed, s[1], level_number)
-	level = LevelStateScript.build(level_dict, level_number, players)
+	level = LevelStateScript.build(level_dict, level_number, players, run_seed)
 
 
 static func _stream_seed(p_run_seed: int, stream_id: int, p_level_number: int) -> int:

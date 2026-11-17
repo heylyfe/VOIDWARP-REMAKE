@@ -4,9 +4,9 @@ extends RefCounted
 #
 # Validates the REAL content on disk through the registry (core/registry.gd + the JSON
 # schemas in core/schemas/), then asserts the counts the launch content promises (46 curses,
-# 36 upgrades, 5 biomes; zero enemy folders so far), the id-sorted determinism, the data-file
-# presence, the CANON pool relationships of DESIGN.md section 8, and the sync between the
-# schema enums and the closed code lists in core/stats.gd + core/hooks.gd.
+# 36 upgrades, 5 biomes; one enemy entry so far - the tripmine, T-021), the id-sorted
+# determinism, the data-file presence, the CANON pool relationships of DESIGN.md section 8,
+# and the sync between the schema enums and the closed code lists in core/stats.gd + core/hooks.gd.
 
 const RegistryScript := preload("res://core/registry.gd")
 const ContentApiScript := preload("res://core/content_api.gd")
@@ -21,7 +21,7 @@ func run() -> Array[String]:
 		return failures
 
 	# Counts (T-014 tickets) and determinism (DESIGN.md section 12: sorted by id).
-	var counts := {"curses": 46, "upgrades": 36, "biomes": 5, "enemies": 0}
+	var counts := {"curses": 46, "upgrades": 36, "biomes": 5, "enemies": 1}
 	var dictionaries := {"curses": res["curses"], "upgrades": res["upgrades"], "biomes": res["biomes"], "enemies": res["enemies"]}
 	for key in counts:
 		var dict: Dictionary = dictionaries[key]
@@ -30,7 +30,7 @@ func run() -> Array[String]:
 	_check(failures, (res["data"] as Dictionary).size() == 6, "data files loaded: %d, expected 6" % (res["data"] as Dictionary).size())
 	var cids: Array[String] = []
 	for item in res["content_ids"]: cids.append(str(item))
-	_check(failures, cids.size() == 87, "content_ids has %d entries, expected 87" % cids.size())
+	_check(failures, cids.size() == 88, "content_ids has %d entries, expected 88" % cids.size())
 	_ascending(failures, "content_ids", cids)
 	_pools_and_api(failures)
 	_api_semantics(failures)
