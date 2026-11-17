@@ -198,7 +198,9 @@ func tick(row: Dictionary, api, dt_ticks: int) -> void:
 
 func _tick_one(row: Dictionary, api) -> void:
 	row["age"] = int(row["age"]) + 1
-	if int(row["age"]) == SPAWN_FADE_TICKS:
+	# the anim block's spawn row blocks contact for its 30 ticks (the anim's own
+	# contact_blocked covers ticks_in_state 0..29): the body returns at age 31
+	if int(row["age"]) == SPAWN_FADE_TICKS + 1:
 		row["diameter_u"] = float(row["diameter_full"])   # the fade is done: contact kills
 	_advance_music(row, api)
 	_tick_agitation(row)
@@ -226,7 +228,9 @@ func _beat_ticks(row: Dictionary) -> float:
 
 func _advance_music(row: Dictionary, api) -> void:
 	row["beat_pos"] = float(row["beat_pos"]) + _bpm(row) / 3600.0
-	var beat := int(floor(float(row["beat_pos"])))
+	# beat k fires when the phase crosses k + 1 beats: beat 0 (the bar's beat 1)
+	# lands 36 ticks after the music starts at 100 BPM, never on the spawn tick
+	var beat := int(floor(float(row["beat_pos"]))) - 1
 	while int(row["beat_fired"]) < beat:
 		row["beat_fired"] = int(row["beat_fired"]) + 1
 		_on_beat(row, api, int(row["beat_fired"]))
@@ -282,13 +286,23 @@ func _tick_plushies(row: Dictionary, api) -> void:
 		var d := sqrt(dx * dx + dz * dz)
 		if d < PLUSHIE_MIN_U or d > PLUSHIE_MAX_U:
 			continue
+		var too_close := false
+		for p in row["plushies"]:
+			var px2 := float(t["x"]) - float(p["x"])
+			var pz2 := float(t["z"]) - float(p["z"])
+			if px2 * px2 + pz2 * pz2 < 4.0:
+				too_close = true   # never stack a plushie on an existing one (2 u apart)
+				break
+		if too_close:
+			continue
 		if best == null or d > best_d:
 			best = t
 			best_d = d
 	if best == null:
 		return
 	var plushies: Array = row["plushies"]
-	plushies.append({"x": float(best["x"]), "y": float(best["y"]), "z": float(best["z"])})
+	plushies.append({"x": float(best["x"]), "y": float(best["y"]), "z": float(best["z"]),
+			"born": int(row["age"])})
 	row["plushies"] = plushies
 	row["plushie_cd"] = PLUSHIE_INTERVAL_TICKS
 	row["last_plushie_tick"] = int(row["age"])
@@ -310,6 +324,7 @@ func _pickup_plushies(row: Dictionary, api, near: Dictionary) -> void:
 			continue
 		row["agitation"] = maxf(float(row["agitation"]) - PLUSHIE_CALM, 0.0)
 		row["last_pickup_tick"] = int(row["age"])
+		row["last_pickup_pos"] = {"x": float(p["x"]), "y": float(p["y"]), "z": float(p["z"])}
 	row["plushies"] = keep
 
 
@@ -559,11 +574,22 @@ func _shot_tick(row: Dictionary, api, shot: Dictionary) -> bool:
 			shot["dy"] = dir.y
 			shot["dz"] = dir.z
 	var prev := Vector3(float(shot["x"]), float(shot["y"]), float(shot["z"]))
-	var nxt := prev + Vector3(float(shot["dx"]), float(shot["dy"]), float(shot["dz"])) * (WIND_SPEED / 60.0)
+	var dir_v := Vector3(float(shot["dx"]), float(shot["dy"]), float(shot["dz"])).normalized()
+	shot["dx"] = dir_v.x
+	shot["dy"] = dir_v.y
+	shot["dz"] = dir_v.z
+	var nxt := prev + dir_v * (WIND_SPEED / 60.0)
 	shot["x"] = nxt.x
 	shot["y"] = nxt.y
 	shot["z"] = nxt.z
-	if not api.los(prev, nxt):
+	# D-071: dies on touching any tile slab, step riser or prop. api.los marches at
+	# 0.25 u and a 7 u/s step is only 0.117 u - a direct prev->now call would sample
+	# NOTHING (D-T040-5). Probe the trailing 0.3 u of the path instead: the segment is
+	# then always long enough for the march to sample its midpoint every tick, so no
+	# wall thicker than ~0.2 u can be tunnelled and the detection lags the touch by
+	# at most ~3 ticks (never early).
+	var back := nxt - dir_v * 0.3
+	if not api.los(back, nxt):
 		return false              # clipped a tile slab, a step riser or a prop (D-071)
 	if not near.is_empty():
 		var px := float(near["x"]) - float(shot["x"])
