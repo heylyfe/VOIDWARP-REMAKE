@@ -1,7 +1,8 @@
 extends Node3D
 #
-# Beacon view (ticket T-020; TERRAIN_SPEC.md sections 6.1 and 12.2, DESIGN.md
-# section 3, research/fable-tickets.md section 2.3).
+# Beacon view (ticket T-020; SPEC-CONFORMANCE pass: ticket T-085,
+# research/fable-tickets.md section 2.3, TERRAIN_SPEC.md sections 6.1 and 12.2,
+# DESIGN.md section 3).
 #
 # CLOSED: the T-015 beacon mesh as modelled (dull beacon_closed #3A4A55, no
 # emission), plus the progress read-out: a dim ring of 8 unlit segments around
@@ -10,7 +11,17 @@ extends Node3D
 # column #E8FFFF, 1.5 u wide, alpha 0.6, to Y +60 u, visible through the fog;
 # both ramp in over 0.6 s (36 ticks) from the open tick, then the column pulses
 # 0.9..1.0 at 0.5 Hz. The T-015 model has no doorway, so there is no door slab
-# to animate (D-T020-6).
+# to animate (D-T020-6 stands; D-T085-4).
+#
+# TICK-DRIVEN (T-085): the section 2.3 row "on the tick the last real black gift
+# is collected ... the light column rises" is a tick contract, so sync_tick()
+# owns the ramp and the pulse - the column is visible on the open tick itself
+# (the ramp starts at 1/36, D-T085-3). The frame path (_process) stays for
+# callers that have no tick clock (test_gifts.gd's smoke path).
+#
+# Also built here: the white shock ring that crosses the hub on the open tick,
+# and the blocked state (Crowded Dais / Slow Door: the column turns danger red
+# while entry is refused, and Slow Door shows a ring filling over 180 ticks).
 #
 # Reads sim state only (never writes): set_progress + set_open from the caller.
 
@@ -20,18 +31,30 @@ const MODEL := "res://assets/models/beacon.glb"
 const OPEN_COLOR := Color(0.910, 1.0, 1.0)   # #E8FFFF
 const DIM_COLOR := Color(0.227, 0.290, 0.333)  # #3A4A55
 const LIT_COLOR := Color(0.486, 1.0, 0.957)  # #7CFFF4 (D-T020-6: no lit colour stated)
+const DANGER_RED := Color(1.0, 0.1647, 0.1647)  # #FF2A2A (TERRAIN_SPEC 12.2)
 const RING_SEGMENTS := 8
 const RING_HALF := 2.5        # dais cells -2..2 -> world edge 2.5 u from the centre
 const RING_Y := 0.02          # above the dais top (y = 1 * 0.5)
 const EMISSION_MAX := 4.0     # beacon_open emission x 4.0
 const COLUMN_HEIGHT := 60.0   # light column to Y +60 u
 const COLUMN_RADIUS := 0.75   # 1.5 u wide
+const COLUMN_ALPHA := 0.6     # section 2.3 OPEN row
 const OPEN_RAMP := 0.6        # 36 ticks
+const OPEN_TICKS := 36        # section 2.3: the slab/column ramp, 0.6 s
+const PULSE_HZ := 0.5         # section 2.3: slow pulse 0.9 -> 1.0 at 0.5 Hz
+const SLOW_DOOR_TICKS := 180  # section 2.3: the Slow Door ring fills over 180 ticks
+const TRIGGER_RADIUS := BeaconScript.RADIUS  # 1.5 u, binding
 
 var _ramp := 0.0
 var _opened := false
+var _open_tick := -1          # the sim tick the beacon opened on (-1: no tick clock)
+var _tick := 0
+var _blocked := false
+var _slow_door_ticks := -1    # ticks elapsed since entry was refused (-1: not refused)
 var _ring: Array = []         # 8 MeshInstance3D
 var _column: MeshInstance3D
+var _shock: MeshInstance3D
+var _slow_door: MeshInstance3D
 var _body: Array = []         # the beacon mesh instances
 var _open_mat: StandardMaterial3D
 
@@ -50,6 +73,8 @@ func _init() -> void:
 				_body.append(n)
 	_build_ring()
 	_build_column()
+	_build_shock_ring()
+	_build_slow_door()
 
 
 ## Places the node on the beacon tile of the Level dict (x + 0.5, y * 0.5, z + 0.5).
@@ -99,6 +124,54 @@ func _build_column() -> void:
 	_column = mi
 
 
+## The white shock ring that crosses the hub on the open tick (section 2.3,
+## cosmetic): a flat ring that expands from the dais centre to the dais edge
+## over the same 36 ticks as the column.
+func _build_shock_ring() -> void:
+	var mesh := TorusMesh.new()
+	mesh.inner_radius = 0.94
+	mesh.outer_radius = 1.0
+	mesh.rings = 3
+	mesh.ring_segments = 32
+	var mi := MeshInstance3D.new()
+	mi.mesh = mesh
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	m.albedo_color = Color(1.0, 1.0, 1.0, 0.8)
+	m.disable_fog = true
+	m.disable_receive_shadows = true
+	mi.material_override = m
+	mi.position = Vector3(0.0, RING_Y, 0.0)
+	mi.visible = false
+	add_child(mi)
+	_shock = mi
+
+
+## The Slow Door ring: it fills from the beacon axis out to the 1.5 u trigger
+## radius over 180 ticks while entry is refused (section 2.3, blocked row).
+func _build_slow_door() -> void:
+	var mesh := TorusMesh.new()
+	mesh.inner_radius = 0.9
+	mesh.outer_radius = 1.0
+	mesh.rings = 3
+	mesh.ring_segments = 32
+	var mi := MeshInstance3D.new()
+	mi.mesh = mesh
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.albedo_color = Color(DANGER_RED.r, DANGER_RED.g, DANGER_RED.b, 0.7)
+	m.disable_fog = true
+	m.disable_receive_shadows = true
+	mi.material_override = m
+	mi.position = Vector3(0.0, RING_Y, 0.0)
+	mi.visible = false
+	add_child(mi)
+	_slow_door = mi
+
+
 static func _ring_material(lit: bool) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -119,36 +192,135 @@ func set_progress(collected: int, total: int) -> void:
 		_ring[i].material_override = _ring_material(i < lit)
 
 
-## Opens (or resets) the beacon; the open ramp runs in _process.
-func set_open(opened: bool) -> void:
+## Opens (or resets) the beacon. tick: the sim tick the beacon opened on (the
+## beacon_opened event's tick, i.e. the tick of the last real black gift); -1
+## keeps the frame-driven path for callers with no tick clock.
+func set_open(opened: bool, tick: int = -1) -> void:
+	if opened and not _opened:
+		_open_tick = tick
 	_opened = opened
 	if not opened:
 		_ramp = 0.0
+		_open_tick = -1
+		_blocked = false
+		_slow_door_ticks = -1
 		for b in _body:
 			b.material_override = null
 		if _column != null:
 			_column.visible = false
+		if _shock != null:
+			_shock.visible = false
+		if _slow_door != null:
+			_slow_door.visible = false
 
 
-func _process(delta: float) -> void:
+## The tick the beacon opened on (-1 when it is closed or has no tick clock).
+func open_tick() -> int:
+	return _open_tick
+
+
+## The tick-driven sync (section 2.3): the ramp and the pulse are functions of
+## the sim tick, so the column is visible on the open tick itself.
+func sync_tick(tick: int) -> void:
+	_tick = tick
 	if not _opened:
+		return
+	if _open_tick >= 0:
+		# the ramp starts at 1/36 on the open tick (D-T085-3): "appears on the tick"
+		_ramp = clampf(float(tick - _open_tick + 1) / float(OPEN_TICKS), 0.0, 1.0)
+	_apply(_pulse_at(tick))
+
+
+## The frame-driven path (no tick clock): the ramp advances with delta.
+func _process(delta: float) -> void:
+	if not _opened or _open_tick >= 0:
 		return
 	if _ramp < 1.0:
 		_ramp = minf(_ramp + delta / OPEN_RAMP, 1.0)
-	var pulse := 1.0
-	if _ramp >= 1.0:
-		# slow pulse 0.9 -> 1.0 at 0.5 Hz once the ramp is done
-		pulse = 0.95 + 0.05 * sin(Time.get_ticks_msec() * 0.001 * TAU * 0.5)
+	_apply(0.95 + 0.05 * sin(Time.get_ticks_msec() * 0.001 * TAU * PULSE_HZ))
+
+
+## The 0.9 -> 1.0 pulse at 0.5 Hz, as a function of the sim tick.
+static func _pulse_at(tick: int) -> float:
+	return 0.95 + 0.05 * sin(float(tick) / 60.0 * TAU * PULSE_HZ)
+
+
+## Applies the current ramp + pulse to the body, the column, the shock ring and
+## the Slow Door ring.
+func _apply(pulse: float) -> void:
 	var energy := EMISSION_MAX * _ramp * pulse
 	if _open_mat == null:
 		_open_mat = _open_material()
 	_open_mat.emission_energy_multiplier = energy
+	_open_mat.albedo_color = DANGER_RED if _blocked else OPEN_COLOR
 	for b in _body:
 		b.material_override = _open_mat
 	if _column != null:
-		_column.visible = _ramp > 0.01
+		_column.visible = _ramp > 0.0
 		_column.scale.y = maxf(_ramp, 0.001)
 		_column.position.y = COLUMN_HEIGHT * 0.5 * _ramp
+		var cm: StandardMaterial3D = _column.material_override
+		cm.albedo_color = Color(DANGER_RED.r, DANGER_RED.g, DANGER_RED.b, COLUMN_ALPHA) if _blocked \
+			else Color(OPEN_COLOR.r, OPEN_COLOR.g, OPEN_COLOR.b, COLUMN_ALPHA)
+	if _shock != null:
+		# the shock ring crosses the hub over the same 36 ticks, then hides
+		var s: float = _ramp * RING_HALF
+		_shock.visible = _ramp > 0.0 and _ramp < 1.0
+		_shock.scale = Vector3(maxf(s, 0.001), 1.0, maxf(s, 0.001))
+	if _slow_door != null:
+		# the Slow Door ring fills from the axis out to the trigger radius
+		var f: float = 0.0
+		if _slow_door_ticks >= 0:
+			f = clampf(float(_slow_door_ticks) / float(SLOW_DOOR_TICKS), 0.0, 1.0)
+		_slow_door.visible = _slow_door_ticks >= 0
+		_slow_door.scale = Vector3(maxf(f * TRIGGER_RADIUS, 0.001), 1.0,
+			maxf(f * TRIGGER_RADIUS, 0.001))
+
+
+## Blocked (Crowded Dais / Slow Door): the column turns danger red while entry
+## is refused. slow_door_ticks: ticks elapsed since the refusal (-1: not refused).
+func set_blocked(blocked: bool, slow_door_ticks: int = -1) -> void:
+	_blocked = blocked
+	_slow_door_ticks = slow_door_ticks if blocked else -1
+	if _opened:
+		_apply(_pulse_at(_tick))
+
+
+## The column's current height in u (0 when it is not showing).
+func column_height() -> float:
+	if _column == null or not _column.visible:
+		return 0.0
+	return COLUMN_HEIGHT * _column.scale.y
+
+
+func column_visible() -> bool:
+	return _column != null and _column.visible
+
+
+func column_alpha() -> float:
+	if _column == null:
+		return 0.0
+	return (_column.material_override as StandardMaterial3D).albedo_color.a
+
+
+func column_color() -> Color:
+	if _column == null:
+		return Color(0, 0, 0, 0)
+	return (_column.material_override as StandardMaterial3D).albedo_color
+
+
+func shock_ring_visible() -> bool:
+	return _shock != null and _shock.visible
+
+
+func slow_door_visible() -> bool:
+	return _slow_door != null and _slow_door.visible
+
+
+func slow_door_fill() -> float:
+	if _slow_door == null:
+		return 0.0
+	return _slow_door.scale.x / TRIGGER_RADIUS
 
 
 static func _open_material() -> StandardMaterial3D:
@@ -159,8 +331,13 @@ static func _open_material() -> StandardMaterial3D:
 	return m
 
 
-## Convenience: sync straight from the sim's beacon state + gift state.
-func sync_from(beacon_state: RefCounted, gifts_state: RefCounted) -> void:
-	set_open(beacon_state.is_open())
+## Convenience: sync straight from the sim's beacon state + gift state. tick: the
+## sim tick to sync on (-1: the frame path). The open tick is the tick the beacon
+## state flipped, which is the tick of the last real black gift (sim/gifts.gd
+## opens the beacon on the same tick it collects it).
+func sync_from(beacon_state: RefCounted, gifts_state: RefCounted, tick: int = -1) -> void:
+	set_open(beacon_state.is_open(), tick)
 	if gifts_state != null and not beacon_state.is_open():
 		set_progress(gifts_state.total_real - gifts_state.remaining(), gifts_state.total_real)
+	if tick >= 0:
+		sync_tick(tick)

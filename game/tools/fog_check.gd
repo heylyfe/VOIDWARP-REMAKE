@@ -15,6 +15,7 @@ extends SceneTree
 #   walkway checker light vs fog                  d = 60 u  >= 3.0
 #   platform light vs platform dark (both fogged) d = 40 u  >= 2.0
 #   black gift rim / gold gift / tripmine particles / open beacon vs fog @ 60 u   >= 4.5
+#   tripmine particles vs fog @ 12 u (the tell, section 2.1)                      >= 4.5
 #   every enemy PNG mean opaque colour vs fog     d = 40 u  >= 3.0 (ENEMIES.md hard rule;
 #                                     sprites arrive with T-016; until then the row is vacuous)
 #
@@ -29,6 +30,9 @@ const FogEnvScript := preload("res://view/fog_env.gd")
 const BIOME_DIR := "res://content/biomes"
 const D_PLANNING := 60.0   # section 12.3 rationale: ~6.7 s of running
 const D_DODGE := 40.0      # the dodge horizon
+## The tripmine tell radius (DESIGN.md section 3.3, research/fable-tickets.md
+## section 2.1 readability row): inside 12 u the particles must pass the check.
+const D_TELL := 12.0
 
 static func _s2l(c: float) -> float:
 	return c / 12.92 if c <= 0.04045 else pow((c + 0.055) / 1.055, 2.4)
@@ -99,11 +103,13 @@ static func _check_biome(biome_id: String, global_failures: Array) -> int:
 	_row("%s black_gift_rim vs fog @60" % biome_id, _fogged(R["black_gift_rim"]["hex"], fog_hex, D_PLANNING, dens, 1.0 + float(R["black_gift_rim"].get("emission", 0.0))), _fogged(fog_hex, fog_hex, D_PLANNING, dens), 4.5, failures)
 	_row("%s gold_gift vs fog @60" % biome_id, _fogged(R["gold_gift"]["hex"], fog_hex, D_PLANNING, dens, 1.0 + float(R["gold_gift"].get("emission", 0.0))), _fogged(fog_hex, fog_hex, D_PLANNING, dens), 4.5, failures)
 	_row("%s tripmine_particles vs fog @60" % biome_id, _fogged(R["tripmine_particles"]["hex"], fog_hex, D_PLANNING, dens, 2.0), _fogged(fog_hex, fog_hex, D_PLANNING, dens), 4.5, failures)
+	# the tell's own readability row (section 2.1): inside 12 u the particles read
+	_row("%s tripmine_particles vs fog @12 (tell)" % biome_id, _fogged(R["tripmine_particles"]["hex"], fog_hex, D_TELL, dens, 2.0), _fogged(fog_hex, fog_hex, D_TELL, dens), 4.5, failures)
 	_row("%s beacon_open vs fog @60" % biome_id, _fogged(R["beacon_open"]["hex"], fog_hex, D_PLANNING, dens, 1.0 + float(R["beacon_open"].get("emission", 0.0))), _fogged(fog_hex, fog_hex, D_PLANNING, dens), 4.5, failures)
 	# DESIGN.md section 10 row: informational, T-054 owns any adjustment
 	var info := _contrast(_fogged(R["tripmine_particles"]["hex"], fog_hex, D_DODGE, dens), _fogged(R["platform_light"]["hex"], fog_hex, D_DODGE, dens, 1.0 + float(R["platform_light"].get("emission", 0.0))))
 	print("FOGCHECK INFO %s tripmine vs platform_light @40: %.3f (DESIGN section 10, target 3.0, T-054 owns)" % [biome_id, info])
-	var checked := 7
+	var checked := 8
 	global_failures.append_array(failures)
 	return checked
 
