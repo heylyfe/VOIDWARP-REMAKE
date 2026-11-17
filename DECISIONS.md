@@ -5144,6 +5144,40 @@ are art choices driven by the measured A8 ratio, not spec numbers; no threshold,
 was touched. The finger's backdrop is removed by a border flood fill at tolerance ~34/255 (a global
 key would have eaten the finger's dark outline pixels, e.g. (36,20,0)); the JPEG ring noise inside
 that tolerance is fully enclosed.
+
+### D-ART-GIN-1 - gin's frames are cut by game/tools/art/gin.gd, not the shared pipeline (T-ART-GIN)
+The two owner sources are opaque (`gin idle.png` border #F7F7F7; `ginsword.png` border #FFFFFF),
+so the shared pipeline's 24/255 corner flood fill eats the whole image and reports NO BODY; the
+enemy stayed TBD after the revert. `game/tools/art/gin.gd` owns gin's frames (the pipeline skips an
+enemy that has this module): distance-to-border-colour threshold + a 4-connected flood fill from
+the border - `gin idle.png`, border #F7F7F7, tolerance 70 (removes the soft drop shadow and the
+white glare arc, keeps the cel-shaded outline; the robe's near-white interior is reachable only
+through the dark outline, so it stays opaque), `ginsword.png`, border #FFFFFF, tolerance 32 (the
+silver blade reads ~#C6C6C6 and must survive). Tight crop to alpha > 16, 512x512 canvas (power of
+two, <= 512), the body bottom-anchored (gin stands on the ground), the sword centred, a transparent
+margin of >= 2 px. The sword's blade is cut off by the source canvas at the bottom-left corner -
+kept as authored (owner's art, Image 17).
+
+### D-ART-GIN-2 - one distinct derived frame per anim-block state; the derivation parameters are [CONTESTABLE]
+`attack_void_zone` keeps zero frames (the void zone is VFX; the state lists none). Every other
+state of the T-083 block now points at its own file, each derived from the base body: idle_00 =
+base; spawn_00 = materialize tint toward #CFF6FF k=0.35 + brightness +0.08 (the spawn fade is the
+state's runtime effect; this is the body mid-assembly); telegraph_00 = stretch (0.94, 1.08) + red
+charge tint toward #FF4A3C k=0.14 (the mark's outline is #FF2A2A) + brightness +0.10 (the rumble);
+launch_00 = the sword source + white-hot tint toward #FFFFFF k=0.12 + brightness +0.18 (the shing);
+recover_00 = desaturate 0.45 + brightness -0.25 (ghosting out after the launch). All of these are
+[CONTESTABLE] art-derivation parameters: no document states them; any equivalent recipe yields the
+same game, and the T-083 tick counts, loop flags and effect params are untouched (D-040). Every
+frame's body_rect is recomputed as the tight bbox of alpha > 16 (HITBOXES); the spec frames stay
+`gin_idle_00`/`gin_launch_00` and frame_map points them at `idle_00.png`/`launch_00.png`.
+
+### D-ART-GIN-3 - launch_00 fits the sword in a 500 px box, not 508 (T-ART-GIN) [CONTESTABLE]
+T-084's probe `(2,2)` of the frame shown must never hit (TRANSPARENCY padding). A 508 px fit on a
+512 canvas left opaque pixels at (2,2) - the launch frame is the only gin frame whose body_rect can
+start that close to the origin - so the sword is fitted to 500 px (6 px margin, body_rect
+[6,6,499,500]). No test file was edited; the validator's 2 px floor is untouched (the margin is
+larger, never smaller); only the art changed. Same class of choice as D-ART-GIN-2 (an art parameter,
+not a threshold).
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)

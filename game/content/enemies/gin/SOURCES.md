@@ -7,8 +7,12 @@ their sources documented here.
 
 | image | exact filename | path (repo-relative) | pipeline state |
 |---|---|---|---|
-| 16 | `gin idle.png` | `assets_src/enemies/gin idle.png` | MISSING -> TBD |
-| 17 | `ginsword.png` | `assets_src/enemies/ginsword.png` | MISSING -> TBD |
+| 16 | `gin idle.png` | `assets_src/enemies/gin idle.png` | REAL ART (T-ART-GIN, `game/tools/art/gin.gd`) |
+| 17 | `ginsword.png` | `assets_src/enemies/ginsword.png` | REAL ART (T-ART-GIN, `game/tools/art/gin.gd`) |
+
+As of T-ART-GIN the two frames are cut by `game/tools/art/gin.gd`, not the shared pipeline
+(the sources are opaque; the pipeline's 24/255 corner fill eats them). Re-run the module to
+regenerate; the anim block in `sprites.json` is preserved by it.
 
 Pipeline (every source): RGBA convert, background removed by a flood fill from the four
 image corners (colour tolerance 24/255, skipped when the corners are already alpha 0),
