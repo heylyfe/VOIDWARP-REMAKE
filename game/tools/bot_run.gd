@@ -26,12 +26,17 @@ extends SceneTree
 #     nothing is forked or reimplemented.
 #   - nearest-gift routing: pathfinds on the TERRAIN_SPEC section 5.2 movement graph
 #     (walk + jump edges, reused from terrain/voidgen.gd's own movement()) from the
-#     player's tile to the nearest REACHABLE uncollected black gift (BFS distance,
+#     player's tile to the nearest REACHABLE uncollected black gift (weighted route,
 #     tie-break slot id); re-paths on collection / phase change / every REPLAN_TICKS /
-#     after any jump; when the beacon is open, routes to the beacon tile instead.
-#     Jump edges are taken with a tap-jump + reduced approach speed on level/near
-#     edges, a full jump on rising edges, and a plain run-off on drops that fall far
-#     enough (see _jump_plan). A path the follower can no longer walk re-plans.
+#     after any landing; when the beacon is open, routes to the beacon tile instead.
+#     Edge discipline (FIX-A3, D-FIX-A3-1): every edge that is not a same-level walk
+#     is a committed manoeuvre over air, so the route pays for air time (Dijkstra
+#     costs; the walkable route is preferred, a deep drop costs the most) and a
+#     non-walk edge is only followed when the controller's own jump physics (the
+#     TERRAIN_SPEC section 5.1 envelope, forward-simulated in _jump_arc) validates an
+#     arc that lands on a tile - otherwise the edge is banned and the route re-plans.
+#     The bot never "walks off and prays", and the dodge escape is picked so it keeps
+#     ground support instead of running straight off a ledge into the void.
 #   - dodges telegraphs with a 250 ms reaction: the enemy runtime's telegraph dicts
 #     (the ones the view draws) are tracked from the tick they first appear; the bot
 #     reacts REACT_TICKS = 15 ticks LATER (60 Hz; a bot that reacts on the tick a
@@ -206,6 +211,7 @@ static func play_run(api: RefCounted, seed: int, max_level: int, p_log = null,
 		p_log.lobby_left()
 	var entered := 1
 	var outcome := "complete"
+	var l1_tick := -1
 	var death_tick := -1
 	var death_killer := ""
 	var death_code := ""
@@ -213,6 +219,8 @@ static func play_run(api: RefCounted, seed: int, max_level: int, p_log = null,
 		var result: Dictionary = _play_level(api, ledger, seed, entered, p_log, p_rec)
 		var res := str(result.get("result", "dead"))
 		if res == "complete":
+			if entered == 1:
+				l1_tick = int(result.get("complete_tick", -1))
 			if entered >= max_level:
 				break
 			entered += 1
@@ -235,6 +243,7 @@ static func play_run(api: RefCounted, seed: int, max_level: int, p_log = null,
 	return {
 		"reached_6": entered >= 6, "reached_12": entered >= 12, "reached_18": entered >= 18,
 		"outcome": outcome, "entered": entered, "class": str(ledger["class"]),
+		"l1_tick": l1_tick,
 		"death_tick": death_tick, "death_killer": death_killer, "death_code": death_code,
 		"charges": int(ledger.get("charges", 2)),
 	}
@@ -353,8 +362,82 @@ static func _build_graph(L: Dictionary) -> Dictionary:
 	return {"world": w, "adj": mv[1], "tiles": w.tiles}
 
 
-## One forward BFS from `start`; returns {"dist": PackedInt32Array, "parent": PackedInt32Array}.
-static func _bfs(adj: Array, start: int) -> Dictionary:
+## One weighted route from `start` (Dijkstra; FIX-A3, D-FIX-A3-1). Edge costs make the
+## router prefer ground: a same-level walk is free-ish, any edge over air is paid for,
+## and a drop onto far-below ground costs the most (one-way, no recovery). Returns
+## {"dist": PackedInt32Array, "parent": PackedInt32Array}; banned edges ("a>b" keys)
+## are never relaxed. Deterministic: ties break FIFO like the BFS it replaces.
+const COST_WALK := 1
+const COST_STEP_DOWN := 2    # 4-neighbour, 1 HU down: the controller lands instantly
+const COST_STEP_UP := 3      # 4-neighbour, 1 HU up: auto step-up
+const COST_HOP := 6          # small rise/drop over a gap
+const COST_DROP := 60        # drop onto ground far below (one-way, follow it badly and you die)
+
+static func _edge_cost(a: Array, b: Array) -> int:
+	var dx := absi(int(b[0]) - int(a[0]))
+	var dz := absi(int(b[1]) - int(a[1]))
+	var dy := int(b[2]) - int(a[2])
+	var man := dx + dz
+	if man == 1:
+		if dy == 0:
+			return COST_WALK
+		if dy == -1:
+			return COST_STEP_DOWN
+		if dy == 1:
+			return COST_STEP_UP
+	var gap := maxi(dx, dz)
+	if dy > 0:
+		return COST_HOP + 2 * gap
+	if dy < -2:
+		return COST_DROP
+	return COST_HOP if gap <= 2 else COST_HOP + 2 * gap
+
+
+static func _h_lt(a: Array, b: Array) -> bool:
+	if int(a[0]) != int(b[0]):
+		return int(a[0]) < int(b[0])
+	return int(a[1]) < int(b[1])
+
+
+static func _h_push(heap: Array, e: Array) -> void:
+	heap.append(e)
+	var c := heap.size() - 1
+	while c > 0:
+		var p := (c - 1) >> 1
+		if _h_lt(heap[c], heap[p]):
+			var tmp: Array = heap[p]
+			heap[p] = heap[c]
+			heap[c] = tmp
+			c = p
+		else:
+			break
+
+
+static func _h_pop(heap: Array) -> Array:
+	var top: Array = heap[0]
+	var last: Array = heap.pop_back()
+	if not heap.is_empty():
+		heap[0] = last
+		var n := heap.size()
+		var c := 0
+		while true:
+			var l := 2 * c + 1
+			var r := 2 * c + 2
+			var m := c
+			if l < n and _h_lt(heap[l], heap[m]):
+				m = l
+			if r < n and _h_lt(heap[r], heap[m]):
+				m = r
+			if m == c:
+				break
+			var tmp: Array = heap[m]
+			heap[m] = heap[c]
+			heap[c] = tmp
+			c = m
+	return top
+
+
+static func _route(adj: Array, tiles: Array, start: int, banned: Dictionary) -> Dictionary:
 	var n: int = adj.size()
 	var dist := PackedInt32Array()
 	var parent := PackedInt32Array()
@@ -364,16 +447,24 @@ static func _bfs(adj: Array, start: int) -> Dictionary:
 		dist[i] = -1
 		parent[i] = -1
 	dist[start] = 0
-	var queue: Array[int] = [start]
-	var h := 0
-	while h < queue.size():
-		var c: int = queue[h]
-		h += 1
-		for nb in adj[c]:
-			if dist[nb] == -1:
-				dist[nb] = dist[c] + 1
-				parent[nb] = c
-				queue.append(nb)
+	var heap: Array = []
+	var seq := 0
+	_h_push(heap, [0, 0, start])
+	while not heap.is_empty():
+		var top: Array = _h_pop(heap)
+		var c: int = int(top[0])
+		var u: int = int(top[2])
+		if c != int(dist[u]):
+			continue   # stale heap entry
+		for v in adj[u]:
+			if banned.has("%d>%d" % [u, v]):
+				continue
+			var nd: int = c + _edge_cost(tiles[u], tiles[v])
+			if int(dist[v]) < 0 or nd < int(dist[v]):
+				dist[v] = nd
+				parent[v] = u
+				seq += 1
+				_h_push(heap, [nd, seq, v])
 	return {"dist": dist, "parent": parent}
 
 
@@ -529,7 +620,7 @@ static func _play_level(api: RefCounted, ledger: Dictionary, seed: int, level: i
 		if bool(lv.beacon.completed):
 			ledger["charges"] = int(ctl.charges)
 			ledger["last_light_spent"] = bool(ctl.last_light_spent)
-			return {"result": "complete"}
+			return {"result": "complete", "complete_tick": int(lv.tick)}
 		for e in ev:
 			var ek := str(e.get("e", ""))
 			if ek == "gift_collected" or ek == "respawn" or ek == "last_light_save":
@@ -554,6 +645,8 @@ static func _fresh_mem() -> Dictionary:
 		"stuck_timer": 0, "last_pos": Vector2(-9999.0, -9999.0),
 		"slot_tiles": [], "cur_tile": -1,
 		"air_ticks": 0, "air_released": {},   # gifts this level we gave up reaching (thicc_ben pin)
+		"banned": {}, "lift_at": 0,           # refused edges (D-FIX-A3-1) + the lift cooldown
+		"was_grounded": true,
 	}
 
 
@@ -684,7 +777,11 @@ static func _escape_vector(shape: Dictionary, px: float, pz: float) -> Vector2:
 
 ## The dodge input for this tick, or null when no telegraph demands one.
 ## Reacts REACT_TICKS (250 ms) after a telegraph appears - never on the tick it appears.
-static func _dodge_vector(mem: Dictionary, rt, ctl, tick: int) -> Variant:
+## The escape direction is ledge-checked (D-FIX-A3-1): if the straight escape runs off
+## the walkway into the void, the bot rotates it in 30-degree steps (both ways, nearest
+## first) to a direction that keeps ground support - a strike beats a D-VOID fall
+## (T-060/T-081: 60% of deaths were void falls, and a straight-out dodge caused many).
+static func _dodge_vector(mem: Dictionary, rt, ctl, tick: int, w) -> Variant:
 	var best_strike := 1 << 30
 	var best_shape: Dictionary = {}
 	for i in range(int(mem["seen"])):
@@ -712,7 +809,15 @@ static func _dodge_vector(mem: Dictionary, rt, ctl, tick: int) -> Variant:
 			best_shape = shape
 	if best_shape.is_empty():
 		return null
-	return _escape_vector(best_shape, float(ctl.x), float(ctl.z))
+	var esc := _escape_vector(best_shape, float(ctl.x), float(ctl.z))
+	if not _dir_has_support(w, ctl, esc):
+		for k in range(1, 12):
+			var ang := float(k) * PI / 6.0
+			for s in [1.0, -1.0]:
+				var dir2 := esc.rotated(ang * s)
+				if _dir_has_support(w, ctl, dir2):
+					return dir2
+	return esc
 
 
 # ---------------------------------------------------------------- routing brain --
@@ -741,6 +846,30 @@ static func _tile_under(w, ctl) -> int:
 			best_top = top
 			best = int(t["i"])
 	return best
+
+## True when walking from the feet toward `dir` keeps ground support over the next
+## ~0.9 u (a same-level straight walk may only be commanded onto ground that exists).
+static func _step_safe(w, ctl, dir: Vector2) -> bool:
+	var px := float(ctl.x)
+	var py := float(ctl.y)
+	var pz := float(ctl.z)
+	for d in [0.45, 0.9]:
+		if _tile_under(w, {"x": px + dir.x * d, "y": py, "z": pz + dir.y * d}) < 0:
+			return false
+	return true
+
+
+## True when an escape run toward `dir` from the feet keeps support over the next
+## ~1.9 u (a dodge may last several tenths of a second at run speed).
+static func _dir_has_support(w, ctl, dir: Vector2) -> bool:
+	var px := float(ctl.x)
+	var py := float(ctl.y)
+	var pz := float(ctl.z)
+	for d in [0.4, 0.8, 1.3, 1.9]:
+		if _tile_under(w, {"x": px + dir.x * d, "y": py, "z": pz + dir.y * d}) < 0:
+			return false
+	return true
+
 
 ## Simulate the horizontal speed ramp exactly as sim/controller.gd does it
 ## (accel 90 u/s^2 toward the target velocity), from `vz` (speed toward the
@@ -858,8 +987,10 @@ static func _jump_plan(ct: Array, _wt: Array, wp_pos: Vector2, dir: Vector2,
 	var rise := float(dy_hu) * 0.5
 	var arc := _jump_arc(ctl, w, wp_pos.x, wp_pos.y)
 	if arc.is_empty():
-		# no arc lands on a tile from this position/orientation: walk off and pray
-		return {"mag": 1.0, "hold": 0}
+		# no arc lands on a tile from this position/orientation: refuse the edge (the
+		# caller bans it and re-routes - "walk off and pray" is what produced the
+		# D-VOID epidemic; FIX-A3)
+		return {}
 	# the arc the sim validated may use a LOW approach speed (e.g. a gentle hop over a
 	# 1-cell wall): the bot must keep THAT speed, not launch at 9 u/s past the tile
 	return {"mag": maxf(float(arc["v"]) / 9.0, 0.25), "hold": int(arc["hold"])}
@@ -883,81 +1014,89 @@ static func _cell_exit(ct: Array, dir: Vector2) -> Vector2:
 
 
 ## Goal selection + replanning. Sets mem["path"]/["path_i"]/["goal_*"]; returns nothing.
-## Goal: the nearest REACHABLE uncollected black gift (BFS path distance, tie-break slot
-## id), or the beacon tile once the beacon is open (DESIGN.md section 3).
-static func _replan(mem: Dictionary, lv, ctl, cur: int, w2, adj: Array, L: Dictionary) -> void:
+## Goal: the nearest REACHABLE uncollected black gift (weighted route distance, tie-break
+## slot id), or the beacon tile once the beacon is open (DESIGN.md section 3). Edges the
+## follower has refused are banned (mem["banned"], "a>b" keys) and never relaxed onto;
+## when that makes every remaining gift unreachable the bans lift after a cooldown
+## (D-FIX-A3-1) - a wrong ban must not soft-lock the level.
+static func _replan(mem: Dictionary, lv, ctl, cur: int, w2, gtiles: Array, adj: Array,
+		L: Dictionary) -> void:
 	var goal_tile := -1
 	var goal_slot := -1
 	var goal_kind := "gift"
 	if bool(lv.beacon.is_open()):
+		goal_kind = "beacon"
 		var b: Array = L.get("beacon", [0, 0, 1])
 		goal_tile = VoidGenScript.find_tile(w2, int(b[0]), int(b[1]), int(b[2]))
-		goal_kind = "beacon"
+		if cur >= 0 and goal_tile >= 0:
+			var rb: Dictionary = _route(adj, gtiles, cur, mem.get("banned", {}))
+			if int((rb["dist"] as PackedInt32Array)[goal_tile]) < 0:
+				# the beacon is behind a banned edge: the beacon is the level's only
+				# way out, so lift the bans and try the full graph
+				mem["banned"] = {}
+				rb = _route(adj, gtiles, cur, {})
+			if int((rb["dist"] as PackedInt32Array)[goal_tile]) >= 0:
+				mem["path"] = _path_to(rb["parent"], cur, goal_tile)
+				mem["path_i"] = 0
+				mem["goal_kind"] = goal_kind
+				mem["goal_tile"] = goal_tile
+				mem["goal_slot"] = -1
+				return
 	elif cur >= 0:
-		var bf: Dictionary = _bfs(adj, cur)
-		var dist: PackedInt32Array = bf["dist"]
-		var parent: PackedInt32Array = bf["parent"]
-		var slots: Array = lv.gifts.slots
-		var released: Dictionary = mem.get("air_released", {})
-		var best_d := -1
-		var found_unreleased := false
-		for i in range(slots.size()):
-			if not lv.gifts.is_real(i) or lv.gifts.collected(i):
-				continue
-			if released.has(i):
-				continue
-			found_unreleased = true
-			var gi: int = int((mem["slot_tiles"] as Array)[i])
-			if gi < 0 or gi >= dist.size():
-				continue
-			var d := int(dist[gi])
-			if d < 0:
-				continue
-			if best_d < 0 or d < best_d or (d == best_d and i < goal_slot):
-				best_d = d
-				goal_tile = gi
-				goal_slot = i
-		if not found_unreleased:
-			# everything reachable was banned: the ban was too eager, lift it and re-pick
+		var route: Dictionary = _route(adj, gtiles, cur, mem.get("banned", {}))
+		var pick: Array = _nearest_gift(lv, mem, route["dist"], false)
+		if int(pick[0]) < 0 and int(lv.tick) >= int(mem.get("lift_at", 0)):
+			# nothing reachable: the bans (or the thicc_ben releases) over-constrained
+			# the route. Lift both after a cooldown and re-pick.
+			mem["banned"] = {}
 			mem["air_released"] = {}
-			for i in range(slots.size()):
-				if not lv.gifts.is_real(i) or lv.gifts.collected(i):
-					continue
-				var gi2: int = int((mem["slot_tiles"] as Array)[i])
-				if gi2 < 0 or gi2 >= dist.size():
-					continue
-				var d2 := int(dist[gi2])
-				if d2 < 0:
-					continue
-				if best_d < 0 or d2 < best_d or (d2 == best_d and i < goal_slot):
-					best_d = d2
-					goal_tile = gi2
-					goal_slot = i
+			mem["lift_at"] = int(lv.tick) + 300
+			route = _route(adj, gtiles, cur, {})
+			pick = _nearest_gift(lv, mem, route["dist"], true)
+		goal_tile = int(pick[0])
+		goal_slot = int(pick[1])
 		if goal_tile >= 0:
-			mem["path"] = _path_to(parent, cur, goal_tile)
+			mem["path"] = _path_to(route["parent"], cur, goal_tile)
 			mem["path_i"] = 0
 			mem["goal_kind"] = goal_kind
 			mem["goal_tile"] = goal_tile
 			mem["goal_slot"] = goal_slot
 			return
-		mem["path"] = []
-		mem["path_i"] = 0
-		mem["goal_kind"] = "gift"
-		mem["goal_tile"] = -1
-		mem["goal_slot"] = -1
-		return
-	if goal_tile >= 0 and cur >= 0:
-		var bf2: Dictionary = _bfs(adj, cur)
-		mem["path"] = _path_to(bf2["parent"], cur, goal_tile)
-		mem["path_i"] = 0
-		mem["goal_kind"] = goal_kind
-		mem["goal_tile"] = goal_tile
-		mem["goal_slot"] = goal_slot
-	elif goal_tile >= 0:
-		# airborne over the void: keep the previous path, fix only the goal markers
-		mem["goal_kind"] = goal_kind
-		mem["goal_tile"] = goal_tile
-		mem["goal_slot"] = goal_slot
+	# airborne over the void, or nothing reachable: keep the goal markers, clear the
+	# path; the caller stands (or steers to a still-valid goal) instead of beelining
+	# over the void
+	mem["path"] = []
+	mem["path_i"] = 0
+	mem["goal_kind"] = goal_kind
+	mem["goal_tile"] = goal_tile
+	mem["goal_slot"] = goal_slot
+
+
+## Nearest reachable uncollected real gift on `dist` (route distances from the player's
+## tile). Returns [goal_tile, goal_slot]; [-1, -1] when none is reachable. Pure.
+static func _nearest_gift(lv, mem: Dictionary, dist_v: Variant, ignore_released: bool) -> Array:
+	var dist: PackedInt32Array = dist_v
+	var slots: Array = lv.gifts.slots
+	var released: Dictionary = mem.get("air_released", {})
+	var best_d := -1
+	var goal_tile := -1
+	var goal_slot := -1
+	for i in range(slots.size()):
+		if not lv.gifts.is_real(i) or lv.gifts.collected(i):
+			continue
+		if not ignore_released and (released as Dictionary).has(i):
+			continue
+		var gi: int = int((mem["slot_tiles"] as Array)[i])
+		if gi < 0 or gi >= dist.size():
+			continue
+		var d := int(dist[gi])
+		if d < 0:
+			continue
+		if best_d < 0 or d < best_d or (d == best_d and i < goal_slot):
+			best_d = d
+			goal_tile = gi
+			goal_slot = i
+	return [goal_tile, goal_slot]
 
 
 ## The goal world position (gift hover point / beacon trigger centre), XZ used by the bot.
@@ -994,7 +1133,12 @@ static func _routing(mem: Dictionary, lv, ctl, w, w2, gtiles: Array, adj: Array,
 	# thicc_ben's launch cycle pins a body that keeps standing under him: no ground for
 	# 240 ticks at an uncollected gift goal means the gift is ungrabbable right now -
 	# release it for the rest of the level and path elsewhere (a human walks off)
+	var was_grounded: bool = bool(mem.get("was_grounded", true))
 	if bool(ctl.grounded):
+		if not was_grounded:
+			# just landed (often short of or past the planned waypoint after a jump):
+			# re-route from where the feet actually are (D-FIX-A3-1)
+			mem["repath"] = true
 		mem["air_ticks"] = 0
 	else:
 		mem["air_ticks"] = int(mem["air_ticks"]) + 1
@@ -1003,8 +1147,9 @@ static func _routing(mem: Dictionary, lv, ctl, w, w2, gtiles: Array, adj: Array,
 					and int(mem["air_ticks"]) >= 240:
 				(mem["air_released"] as Dictionary)[int(mem["goal_slot"])] = true
 				mem["repath"] = true
+	mem["was_grounded"] = bool(ctl.grounded)
 	if bool(mem["repath"]) or _goal_stale(mem, lv) or int(mem["replan_in"]) <= 0:
-		_replan(mem, lv, ctl, cur, w2, adj, L)
+		_replan(mem, lv, ctl, cur, w2, tiles, adj, L)
 		mem["repath"] = false
 		mem["replan_in"] = REPLAN_TICKS
 	else:
@@ -1018,11 +1163,15 @@ static func _routing(mem: Dictionary, lv, ctl, w, w2, gtiles: Array, adj: Array,
 	if path.is_empty() or pi >= path.size():
 		# no waypoints left: walk straight onto the goal point (its XZ must be reached;
 		# the gift's hover height is out of reach and stopping under it in 3D stops the bot
-		# just short of the pickup radius - the XZ distance is what collection needs)
-		var gp := _goal_point(mem, lv)
-		var d3 := Vector2(gp.x - float(ctl.x), gp.z - float(ctl.z))
-		if d3.length() > 0.1:
-			return {"move": d3.normalized(), "buttons": buttons}
+		# just short of the pickup radius - the XZ distance is what collection needs).
+		# Only onto a REAL goal, and only where the straight line keeps ground support
+		# (D-FIX-A3-1): with no path and no goal the old code walked toward the world
+		# origin - straight into the void.
+		if str(mem["goal_kind"]) == "beacon" or int(mem["goal_slot"]) >= 0:
+			var gp := _goal_point(mem, lv)
+			var d3 := Vector2(gp.x - float(ctl.x), gp.z - float(ctl.z))
+			if d3.length() > 0.1 and _step_safe(w, ctl, d3.normalized()):
+				return {"move": d3.normalized(), "buttons": buttons}
 		return {"move": Vector2.ZERO, "buttons": buttons}
 	while pi < path.size() and path[pi] == cur:
 		pi += 1
@@ -1030,7 +1179,7 @@ static func _routing(mem: Dictionary, lv, ctl, w, w2, gtiles: Array, adj: Array,
 	if pi >= path.size():
 		var gp2 := _goal_point(mem, lv)
 		var d4 := Vector2(gp2.x - float(ctl.x), gp2.z - float(ctl.z))
-		if d4.length() > 0.1:
+		if d4.length() > 0.1 and _step_safe(w, ctl, d4.normalized()):
 			return {"move": d4.normalized(), "buttons": buttons}
 		return {"move": Vector2.ZERO, "buttons": buttons}
 	var wp: int = int(path[pi])
@@ -1047,10 +1196,23 @@ static func _routing(mem: Dictionary, lv, ctl, w, w2, gtiles: Array, adj: Array,
 	var dz := absi(int(wt[1]) - int(ct[1]))
 	var is_walk := dx <= 1 and dz <= 1 and dy == 0   # downhill edges are hop-downs, not walks - the bot would flutter off them and never land
 	var mag := 1.0
-	if not is_walk:
-		# the arc solution depends on the player's CURRENT speed toward the target
-		var vz := float(ctl.vx) * dir.x + float(ctl.vz) * dir.y
-		var plan: Dictionary = _jump_plan(ct, wt, wp_pos, dir, dy, vz, ctl, w)
+	if cur < 0:
+		# airborne over the void with no tile under the feet: hold course toward the
+		# waypoint (steering only - nothing else can be done mid-fall)
+		pass
+	elif not is_walk:
+		# EDGE DISCIPLINE (D-FIX-A3-1): a non-walk edge is only followed when the
+		# controller's own jump physics validate an arc from THIS state that lands on
+		# a tile. No validated arc -> the edge is banned and the route re-plans; the
+		# bot never steps off a takeoff tile on faith.
+		var plan: Dictionary = _jump_plan(ct, wt, wp_pos, dir, dy, 0.0, ctl, w)
+		if plan.is_empty() or float(plan["mag"]) <= 0.0 or int(plan["hold"]) <= 0:
+			var ek := "%d>%d" % [cur, wp]
+			if not bool((mem["banned"] as Dictionary).get(ek, false)) and cur != wp:
+				(mem["banned"] as Dictionary)[ek] = true
+				mem["repath"] = true
+			return {"move": Vector2.ZERO, "buttons": buttons}
+		# the validated arc carries its own approach speed (plan["mag"]); keep it
 		mag = float(plan["mag"])
 		var exitp := _cell_exit(ct, dir)
 		var D := exitp.distance_to(wp_pos)
@@ -1083,7 +1245,7 @@ static func _bot_input(mem: Dictionary, lv, rt, ctl, w, w2, gtiles: Array, adj: 
 		L: Dictionary) -> Dictionary:
 	var tick: int = lv.tick
 	mem["tick"] = tick
-	var dodge = _dodge_vector(mem, rt, ctl, tick)
+	var dodge = _dodge_vector(mem, rt, ctl, tick, w)
 	var move := Vector2.ZERO
 	var buttons := 0
 	if dodge != null:
@@ -1095,7 +1257,9 @@ static func _bot_input(mem: Dictionary, lv, rt, ctl, w, w2, gtiles: Array, adj: 
 		var r: Dictionary = _routing(mem, lv, ctl, w, w2, gtiles, adj, L)
 		move = r["move"]
 		buttons = int(r["buttons"])
-	# hurdle a contact-kill enemy on the tile line (grounded only; the arc clears 0.9 u bodies)
+	# hurdle a contact-kill enemy on the tile line (grounded only; the arc clears 0.9 u
+	# bodies) - but never hurdle off a ledge (D-FIX-A3-1): with a heading that has no
+	# support ahead the bot jumps in place instead of leaping into the void
 	if bool(ctl.grounded) and (buttons & BUTTON_JUMP) == 0:
 		for e in rt.enemies:
 			if not bool(e.get("contact_kill", true)):
@@ -1103,6 +1267,8 @@ static func _bot_input(mem: Dictionary, lv, rt, ctl, w, w2, gtiles: Array, adj: 
 			var dx := float(e["x"]) - float(ctl.x)
 			var dz := float(e["z"]) - float(ctl.z)
 			if dx * dx + dz * dz < HURDLE_DIST * HURDLE_DIST:
+				if move != Vector2.ZERO and not _dir_has_support(w, ctl, move.normalized()):
+					break   # no ground ahead: jump in place is the safe hurdle
 				buttons |= BUTTON_JUMP
 				break
 	return {
@@ -1139,6 +1305,38 @@ func _init() -> void:
 		print("run %d seed=%d class=%s entered=%d outcome=%s reached_6=%s reached_12=%s reached_18=%s%s" % [
 			i, int(rd["seed"]), str(rd["class"]), int(rd["entered"]),
 			str(rd["outcome"]), str(rd["reached_6"]), str(rd["reached_12"]), str(rd["reached_18"]), extra])
+	# FIX-A3 summary: level-1 completions, the median sim time of a COMPLETED level 1,
+	# the death-code histogram, the levels reached. Informational - the criterion
+	# itself lives in FLEET_PACK section 5 / DECISIONS, never weakened here.
+	var comps := 0
+	var times: Array = []
+	var codes := {}
+	var levs: Array = []
+	for i in agg["rows"].size():
+		var rd: Dictionary = agg["rows"][i]
+		if int(rd.get("l1_tick", -1)) >= 0:
+			comps += 1
+			times.append(float(int(rd["l1_tick"])) / 60.0)
+		if str(rd.get("outcome", "")) == "dead":
+			var dc := str(rd.get("death_code", ""))
+			codes[dc] = int(codes.get(dc, 0)) + 1
+		levs.append(int(rd.get("entered", 0)))
+	times.sort()
+	levs.sort()
+	var med := -1.0
+	if not times.is_empty():
+		var h := times.size() >> 1
+		med = times[h] if times.size() % 2 == 1 else 0.5 * (times[h - 1] + times[h])
+	var med_lev := -1
+	if not levs.is_empty():
+		med_lev = levs[levs.size() >> 1]
+	print("A3 SUMMARY level 1: completed %d/%d | median sim time %.1f s (completed runs%s) | levels reached: median %d max %d" % [
+		comps, agg["rows"].size(), med,
+		"" if not times.is_empty() else ", n/a - none completed", med_lev, levs[levs.size() - 1]])
+	var code_keys: Array = codes.keys()
+	code_keys.sort()
+	for c in code_keys:
+		print("A3 deaths %s: %d" % [str(c), int(codes[c])])
 	print(format_report(agg))
 	print("BOT_RUN OK (%d runs, deterministic seed set seed_base=%d..%d)" % [runs, seed_base, seed_base + runs - 1])
 	quit(0)
