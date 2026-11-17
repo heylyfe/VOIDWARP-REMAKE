@@ -143,9 +143,12 @@ func _apply_frame(i: int) -> void:
 	var body_px_h: float = brh * px
 	var s: float = world_height / body_px_h
 	scale = Vector3(s, s, s)
-	# body bottom row (px, from top): br[1] + br[3]; distance from the frame centre, in u
-	body_feet_shift = (frame_h * 0.5 - (float(br[1]) + brh)) * px * s
-	offset = Vector2(0.0, (frame_h * 0.5 - (float(br[1]) + brh)))
+	# body bottom row (px, from top): br[1] + br[3]; distance below the frame centre, in u.
+	# SpriteBase3D.offset.y is +up in world space (Godot 4 docs; verified against
+	# generate_triangle_mesh()), so standing the body bottom on the node origin needs the
+	# POSITIVE distance, not its negation.
+	body_feet_shift = ((float(br[1]) + brh) - frame_h * 0.5) * px * s
+	offset = Vector2(0.0, (float(br[1]) + brh) - frame_h * 0.5)
 
 
 ## Diegetic spawn text (deliverable 4): an in-world label above the spawn point, showing the
