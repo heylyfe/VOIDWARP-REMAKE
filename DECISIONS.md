@@ -3927,9 +3927,66 @@ WHY: the ticket allows rewriting a row that genuinely disagrees with DESIGN.md; 
 -60% floor slow as "Insulation" would be invisible until playtest. Flagged for the
 orchestrator and for T-053 in tickets/T-052.response.md.
 
+### D-T054-1 - Act -> biome wiring: the Antechamber fog now follows the biome it was handed (was always Deepwater); test_biomes.gd pins the table (T-054).
+
+DECISION (T-054): the act -> biome table (DESIGN.md section 10) already lives in view/fog_env.gd
+(biome_id_for_level, acts I..V, levels 1-30; levels 31+ cycle acts I..V with the density pinned at
+0.015, D-T014c-1) and is consumed by view/level_mesher.gd (build) and tools/shot.gd / tools/shot_biomes.gd.
+One consumer did NOT reach it: view/lobby/antechamber.gd's _lights() built its FogEnv from
+`str(_pal.get("biome", "deepwater"))` / `_pal.get("level", 0)` - keys resolve_palette() never
+returns - so the hall always ran Deepwater fog whatever biome was passed to build_all() (the
+default p_biome_id is "deepwater", and every caller today passes "deepwater"). Fixed:
+_resolve_colours() stores the p_biome_id / p_level it was handed and _lights() calls
+fog.configure(_biome_id, _level) (DESIGN.md section 11: the hall carries the CURRENT biome's fog).
+New tests/test_biomes.gd pins the wiring headlessly (TESTS 41 -> 42): the level -> biome table at
+every act boundary and the 31+ cycle, BIOME_ORDER, every biome file's act/levels/fog_density and
+palette hexes verbatim against the DESIGN.md section 10 table (deepwater walkway_light #3A74FF per
+D-T011-6), resolve_palette() returning each biome's roles/fog/void/density, and the 31+ density
+override. No canon hex, role, threshold or file outside this list changed.
+
+### D-T054-2 - [CONTESTABLE] DESIGN.md section 10's "tripmine particles vs platform light >= 3.0" is unsatisfiable by ANY platform_light hex; parked, not worked around (T-054).
+
+DECISION (T-054): fog_check.gd (TERRAIN_SPEC section 12.3 exactly, D-T011-3) prints the DESIGN.md
+section 10 row "tripmine particles vs platform_light >= 3.0" as INFO only, because section 12.3
+itself does not carry the row (it is section 10's own addition). The row FAILS for all five biomes
+(deepwater 1.468, verdigris 1.142, violet_hour 1.064, indigo_trench 1.163, pale_abyss 2.029;
+emitted at 40 u, platform fogged at 1 + 0.35 = 1.35 total radiance). Adjusting biome light colours
+upward in lightness cannot close it, and no adjustment can: with the canon #FF4FD8 tripmine tell
+(fixed in every biome - DESIGN.md section 10; every biome file's _doc), even a PURE WHITE
+platform_light at 1.35 radiance reaches only 2.675-2.703 fogged vs the tell; for three of the five
+biomes darkening platform_light is the only direction that raises the number at all, and darkening
+enough to reach 3.0 (fogged radiance <= 0.026-0.033 at 40 u) makes the fogged platform lum at 60 u
+fall below ~0.033, breaking the section 12.3 required row "platform_light vs fog @60 >= 3.0"
+(needs fogged lum >= 0.107-0.117). The two canon rows are mutually exclusive for a fixed #FF4FD8.
+WHY (gameplay reason): the platform light is the surface the player plans the route on (DESIGN.md
+section 10; section 12.3 exists to defend ITS legibility vs the fog); the tripmine tell is "the
+only pink in the level" (section 12.2) chosen so danger reads BY HUE FAMILY, not by local contrast
+against its background - a 3.0 contrast target against every biome's plat would force the tell or
+the platforms out of canon. Built reading (closest to TERRAIN_SPEC section 12.3, this ticket's
+authoritative check): the row stays INFO-only, NO hex moved in ANY biome, 5/5 biomes PASS the
+authoritative check (250 checks OK, fog_check.gd exit 0) - see PARKED.md row 11 and
+tickets/T-054.response.md for the full measurements. Owner to rule: (a) the row is informational
+(built reading), or (b) amend DESIGN.md section 10's row (drop it, or name the tell colour it is
+meant to test against), or (c) amend section 12.3 to carry the row and accept that every biome's
+platform_light becomes near-white/near-black by hue-preserving constraints, or (d) the #FF4FD8
+tell changes per-biome (contradicts three canon passages). NO THRESHOLD WAS MOVED.
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
+- 2026-11-17 T-054 (spawn, inkling-2-small-free): act -> biome wiring
+  - view/lobby/antechamber.gd: the hall fog now follows the biome it was built with (was always
+    Deepwater via a _pal.get("biome", ...) key resolve_palette never returns); tests/test_biomes.gd
+    (NEW; TESTS 41 -> 42) pins biome_id_for_level at every act boundary + the 31+ cycle (D-T014c-1),
+    BIOME_ORDER, and all five biome files' act/levels/density/hexes verbatim vs DESIGN.md section 10
+    (deepwater walkway #3A74FF per D-T011-6) via resolve_palette().
+  - fog_check.gd for all 5 biomes: FOGCHECK OK (250 checks) - no colour needed adjusting (no biome
+    fails the section 12.3 rows); the DESIGN.md section 10 INFO row (tripmine vs platform_light >=
+    3.0) fails 5/5 and is unsatisfiable by any platform_light hex - parked (PARKED.md row 11), zero
+    hexes moved, D-T054-2 [CONTESTABLE]. 
+  - tools/shot_biomes.gd (NEW, windowed): one top-down screenshot per act biome (seed 7, act-final
+    level) -> game/shots/biome_{deepwater,verdigris,violet_hour,indigo_trench,pale_abyss}.png.
+  - DECISIONS D-T054-1, D-T054-2; tickets/T-054.response.md. GATE OK expected; no push.
 - 2026-11-17 T-040 (Claude, this session): content/enemies/claude/enemy.json + enemy.gd (the
   drums/strings/wind bar cycle at 100 + 0.6 x agitation BPM, the 20 u leash, agitation +2/s with
   plushie calm -35, the Deadline) + view/claude_view.gd (frames + drum bands + strings line +
