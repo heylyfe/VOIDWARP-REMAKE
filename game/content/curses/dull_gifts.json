@@ -1,0 +1,13 @@
+{
+  "id": "dull_gifts",
+  "name": "Dull Gifts",
+  "severity": "mild",
+  "min_level": 3,
+  "requires_enemy": null,
+  "max_stacks": 1,
+  "rule": "black gift rim glow visible only within 20 u",
+  "counter_play": "sweep platforms methodically",
+  "modifiers": [],
+  "script": true,
+  "hooks": []
+}

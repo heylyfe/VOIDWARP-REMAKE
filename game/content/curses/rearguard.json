@@ -1,0 +1,13 @@
+{
+  "id": "rearguard",
+  "name": "Rearguard",
+  "severity": "harsh",
+  "min_level": 5,
+  "requires_enemy": null,
+  "max_stacks": 1,
+  "rule": "when the beacon opens, one extra copy of a random enemy in play spawns at the beacon",
+  "counter_play": "don't finish next to the beacon",
+  "modifiers": [],
+  "script": true,
+  "hooks": []
+}

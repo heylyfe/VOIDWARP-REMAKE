@@ -1,0 +1,13 @@
+{
+  "id": "early_bird",
+  "name": "Early Bird",
+  "severity": "mild",
+  "min_level": 2,
+  "requires_enemy": null,
+  "max_stacks": 1,
+  "rule": "enemies spawn 2 s after level start instead of 6 s",
+  "counter_play": "move first, plan later",
+  "modifiers": [],
+  "script": true,
+  "hooks": []
+}

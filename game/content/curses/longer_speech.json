@@ -1,0 +1,13 @@
+{
+  "id": "longer_speech",
+  "name": "Filibuster",
+  "severity": "harsh",
+  "min_level": 7,
+  "requires_enemy": "address_me",
+  "max_stacks": 1,
+  "rule": "you must hold still 2.5 s instead of 1.5 s",
+  "counter_play": "stop sooner",
+  "modifiers": [],
+  "script": true,
+  "hooks": []
+}

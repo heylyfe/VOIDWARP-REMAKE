@@ -1,0 +1,18 @@
+{
+  "id": "rush_hour",
+  "name": "Rush Hour",
+  "severity": "harsh",
+  "min_level": 4,
+  "requires_enemy": null,
+  "max_stacks": 3,
+  "rule": "all enemies +8% movement speed per stack",
+  "counter_play": "—",
+  "modifiers": [
+    {
+      "stat": "enemy_speed_mul",
+      "op": "mul",
+      "value": 1.08
+    }
+  ],
+  "hooks": []
+}

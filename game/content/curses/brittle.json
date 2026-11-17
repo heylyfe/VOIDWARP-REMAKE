@@ -1,0 +1,23 @@
+{
+  "id": "brittle",
+  "name": "Brittle",
+  "severity": "harsh",
+  "min_level": 2,
+  "requires_enemy": null,
+  "max_stacks": 2,
+  "rule": "a void fall's respawn delay is 1.6 s instead of 0.8 s and the respawn invulnerability is 0.5 s instead of 1.0 s (2 stacks: 2.4 s / 0.0 s)",
+  "counter_play": "Sure Foot; don't fall inside a platform you have not cleared",
+  "modifiers": [
+    {
+      "stat": "respawn_delay",
+      "op": "add",
+      "value": 0.8
+    },
+    {
+      "stat": "respawn_invuln",
+      "op": "add",
+      "value": -0.5
+    }
+  ],
+  "hooks": []
+}

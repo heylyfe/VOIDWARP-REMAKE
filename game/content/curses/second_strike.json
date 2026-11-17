@@ -1,0 +1,13 @@
+{
+  "id": "second_strike",
+  "name": "Second Strike",
+  "severity": "harsh",
+  "min_level": 6,
+  "requires_enemy": "nuke",
+  "max_stacks": 1,
+  "rule": "a second missile lands 1.0 s after the first on your new position",
+  "counter_play": "keep running after the first — the second kills too",
+  "modifiers": [],
+  "script": true,
+  "hooks": []
+}

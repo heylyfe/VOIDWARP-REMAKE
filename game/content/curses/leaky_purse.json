@@ -1,0 +1,13 @@
+{
+  "id": "leaky_purse",
+  "name": "Leaky Purse",
+  "severity": "mild",
+  "min_level": 4,
+  "requires_enemy": null,
+  "max_stacks": 1,
+  "rule": "a void fall drops 5% of this level's earned gold (max 20 g per fall)",
+  "counter_play": "Stand Fast; Field Dressing",
+  "modifiers": [],
+  "script": true,
+  "hooks": []
+}

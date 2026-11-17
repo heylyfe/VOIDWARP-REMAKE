@@ -1,0 +1,13 @@
+{
+  "id": "understudies",
+  "name": "Understudies",
+  "severity": "mild",
+  "min_level": 5,
+  "requires_enemy": "gift_larper",
+  "max_stacks": 3,
+  "rule": "+4 flat extra mines per stack (20% cap still holds)",
+  "counter_play": "Defuse Kit",
+  "modifiers": [],
+  "script": true,
+  "hooks": []
+}

@@ -1,0 +1,18 @@
+{
+  "id": "inflation",
+  "name": "Inflation",
+  "severity": "mild",
+  "min_level": 3,
+  "requires_enemy": null,
+  "max_stacks": 3,
+  "rule": "shop prices +15% per stack",
+  "counter_play": "Bargain; save",
+  "modifiers": [
+    {
+      "stat": "shop_price_mul",
+      "op": "mul",
+      "value": 1.15
+    }
+  ],
+  "hooks": []
+}

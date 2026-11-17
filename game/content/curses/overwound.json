@@ -1,0 +1,13 @@
+{
+  "id": "overwound",
+  "name": "Overwound",
+  "severity": "mild",
+  "min_level": 2,
+  "requires_enemy": "coil",
+  "max_stacks": 2,
+  "rule": "coil idle time 3.0 → 2.0 s (then 1.5 s)",
+  "counter_play": "leave the ring and be airborne or > 6 u away at landing (§5.2); the shove decays over 0.5 s and never kills",
+  "modifiers": [],
+  "script": true,
+  "hooks": []
+}

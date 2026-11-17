@@ -1,0 +1,13 @@
+{
+  "id": "slipstream_trail",
+  "name": "Wet Trail",
+  "severity": "mild",
+  "min_level": 2,
+  "requires_enemy": "seal",
+  "max_stacks": 1,
+  "rule": "a dash leaves a slippery trail (friction ×0.4) for 3 s",
+  "counter_play": "don't cross the line",
+  "modifiers": [],
+  "script": true,
+  "hooks": []
+}

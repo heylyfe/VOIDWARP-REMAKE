@@ -1,0 +1,13 @@
+{
+  "id": "long_toll",
+  "name": "The Long Toll",
+  "severity": "harsh",
+  "min_level": 10,
+  "requires_enemy": "thicc_ben",
+  "max_stacks": 1,
+  "rule": "every ben teleport tolls twice: a second ben arrives at the same locked point 1.5 s after the first",
+  "counter_play": "air control is 100% — steer ≥ 4 u sideways during the launch",
+  "modifiers": [],
+  "script": true,
+  "hooks": []
+}

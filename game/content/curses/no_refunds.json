@@ -1,0 +1,13 @@
+{
+  "id": "no_refunds",
+  "name": "Sealed Deals",
+  "severity": "mild",
+  "min_level": 6,
+  "requires_enemy": null,
+  "max_stacks": 1,
+  "rule": "shop reroll plinth is gone",
+  "counter_play": "—",
+  "modifiers": [],
+  "script": true,
+  "hooks": []
+}

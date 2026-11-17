@@ -1,0 +1,13 @@
+{
+  "id": "crowded_dais",
+  "name": "Crowded Dais",
+  "severity": "harsh",
+  "min_level": 7,
+  "requires_enemy": null,
+  "max_stacks": 1,
+  "rule": "the beacon cannot be entered while any enemy is within 8 u of it",
+  "counter_play": "lead them away first",
+  "modifiers": [],
+  "script": true,
+  "hooks": []
+}
