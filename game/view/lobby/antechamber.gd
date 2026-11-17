@@ -79,7 +79,7 @@ var _last_stamp: int = -1
 var _t: float = 0.0                  # seconds, for the bob
 var _colours: Dictionary = {}        # resolved role name -> Color
 var _pal: Dictionary = {}            # the resolved palette dict (emission factors)
-var _biome_id: String = "deepwater" # the biome p_biome_id named at build_all time
+var _biome_id: String = "" # the biome p_biome_id named at build_all time; "" = act-I biome from content
 var _level: int = 0                  # the level p_level named at build_all time
 var _sink: Array = []                # [{node: Node3D, t: float}] losing-altar sink runs
 
@@ -93,7 +93,7 @@ func _ready() -> void:
 ## The whole build without any hand-placed node. p_api = ContentApi instance,
 ## p_lobby = an IntermissionScript state, p_biome_id / p_level pick the palette AND the fog
 ## (DESIGN.md section 11: the hall carries the current biome's fog).
-func build_all(p_api: RefCounted, p_lobby: RefCounted, p_biome_id: String = "deepwater",
+func build_all(p_api: RefCounted, p_lobby: RefCounted, p_biome_id: String = "",
 		p_level: int = 0) -> void:
 	lobby = p_lobby
 	_resolve_colours(p_api, p_biome_id, p_level)

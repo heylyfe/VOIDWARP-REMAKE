@@ -17,28 +17,34 @@ extends WorldEnvironment
 #   "fog": "#RRGGBB", "fog_density": float, "void": "#RRGGBB",
 #   "ambient": "#RRGGBB", "ambient_energy": float
 
-const BIOME_ORDER: Array[String] = [
-	"deepwater", "verdigris", "violet_hour", "indigo_trench", "pale_abyss",
-]  # acts I..V, one act = 6 levels (DESIGN.md section 10)
-
 const CYCLE_DENSITY := 0.015  # levels 31+ keep the densest density, D-T014c-1
 
 const PALETTE_PATH := "res://data/palette.json"
 const BIOME_DIR := "res://content/biomes"
+const RosterScript := preload("res://core/roster.gd")
 
-var biome_id := "deepwater"
+var biome_id := ""  # "" = the act-I biome (resolved from content)
 var level := 0
 
 
 # ---- biome / palette resolution ---------------------------------------------------------------
 
 
-static func biome_id_for_level(level: int) -> String:
-	if level <= 30:
-		var act: int = clampi((level - 1) / 6, 0, 4)
-		return BIOME_ORDER[act]
+## The biome ids in act order (DESIGN.md section 10), derived from the content tree:
+## biomes sorted by their first level (core/roster.gd). No biome id is named here.
+static func biome_order() -> Array[String]:
+	return RosterScript.biome_order()
+
+
+static func biome_id_for_level(level_: int) -> String:
+	var order := biome_order()
+	if order.is_empty():
+		return ""
+	if level_ <= 30:
+		var act: int = clampi((level_ - 1) / 6, 0, order.size() - 1)
+		return order[act]
 	# 31+: acts cycle I..V again with the 31+ density pinned (D-T014c-1)
-	return BIOME_ORDER[(level - 31) % BIOME_ORDER.size()]
+	return order[(level_ - 31) % order.size()]
 
 
 static func load_palette() -> Dictionary:
@@ -81,7 +87,7 @@ static func resolve_palette(biome_id: String, level: int = -1) -> Dictionary:
 	var fog_density: float = float(fog["density"])
 	var fog_hex: String = fog["color"]
 	var void_hex: String = pal["void_clear"]
-	if biome_id != "" and biome_id != "deepwater":
+	if biome_id != "":
 		var biome := load_biome(biome_id)
 		if not biome.is_empty():
 			for role_name in biome["palette"]:
@@ -94,11 +100,6 @@ static func resolve_palette(biome_id: String, level: int = -1) -> Dictionary:
 			void_hex = biome["palette"]["void"]
 			if level < 31:
 				fog_density = float(biome["fog_density"])
-	else:
-		# Deepwater biomes/levels may still need their density from the biome file (acts only).
-		var biome := load_biome("deepwater")
-		if not biome.is_empty() and level >= 0 and level < 31:
-			fog_density = float(biome["fog_density"])
 	if level >= 31:
 		fog_density = CYCLE_DENSITY  # D-T014c-1
 	var ambient: Dictionary = roles["ambient"]
@@ -116,6 +117,8 @@ static func resolve_palette(biome_id: String, level: int = -1) -> Dictionary:
 
 
 func configure(biome_id_: String, level_: int = 0) -> void:
+	if biome_id_ == "":
+		biome_id_ = biome_id_for_level(max(level_, 1))
 	biome_id = biome_id_
 	level = level_
 	var pal := resolve_palette(biome_id, level)

@@ -194,7 +194,7 @@ static func _shader(code: String) -> Shader:
 static func _roles_of(biome: Dictionary) -> Dictionary:
 	var bd: Dictionary = biome
 	if bd.is_empty():
-		bd = FogEnvScript.resolve_palette("deepwater")
+		bd = FogEnvScript.resolve_palette("")
 	return bd["roles"]
 
 

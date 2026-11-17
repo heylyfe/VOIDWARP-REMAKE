@@ -12,57 +12,24 @@ extends Control
 # Curse death: the curse icon and `D-CURSE:<id>`. Retry is one button, focused
 # by default.
 #
-# sim/death.gd (killer + death codes) is being written by T-021 in parallel and
-# is absent on this branch; the killer and death code are read from the sim
-# events instead - the controller's death event ({"e":"death","code","killer"})
-# and the controller's dead_code / dead_killer fields (D-T025-2, D-T025-6).
 # Killer-name resolution order:
 #   1. the sim-provided killer string, normalised; a known raw id maps to its
-#      roster name (e.g. "gift_larper" -> "gift Larper (Tripmine)")
+#      content death name (core/roster.gd)
 #   2. otherwise the killer string verbatim (the sim is the source of truth)
-#   3. otherwise the death-code map (D-KIWI .. D-VOID, D-CURSE:<id>)
+#   3. otherwise the death-code map (content death codes via core/roster.gd;
+#      D-VOID -> VOID_DISPLAY, D-CURSE:<id> -> the curse)
 #   4. otherwise the code itself
 # A curse death shows "curse: <id>" as the name line and D-CURSE:<id> as the code.
 
 const DANGER_RED := Color(1.0, 0.1647, 0.1647)   # #FF2A2A
 const VOID_COLOR := Color(0.35, 0.2, 0.5, 1.0)   # void swatch (no documented hex - D-T025-1)
 const SPRITE := 256.0
+const RosterScript := preload("res://core/roster.gd")
+
+## the D-VOID display name (the only killer no content owns).
+const VOID_DISPLAY := "The Void"
 const CURSE_ICON := 96.0
 const CURSE_ICON_Script := preload("res://view/hud/icon_placeholder.gd")
-
-## death code -> roster display name (DESIGN.md sections 3.1 / 5).
-const CODE_NAMES := {
-	"D-KIWI": "kiwi cat",
-	"D-COIL": "coil",
-	"D-ISAGI": "Isagi",
-	"D-NUKE": "nuke",
-	"D-YOU": "YOU?!",
-	"D-MINE": "gift Larper (Tripmine)",
-	"D-TOUCH": "toucher",
-	"D-SEAL": "seal",
-	"D-ADDR": "address me",
-	"D-CLAUDE": "Claude",
-	"D-GIN": "gin ichimaru",
-	"D-VOID": "The Void",
-}
-## raw id (normalised) -> roster display name; matches the ids the enemy runtime
-## passes as killer_id (sim/enemy_runtime.gd kill API).
-const RAW_ID_NAMES := {
-	"kiwi_cat": "kiwi cat",
-	"coil": "coil",
-	"thicc_ben": "thicc ben",
-	"isagi": "Isagi",
-	"nuke": "nuke",
-	"you": "YOU?!",
-	"gift_larper": "gift Larper (Tripmine)",
-	"toucher": "toucher",
-	"seal": "seal",
-	"address_me": "address me",
-	"claude": "Claude",
-	"gin": "gin ichimaru",
-	"gin_ichimaru": "gin ichimaru",
-	"void": "The Void",
-}
 
 signal retried
 
@@ -156,16 +123,24 @@ static func normalize_killer(killer: String) -> String:
 
 
 ## The killer display name for a (code, killer) pair; see the header for the order.
+## Names come from the content tree through core/roster.gd (death_name, default
+## name); D-VOID has no content row and uses VOID_DISPLAY.
 static func killer_name(p_code: String, killer: String) -> String:
 	if p_code.begins_with("D-CURSE:"):
 		return "curse: " + p_code.substr(8)
 	if killer.strip_edges() != "":
 		var raw := normalize_killer(killer)
-		if RAW_ID_NAMES.has(raw):
-			return RAW_ID_NAMES[raw]
+		if raw == "void":
+			return VOID_DISPLAY
+		var by_id := RosterScript.name_for_id(raw)
+		if by_id != "":
+			return by_id
 		return killer
-	if CODE_NAMES.has(p_code):
-		return CODE_NAMES[p_code]
+	if p_code == "D-VOID":
+		return VOID_DISPLAY
+	var by_code := RosterScript.name_for_code(p_code)
+	if by_code != "":
+		return by_code
 	return p_code
 
 
@@ -187,7 +162,7 @@ func curse_icon_id() -> String:
 
 
 ## Fill the screen from a death snapshot:
-##   code (String) - the death code, e.g. "D-MINE" / "D-CURSE:cold_start"
+##   code (String) - the death code, e.g. "D-MINE" / "D-CURSE:<curse id>"
 ##   killer (String) - the sim-provided killer string ("" when unknown)
 ##   level (int), purse_centi (int), charges (int)
 ##   sprite (Texture2D, optional) - the killer at 256 px; omitted for void deaths

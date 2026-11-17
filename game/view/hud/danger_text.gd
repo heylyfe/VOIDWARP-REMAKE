@@ -12,32 +12,17 @@ extends Node3D
 # The spawn lines (the only per-enemy text stated anywhere - research/fable-
 # tickets.md, the T-027 spawn-line row): THE KIWI CAT SHALL FOLLOW, ... A TBD
 # enemy shows TBD SHALL ARRIVE. The line for an unknown id is therefore the TBD
-# line, never a guess.
+# line, never a guess. The lines ship in each enemy's enemy.json (spawn_line)
+# and are read through core/roster.gd - this file holds no roster table.
 #
 # This element and billboard.gd's spawn_text are deliberately separate: section 14
 # wants the danger line in #FF2A2A for 4.0 s; D-T027-7 pinned the billboard name
 # label at 1.5 s. Both fire on the same event.
 
+const RosterScript := preload("res://core/roster.gd")
 const DANGER_COLOR := Color(1.0, 0.1647, 0.1647)   # #FF2A2A
 const TTL := 4.0
 const HEIGHT := 2.0   # u above the spawn point (sprite stand + clear)
-
-## id (normalised) -> the exact spawn line.
-const SPAWN_LINES := {
-	"kiwi_cat": "THE KIWI CAT SHALL FOLLOW",
-	"coil": "THE COIL SHALL SPRING",
-	"thicc_ben": "THICC BEN SHALL TOLL",
-	"isagi": "ISAGI SHALL SHOOT",
-	"nuke": "THE NUKE SHALL SEEK",
-	"you": "YOU SHALL ECHO",
-	"gift_larper": "THE GIFT LARPER SHALL PRETEND",
-	"toucher": "THE TOUCHER SHALL TOUCH",
-	"seal": "THE SEAL SHALL BARK",
-	"address_me": "THE ELEPHANT SHALL BE ADDRESSED",
-	"claude": "CLAUDE SHALL COMPOSE",
-	"gin": "GIN SHALL SEVER",
-	"gin_ichimaru": "GIN SHALL SEVER",
-}
 const TBD_LINE := "TBD SHALL ARRIVE"
 
 
@@ -47,9 +32,10 @@ static func normalize_id(id: String) -> String:
 	return s
 
 
-## The exact line for an enemy id; unknown ids get the TBD line.
+## The exact line for an enemy id; unknown ids get the TBD line. Lines ship in the
+## enemies' own enemy.json (spawn_line) and are read through core/roster.gd.
 static func spawn_line(id: String) -> String:
-	return SPAWN_LINES.get(normalize_id(id), TBD_LINE)
+	return str(RosterScript.spawn_lines().get(normalize_id(id), TBD_LINE))
 
 
 ## Fire on an enemy_spawn event: raises the line at the spawn point for 4.0 s.

@@ -3,7 +3,7 @@ extends Control
 # Cartographer's minimap (ticket T-053, addendum R4, D-T053-2, D-T053-8): a 220 px
 # square, top-right under the purse, north-up (+z = down on screen), pieces as
 # filled shapes in their biome colour, real gifts as 2 px dots, the player as a
-# white triangle, every piece within 40 u of anywhere you have stood.
+# white triangle, every piece within 40 u of anywhere the player has stood.
 #
 # The reveal set comes from sim/upgrades.gd revealed() (gift slots, unconsumed
 # mines, the beacon) plus the piece tiles: this widget walks level_dict["tiles"]
