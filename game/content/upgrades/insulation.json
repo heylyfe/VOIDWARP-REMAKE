@@ -10,8 +10,8 @@
   "modifiers": [
     {
       "stat": "glitch_slow_mul",
-      "op": "mul",
-      "value": 0.5
+      "op": "add",
+      "value": 0.1
     }
   ],
   "hooks": [],
