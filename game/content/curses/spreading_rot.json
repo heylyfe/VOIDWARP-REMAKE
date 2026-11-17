@@ -1,0 +1,13 @@
+{
+  "id": "spreading_rot",
+  "name": "Spreading Rot",
+  "severity": "harsh",
+  "min_level": 7,
+  "requires_enemy": "toucher",
+  "max_stacks": 1,
+  "rule": "each glitched tile infects one adjacent tile after 6 s (max 2 generations)",
+  "counter_play": "leave early, use ben's ring",
+  "modifiers": [],
+  "script": true,
+  "hooks": []
+}

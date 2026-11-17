@@ -1,0 +1,13 @@
+{
+  "id": "unannounced",
+  "name": "Unannounced",
+  "severity": "brutal",
+  "min_level": 10,
+  "requires_enemy": "address_me",
+  "max_stacks": 1,
+  "rule": "no trumpet — only the sprite and the rumble",
+  "counter_play": "keep it on screen; Radar Module: Threats",
+  "modifiers": [],
+  "script": true,
+  "hooks": []
+}

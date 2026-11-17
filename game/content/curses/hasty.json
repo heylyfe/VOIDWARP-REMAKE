@@ -1,0 +1,18 @@
+{
+  "id": "hasty",
+  "name": "Hasty",
+  "severity": "brutal",
+  "min_level": 9,
+  "requires_enemy": null,
+  "max_stacks": 2,
+  "rule": "every enemy telegraph is 15% shorter per stack",
+  "counter_play": "Early Warning",
+  "modifiers": [
+    {
+      "stat": "telegraph_mul",
+      "op": "mul",
+      "value": 0.85
+    }
+  ],
+  "hooks": []
+}

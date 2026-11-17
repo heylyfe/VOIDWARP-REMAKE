@@ -1,0 +1,18 @@
+{
+  "id": "long_night",
+  "name": "Long Night",
+  "severity": "harsh",
+  "min_level": 6,
+  "requires_enemy": null,
+  "max_stacks": 1,
+  "rule": "overtime tiers every 14 s instead of 20 s",
+  "counter_play": "shorter gold runs",
+  "modifiers": [
+    {
+      "stat": "overtime_period",
+      "op": "set",
+      "value": 14
+    }
+  ],
+  "hooks": []
+}

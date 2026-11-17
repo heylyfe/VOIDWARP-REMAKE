@@ -1,0 +1,13 @@
+{
+  "id": "method_acting",
+  "name": "Method Acting",
+  "severity": "harsh",
+  "min_level": 6,
+  "requires_enemy": "gift_larper",
+  "max_stacks": 1,
+  "rule": "mine tells are visible only within 6 u (was 12 u)",
+  "counter_play": "Radar Module: Mines; slow down at jackpots",
+  "modifiers": [],
+  "script": true,
+  "hooks": []
+}

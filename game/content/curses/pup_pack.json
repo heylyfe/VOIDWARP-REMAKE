@@ -1,0 +1,13 @@
+{
+  "id": "pup_pack",
+  "name": "Pup Pack",
+  "severity": "harsh",
+  "min_level": 4,
+  "requires_enemy": "seal",
+  "max_stacks": 1,
+  "rule": "every seal has a second seal that dashes 0.5 s after it",
+  "counter_play": "**jump each bark** — each seal's line is fixed at its own telegraph start and the barks never coincide (caps + stagger, D-069/SR-3)",
+  "modifiers": [],
+  "script": true,
+  "hooks": []
+}

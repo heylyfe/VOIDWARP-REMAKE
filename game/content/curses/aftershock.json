@@ -1,0 +1,13 @@
+{
+  "id": "aftershock",
+  "name": "Aftershock",
+  "severity": "harsh",
+  "min_level": 9,
+  "requires_enemy": "coil",
+  "max_stacks": 1,
+  "rule": "landing sends a second shockwave 0.5 s later, radius 9 u",
+  "counter_play": "double jump",
+  "modifiers": [],
+  "script": true,
+  "hooks": []
+}

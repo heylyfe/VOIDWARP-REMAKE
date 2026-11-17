@@ -1,0 +1,13 @@
+{
+  "id": "quarter_chimes",
+  "name": "Quarter Chimes",
+  "severity": "mild",
+  "min_level": 4,
+  "requires_enemy": "thicc_ben",
+  "max_stacks": 1,
+  "rule": "ben's teleport interval 13.35 → 9 s",
+  "counter_play": "keep moving",
+  "modifiers": [],
+  "script": true,
+  "hooks": []
+}

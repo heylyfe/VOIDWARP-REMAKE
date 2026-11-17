@@ -1,0 +1,18 @@
+{
+  "id": "tarnish",
+  "name": "Tarnish",
+  "severity": "mild",
+  "min_level": 2,
+  "requires_enemy": null,
+  "max_stacks": 2,
+  "rule": "gold gift value −20% per stack",
+  "counter_play": "chain harder; More",
+  "modifiers": [
+    {
+      "stat": "gold_value",
+      "op": "mul",
+      "value": 0.8
+    }
+  ],
+  "hooks": []
+}

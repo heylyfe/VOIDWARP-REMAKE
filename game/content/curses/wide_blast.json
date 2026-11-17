@@ -1,0 +1,13 @@
+{
+  "id": "wide_blast",
+  "name": "Stage Presence",
+  "severity": "harsh",
+  "min_level": 9,
+  "requires_enemy": "gift_larper",
+  "max_stacks": 1,
+  "rule": "mine blast radius 3 → 4.5 u and the blast chain-detonates mines inside it",
+  "counter_play": "never stand near a second mine",
+  "modifiers": [],
+  "script": true,
+  "hooks": []
+}

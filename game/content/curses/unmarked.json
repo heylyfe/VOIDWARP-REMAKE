@@ -1,0 +1,13 @@
+{
+  "id": "unmarked",
+  "name": "Unmarked",
+  "severity": "mild",
+  "min_level": 1,
+  "requires_enemy": null,
+  "max_stacks": 1,
+  "rule": "no straggler beam",
+  "counter_play": "Radar Module: Gifts",
+  "modifiers": [],
+  "script": true,
+  "hooks": []
+}

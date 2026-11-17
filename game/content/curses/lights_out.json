@@ -1,0 +1,18 @@
+{
+  "id": "lights_out",
+  "name": "Lights Out",
+  "severity": "mild",
+  "min_level": 2,
+  "requires_enemy": null,
+  "max_stacks": 1,
+  "rule": "player fill light range 18 → 11 u",
+  "counter_play": "learn the route in the black phase",
+  "modifiers": [
+    {
+      "stat": "fill_light_range",
+      "op": "set",
+      "value": 11
+    }
+  ],
+  "hooks": []
+}

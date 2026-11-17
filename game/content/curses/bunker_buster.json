@@ -1,0 +1,13 @@
+{
+  "id": "bunker_buster",
+  "name": "Bunker Buster",
+  "severity": "brutal",
+  "min_level": 12,
+  "requires_enemy": "nuke",
+  "max_stacks": 1,
+  "rule": "explosions delete props within the blast for the rest of the level",
+  "counter_play": "fight in the open on purpose, save cover",
+  "modifiers": [],
+  "script": true,
+  "hooks": []
+}

@@ -1,0 +1,18 @@
+{
+  "id": "thick_fog",
+  "name": "Thick Fog",
+  "severity": "mild",
+  "min_level": 1,
+  "requires_enemy": null,
+  "max_stacks": 2,
+  "rule": "fog density 0.012 → 0.018 (→ 0.024)",
+  "counter_play": "radar modules; beacon light column still shows",
+  "modifiers": [
+    {
+      "stat": "fog_density",
+      "op": "add",
+      "value": 0.006
+    }
+  ],
+  "hooks": []
+}

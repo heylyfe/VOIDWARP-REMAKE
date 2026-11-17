@@ -1,0 +1,13 @@
+{
+  "id": "crescendo",
+  "name": "Crescendo",
+  "severity": "harsh",
+  "min_level": 16,
+  "requires_enemy": "claude",
+  "max_stacks": 1,
+  "rule": "agitation rises 3/s instead of 2/s",
+  "counter_play": "plushies first",
+  "modifiers": [],
+  "script": true,
+  "hooks": []
+}

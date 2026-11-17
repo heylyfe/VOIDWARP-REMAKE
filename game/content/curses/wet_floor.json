@@ -1,0 +1,13 @@
+{
+  "id": "wet_floor",
+  "name": "Wet Floor",
+  "severity": "mild",
+  "min_level": 5,
+  "requires_enemy": "toucher",
+  "max_stacks": 1,
+  "rule": "glitched tiles are slippery (friction ×0.4); the toucher's slow stays −20% — no extra slow (D-075)",
+  "counter_play": "jump across, don't walk; the slow stays 20%, so a glitched player at 7.2 u/s still gains 0.45 u/s on the toucher (SR-5)",
+  "modifiers": [],
+  "script": true,
+  "hooks": []
+}

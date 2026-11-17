@@ -1,0 +1,19 @@
+{
+  "id": "weighed_down",
+  "name": "Weighed Down",
+  "severity": "harsh",
+  "min_level": 5,
+  "requires_enemy": null,
+  "max_stacks": 1,
+  "rule": "−10% run speed during the gold phase",
+  "counter_play": "leave earlier",
+  "modifiers": [
+    {
+      "stat": "run_speed",
+      "op": "mul",
+      "value": 0.9,
+      "when": "gold_phase"
+    }
+  ],
+  "hooks": []
+}

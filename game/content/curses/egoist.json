@@ -1,0 +1,13 @@
+{
+  "id": "egoist",
+  "name": "Egoist",
+  "severity": "harsh",
+  "min_level": 8,
+  "requires_enemy": "isagi",
+  "max_stacks": 2,
+  "rule": "+1 ball per burst per stack",
+  "counter_play": "the volley gap (D-064): a burst arrives as volleys of ≤ 3 balls, 0.75 s (45 ticks — one full jump) apart, so each volley is cleared by its own jump (§5.4)",
+  "modifiers": [],
+  "script": true,
+  "hooks": []
+}

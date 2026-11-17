@@ -1,0 +1,13 @@
+{
+  "id": "cold_start",
+  "name": "Cold Start",
+  "severity": "mild",
+  "min_level": 3,
+  "requires_enemy": null,
+  "max_stacks": 1,
+  "rule": "class ability starts each level on cooldown and recharges 25% slower (Athletic: coyote time −0.05 s instead)",
+  "counter_play": "Quick Recovery",
+  "modifiers": [],
+  "script": true,
+  "hooks": []
+}

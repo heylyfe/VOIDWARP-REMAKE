@@ -1,0 +1,13 @@
+{
+  "id": "double_ring",
+  "name": "Echo Ring",
+  "severity": "mild",
+  "min_level": 5,
+  "requires_enemy": "you",
+  "max_stacks": 1,
+  "rule": "every shockwave is followed by a second ring 0.6 s later",
+  "counter_play": "two jumps",
+  "modifiers": [],
+  "script": true,
+  "hooks": []
+}

@@ -1,0 +1,18 @@
+{
+  "id": "hungry_void",
+  "name": "Hungry Void",
+  "severity": "harsh",
+  "min_level": 1,
+  "requires_enemy": null,
+  "max_stacks": 1,
+  "rule": "charge cap becomes 1 (the beacon restores 1, capped at 1)",
+  "counter_play": "Field Dressing; enter the beacon at 0 charges",
+  "modifiers": [
+    {
+      "stat": "void_charges_max",
+      "op": "set",
+      "value": 1
+    }
+  ],
+  "hooks": []
+}

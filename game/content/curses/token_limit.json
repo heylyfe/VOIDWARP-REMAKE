@@ -1,0 +1,13 @@
+{
+  "id": "token_limit",
+  "name": "Token Limit",
+  "severity": "brutal",
+  "min_level": 18,
+  "requires_enemy": "claude",
+  "max_stacks": 1,
+  "rule": "plushies remove 20 agitation instead of 35 and spawn every 30 s",
+  "counter_play": "route for plushies",
+  "modifiers": [],
+  "script": true,
+  "hooks": []
+}

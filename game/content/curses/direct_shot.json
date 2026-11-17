@@ -1,0 +1,13 @@
+{
+  "id": "direct_shot",
+  "name": "Direct Shot",
+  "severity": "brutal",
+  "min_level": 14,
+  "requires_enemy": "isagi",
+  "max_stacks": 1,
+  "rule": "balls ricochet once off tiles/props",
+  "counter_play": "break sightline entirely — a ricochet kills too, so don't hug cover",
+  "modifiers": [],
+  "script": true,
+  "hooks": []
+}

@@ -1,0 +1,13 @@
+{
+  "id": "slow_door",
+  "name": "Slow Door",
+  "severity": "mild",
+  "min_level": 3,
+  "requires_enemy": null,
+  "max_stacks": 1,
+  "rule": "entering the beacon takes 3.0 s of standing in it",
+  "counter_play": "clear the area",
+  "modifiers": [],
+  "script": true,
+  "hooks": []
+}

@@ -1,0 +1,13 @@
+{
+  "id": "crumbling",
+  "name": "Crumbling",
+  "severity": "brutal",
+  "min_level": 10,
+  "requires_enemy": null,
+  "max_stacks": 1,
+  "rule": "1-wide walkway tiles fall 1.2 s after being stepped on and return after 5 s",
+  "counter_play": "keep moving; never returns to a soft-lock because they regrow",
+  "modifiers": [],
+  "script": true,
+  "hooks": []
+}

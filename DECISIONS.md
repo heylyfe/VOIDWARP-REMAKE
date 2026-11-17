@@ -1002,6 +1002,36 @@ WHY: git cannot track an empty directory, but the tree is the fleet's shared map
 into pre-named paths) and the boundary scan needs the layer directories to exist. A one-line comment
 in the placeholder states why it exists; remove it when the directory gains real files.
 
+### D-T014a-1 — Curse JSON encoding conventions (T-014a, content/curses/).
+DECISION (T-014a): the 46 curse files follow DESIGN.md section 12 field names
+(`name, severity, min_level, requires_enemy, max_stacks, modifiers[], hooks[]`) plus `id`,
+`rule` and `counter_play` (the two texts section 7 mandates copying verbatim). Conventions:
+- `severity` is the lowercase full word (`mild|harsh|brutal`), not the table's M/H/B letter.
+  [CONTESTABLE] — T-013's schema may mandate the letter or a different casing; trivial to flip.
+- `rule` and `counter_play` are byte-identical to the section 7.1/7.2 table cells, including
+  markdown `**` emphasis. `counter_play` is spelled with underscores like the other fields.
+- `requires_enemy` is the snake_case enemy folder id (`content/enemies/<id>/`), `null` for
+  general curses. The set used: kiwi_cat, coil, thicc_ben, isagi, nuke, you, gift_larper,
+  toucher, seal, address_me, claude, gin_ichimaru. `you` for YOU?! is an assumption — no enemy
+  id is pinned anywhere yet (enemy folders land with Wave 3); flip if T-013 pins another.
+- A rule expressible with the closed stat list of DESIGN.md section 12 (`fog_density`,
+  `fill_light_range`, `gold_value`, `chain_window`, `shop_price_mul`, `respawn_delay`,
+  `respawn_invuln`, `void_charges_max`, `run_speed`, `enemy_speed_mul`, `overtime_period`,
+  `telegraph_mul`) is a `modifiers[]` entry using only values stated in section 7 (per-stack
+  decompositions, e.g. thick_fog +0.006/stack, brittle +0.8 s respawn_delay / −0.5 s
+  respawn_invuln per stack, rush_hour ×1.08, hasty ×0.85 — all arithmetic on stated numbers,
+  no new spec values). Everything else is `"script": true` with empty `modifiers[]`. No stat
+  outside the section 12 list was invented — adding one is a core change.
+- `when` is used only for weighed_down (`gold_phase`), the one curse whose rule is phase-bound.
+- `hooks` is `[]` everywhere; no curse `.gd` handlers exist yet (rules that need one are marked
+  `script: true` for the implementing ticket to wire).
+- Bounties (Mild 20 / Harsh 45 / Brutal 90 g, × (1 + level/20)) are NOT stored per file; they
+  derive from `severity` at draw time (DESIGN.md section 7 system).
+WHY: T-013's schema is not merged yet, so section 12 is the only contract; these conventions
+keep the data lossless (verbatim texts, exact table numerics — verified by
+`tools/verify_curses.py`, which re-parses the section 7 tables and fails on any mismatch) and
+keep every curse either declarative or explicitly flagged for a script.
+
 ---
 
 ## Handover log

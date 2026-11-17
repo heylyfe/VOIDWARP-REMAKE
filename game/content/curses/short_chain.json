@@ -1,0 +1,18 @@
+{
+  "id": "short_chain",
+  "name": "Short Chain",
+  "severity": "mild",
+  "min_level": 4,
+  "requires_enemy": null,
+  "max_stacks": 1,
+  "rule": "chain window 4.0 → 3.0 s",
+  "counter_play": "Hot Streak",
+  "modifiers": [
+    {
+      "stat": "chain_window",
+      "op": "set",
+      "value": 3.0
+    }
+  ],
+  "hooks": []
+}

@@ -1,0 +1,13 @@
+{
+  "id": "mirror_match",
+  "name": "Mirror Match",
+  "severity": "harsh",
+  "min_level": 12,
+  "requires_enemy": "you",
+  "max_stacks": 1,
+  "rule": "YOU?! uses your class kit: dashes 6 u every 5 s / ignores height (glides) / moves +15%",
+  "counter_play": "watch your own cooldown",
+  "modifiers": [],
+  "script": true,
+  "hooks": []
+}
