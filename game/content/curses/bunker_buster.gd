@@ -13,7 +13,7 @@ extends RefCounted
 # itself: each prop column entry within the blast's radius of the detonation point
 # is removed from the world for the rest of the level. Tiles are never touched.
 
-const CURSE_ID := "buster"
+const CURSE_ID := "bunker_buster"   # the JSON id (D-T051-1; the run holds stacks under it)
 
 const NUKE_ID := "nuke"           # the enemy the curse attaches to (content names content)
 const BLAST_RADIUS_FALLBACK := 5.0  # u, the enemy.json blast_radius (nuke's sphere)

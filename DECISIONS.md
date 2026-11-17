@@ -4613,9 +4613,61 @@ WHY: every value above is the literal reading of the two section 9 clauses plus 
 DECISION (T-060): the bot's jump planner no longer solves a parabola in closed form. For each jump edge it steps the controller's own physics forward - vy = 12 on jump, g = 32, releasing k ticks in with vy > 0 halves vy once, horizontal accel 90 u/s^2 - and tests CollisionScript.move_body candidates (horizontal speed v in [9, 7.5, 6, 4, 2] m/s x hold k in [0, 2, 4, 8, 14, 22, 30] ticks) until a candidate lands on a tile other than the takeoff tile. An earlier analytic solver (apex/range from a symmetric parabola) repeatedly mis-landed - it ignored the controller's release-halves-vy semantics and per-tile collision - so the bot could not cross any gap at all.
 WHY [technical reason, not a spec value]: simulating the same integrator the sim runs removes the divergence between "where the bot intends to land" and "where the body lands" by construction, and keeps the planner honest against ramps and partial tiles. No spec number was invented or changed; the frozen terrain thresholds and the frozen bands are untouched.
 
+### D-T051-20 - The enemy-linked scripted tests: what they prove, at which layer, and the merge-gap accounting (T-051)
+
+DECISION (T-051): tests/test_curses_scripted_enemy.gd carries one test per enemy-linked
+script curse whose module is on main (12: aftershock, bunker_buster, crescendo,
+direct_shot, double_ring, egoist, litter, long_toll, longer_speech, method_acting,
+mirror_match, overwound), each asserting the JSON's own rule sentence. Rules read at
+the cheapest honest layer: pure helpers assert numbers (double_ring's radius/cap,
+egoist's +1-per-stack burst and the D-064 volley plan, litter's kitten cfg/trail point,
+method_acting's 6/12 u cutoff and 5/10 u ramp, overwound's 2.0/1.5 s idle, longer_speech's
+150-tick mapping); module-level state machines are driven over REAL sim objects
+(real sim/enemy_runtime.gd rows, REAL controllers as "players" - the D-T051-1 contract
+shape, which is where several 2-arg player .get calls of the first draft crashed and
+were repaired); Long Toll is driven END-TO-END (D-T051-21). The api is never null where
+a module uses it: FakeApi records pushes/kills/spawns/telegraphs and assertions read
+what the module ASKED for. The contract section pins the full 24-id inventory; the 12
+ids whose modules live on the unmerged t3/scripted-curses-groups-4-6 branch are parked
+(PARKED.md 16) and asserted to be exactly that NOT_ON_MAIN list.
+
+### D-T051-21 - Two module repairs the tests forced; Long Toll proven end-to-end (T-051)
+
+DECISION (T-051): writing the one-test-per-curse sentences exposed four module defects,
+each repaired to the module's OWN spec sentence (no JSON edited, no rule weakened):
+(a) bunker_buster.gd's CURSE_ID was "buster" - not the JSON id - so held_stacks never
+found the run's held stacks (intermission.gd keys curses_held by JSON id): one-word fix
+to "bunker_buster" (D-T051-1's contract). (b) longer_speech.gd's ONE-shot 60-tick debit
+clamped the visible still counter at 0, which ABSORBS the whole shift: the 90-tick gate
+still fired at ~1.5 s, not the sentence's 2.5 s. Replaced with a per-run DEBT (60 ticks
+booked at run start, one tick of the behavior's +1 climb absorbed per tick until paid,
+re-booked when the run breaks): the release now lands exactly at 150 true still ticks,
+the visible counter never goes negative, and the view's arc (0..90 fill) still reads.
+(c) double_ring.gd's growth detector compared seq against seen[key] DEFAULTED to the
+current seq, so on_tick could never schedule anything (the curse was inert); the first
+sight of a row is now the baseline, later growth releases the echo. (d) mirror_match's
+cadence helpers typed the mirror target as Dictionary, crashing on the D-T051-1
+controller shape; both read the same 1-arg surface now. Long Toll's done-when is proven
+END-TO-END: the REAL thicc_ben behavior runs inside a REAL enemy_runtime and the curse
+joins the tick loop; with the curse the second ben arrives at the SAME locked point
+exactly +90 ticks (1.5 s, TOLL_INTERVAL_TICKS) after the first even though the player
+moved away (a fresh lock would land on the moved player), ejects the player standing on
+the locked point and never kills (controller un-dead); without the curse the next
+arrival is ben's own 801-tick cycle away on the fresh lock. A toll never chains (no
+third arrival within 95 ticks of the second). The understudies mine-cap done-when stays
+parked with PARKED.md 16.
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
+- 2026-11-17 T-051 (zai-glm-5-3-flash, this session): the enemy-linked scripted test file
+  DONE and green on t3/t051-enemy-curse-tests (08c5e04): game/tests/ 
+  test_curses_scripted_enemy.gd, one test per enemy-linked scripted curse (the 12 whose
+  modules are on main), long_toll done-when proven END-TO-END against the real thicc_ben
+  behavior; four module repairs the honest sentences forced (D-T051-21); the other 12
+  modules + check_mine_cap.gd are on the unmerged t3/scripted-curses-groups-4-6 branch
+  (PARKED.md 16 - the understudies 20% mine-cap assertion rides with that merge). Gate at
+  the end of the session: GATE OK (9 ran, 0 skipped, 131 s), TESTS 50 passed 0 failed.
 - 2026-11-17 T-061 (zai-glm-5-3-flash, this session): tools/feel_probe.gd (A12: 6 rows,
   all PASS) + tools/perf_probe.gd (A13: the pinned 22-enemy scene - all 22 place per the
   fixed vote list, dodge bot, third-person rig, 600/120 frames, 1920x1080 v-sync off,

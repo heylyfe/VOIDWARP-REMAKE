@@ -72,9 +72,9 @@ static func _fire_wave(e: Dictionary, state: Dictionary, api) -> void:
 	var players: Array = state.get("players", [])
 	for i in range(players.size()):
 		var p = players[i]
-		var dx: float = float(p.get("x", 0.0)) - float(e["x"])
-		var dz: float = float(p.get("z", 0.0)) - float(e["z"])
-		var dy: float = float(p.get("y", 0.0)) - float(e["y"])
+		var dx: float = _num(p, "x") - float(e["x"])
+		var dz: float = _num(p, "z") - float(e["z"])
+		var dy: float = _num(p, "y") - float(e["y"])
 		var d2: float = dx * dx + dz * dz + dy * dy
 		if d2 > WAVE_RADIUS * WAVE_RADIUS:
 			continue
@@ -86,6 +86,13 @@ static func _fire_wave(e: Dictionary, state: Dictionary, api) -> void:
 			api.push(i, dir, SHOCK_PUSH)
 	if api.has_method("telegraph"):
 		_announce(e, api)
+
+
+## A player row is a T-012 controller (an Object: .get takes ONE argument) or a
+## plain dict - read a numeric key off either, 0.0 when absent.
+static func _num(p, key: String) -> float:
+	var v: Variant = p.get(key)
+	return float(v) if v != null else 0.0
 
 
 ## The view's echo ring so the second wave is readable: a one-tick telegraph of the

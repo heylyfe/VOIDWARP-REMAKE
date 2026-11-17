@@ -47,14 +47,20 @@ static func on_tick(state: Dictionary, api) -> void:
 	var entries: Array = st.get(ST_KEY, [])
 	var tick := int(state.get("tick", 0))
 	var seen: Dictionary = st.get("double_ring_seen", {})
-	# 1. a row whose ring_seq grew since last sight releases a ring: schedule the echo
+	# 1. a row whose ring_seq grew since last sight releases a ring: schedule the echo.
+	# The FIRST sight of a row is only the baseline (a ring released before the curse
+	# watched is not echoed - the sentence echoes every LIVE release).
 	for i in range(rt.enemies.size()):
 		var row = rt.enemies[i]
 		if str(row.get("id", "")) != YOU_ID:
 			continue
 		var seq := int(row.get("ring_seq", 0))
 		var key := "%d" % i
-		if seq <= int(seen.get(key, seq)):
+		var prev := int(seen.get(key, -1))
+		if prev < 0:
+			seen[key] = seq   # baseline sight
+			continue
+		if seq <= prev:
 			continue
 		seen[key] = seq
 		entries.append({"due": tick + SECOND_DELAY_TICKS, "seq": seq,
@@ -75,20 +81,27 @@ static func on_tick(state: Dictionary, api) -> void:
 
 ## Pure helper (test target): who dies under the ring at radius r, and the ring's
 ## own progress line. The kill runs through api.kill, guarded for stubbed apis.
+## Player rows are T-012 controllers (Object: .get takes ONE argument) or dicts.
 static func ring_hits(e: Dictionary, r: float, players: Array) -> Array:
 	var out: Array = []
 	for i in range(players.size()):
 		var p = players[i]
-		var dx: float = float(p.get("x", 0.0)) - float(e["x"])
-		var dz: float = float(p.get("z", 0.0)) - float(e["z"])
+		var dx: float = _num(p, "x") - float(e["x"])
+		var dz: float = _num(p, "z") - float(e["z"])
 		var d := sqrt(dx * dx + dz * dz)
 		if absf(d - r) > RADIAL_WINDOW:
 			continue
-		var feet: float = float(p.get("y", 0.0))
+		var feet: float = _num(p, "y")
 		if feet <= float(e["y"]) - FEET_BELOW or feet >= float(e["y"]) + FEET_ABOVE:
 			continue
 		out.append(i)
 	return out
+
+
+## Read a numeric key off a controller (Object) or a dict row; 0.0 when absent.
+static func _num(p, key: String) -> float:
+	var v: Variant = p.get(key)
+	return float(v) if v != null else 0.0
 
 
 ## The ring's radius at t ticks after release (capped), for tests and views.
