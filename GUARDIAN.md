@@ -545,3 +545,35 @@ FINAL REQUIREMENT: be extremely thorough. Do not assume the repository is safe j
 
 ## 2026-11-17 22:0xZ owner instruction: replace the Windows username with "username"
 - Replaced in the working tree (tracked files): FLEET_PACK.md (2), game/tools/art/toucher.gd (1), tickets/T-002, T-056 (2), T-082, T-083-enemies-1-6, T-083-enemies-7-12 responses, GUARDIAN.md, RUNLOG.md; tools/build_models.ps1 now derives the Blender path from $env:USERPROFILE instead of a literal username (so it still works). git grep -i for the username in tracked files now returns nothing. NOT YET COMMITTED. Caveats: (1) the pushed history (origin/main 90212f9) still contains the old username, only a history rewrite + force-push would remove it (needs owner approval); (2) workers need the real path to run godot, so briefs/RUNLOG will keep getting it: sanitize again before the final commit/push; (3) FLEET_PACK.md lines 482/526 now say C:\Users\username\... (cosmetic; real path needed only in worker briefs, orchestrator knows it).
+
+## 2026-11-17 22:01Z check #47
+- Re-armed task f80e25e7 for 22:30Z (ok).
+- RUNLOG (last write 21:58:42): username sanitisation gated (GATE OK 238 s, TESTS 58/0, PARITY 56/56) and committed as its own commit; tracked files return no hits for the old username. FIX-A3 DONE: bot completes level 1 in 82 of 100 seeds (was 56 with the fast cat, 1/10 at audit), median 43.4 s vs 120 s criterion; A3 STILL FAIL (need 95); residual 18 failures: D-KIWI 8, D-VOID 4, stuck 4, timeout 1, D-COIL 1; PARKED row 24 carries numbers + next lever (purer intercept prediction of the landing tile); merged b9c6470 (GATE OK 236 s, TESTS 58/0, PARITY 56/56). T-099R (Opus 5.5) was the last gate before final commit, alpha-tag decision and second push.
+- git: main b9c6470, origin/main ahead 9 (second push pending); working tree: RUNLOG.md modified only.
+- 466457f6 orchestrator: running (run 110), itemCount 5059 (was 5027), updatedAt 21:58:45, pending 0. No workers listed running (T-099R not in the running list: finished/handed back, orchestrator processing its result).
+- Faults: none. Actions: none, nothing sent. research/MORNING_REPORT.md not yet written. POST-RUN PROMPT + SECURITY AUDIT (text saved above) still pending: send when T-099R verdict + final commit + push + MORNING_REPORT are done and the orchestrator is idle.
+- Expect 22:30Z: T-099R verdict (A1-A16; tag only if all pass; A3 failing at 82/100 means NO tag), final commit, second push, MORNING_REPORT.md, orchestrator idle -> then send post-run prompt + audit, stop schedule, final summary.
+
+## 2026-11-17 22:16Z owner asked: is the orchestrator hung?
+- Finding: NOT hung but wasting time. Orchestrator run 101 sat in a 20 min "Waiting for input" (started 21:58:44Z, deadline ~22:18:44Z) for T-099R; T-099R (Opus 5.5, thread 4cc5a451, 249 items) had ALREADY completed at 21:58:43Z, one second earlier (missed wake-up). FIX-A3 thread also completed (22:11). No worker was running. itemCount 5059 unchanged since 21:58:45 (16 min).
+- ACTION: t3_thread_send(466457f6, auto) -> run 111 queued; t3_queue(promote_to_steer run 111 -> active run 101). Message: stop waiting, T-099R and FIX-A3 are done, read AUDIT.md/result, then MORNING_REPORT, alpha-tag decision (no tag unless A1-A16 all pass), sanitise username, final commit + push, report finished.
+- Expect: orchestrator wakes within a minute, writes MORNING_REPORT.md, final commit, push; verify at 22:30Z with git ls-remote origin main.
+
+## 2026-11-17 22:31Z check #48
+- Re-armed task f80e25e7 for 23:00Z (ok).
+- My 22:16Z nudge worked: orchestrator woke (run 111, itemCount 5093, was stuck at 5059), merged T-099R (9895c19), AUDIT.md updated (816 lines), research/MORNING_REPORT.md written (untracked so far, 22:19), and dispatched APP-LOOP (Inkling).
+- T-099R VERDICT: A1-A16 = 15 PASS, 0 PARTIAL, 1 FAIL (A3, bot 82/100, needs 95). Moved up from first audit: A4, A14, A15 PASS. Alpha tag v0.1.0-alpha.1 NOT created. Owner design question recorded: 95/100 is a demanding bar for a bot; lowering it is the owner's call.
+- KEY FINDING (MORNING_REPORT 2.2): the shipped exe could not finish a level. game/app/world.gd step() ticks controller, enemies, billboards, camera but NOT gifts, tripmines or the beacon: HUD shows 0/0 gifts, beacon never opens, no level completes, lobby never reached; menu also lost its Settings entry (D-MENU-1). Orchestrator dispatched APP-LOOP to fix it (running).
+- git: main 9895c19, origin/main 90212f9 (11 ahead; second push pending); uncommitted: AUDIT.md, GUARDIAN.md, RUNLOG.md modified, research/MORNING_REPORT.md untracked. RUNLOG.md last write 21:58:42 (orchestrator has not logged the post-wake work yet).
+- 466457f6 orchestrator: running (run 111), itemCount 5093, updatedAt 22:19:30 (11 min), pending 0.
+- Worker (running, pending 0): APP-LOOP c7a923d4 (Inkling) itemCount 144 / 22:25:55 (created 22:19).
+- Faults: none. Actions: none, nothing sent. POST-RUN PROMPT + SECURITY AUDIT still pending (APP-LOOP, then final commit + second push, orchestrator idle).
+- Expect 23:00Z: APP-LOOP merged, MORNING_REPORT finalised, final commit, second push to GitHub (verify ls-remote), orchestrator idle -> send post-run prompt + audit, stop schedule.
+
+## 2026-11-17 23:03Z check #49
+- Re-armed task f80e25e7 for 23:30Z (ok).
+- RUNLOG (last write 22:49:48): T-099R verdict logged (15 PASS, 1 FAIL A3; A12 PASS on judgment call D-T099R-1: restarts hold 2.0 s under D-LOAD-5 vs A12 literal >= 5.0 s); AUDIT.md A3 section updated by hand (audit measured 19/100 without FIX-A3, merged tree 82/100; verdict unchanged, no alpha tag); APP-LOOP dispatched (headline finding: exe cannot finish a level, world.gd does not tick gifts/mines/beacon).
+- APP-LOOP (Inkling c7a923d4) COMPLETED at 22:55:42Z, itemCount 196 (world.gd, app.gd modified, test_app_loop.gd created in its worktree). Orchestrator run 101 sits in a 15 min "Waiting for input" started 22:49:49 (deadline ~23:04:49): the completion notification arrived at 22:55:42 into the queue and will be handled when that wait ends (same missed-wake pattern as 21:58). Not hung; no nudge (2 min left); itemCount 5106 (was 5093), updatedAt 22:55:42.
+- git: main 9895c19; origin/main still 90212f9 (11 ahead); uncommitted AUDIT.md, GUARDIAN.md, RUNLOG.md modified, research/MORNING_REPORT.md untracked. No workers running.
+- Faults: none. Actions: none, nothing sent. POST-RUN PROMPT + SECURITY AUDIT still pending.
+- Expect 23:30Z: APP-LOOP gated and merged (or parked), MORNING_REPORT updated, final commit + second push (verify ls-remote), orchestrator idle -> send post-run prompt + audit, stop schedule, final summary. If at 23:30Z the orchestrator is still waiting with no new item, interrupt and R10-nudge.

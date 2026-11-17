@@ -119,7 +119,7 @@ behaviour exists and is tested, but the criterion's stated number, scope or proo
 - `test_terrain_parity.gd` → `GALLERY_PIN 16/16`, `PARITY 56/56 OK`, exit **0** (16 pinned gallery records + 40 parity cases).
 - Proof: `terrain_ref/validate.py`, `game/tests/test_terrain_parity.gd`.
 
-### A3 — the bot completes level 1 in ≥ 95 of 100 seeds, median ≤ 120 s — **FAIL** (unchanged: was FAIL at 1/10, now FAIL at 19/100)
+### A3 — the bot completes level 1 in ≥ 95 of 100 seeds, median ≤ 120 s — **FAIL** (unchanged: was FAIL at 1/10, now FAIL at 19/100 on the audited tree and 82/100 after FIX-A3 merged)
 
 - **A3's literal command cannot be run** (D1): `bot_run.gd` has no `--seeds` and no `--enemy` flag, and
   silently ignores both. The working form is
@@ -147,6 +147,16 @@ behaviour exists and is tested, but the criterion's stated number, scope or proo
 - Still parked: PARKED.md #4 (T-026). FIX-A3 (edge discipline + charge-aware routing; RUNLOG 00:56Z
   reports 5/10 on its own 10-seed probe) is in flight on its own branch and is not measured here.
 - Proof: `game/tools/bot_run.gd`, `game/tests/test_bot_run.gd`, `out/a3_100.log`.
+- **Post-audit addendum (orchestrator, after this audit was written): FIX-A3 merged as `b9c6470` and the
+  number is now 82 of 100, still FAIL.** The audit above measured the tree without FIX-A3. FIX-A3's own
+  re-measure on the merged tree reports **82/100 seeds complete level 1** (up from 56 with the fast kiwi
+  cat and 1/10 at the first audit's baseline), median level-1 sim time **43.4 s** over the 82 completions
+  against the 120 s criterion, and 18 failures: `D-KIWI` 8, `D-VOID` 4, stuck 4, timeout 1, `D-COIL` 1.
+  Nothing was weakened, no threshold moved, no criterion edited and no enemy number touched; the kiwi
+  values in that sweep are exactly D-KIWI-SLOW-1's (base 3.0, ceiling 0.40, burst 0.55). The verdict does
+  not change: **82 < 95, so A3 is FAIL and the alpha tag is not created.** PARKED.md row 24 carries the
+  numbers and the next competence lever (a purer intercept prediction of the landing tile). The median
+  half of the criterion is now measured and met; only the completion rate fails.
 
 ### A4 — replay determinism: 10 recorded bot runs, identical hashes at every checkpoint — **PASS** (was PARTIAL, now PASS, because the test now records and replays ten bot runs)
 
@@ -754,7 +764,7 @@ level 1, see §2 A3.
 |---|---|
 | PASS (15) | A1, A2, A4, A5, A6, A7, A8, A9, A10, A11, A12, A13, A14, A15, A16 |
 | PARTIAL (0) | — (A12 becomes PARTIAL if the owner rejects D-T099R-1) |
-| FAIL (1) | **A3** — the bot completes level 1 in 19 of 100 seeds, against a required 95 of 100 |
+| FAIL (1) | **A3** — the bot completes level 1 in 19 of 100 seeds on the audited tree, 82 of 100 after FIX-A3 merged (`b9c6470`), against a required 95 of 100 |
 
 **THE ALPHA GATE DOES NOT PASS. The tag `v0.1.0-alpha.1` was NOT created.**
 
@@ -762,7 +772,7 @@ level 1, see §2 A3.
 
 | criterion | first audit | now | why |
 |---|---|---|---|
-| A3 | FAIL (1/10) | **FAIL (19/100)** | measured on all 100 seeds this time; 81 level-1 deaths (60 `D-VOID`); FIX-A3 is not on `main` |
+| A3 | FAIL (1/10) | **FAIL (19/100 audited, 82/100 after FIX-A3 `b9c6470`)** | measured on all 100 seeds this time; 81 level-1 deaths (60 `D-VOID`) on the audited tree; FIX-A3 merged afterwards and re-measured at 82/100, still short of 95 |
 | A4 | PARTIAL | **PASS** | 10 recorded bot runs, 160 checkpoints identical (FIX-A4); runs capped at 1,000 ticks |
 | A14 | PARTIAL | **PASS** | real content-id scan over `.gd`+`.json` in terrain/sim/core/app, red-proven; core violations removed (FIX-A14, FIX-APP-BOUNDARY) |
 | A15 | PARTIAL | **PASS** | plaque byte-identical to README (U+2014), asserted by `test_disclaimer.gd` (FIX-A15) |
@@ -771,12 +781,13 @@ level 1, see §2 A3.
 
 ### The three findings that matter most for the owner
 
-1. **The bot still cannot finish level 1, and the terrain is still what kills it.** On current `main`,
+1. **The bot still cannot finish level 1, and the terrain is still what kills it.** On the audited tree,
    **19 of 100** seeds complete level 1 (95 required). Of the 81 that fail, 60 fall into the void
    (`D-VOID`), 14 are caught by the kiwi cat and 7 by coil. The slow-cat ruling is in (3.0 u/s), and the cat
-   still accounts for 14 of the 81 deaths. FIX-A3, the bot-competence fix, is not on `main`; until it lands
-   and re-measures, A3 is the one criterion that blocks the alpha. If FIX-A3 still misses 95/100, the
-   remaining question is a design one for the owner: how forgiving the level-1 terrain is.
+   still accounts for 14 of the 81 deaths. FIX-A3, the bot-competence fix, has since merged (`b9c6470`) and
+   re-measured at **82 of 100** — a real gain, still 13 short of the criterion, so A3 remains the one
+   criterion that blocks the alpha. The remaining question is a design one for the owner: how forgiving the
+   level-1 terrain is.
 2. **The shipped exe is a menu and a walk-around, not a game loop, and the gate cannot see it.**
    `game/app/world.gd:33-37` and D-APPFLOW-5 state it plainly: the world ticks the controller and the
    enemies, but **not gifts, tripmines or the beacon** (read from the code and the decision; I did not play
