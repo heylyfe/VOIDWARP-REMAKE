@@ -1193,6 +1193,68 @@ files traces to DESIGN.md §3.2 / §7 system / §8 system / §8 tier table or th
 schema, these files are re-validated against it by the registry (T-013 owns boot validation), not
 silently reshaped here.
 
+### D-T013-1 - JSON schema dialect, schema file set, scan scope (T-013, core/registry.gd + core/schemas/).
+DECISION (T-013): the registry ships a small JSON-schema validator implementing exactly these
+keywords: `type` (string or array of: object/array/string/integer/number/boolean/null),
+`properties`, `required` (key-presence; null counts as present), `additionalProperties` (false,
+or a sub-schema for unknown keys), `enum` (type-aware compare), `pattern` (RegEx), `items`,
+`minItems`/`maxItems`, `minimum`/`maximum`, and local `definitions` + `{"$ref": "name"}`
+resolved once at schema load. Unknown keywords are ignored. Schema files are
+`core/schemas/<name>.schema.json`, singular names: enemy, curse, upgrade, biome + economy,
+offering_schedule, palette, player, tips, upgrade_pools (10 files). The registry scans
+content/enemies (subfolder/enemy.json), content/curses, content/upgrades, content/biomes
+against those schemas and the six data/ files against theirs; content/gimmicks and
+content/modes are scanned for JSON parse validity only until their tickets seat them. JSON
+parse errors are themselves boot refusals. Values: the content schemas pin shape + enums +
+optional-key policy; the data schemas pin top-level shape only (nested numbers free) so the
+T-011/T-012 consumers evolve without schema churn.
+WHY: a full JSON-Schema implementation is unneeded surface; the keyword set covers every
+constraint the launch content actually states, and the dialect is documented in registry.gd so
+schema authors know exactly what will be enforced.
+
+### D-T013-2 [RESOLVES D-T014a-1 open points] - Vocabulary pinning: severity words, the 12 enemy ids, tier and class enums.
+DECISION (T-013): `severity` stays the lowercase full word (`mild|harsh|brutal`) - D-T014a-1's
+[CONTESTABLE] accepted; the curse schema's enum now REJECTS the M/H/B letters, and
+core/content_api.gd curse_bounty() reads the words (bases 20/45/90, data/economy.json).
+`requires_enemy` is pinned to the fixed 12 enemy ids by enum in curse.schema.json:
+kiwi_cat, coil, thicc_ben, isagi, nuke, you, gift_larper, toucher, seal, address_me, claude,
+gin_ichimaru - so `you` for YOU?! is now canon (D-T014a-1's assumption accepted), and Wave 3
+enemy folders must use these ids. `tier` enum T1..T5; class vocabulary dasher|glider|athletic
+(including `when: "class:<id>"` prefixes). The stat enum in curse.schema.json and
+upgrade.schema.json and the hook enum in both MUST byte-equal the closed code lists
+(core/stats.gd STATS / core/hooks.gd HOOKS); test_content.gd asserts the sync - a stat or hook
+is added in one commit touching stats.gd or hooks.gd plus both schemas.
+WHY: the constants are the extensibility contract (DESIGN.md section 12 "closed list"); pinning
+them where schema validation happens means a typo in any future content file refuses the boot
+with the file name, instead of drifting until game time.
+
+### D-T013-3 - Boot-refusal contract and content_ids format (T-013, core/registry.gd / core/content_api.gd).
+DECISION (T-013): `registry.load_all()` refuses a boot by pushing one error line per offending
+file (message includes the res:// file path and the reason) and returning `{ok: false, ...}`;
+it cannot quit on its own (core/ is pure - no tree access), so the app boot (T-024) MUST treat
+`ok=false` as fatal and quit(1). test_dropin.gd enforces the observable part on every run: a
+malformed content file in content/ makes the registry refuse AND name the file. Determinism:
+every kind's dictionary is rebuilt in id order, and `content_ids()` (the content set for
+RunState, DESIGN.md section 13 rule 2) is a sorted Array[String] of singular `kind:id` strings
+(`curse:zoomies`, `enemy:test_dummy`).
+WHY: core/ is the one layer the boundary scan holds to Array/Dictionary purity; delegation of
+the quit to the only layer allowed to quit keeps the pure layer pure while keeping the refusal
+single-sourced. Singular prefixes read as type tags, the folder names read as storage.
+
+### D-T013-4 - Shop-pool semantics for drop-ins (T-013, core/content_api.gd shop_pool).
+DECISION (T-013): `shop_pool(level)` = the FIRST data/upgrade_pools.json bracket containing the
+level, filtered to (a) ids that exist in content/upgrades/ and (b) upgrades whose tier has
+entered the pool by that level (TIER_FROM constant here: T1@1, T2@4, T3@10, T4@18, T5@26 -
+DESIGN.md section 8 [CANON]). Consequence, asserted in test_dropin.gd: a drop-in upgrade is
+registered and validated with zero edits outside content/, but is NOT SOLD until
+data/upgrade_pools.json lists it - a data edit, never a core edit. `eligible_curses(level,
+votes)` however does NOT consult any data file: the drop-in curse IS offered with zero edits
+outside content/ (level >= min_level; enemy-linked needs >= 1 vote for that enemy, section 7).
+WHY: the pool file is the shop's catalog by DESIGN.md section 8 [CANON] ("the shop never shows
+the full catalog"), so the gate for "drop-in must work" is registration + eligibility reads,
+not shop presence; documenting the boundary now keeps T-020 (shop owner) from wiring around
+the pool file later.
+
 ---
 
 ## Handover log

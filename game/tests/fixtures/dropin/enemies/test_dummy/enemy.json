@@ -1,0 +1,11 @@
+{
+  "id": "test_dummy",
+  "name": "Test Dummy",
+  "min_level": 1,
+  "max_votes": 3,
+  "vote_effect": "spawn",
+  "anchor_kinds": ["floor"],
+  "stats": {"speed": 4.0, "height": 1.0},
+  "sprites": null,
+  "script": false
+}

@@ -1,0 +1,34 @@
+{
+  "$comment": "data/palette.json schema (TERRAIN_SPEC section 12.2; ticket T-013). The Deepwater reference palette: 23 roles, each with a hex, optional emission/energy/params. Role keys are free-shaped (roles and their extras evolve with T-011/T-016); fog, void_clear and colors are pinned to the hex form.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["fog", "void_clear", "roles"],
+  "properties": {
+    "_doc": {"type": "string"},
+    "units": {"type": "object"},
+    "fog": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["color", "type", "density"],
+      "properties": {
+        "color": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
+        "type": {"type": "string"},
+        "density": {"type": "number", "minimum": 0.0}
+      }
+    },
+    "void_clear": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
+    "roles": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["hex"],
+        "properties": {
+          "hex": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"}
+        }
+      }
+    },
+    "checker": {"type": "object"},
+    "slab": {"type": "object"},
+    "source": {"type": "string"}
+  }
+}

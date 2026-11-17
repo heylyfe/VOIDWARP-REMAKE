@@ -1,0 +1,18 @@
+{
+  "_doc": "Drop-in fixture biome (test_dropin.gd copies this into content/biomes/ and expects the registry to accept it verbatim, zero edits outside content/). Same shape as the shipped act biomes (D-T014c-2); unreachable levels 99-100 so nothing real can pick it.",
+  "id": "test_biome",
+  "name": "Test Biome",
+  "act": "I",
+  "levels": [99, 100],
+  "fog_density": 0.012,
+  "palette": {
+    "platform_light": "#2FB7B0",
+    "platform_dark": "#0A2E30",
+    "walkway_light": "#2A5BFF",
+    "walkway_dark": "#0B1A66",
+    "fog": "#021416",
+    "void": "#010B0C"
+  },
+  "inherits": "data/palette.json",
+  "source": "ticket T-013 fixture; values copied from content/biomes/deepwater.json"
+}

@@ -1,0 +1,12 @@
+{
+  "id": "test_curse",
+  "name": "Test Curse",
+  "severity": "mild",
+  "min_level": 1,
+  "requires_enemy": null,
+  "max_stacks": 2,
+  "rule": "drop-in fixture: the player's eyes water, gifts shimmer hazier (pickup radius x1.1 per stack)",
+  "counter_play": "none needed - this is a fixture",
+  "modifiers": [{"stat": "pickup_radius", "op": "mul", "value": 1.1}],
+  "hooks": []
+}

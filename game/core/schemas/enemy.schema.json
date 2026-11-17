@@ -1,0 +1,17 @@
+{
+  "$comment": "Enemy JSON schema - content/enemies/<id>/enemy.json (DESIGN.md sections 12 and 5; ticket T-013). No enemy data ships yet (enemy folders land with Wave 3, per FLEET_PACK merge order); the shape follows section 12 field names. anchor_kinds and stats are open vocabularies for now: anchor kinds come from TERRAIN_SPEC level anchors and enemy stats have no closed list in any document yet - tighten both when the wave landing the behaviors pins them.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "name", "min_level", "max_votes", "vote_effect", "anchor_kinds", "stats"],
+  "properties": {
+    "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+    "name": {"type": "string"},
+    "min_level": {"type": "integer", "minimum": 1},
+    "max_votes": {"type": "integer", "minimum": 0},
+    "vote_effect": {"type": "string"},
+    "anchor_kinds": {"type": "array", "items": {"type": "string"}},
+    "stats": {"type": "object"},
+    "sprites": {"type": ["string", "null"], "$comment": "resource path of this enemy's sprites.json (enemies/<id>/sprites.json), when frames exist"},
+    "script": {"type": "boolean", "$comment": "true when the behavior needs an enemies/<id>/enemy.gd beyond defaults"}
+  }
+}
