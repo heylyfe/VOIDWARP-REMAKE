@@ -5347,6 +5347,74 @@ pass/fail, and `sprites.json`'s per-frame `body_rect` must be re-synced to the p
 lines after every regeneration (all ten logo frames are one command; the three plushie
 placeholders come from `game/tools/make_tbd_png.gd` and only change when the plushie sprite
 is fetched).
+
+### D-ART-ADDRESS_ME-1 - address me ships real sprite art (ART-ADDRESS_ME)
+The placeholder magenta TBD frames are replaced by real art, generated deterministically
+(no randomness anywhere) by game/tools/art/address_me.gd, run headless like the rest of
+the fleet's art wave. The shared pipeline (game/tools/sprite_pipeline.gd) SKIPS any enemy
+with an art module, so a later rebuild cannot regress these frames; the rebuild path for
+this enemy is the art module. Frames (binding counts from the T-083 block, unchanged):
+cycle_00.png = the spec's addressme_00 (the normal elephant meme, the fog-lifted hide);
+cycle_01.png = the spec's addressme_01 (the explode frame - Image 14 composited over the
+elephant at 30% alpha, exactly the composite TBD.md's owner-action note named and
+envisioned: the explosion cutout drawn over a 30%-alpha elephant ghost); spawn_00.png =
+the same body, brightness flash (the trumpet tell - the runtime effect still does the
+fade; the frame is the brighter hold); telegraph_00.png = desaturated (0.45) hold, the
+neutral stillness before the amber/red tint ramp (dim dropped to 1.0 - any dimming broke
+the fog-contrast bar, see D-ART-ADDRESS_ME-2); leaves_00.png = 1.18x / 0.78y squash,
+the anticipation of shrink_to_0; attack_00.png = attack's spec frame (same composite as
+cycle_01 - see D-ART-ADDRESS_ME-4). The anim block's spawn/telegraph/leaves/attack states
+point at spawn_00/telegraph_00/leaves_00/attack_00; recover stays frameless as specified.
+The view (game/view/address_me_view.gd) is untouched - it pins index 0/1 of the cycle
+animation, which kept its [cycle_00, cycle_01] layout with refreshed body_rect.
+
+### D-ART-ADDRESS_ME-2 - the fog-contrast bar is met by lifting the hide, never the threshold [CONTESTABLE]
+The raw hide measures fog contrast 2.19 at 40 u vs the Deepwater fog (#021416) - below
+A8's 3.0 WCAG bar, same class of failure as the other art-wave enemies. The art is lifted
+to clear it: sRGB scale x1.22 + 14/255 pedestal on the elephant (the mean opaque colour
+ends up around #897E73, cycle_00/leaves_00 at 4.75-4.80 contrast per the fog check; spawn
+reads 6.11, telegraph 4.68; the explosion composite reads 8.89). Thresholds untouched
+(validate_sprites.gd, fog_check.gd); the lift lives in game/tools/art/address_me.gd (_fog_lift).
+The lift constants (1.22, 14/255) are [CONTESTABLE] - the owner may prefer a hue-matched
+rim light over a global lift; the check they must satisfy (mean opaque >= 3.0 vs fog) is
+the part that is binding, and it passes with margin.
+
+### D-ART-ADDRESS_ME-3 - background removal per image, constants stated [CONTESTABLE]
+The shared corner flood fill (tolerance 24) cannot segment either source, so each image
+gets its own rule, all deterministic:
+- elephant (address me elephant.png, room photo): the room's grey is byte-near the hide's
+  grey (body vs wall distance ~11), so colour alone cannot separate them. A hand-traced
+  sure-foreground polygon (interior silhouette, incl. a not-polygon notch at the
+  under-belly strip) guards the body; the border flood (neighbour-step RGB distance <= 30)
+  eats the room around it; enclosed background islands are refilled; the largest connected
+  component is kept. The white "Address me" strike across the lower third was inpainted
+  with hide colour where it overlaps the body (diffusion from each letter's border,
+  letters dilated 2 px for the antialias rim); lettering off the body drops out with the
+  component cut. Result: the full meme silhouette (ear, trunk, tusks, all four legs) with
+  the room removed.
+- explosion (explosionsffect.jpg, fireball + tabby): the fireball fades into sky/beach in
+  smooth gradients that defeat a neighbour flood, so the body is picked by a global rule
+  ("warm: r > b + 10, or bright: max >= 175"); the cat's neutral-dark pixels fail that rule,
+  so a cat-silhouette polygon protects them; largest component wins; enclosed islands
+  refilled.
+- canvas 512x512 (power-of-two, <= 512), the cutout fit to 448 px preserving aspect,
+  horizontally centred, bottom-anchored (the enemy stands), transparent margin >= 4 px on
+  every side (validate requires no opaque pixel within 2 px of an edge). body_rect in
+  sprites.json is the tight bbox of alpha > 16 on the final canvas - identical to what the
+  validator recomputes.
+The constants (30.0 flood distance, LETTER_BAND_Y 455, 448 fit, 512 canvas, 4 px margin,
+the polygons) are [CONTESTABLE] in the sense that a repaint-quality pass may want them
+re-tuned; they are art decisions, not sim numbers, and nothing moves a check.
+
+### D-ART-ADDRESS_ME-4 - attack_00.png and cycle_01.png are the same composite, byte-identical
+The view hard-pins cycle index 1 (cycle_01.png) as the attack frame; the anim block's
+attack state points at its spec frame (addressme_01, file attack_00.png). Rather than let
+the two names carry two different composites, both files are written by the same
+_composite_attack() call - identical art under the two names the two consumers expect.
+Deleting one and pointing both consumers at the other would also work, but the cycle
+sheet's [cycle_00, cycle_01] layout and index 1 pin live in shipped view code, and the
+anim block's file names are its own contract - the duplication costs 266 KB and keeps both
+interfaces byte-stable. The four state frames are otherwise distinct art.
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
