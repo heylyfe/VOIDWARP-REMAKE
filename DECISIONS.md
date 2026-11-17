@@ -4792,6 +4792,44 @@ lives in tools/ as specified. Conventions: a lobby's bucket is the level it ARMS
 record lands in its bucket AND the overall slot), never recomputed; empty buckets
 print zero counts - real counts, not blanks.
 
+### D-T075-1 - The answer table is the single source; the lab only re-anchors it
+game/tools/answer_lab.gd plays the documented answer through answers.gd's own
+entry (answer_for/inputs_for), never a second copy of the numbers: the pair's
+telegraph row fires the entry, the entry's tick offsets are the answer's
+schedule, DELAY_TICKS is the addendum's 15. The T-026 --dodge and this lab
+share the one table by construction.
+
+### D-T075-2 - Trial design: 600-tick window, seeds, dasher, Last Light spent
+Each pair runs 200 seeded trials per arm (seeds 1000..2199, per-pair scaled),
+base stats, no upgrades, Last Light spent (the done-when's own words), dasher
+class, 60 Hz. Window 600 ticks (10 s): the answer exchanges resolve in < 1 s
+and the慢 slowest full telegraph cycle measured is the address me episode
+(separate: the F8 combos get 1500 because the SR-4 gate defers the episode's
+open until the player is quiet). A longer window cannot rescue a dead player -
+the death is recorded the tick it happens - so the endpoint is well defined.
+
+### D-T075-3 - Level choice per pair, and the not-named ones
+research/fable-enemies.md section 2's pairing mapped to the five micro-levels:
+kiwi (nook + flat), coil (hub + flat), ben (flat), seal (flat), you (flat),
+nuke (flat), larper (flat + hub), toucher (flat), address me (flat), isagi
+(flat: the F6 worst case + stepped: the 2 HU good case), claude (flat), gin
+(flat). Section 2 does not name a level for most single enemies (it pairs by
+ARCHETYPE, not per-enemy rows), so the picks above are the archetype's closest
+micro-level, recorded here as the [CONTESTABLE] choice. The stacked cases use
+the same levels with the cap vote counts (4/3/2/3/2/2/2/3 + larper 5); claude
+is capped at 1 in the schedule and address me stacks are meaningless (the
+one-at-a-time gate), so neither gets a stacked row.
+
+### D-T075-4 - [CONTESTABLE] the answer executor's reaction timing
+The addendum's 15-tick reaction (answers.gd DELAY_TICKS) is applied where the
+doc's window admits it; the "ON the cue" rows press at 0 (seal "jump ON the
+bark", claude "jump on the beat" - ON is the doc's own word, and a 0.25 s
+reaction would forfeit them), the you's press waits for the rumble's end (the
+ring's release), and the nuke's answer runs until the ring stops, not a fixed
+0.5 s. These are TIMING readings of answers.gd's anchors, not enemy-number
+changes; they are contestable and re-tunable per pair without touching the
+doc's contract. The full mapping lives in answer_lab.gd's _pairs() header.
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
