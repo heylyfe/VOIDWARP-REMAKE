@@ -4097,6 +4097,40 @@ quarter of the roster teaches the player nothing at the vote - the wave has land
 already renders the rest of the roster, and the owner spec is "an enemy shown off with a
 description". All 12 enemies now render name / behavior / tell / counter-play / In play.
 
+### D-T056-1 - [CONTESTABLE] Minimal boot scene (app/main.tscn) so the exported exe starts to the menu (T-056).
+DECISION (T-056): no document states a boot scene or entry point yet - DESIGN.md section 14 assigns
+`app/` "main scene, input capture..." but no main scene exists, app/menu.gd (T-024) states "No boot
+scene exists yet (the loading screen is wired to one in a later ticket), so this script is the menu
+component, not the entry point", and project.godot set no run/main_scene. An export with no main
+scene cannot start to the menu, so A1 (the ticket's Done-when) would fail by construction. T-056
+therefore adds the smallest possible boot scene, game/app/main.tscn: one Control node whose script is
+res://app/menu.gd (the menu builds its whole view in _ready), and sets run/main_scene to it. `Play`
+emits play_requested with no listener (a no-op) until the real boot/loading ticket lands and
+supersedes this scene. No menu code was changed.
+WHY: the owner's spec is "it ships as its own standalone native .exe"; an exe that does not start
+violates it. The alternative (export with no main scene) fails A1 outright. [CONTESTABLE] - the
+later boot ticket will likely replace this scene; flip by pointing run/main_scene at its scene. No
+number here is invented: the scene adds zero spec values.
+
+### D-T056-2 - Windows Desktop preset: embed pck on, x86_64, release template, no signing, no encryption (T-056).
+DECISION (T-056): game/export_presets.cfg defines exactly one preset, "Windows Desktop":
+platform "Windows Desktop", runnable, export_filter "all_resources", export_path
+"../build/voidwrap_run.exe" (repo-root build/, which .gitignore already ignores - the .exe is never
+committed), binary_format/architecture "x86_64", binary_format/embed_pck true (the owner's
+"standalone native .exe": one self-contained file, no sidecar .pck), release template with the
+console wrapper OFF (a GUI game, not a console app), no codesigning (no certificate exists in this
+environment and signing needs one), no PCK encryption (nothing to protect in a free non-commercial
+project; encryption would add a key-management burden and zero player value), application/icon left
+empty (no icon asset is pinned in any document - a blank icon is the honest placeholder, not an
+invented asset). The 4.7.2.stable export templates were VERIFIED present in the per-user Godot
+templates folder (windows_debug/release_x86_64.exe + _console variants, version.txt =
+"4.7.2.stable", dated 2026-08-17) rather than re-downloaded; tools/godot is 4.7.2.stable.official
+and the templates match it exactly.
+WHY: every field traces to the owner's spec or to an explicit absence (no cert, no icon asset, no
+reason to encrypt). embed_pck is the one field the owner's spec actually pins ("ships as its own
+standalone native .exe"). A number no document states would have been a SPEC GAP; none was needed
+beyond the preset mechanics themselves.
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
