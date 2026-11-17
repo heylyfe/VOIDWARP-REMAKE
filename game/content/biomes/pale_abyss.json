@@ -1,0 +1,18 @@
+{
+  "_doc": "Biome 'Pale Abyss' - palette family + fog for act V (DESIGN.md section 10). Geometry is unaffected (view-layer only, D-048). Roles not listed here (slab side, trim, props, dais, gifts, beacon, ambient, fill light, tripmine particles) inherit from data/palette.json (the Deepwater section 12.2 reference), including the 0.35 emission factor for platform/walkway light. Danger stays red/pink and gold stays gold in every biome (DESIGN.md section 10 rules); the tripmine tells (#FF4FD8 particles, six-pointed star) and the straggler/rim colour (#7CFFF4) never change. Levels 31+ cycle acts I-V; the DESIGN.md section 10 table lists fog density 0.015 for that row - see DECISIONS.md D-T014c-1 for the reading recorded for the cycle.",
+  "id": "pale_abyss",
+  "name": "Pale Abyss",
+  "act": "V",
+  "levels": [25, 30],
+  "fog_density": 0.015,
+  "palette": {
+    "platform_light": "#B8C7CC",
+    "platform_dark": "#1E2A2E",
+    "walkway_light": "#6FA8FF",
+    "walkway_dark": "#14284A",
+    "fog": "#0A1114",
+    "void": "#05090B"
+  },
+  "inherits": "data/palette.json",
+  "source": "DESIGN.md section 10"
+}

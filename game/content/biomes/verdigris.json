@@ -1,0 +1,18 @@
+{
+  "_doc": "Biome 'Verdigris' - palette family + fog for act II (DESIGN.md section 10). Geometry is unaffected (view-layer only, D-048). Roles not listed here (slab side, trim, props, dais, gifts, beacon, ambient, fill light, tripmine particles) inherit from data/palette.json (the Deepwater section 12.2 reference), including the 0.35 emission factor for platform/walkway light. Danger stays red/pink and gold stays gold in every biome (DESIGN.md section 10 rules); the tripmine tells (#FF4FD8 particles, six-pointed star) and the straggler/rim colour (#7CFFF4) never change.",
+  "id": "verdigris",
+  "name": "Verdigris",
+  "act": "II",
+  "levels": [7, 12],
+  "fog_density": 0.012,
+  "palette": {
+    "platform_light": "#5E9E6A",
+    "platform_dark": "#0E2A14",
+    "walkway_light": "#B45CFF",
+    "walkway_dark": "#2E0F52",
+    "fog": "#04140A",
+    "void": "#020A05"
+  },
+  "inherits": "data/palette.json",
+  "source": "DESIGN.md section 10"
+}

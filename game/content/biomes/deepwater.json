@@ -1,0 +1,18 @@
+{
+  "_doc": "Biome 'Deepwater' - palette family + fog for act I (DESIGN.md section 10). Geometry is unaffected (view-layer only, D-048). Roles not listed here (slab side, trim, props, dais, gifts, beacon, ambient, fill light, tripmine particles) inherit from data/palette.json (the Deepwater section 12.2 reference), including the 0.35 emission factor for platform/walkway light. Danger stays red/pink and gold stays gold in every biome (DESIGN.md section 10 rules); the tripmine tells (#FF4FD8 particles, six-pointed star) and the straggler/rim colour (#7CFFF4) never change.",
+  "id": "deepwater",
+  "name": "Deepwater",
+  "act": "I",
+  "levels": [1, 6],
+  "fog_density": 0.012,
+  "palette": {
+    "platform_light": "#2FB7B0",
+    "platform_dark": "#0A2E30",
+    "walkway_light": "#2A5BFF",
+    "walkway_dark": "#0B1A66",
+    "fog": "#021416",
+    "void": "#010B0C"
+  },
+  "inherits": "data/palette.json",
+  "source": "DESIGN.md section 10; TERRAIN_SPEC.md section 12.2"
+}
