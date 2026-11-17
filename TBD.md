@@ -14,7 +14,7 @@ wired in full, the entry is marked `"tbd": true` in its JSON, and the row appear
 | 7 | T-016 | gift Larper sprites - REAL ART (tools/art/gift_larper.gd, 2026-11-17) | Image 9 `tripine.png` present (corners already alpha 0; near-black body needed an art-side grade to clear the fog rule) | done; rebuild = rerun `tools/godot/godot.exe --headless --path game --script res://tools/art/gift_larper.gd` |
 | 8 | T-016 | toucher sprites - LANDED (T-ART): 17 real frames from `toucher.jpeg` / `glitchedground.jpeg` (all body states + 5 floor decals) | Images 10/11 landed via game/tools/art/toucher.gd | none - real art in game/content/enemies/toucher/sprites/; `"tbd": false` |
 | 9 | T-016 | seal sprites - REAL ART (2026-11-17, `game/tools/art/seal.gd`) | Image 12 `babehseal.webp` present; the shared corner flood fill cannot cut out this photo (background is an opaque blue-grey gradient), so the art module owns the cutout (per-column gradient model + luminance floor + largest component + seeded fluff fringe); all five anim-block states ship distinct derived frames | none - sealed (D-ART-SEAL-1) |
-| 10 | T-016 | address me sprites - all frames TBD | Images 13/14 (`address me elephant.png`, `explosionsffect.jpg`) absent | drop both PNGs in, rebuild |
+| 10 | T-016 | address me sprites - REAL ART (ART-ADDRESS_ME, 2026-11-17) | Images 13/14 (`address me elephant.png`, `explosionsffect.jpg`) turned into real art by `game/tools/art/address_me.gd`; the shared pipeline skips this enemy (it has an art module) | none - landed; rebuild = rerun `tools/godot/godot.exe --headless --path game --script res://tools/art/address_me.gd` |
 | 11 | T-016 | Claude sprites - REAL ART (tools/art/claude.gd, 2026-11-17) | Image 15 `claudelogo.png` present (clawd Crab plushie source unfetched -> plushie_00..02.png stay TBD) | done for the logo; rebuild = rerun `tools/godot/godot.exe --headless --path game --script res://tools/art/claude.gd` (accepts no args); plushie needs the sprite fetched (row 26) |
 | 12 | T-016 / T-ART-GIN | gin ichimaru sprites - REAL ART (T-ART-GIN): `idle_00`, `spawn_00`, `telegraph_00`, `launch_00`, `recover_00` | Images 16/17 are present; the shared pipeline cannot cut the opaque sources, so `game/tools/art/gin.gd` owns the frames | none - re-run the module to regenerate; `attack_void_zone` keeps no frames by design (the void zone is VFX) |
 
@@ -26,7 +26,7 @@ wired in full, the entry is marked `"tbd": true` in its JSON, and the row appear
 | 2 | T-033 | isagi: `isagi_shoot_sae_math_final_shot` - the shoot line per release (ENEMIES.md Isagi "New sound": Isagi shoot sae math final shot gun-shot sound) | no audio files exist yet | drop the hook file in, view wires it |
 | 3 | T-033 | isagi: `isagi_gunshot` - per ball release, layered under the shoot line | no audio files exist yet | drop the hook file in, view wires it |
 
-## 1. The 17 enemy images - 6 MISSING (coil, thicc ben, kiwi cat, isagi, YOU?!, toucher, gin, gift Larper, seal and the Claude logo are real art since 2026-11-17)
+## 1. The 17 enemy images - 4 MISSING (coil, thicc ben, kiwi cat, isagi, YOU?!, toucher, gin, gift Larper, seal, the Claude logo and address me are real art since 2026-11-17; only the clawd Crab plushie and the four remaining source rows are still TBD)
 
 Enemy sprites are normally produced by `game/tools/sprite_pipeline.gd` (T-016): missing, unreadable, or
 validation-failing sources become `game/tools/make_tbd_png.gd` placeholder frames, `"tbd": true`
@@ -81,8 +81,8 @@ ART-ADDRESS_ME: the address me rows are no longer MISSING - the frames are real 
 | 10 | toucher | `toucher.jpeg` | LANDED (game/tools/art/toucher.gd; 12 real frames) |
 | 11 | toucher (floor) | `glitchedground.jpeg` | LANDED (game/tools/art/toucher.gd; 5 real decal frames) |
 | 12 | seal | `babehseal.webp` | REAL -> frames derived by `game/tools/art/seal.gd` (2026-11-17): idle_00/01, spawn_00, telegraph_00, dash_00/01, recover_00 |
-| 13 | address me | `address me elephant.png` | MISSING -> TBD |
-| 14 | address me (explosion) | `explosionsffect.jpg` | MISSING -> TBD |
+| 13 | address me | `address me elephant.png` | REAL ART (ART-ADDRESS_ME, `game/tools/art/address_me.gd`): cycle_00/01, spawn_00, telegraph_00, leaves_00, attack_00; `tbd: false` |
+| 14 | address me (explosion) | `explosionsffect.jpg` | REAL ART - the explode frame is the spec's composite (explosionsffect.jpg over the elephant at 30% alpha), shipped as `attack_00.png` / `cycle_01.png` (D-ART-ADDRESS_ME-4) |
 | 15 | Claude | `claudelogo.png` (+ clawd Crab plushie) | REAL ART for the logo (2026-11-17, `game/tools/art/claude.gd`): 10 logo-derived frames, one per anim-block state; the clawd Crab plushie was never fetched -> `plushie_00..02.png` stay TBD placeholders (`tbd`: true) | plushie: fetch the clawd Crab sprite (ENEMIES.md points at github.com/xyc/plushie); rebuild the logo frames via `tools/godot/godot.exe --headless --path game --script res://tools/art/claude.gd` |
 | 16 | gin ichimaru | `gin idle.png` | REAL ART (T-ART-GIN, `game/tools/art/gin.gd`) |
 | 17 | gin ichimaru (sword) | `ginsword.png` | REAL ART (T-ART-GIN, `game/tools/art/gin.gd`) |
