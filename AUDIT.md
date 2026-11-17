@@ -174,3 +174,93 @@ enemy id `gin`. **`twin_fangs` can therefore never become eligible: one of the 4
 in play.** `test_content.gd` only exercises `zoomies`/`kiwi_cat`, so nothing catches it. The same
 `gin_ichimaru` string is hardcoded in `game/core/schemas/curse.schema.json`'s enum, which is why the
 schema accepts the bad value.
+
+---
+
+## 5. Boundary result: no core file names a content id
+
+**Gate step 4 passes:** `OK boundary scan (ran in run_all: game/tests/test_boundaries.gd)`, and
+`test_boundaries.gd` is part of the `TESTS 55 passed 0 failed` run. **The scan is nonetheless vacuous
+for content ids, and my own grep finds four violations it cannot see.**
+
+### 5.1 Why the existing proof does not prove the claim
+
+`game/tests/test_boundaries.gd` has:
+
+```gdscript
+# Content ids that scenery code may never name. Empty today; every ticket that adds content
+# appends its ids here (registry ids only, e.g. "kiwi_cat"), and the scan grows with them.
+const KNOWN_CONTENT_IDS: Array[String] = []
+```
+
+The list is **empty**. The loop `for id in KNOWN_CONTENT_IDS` therefore never executes, so the
+"names content id" half of the scan asserts nothing. The comment says every ticket appends its ids;
+none did. The scan also reads only `*.gd` files (`_gd_files` filters `f.ends_with(".gd")`), so the
+`core/schemas/*.json` files are outside it entirely. The forbidden-engine-string half of the scan
+(`Node`, `get_tree`, `Engine.`, `Time.`, `randf`, `randi`, `PhysicsServer`, `Input.`) is real and does
+pass.
+
+### 5.2 My own grep: every content id against sim/, core/, terrain/
+
+Ids taken from the content tree (12 enemy folders, 46 curse files, 36 upgrade files, 5 biome files),
+matched whole-word against every `.gd` under `game/sim`, `game/core`, `game/terrain`:
+
+| file | what it names | verdict |
+|---|---|---|
+| `game/core/schemas/curse.schema.json:11` | `"requires_enemy"` enum hardcodes **all 12 enemy ids**: `kiwi_cat, coil, thicc_ben, isagi, nuke, you, gift_larper, toucher, seal, address_me, claude, gin_ichimaru` | **VIOLATION** — a core file naming content ids. Not scanned (it is `.json`). It is also why the bad `gin_ichimaru` value in §4 passes validation. |
+| `game/sim/death.gd:29-41` | the `CODES` map hardcodes **all 12 roster display names** (`"kiwi cat"`, `"coil"`, `"Isagi"`, `"nuke"`, `"YOU?!"`, `"gift Larper (Tripmine)"`, `"toucher"`, `"seal"`, `"address me"`, `"Claude"`, `"gin ichimaru"`) | **VIOLATION in spirit** — display names, not ids, so the literal rule is met; but the roster is hardcoded in `sim/`, so a 13th enemy needs a `sim/death.gd` edit. That breaks drop-in (A14). |
+| `game/sim/upgrades.gd:37` | `const ROLE_CARTOGRAPHER := "cartographer"` — `cartographer` is an upgrade id (`content/upgrades/cartographer.json`) | **VIOLATION** — a sim file naming an upgrade id. |
+| `game/sim/controller.gd:396` | `ev.append({"e": "updraft"})` — `updraft` is an upgrade id (`content/upgrades/updraft.json`) | **VIOLATION** — a sim file naming an upgrade id. |
+| `game/core/schemas/upgrade_pools.schema.json:2` | `$comment` names `paycheck, more, yearn_for_speed` | comment only; noted, not counted. |
+| `game/sim/death.gd:77` | comment names `D-CURSE:hungry_void` | comment only; noted, not counted. |
+
+**Verdict: FAIL.** The rule "nothing under `terrain/ sim/ core/` may contain … any content id" is
+violated by `core/schemas/curse.schema.json` (all 12 enemy ids) and by two sim files naming upgrade ids.
+The gate's boundary step is green because the check that would catch this is an empty array.
+
+---
+
+## 6. Disclaimer result
+
+The exact string, from FLEET_PACK.md T-001's spec (em dash, as the repo writes it):
+
+> VOIDWRAP RUN is a personal, non-commercial project — no money is involved, and it is not affiliated with, endorsed by, or connected to any person, brand, character, or IP referenced or depicted in the game.
+
+| location | present? | byte-exact? |
+|---|---|---|
+| `README.md` line 7 | yes | **YES** — `t001 in readme` is `True`; em dash `—` (U+2014) present |
+| lobby About plaque, `game/view/lobby/antechamber.gd:63` (`const DISCLAIMER`, rendered at line 290 as `"ABOUT\n\n" + DISCLAIMER`) | yes | **NO — one character differs.** At index 51 the plaque has ASCII hyphen `-` where the spec has em dash `—`. Everything else matches; `flat.replace(" - ", " — ") == t001` is `True`. |
+| app menu About screen, `game/app/menu.gd:18` (`ABOUT_DISCLAIMER`) | yes | it carries the **ENEMIES.md** paragraph ("this is a personal, non-commercial project with no money involved. …"), a *different* wording from the T-001 string. PARKED.md #2 records the two-document disagreement. |
+
+**A15's stated proof does not cover the plaque.** `test_disclaimer.gd` asserts three things: that
+`menu.gd`'s `ABOUT_DISCLAIMER` equals the ENEMIES.md paragraph, that `about_text()` contains it, and
+that `README.md` contains it. **It never reads `antechamber.gd`.** So the "lobby About plaque" half of
+A15 has no test at all, and the one-character difference above is exactly what such a test would catch.
+
+**Verdict: PARTIAL.** README is verbatim and tested. The lobby plaque is present but is not verbatim
+(ASCII hyphen for em dash) and is untested.
+
+---
+
+## 7. Retired vocabulary — every hit
+
+Patterns from DECISIONS.md D-052 ("Retired vocabulary"), case-insensitive, over `DESIGN.md`,
+`FLEET_PACK.md`, `README.md`, `game/data/`. Allowed hits: lines beginning `SUPERSEDED BY`, and verbatim
+owner quotes in FLEET_PACK.md. **Seven hits. None of the seven is a `SUPERSEDED BY` line and none is an
+owner quote.**
+
+| # | pattern | file:line | the line (trimmed) | classification |
+|---|---|---|---|---|
+| 1 | `\bHP\b` | `FLEET_PACK.md:645` | `Zero hits for "damage", "HP", "rooms", "hop", "2 per level" across all docs and code (allowed` | **Not allowed.** This is T-091's own instruction text naming the retired words as grep targets. It is not an owner quote and not a `SUPERSEDED BY` line. |
+| 2 | `damage` | `FLEET_PACK.md:645` | same line as #1 | **Not allowed**, same reason. |
+| 3 | `LETHAL` | `DESIGN.md:471` | `while a chaser, a nuke ring, a gin patch or a coil ring makes stillness lethal.` | ordinary-English adjective, lowercase; not the retired Overtuned "LETHAL" state. Still a hit under a case-insensitive grep. |
+| 4 | `LETHAL` | `DESIGN.md:574` | `- **Chaser ceiling (D-074): at most 6 floating lethal bodies in play at once** (kiwi cat, toucher,` | ordinary-English adjective. |
+| 5 | `LETHAL` | `FLEET_PACK.md:196` | `… the second lethal hit after it is spent kills; HUD icon lit while armed …` | ordinary-English adjective. |
+| 6 | `LETHAL` | `FLEET_PACK.md:321` | `… or airborne/glitched floor would make stillness lethal.` | ordinary-English adjective. |
+| 7 | `LETHAL` | `game/data/offering_schedule.json:7` | `"_doc": "D-074 chaser ceiling (FINAL): an E altar is not drawn when picking it would push the floating lethal bodies in play past 'ceiling'. …"` | ordinary-English adjective. |
+
+Zero hits for `hit points`, `max_hp`, `heal`, `Patch Kit`, `Thick Skin`, `Glass Jaw` in any of the four
+targets. The retired *mechanic* term (thicc ben's "Overtuned" LETHAL state) does not appear anywhere.
+
+**Verdict: 7 hits, 0 allowed.** Two are a self-referential grep instruction in FLEET_PACK.md; five are
+the ordinary English word "lethal" used as an adjective. Nothing was edited.
