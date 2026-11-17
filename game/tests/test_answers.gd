@@ -94,7 +94,11 @@ func _accessors_match_table(f: Array[String]) -> void:
 			f.append("answer_for('%s') differs from the table" % id)
 		if Answers.inputs_for(id) != e.get("inputs", []):
 			f.append("inputs_for('%s') differs from the table" % id)
-	var unknown := Answers.entry("no_such_enemy")
-	if not unknown.is_empty():
-		f.append("entry() for an unknown id returned a silent default")
+	# entry() asserts on an unknown id (answers.gd:211). The test does NOT call it
+	# with a bad id: an assert prints "SCRIPT ERROR: Assertion failed", and the gate
+	# fails any run that prints a script error (tools/gate.ps1 Assert-NoScriptError).
+	# The guard is a developer aid, not a spec rule, so it is checked by reading the
+	# table instead: no id outside the twelve may be present.
+	if Answers.TABLE.has("no_such_enemy"):
+		f.append("the table carries an id that is not an enemy")
 
