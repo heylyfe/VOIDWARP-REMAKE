@@ -4,9 +4,9 @@ extends RefCounted
 #
 # Validates the REAL content on disk through the registry (core/registry.gd + the JSON
 # schemas in core/schemas/), then asserts the counts the launch content promises (46 curses,
-# 36 upgrades, 5 biomes; ten enemy entries so far - the tripmine (T-021), the kiwi cat
+# 36 upgrades, 5 biomes; eleven enemy entries so far - the tripmine (T-021), the kiwi cat
 # (T-030), coil (T-031), thicc ben (T-032), YOU?! (T-035), seal (T-038), isagi (T-033),
-# nuke (T-034), address_me (T-039) and toucher (T-037)), the id-sorted
+# nuke (T-034), address_me (T-039), toucher (T-037) and gin (T-041)), the id-sorted
 # determinism, the data-file presence, the CANON pool relationships of DESIGN.md section 8,
 # and the sync between the schema enums and the closed code lists in core/stats.gd + core/hooks.gd.
 
@@ -25,8 +25,8 @@ func run() -> Array[String]:
 	# Counts (T-014 tickets) and determinism (DESIGN.md section 12: sorted by id).
 	# (T-021: +1 enemy - the tripmine; T-030: +1 - kiwi cat; T-031: +1 - coil;
 	# T-032: +1 - thicc ben; T-035: +1 - YOU?!; T-038: +1 - seal; T-033: +1 - isagi;
-	# T-034: +1 - nuke; T-039: +1 - address_me; T-037: +1 - toucher.)
-	var counts := {"curses": 46, "upgrades": 36, "biomes": 5, "enemies": 10}
+	# T-034: +1 - nuke; T-039: +1 - address_me; T-037: +1 - toucher; T-041: +1 - gin.)
+	var counts := {"curses": 46, "upgrades": 36, "biomes": 5, "enemies": 11}
 	var dictionaries := {"curses": res["curses"], "upgrades": res["upgrades"], "biomes": res["biomes"], "enemies": res["enemies"]}
 	for key in counts:
 		var dict: Dictionary = dictionaries[key]
@@ -35,7 +35,7 @@ func run() -> Array[String]:
 	_check(failures, (res["data"] as Dictionary).size() == 6, "data files loaded: %d, expected 6" % (res["data"] as Dictionary).size())
 	var cids: Array[String] = []
 	for item in res["content_ids"]: cids.append(str(item))
-	_check(failures, cids.size() == 97, "content_ids has %d entries, expected 97" % cids.size())
+	_check(failures, cids.size() == 98, "content_ids has %d entries, expected 98" % cids.size())
 	_ascending(failures, "content_ids", cids)
 	_pools_and_api(failures)
 	_api_semantics(failures)
