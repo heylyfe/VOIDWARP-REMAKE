@@ -39,8 +39,54 @@
 		"behavior": "Floats toward the nearest player at 3.4 u/s; within 10 u, a corrupted rumble 1.5 s, then a shockwave ring expands 9 u/s to 14 u (1.0 u tall, 0.6 u thick, plane of its feet). Hit = kill. Touch = kill.",
 		"counter_play": "Jump as the ring reaches you (jump height > 1.0 u from 0.10 s to 0.65 s), or stand >= 1.5 u above or below its feet.",
 		"tell": "A corrupted rumble ~1.5 s before every shockwave",
-		"audio_cues": [
-			"you_corrupted_rumble"
+		"audio_cues": ["you_corrupted_rumble", "ring_release"],
+		"audio_cue_timing": {
+			"you_corrupted_rumble": {
+			"event": "telegraph",
+			"kind": "you_rumble",
+			"occurrence": 1,
+			"offset_ticks": 0,
+			"length_s": 1.5,
+			"role": "binding",
+			"attack": "ring_kill",
+			"attack_offset_ticks": 90,
+			"binding_cue_ticks": 90
+		},
+			"ring_release": {
+			"event": "release",
+			"kind": "",
+			"occurrence": 1,
+			"offset_ticks": 0,
+			"length_s": 0.3,
+			"role": "on_attack",
+			"attack": "ring_kill",
+			"attack_offset_ticks": null,
+			"binding_cue_ticks": null
+		}
+		},
+		"lethal_attacks": [
+			{
+			"attack": "ring_kill",
+			"code": "D-YOU",
+			"event": "telegraph",
+			"kind": "you_rumble",
+			"occurrence": 1,
+			"attack_offset_ticks": 90,
+			"binding_cue": "you_corrupted_rumble",
+			"binding_cue_ticks": 90,
+			"parked": null
+		},
+			{
+			"attack": "touch_kill",
+			"code": "D-YOU",
+			"event": "none",
+			"kind": "",
+			"occurrence": 1,
+			"attack_offset_ticks": null,
+			"binding_cue": null,
+			"binding_cue_ticks": null,
+			"parked": "PARKED.md #12"
+		}
 		]
 	},
 	"behavior": "Floats toward the nearest player at 3.4 u/s; within 10 u, a corrupted rumble 1.5 s, then a shockwave ring expands 9 u/s to 14 u (1.0 u tall, 0.6 u thick, plane of its feet). Hit = kill. Touch = kill.",

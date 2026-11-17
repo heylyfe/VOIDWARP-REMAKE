@@ -29,8 +29,59 @@
     "defuse_drop_u": 0.5,
     "audio_cues": [
       "explosion",
-      "pff"
-    ]
+      "pff",
+      "mine_hum"
+    ],
+    "audio_cue_timing": {
+      "explosion": {
+        "event": "mine_contact",
+        "kind": "",
+        "occurrence": 1,
+        "offset_ticks": 0,
+        "length_s": 0.8,
+        "role": "on_attack",
+        "attack": "mine_blast_kill",
+        "attack_offset_ticks": null,
+        "binding_cue_ticks": null
+      },
+      "pff": {
+        "event": "mine_defused",
+        "kind": "",
+        "occurrence": 1,
+        "offset_ticks": 0,
+        "length_s": 0.3,
+        "role": "stinger",
+        "attack": null,
+        "attack_offset_ticks": null,
+        "binding_cue_ticks": null
+      },
+      "mine_hum": {
+        "event": "proximity_6u",
+        "kind": "",
+        "occurrence": 1,
+        "offset_ticks": 0,
+        "length_s": 2.0,
+        "role": "loop",
+        "attack": null,
+        "attack_offset_ticks": null,
+        "binding_cue_ticks": null,
+        "loop": true
+      }
+    },
+    "lethal_attacks": [
+      {
+        "attack": "mine_blast_kill",
+        "code": "D-MINE",
+        "event": "none",
+        "kind": "",
+        "occurrence": 1,
+        "attack_offset_ticks": null,
+        "binding_cue": null,
+        "binding_cue_ticks": null,
+        "parked": "PARKED.md #12"
+      }
+    ],
+    "tbd_audio": true
   },
   "behavior": "Stationary: it lives in gift slots as the tripmine. 5-frame rotation cycle, one revolution per 4.0 s. Contact at any height detonates it (D-MINE) - the walkable bypass is the only way past.",
   "counter_play": "A tripmine is a wall on its tile: the walkable bypass is the only way past it.",

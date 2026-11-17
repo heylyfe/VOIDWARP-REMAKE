@@ -10,10 +10,8 @@
 #   1. game/content/enemies/<id>/enemy.json - the "stats.audio_cues" list and the
 #      "stats.audio" dict (coil, thicc_ben). Every cue named there gets a .wav.
 #      The file name IS the cue name (the stable contract the view hooks use).
-#   2. EXTRA_CUES below - cues named in the repo (TBD.md T-033 rows for Isagi,
-#      nuke's sprites.json TBD audio hooks) whose enemy.json files list NO cues
-#      yet. Synthesised here so every audio hook the repo names resolves to a
-#      file; enemy.json stays untouched (T-087 wires the cue lists).
+#   2. EXTRA_CUES below - (empty since T-087 wired Isagi's and nuke's cue lists into their
+#      enemy.json files). Every cue the repo names resolves through enemy.json now.
 #
 # Output: game/assets/audio/enemies/<id>/<cue>.wav - 44.1 kHz mono 16-bit
 # (research/fable-tickets.md section 3's format line). Cue TIMINGS are driven by
@@ -110,6 +108,9 @@ def deep_bell(freq, t, decay):
 # stateful fn(t) in roughly [-1, 1]. All recipes are [CONTESTABLE] placeholders
 # (research/fable-tickets.md section 3 says so of its own recipes); the cue
 # NAMES and the enemy.json references are the contract, not the waveforms.
+# T-087 additions: locked, ring_release, mine_hum, prowl, leaves, beat,
+# string_sweep (section 3 rows the T-055 wave set was missing); the loop rows
+# (mine_hum, prowl, flipper_flap) synthesise 2.0 s beds (D-T087-2 [CONTESTABLE]).
 
 def _meow(freq_scale):
     def fn(t):
@@ -267,7 +268,7 @@ def _bark():
 def _flipper_flap():
     noise = Noise(0xF1A9)
     state = [0.0]
-    slaps = [0.0, 0.303, 0.606]                       # 3.3 Hz - the telegraph is 6.6 Hz
+    slaps = [i * (2.0 / 6.6) for i in range(7)]             # ~3.3 Hz over the 2.0 s bed
     def fn(t):
         for s0 in slaps:
             local = t - s0
@@ -383,6 +384,84 @@ def _impact_boom():
     return fn
 
 
+# --- T-087 additions: the section 3 rows T-055's wave set was missing ----------
+def _locked():
+    # two-tone 1200 -> 1600 Hz, 0.2 s: the ring stops
+    def fn(t):
+        f = 1200.0 if t < 0.1 else 1600.0
+        sq = 1.0 if sine(f, t) >= 0.0 else -1.0             # same square voice as lock_on_beep
+        env = attack(t % 0.1 if t < 0.1 else t - 0.1, 0.002) * math.exp(-18.0 * (t % 0.1 if t < 0.1 else t - 0.1))
+        return sq * env * 0.7
+    return fn
+
+
+def _ring_release():
+    # a short downward chirp 900 -> 200 Hz, 0.3 s
+    def fn(t):
+        f = glide([(0.0, 900.0), (0.3, 200.0)], t)
+        return sine(f, t) * attack(t, 0.004) * math.exp(-3.0 * t) * 0.8
+    return fn
+
+
+def _mine_hum():
+    # very quiet 180 Hz hum with a slow 0.5 Hz tremolo (loop bed)
+    def fn(t):
+        trem = 0.7 + 0.3 * sine(0.5, t)
+        return sine(180.0, t) * trem * 0.35
+    return fn
+
+
+def _prowl():
+    # granular clicks at an irregular ~6-10 Hz rate (LCG-seeded jitter, deterministic)
+    noise = Noise(0x9E11)
+    clicks = []
+    t = 0.05
+    while t < 1.95:
+        clicks.append(t)
+        t += 0.111 + 0.056 * (noise.next() * 0.5 + 0.5)     # 0.111..0.167 s -> 6..9 Hz
+    def fn(t):
+        s = 0.0
+        for c0 in clicks:
+            local = t - c0
+            if 0.0 <= local < 0.03:
+                s += noise.next() * math.exp(-55.0 * local) * 0.9
+        return s * 0.6
+    return fn
+
+
+def _leaves():
+    # soft descending two-note, 0.3 s
+    def fn(t):
+        if t < 0.15:
+            return sine(660.0, t) * attack(t, 0.02) * math.exp(-8.0 * t) * 0.6
+        return sine(440.0, t - 0.15) * math.exp(-8.0 * (t - 0.15)) * 0.6
+    return fn
+
+
+def _beat():
+    # soft tick at 880 Hz, 0.05 s (the metronome)
+    def fn(t):
+        return sine(880.0, t) * attack(t, 0.002) * math.exp(-60.0 * t) * 0.6
+    return fn
+
+
+def _string_sweep():
+    # the telegraph beat, then 4 sweep beats: rapid keystroke ticks at 16 per beat rising in pitch
+    noise = Noise(0x57E5)
+    def fn(t):
+        beat = t / 0.6
+        if beat >= 5.0:
+            return 0.0
+        idx = int(beat * 16.0)
+        local = beat * 16.0 - idx
+        if local >= 0.09:                                    # tick occupies ~9% of a 1/16 beat
+            return 0.0
+        f = 800.0 * (4.0 ** (idx / 80.0))                    # pitch rises through the sweep
+        click = noise.next() * math.exp(-38.0 * local / 0.09) * 0.7
+        return click + sine(f, local * 0.6) * math.exp(-30.0 * local / 0.09) * 0.35
+    return fn
+
+
 # cue name -> (length_seconds, factory). Lengths follow research/fable-tickets.md
 # section 3 where a cue maps to its row; enemy.json names are kept verbatim.
 RECIPES = {
@@ -409,34 +488,39 @@ RECIPES = {
     "keystroke_tick": (0.08, _keystroke_tick),
     "notification_ping": (0.15, _notification_ping),
     "squeak_pop": (0.2, _squeak_pop),
+    "beat": (0.05, _beat),
+    "string_sweep": (3.0, _string_sweep),
     # seal
     "bark": (0.25, _bark),
-    "flipper_flap": (1.0, _flipper_flap),
+    "flipper_flap": (2.0, _flipper_flap),
     # toucher
     "toucher_squelch": (0.4, _toucher_squelch),
+    "prowl": (2.0, _prowl),
+    # gift_larper (mine_hum, loop)
+    "mine_hum": (2.0, _mine_hum),
     # you
     "you_corrupted_rumble": (1.5, _you_corrupted_rumble),
+    "ring_release": (0.3, _ring_release),
     # address_me
     "spawn_trumpet": (0.9, _spawn_trumpet),
     "rumble_build": (5.0, _rumble_build),
     "explode_boom": (1.2, _explode_boom),
-    # isagi - extras (TBD.md T-033 names; enemy.json lists no cues yet)
+    "leaves": (0.3, _leaves),
+    # isagi
     "isagi_voice_direct_shot": (1.2, _isagi_voice_direct_shot),
     "isagi_shoot_sae_math_final_shot": (0.6, _isagi_shoot_sae_math_final_shot),
     "isagi_gunshot": (0.12, _isagi_gunshot),
-    # nuke - extras (sprites.json TBD audio-hook names; enemy.json lists no cues yet)
+    # nuke
     "lock_on_beep": (0.05, _lock_on_beep),
+    "locked": (0.2, _locked),
     "rocket_booster_roar": (1.5, _rocket_booster_roar),
     "impact_boom": (1.2, _impact_boom),
 }
 
 # Enemy id -> extra cue names synthesised beyond what its enemy.json declares.
-# Isagi (TBD.md section 2, T-033 rows) and nuke (sprites.json TBD audio hooks)
-# name audio hooks the repo expects, but neither enemy.json lists audio_cues.
-EXTRA_CUES = {
-    "isagi": ["isagi_voice_direct_shot", "isagi_shoot_sae_math_final_shot", "isagi_gunshot"],
-    "nuke": ["lock_on_beep", "rocket_booster_roar", "impact_boom"],
-}
+# Empty since T-087: isagi's and nuke's cue lists are wired into their
+# enemy.json files, so the scan finds every cue by itself.
+EXTRA_CUES = {}
 
 
 def enemy_cues(enemy_json_path):

@@ -4,7 +4,9 @@
   "min_level": 3,
   "max_votes": 3,
   "vote_effect": "+1 seal",
-  "anchor_kinds": ["lane"],
+  "anchor_kinds": [
+    "lane"
+  ],
   "preferred_kind": "lane",
   "stats": {
     "world_height": 0.6,
@@ -26,7 +28,45 @@
       "bark",
       "flipper_flap"
     ],
-    "frames": 3
+    "frames": 3,
+    "audio_cue_timing": {
+      "bark": {
+        "event": "telegraph",
+        "kind": "bark",
+        "occurrence": 1,
+        "offset_ticks": 0,
+        "length_s": 0.25,
+        "role": "on_attack",
+        "attack": "dash_kill",
+        "attack_offset_ticks": null,
+        "binding_cue_ticks": null
+      },
+      "flipper_flap": {
+        "event": "telegraph",
+        "kind": "dash_line",
+        "occurrence": 1,
+        "offset_ticks": 0,
+        "length_s": 2.0,
+        "role": "binding",
+        "attack": "dash_kill",
+        "attack_offset_ticks": 45,
+        "binding_cue_ticks": 45,
+        "loop": true
+      }
+    },
+    "lethal_attacks": [
+      {
+        "attack": "dash_kill",
+        "code": "D-SEAL",
+        "event": "telegraph",
+        "kind": "dash_line",
+        "occurrence": 1,
+        "attack_offset_ticks": 45,
+        "binding_cue": "flipper_flap",
+        "binding_cue_ticks": 45,
+        "parked": null
+      }
+    ]
   },
   "behavior": "Flaps toward the nearest player at 4.0 u/s (pursuit ceiling 0.60 - never above 5.4 u/s while flapping); between 4 u and 12 u it stops and telegraphs for 0.75 s (dashed red 3D line fixed from its body centre through the player's centre), barks on tick 0 of the dash and dashes 20 u in 1.0 s along the fixed line, then idles 0.75 s. Contact at any time = kill.",
   "counter_play": "jump on the bark, or stand a 3 HU step above/below the line, or sidestep ≥ 0.7 u on a 2-wide path or platform. Pup Pack's counter-play text is \"jump each bark\" — its second seal runs its own fixed line 0.5 s later, and seals capped at 3 with stagger (SR-3) keep the barks from coinciding.",

@@ -27,12 +27,51 @@
     "death_code": "D-TOUCH",
     "level_number": 1,
     "audio_cues": [
-      "toucher_squelch"
+      "toucher_squelch",
+      "prowl"
     ],
     "tbd_audio": true,
     "tbd_art": true,
     "frames": 3,
-    "frames_floor": 5
+    "frames_floor": 5,
+    "audio_cue_timing": {
+      "toucher_squelch": {
+        "event": "toucher_infect",
+        "kind": "",
+        "occurrence": 1,
+        "offset_ticks": 0,
+        "length_s": 0.4,
+        "role": "stinger",
+        "attack": null,
+        "attack_offset_ticks": null,
+        "binding_cue_ticks": null
+      },
+      "prowl": {
+        "event": "proximity_14u",
+        "kind": "",
+        "occurrence": 1,
+        "offset_ticks": 0,
+        "length_s": 2.0,
+        "role": "loop",
+        "attack": null,
+        "attack_offset_ticks": null,
+        "binding_cue_ticks": null,
+        "loop": true
+      }
+    },
+    "lethal_attacks": [
+      {
+        "attack": "contact_kill",
+        "code": "D-TOUCH",
+        "event": "none",
+        "kind": "",
+        "occurrence": 1,
+        "attack_offset_ticks": null,
+        "binding_cue": null,
+        "binding_cue_ticks": null,
+        "parked": "PARKED.md #12"
+      }
+    ]
   },
   "behavior": "creates glitched floor tiles that slow the player and lock abilities while they stand on them; its body kills instantly on contact; an audio cue plays whenever new glitched tiles appear. Avoid the glitched zones entirely.",
   "counter_play": "keep off its floor, keep height between you (it rises 2.0 u/s at most; you jump 2.25 u in 0.375 s), and hurdle it on a path — its 1.4 u body meets a clean jump with 0.85 u to spare at apex (SR-2). Its glitched tiles invalidate the newest safe-tile ring entries, so a void dive near it respawns you farther back — a real cost, and the tip text says so.",

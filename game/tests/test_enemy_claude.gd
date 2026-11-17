@@ -214,8 +214,9 @@ func _roster_data(f: Array[String]) -> void:
 	_num(f, "plushie_band_max", float(st["plushie_max_u"]), 25.0)
 	_num(f, "plushie_calm", float(st["plushie_calm"]), 35.0)
 	_num(f, "death_code", 1.0 if str(st["death_code"]) == "D-CLAUDE" else 0.0, 1.0)
-	# the audio cue names are ENEMIES.md's "New sound" line's four instrument/cue names
-	var want_cues := ["ui_chime", "keystroke_tick", "notification_ping", "squeak_pop"]
+	# the audio cue names are ENEMIES.md's "New sound" instrument/cue names plus the
+	# section-3 rows T-087 wired (beat, string_sweep)
+	var want_cues := ["ui_chime", "keystroke_tick", "notification_ping", "squeak_pop", "beat", "string_sweep"]
 	_eq(f, "audio cues", str(st["audio_cues"]), str(want_cues))
 	if str(AudioScript.CUE_UI_CHIME) != "ui_chime" or str(AudioScript.CUE_KEYSTROKE_TICK) != "keystroke_tick" \
 			or str(AudioScript.CUE_NOTIFICATION_PING) != "notification_ping" \
