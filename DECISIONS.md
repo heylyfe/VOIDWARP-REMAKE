@@ -5037,6 +5037,34 @@ grayscale manga art and the ball is white - both pass with room; the shoot (navy
 the x0.70 recover frame were measured with SPRITE_DEBUG=1 and, if either lands under 3.0,
 the ART gets lightened (never the threshold) - see D-ART-ISAGI-2 when it lands.
 
+### D-ART-ISAGI-2 - Isagi's bodies are lerp-toward-white lifted to clear the fog check (art lightened, never the threshold)
+D-ART-ISAGI-1 promised: if the shoot (navy) or the x0.70 recover frame lands under the fog
+contrast of 3.0 at 40 u, the ART gets lightened - never the A8 threshold. Measurement with
+SPRITE_DEBUG=1 (validate_sprites.gd):
+
+| art state | mean opaque colour | ratio vs fog @40 u |
+|---|---|---|
+| idle/fire_00 (grayscale manga) | 0.3218 | 1.88 FAIL |
+| fire_01 (squash) | 0.3225 | 1.88 FAIL |
+| fire_02/shoot_00 (navy jersey) | (0.306, 0.290, 0.411) | 1.77 FAIL |
+| telegraph_00 (red rim baked) | (0.355, 0.314, 0.314) | 1.88 FAIL |
+| recover_00 (x0.70 dim) | 0.2241 | 1.39 FAIL |
+| spawn_00 (brightened + cyan lerp) | (0.512, 0.601, 0.589) | 4.25 pass |
+| shot_00 (ball, white/navy) | (0.733, 0.755, 0.807) | 6.81 pass |
+
+A pow(c, p) gamma lift was tried first: p=0.30 gave the idle 3.30 but recover stayed at 2.04;
+p=0.24 gave recover 2.17; p=0.17 gave recover 2.36 - the curve flattens too fast for this dark
+mass. Replaced with a lerp toward white, c' = c + (1-c)*s (stronger on darks, highlights
+compressed): idle/fire bodies and the telegraph rim derive from an idle lifted with s=0.55,
+the shoot body with s=0.45, ball untouched. Recover stays the binding x0.70 dim of the lifted
+idle (the 0.70 factor itself is the anim block's binding effect number and is not touched).
+Measured after the change: SPRITES OK 340 checks over 12 sprites.json - every isagi frame
+passes the four corners / opaque border / 15% transparent / fog contrast / body_rect checks.
+The sprites now read as deliberately bleached (manga ink on near-white); the cost is art fidelity,
+the alternative reading (a brighter recover that would not be the binding 70% brightness) was
+rejected. [CONTESTABLE - the 0.55 / 0.45 lift strengths; the art-fidelity trade-off; a real
+artist pass could rebalance with a designed light rim instead of a global lift]
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
