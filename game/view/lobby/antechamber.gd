@@ -59,10 +59,11 @@ const BANNER_TEXT: Dictionary = {
 	"CLASS": "CLASSES - Choose who falls.",
 }
 
-## VERBATIM (ENEMIES.md DISCLAIMER, DESIGN.md section 14): the About plaque text.
-const DISCLAIMER := "VOIDWRAP RUN is a personal, non-commercial project - no money is\n" \
-	+ "involved, and it is not affiliated with, endorsed by, or connected to any\n" \
-	+ "person, brand, character, or IP referenced or depicted in the game."
+## VERBATIM (FLEET_PACK.md T-001 spec, DESIGN.md section 14): the About plaque text.
+## Byte-identical to the disclaimer sentence in README.md, em dash included. The label
+## wraps at render time (Label3D width + autowrap); the text itself carries no newlines.
+const DISCLAIMER := "VOIDWRAP RUN is a personal, non-commercial project — no money is involved, and it is not affiliated with, endorsed by, or connected to any person, brand, character, or IP referenced or depicted in the game."
+const ABOUT_PLAQUE_TEXT := "ABOUT\n\n" + DISCLAIMER
 
 const IntermissionScript := preload("res://sim/intermission.gd")
 const NO_SELECT := -1
@@ -287,9 +288,11 @@ func _plaque() -> void:
 	var board := _box(Vector3(4.2, 2.4, 0.1), Vector3(0.0, 3.2, HALL_Z * 0.5 - 0.06), "prop_block")
 	board.set_meta("about", true)
 	var label := Label3D.new()
-	label.text = "ABOUT\n\n" + DISCLAIMER
+	label.text = ABOUT_PLAQUE_TEXT
 	label.font_size = 30
 	label.pixel_size = 0.004
+	label.width = 1000
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	label.position = Vector3(0.0, 3.2, HALL_Z * 0.5 - 0.12)
 	label.rotation.y = PI
