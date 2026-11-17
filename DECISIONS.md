@@ -4830,6 +4830,47 @@ ring's release), and the nuke's answer runs until the ring stops, not a fixed
 changes; they are contestable and re-tunable per pair without touching the
 doc's contract. The full mapping lives in answer_lab.gd's _pairs() header.
 
+### D-ART-NUKE-1 - The nuke's frames are real art derived from NUKE.jpeg (game/tools/art/nuke.gd)
+`NUKE.jpeg` (1280x261, opaque white background, a wide ICBM with booster nozzles at
+the rear/right) could not go through `game/tools/sprite_pipeline.gd`: its flood fill
+from the corners at tolerance 24/255 assumes flat corners, and on an opaque white
+photo it eats the whole body (the pipeline's own "NO BODY AFTER BACKGROUND REMOVAL"
+failure). The pipeline now skips any enemy with `game/tools/art/nuke.gd`, so the
+module owns these frames and a later pipeline rebuild cannot regress them. The module
+(headless SceneTree script, deterministic, no randomness) does: border flood fill from
+all four edges at distance-from-white <= 0.20 (normalised RGB euclidean; the body's
+maximum channel value is 0.86, so no body pixel can pass the threshold and the fill
+cannot leak), a one-pixel feather ring on the body edge adjacent to background, crop
+tight to alpha > 16, fit onto a 512x128 power-of-two canvas (fit scale
+min(470/bw, 108/bh), 8 px minimum margin; no opaque pixel touches the canvas edge),
+and writes `sprites/cycle_00..03.png` - the four frames the T-083 anim block's
+`attack_descent` state lists (spec `nuke_00..03`, 12 fps = 5 ticks per frame, binding;
+no tick, loop flag or effect parameter changed). The other five states list no frames
+in the block and got none; their effects (lock ring, descent flash, explosion,
+recover) are billboard/shader-level and change no body_rect. `sprites.json` now has
+`"tbd": false`, per-frame `body_rect` equal to the tight alpha > 16 bbox
+([21,14,470,99] / [28,9,456,106] / [11,19,489,93] / [24,15,463,101]), and the
+`animations[]` entries kept the same filenames (nothing renamed or reordered; the
+existing `cycle_00..03.png` listings now carry the real art). `sources[].state` reads
+"attack_descent (base art...)". Fog contrast was initially 2.69/2.80 for cycle_00/01
+(< 3.0): fixed ART-side with a tone lift (gain 1.25 + add 0.10 after the per-frame
+bright/flame modulation), never by touching the threshold; all four frames now sit at
+7.2-8.4 at 40 u. The frame derivations are: cycle_00 base burn (flame 1.15),
+cycle_01 stretch 0.97x1.07 bob -2 px (flame 1.45), cycle_02 squash 1.04x0.94 bob +2
+px, brightness flash 1.12 (flame 1.25), cycle_03 stretch 0.98x1.04 rotation +1.8 deg
+bob -1 px (flame 1.60) - a 4-frame booster-burn cycle for the 12 fps loop.
+
+### D-ART-NUKE-2 - The derivation constants are art judgment, owner may flip [CONTESTABLE]
+No document states the stretch/squash percentages, the 1.8 deg rotation, the bob
+offsets, the flame multipliers, the LIFT_GAIN/LIFT_ADD, or the FILL_TOL/FEATHER_*
+values; they are taste applied over the owner's source image to satisfy the binding
+checks (fog contrast >= 3.0 at 40 u, >= 15% transparent, tight body_rect) with a
+visible burn cycle for `attack_descent`. The gameplay-relevant numbers (frame count,
+tick ranges, effect params, hitbox body_rect semantics) are untouched. The owner may
+re-tone the lift and re-shape the burn cycle by editing `game/tools/art/nuke.gd` and
+re-running it; `validate_sprites.gd` will re-derive pass/fail, and `sprites.json`'s
+`body_rect` must be re-synced to the printed `RECT` lines after every regeneration.
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)

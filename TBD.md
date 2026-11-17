@@ -9,7 +9,7 @@ wired in full, the entry is marked `"tbd": true` in its JSON, and the row appear
 | 2 | T-016 | coil sprites - all frames TBD | Image 2 `springer.png` absent | drop the PNG in, rebuild |
 | 3 | T-016 | thicc ben sprites - all frames TBD | Image 3 `thiccben.png` absent | drop the PNG in, rebuild |
 | 4 | T-016 | Isagi sprites - all frames TBD | Images 4/5/6 (`isagi_idle.jpeg`, `ISAGI_SHOOT.webp`, `blueballprojectile.webp`) absent | drop all three PNGs in, rebuild |
-| 5 | T-016 | nuke sprites - all frames TBD | Image 7 `NUKE.jpeg` absent | drop the PNG in, rebuild |
+| 5 | T-016 | nuke sprites - real art (4/4 attack_descent frames) | `NUKE.jpeg` was present but the shared flood-fill pipeline could not eat its opaque white background; `game/tools/art/nuke.gd` (T-083 art pass) removes it with a border flood fill on distance-from-white and derives the four `attack_descent` burn-cycle frames from the base body | done; re-run `game/tools/art/nuke.gd` to regenerate; states with no frames in the T-083 block stay empty |
 | 6 | T-016 | YOU?! sprites - all frames TBD | Image 8 `character to be corrupted.png` absent | drop the PNG in, rebuild |
 | 7 | T-016 | gift Larper sprites - all frames TBD | Image 9 `tripine.png` absent | drop the PNG in, rebuild |
 | 8 | T-016 | toucher sprites - all frames TBD | Images 10/11 (`toucher.jpeg`, `glitchedground.jpeg`) absent | drop both PNGs in, rebuild |
@@ -43,7 +43,7 @@ body_rect).
 | 4 | Isagi | `isagi_idle.jpeg` | MISSING -> TBD |
 | 5 | Isagi (shoot) | `ISAGI_SHOOT.webp` | MISSING -> TBD |
 | 6 | Isagi (projectile) | `blueballprojectile.webp` | MISSING -> TBD |
-| 7 | nuke | `NUKE.jpeg` | MISSING -> TBD |
+| 7 | nuke | `NUKE.jpeg` | REAL - base art + the four `attack_descent` frames (cycle_00..03.png, 512x128 POT, alpha-keyed background, tight body_rect); the other five T-083 states carry no sprite frames by the binding anim block (billboard-level effects) and stay empty | none for art; rebuild via `game/tools/art/nuke.gd` |
 | 8 | YOU?! | `character to be corrupted.png` | MISSING -> TBD |
 | 9 | gift Larper | `tripine.png` | MISSING -> TBD |
 | 10 | toucher | `toucher.jpeg` | MISSING -> TBD |
