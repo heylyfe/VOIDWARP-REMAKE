@@ -46,6 +46,8 @@ var class_chosen: String = ""     # "" until the CLASS bay resolves (pre-run)
 var purse: int = 0                # whole gold; bounties add, tithe/purchases subtract
 var tithes: int = 0               # tithes paid this run (the next tithe costs more)
 var hunger: int = 0               # Hunger stacks: +5% enemy speed each, repeatable
+var last_vote: String = ""        # the type of the run's previous vote (D-074: the
+                                  # REPEAT slot never re-offers it, T-074)
 var stamp: int = 0                # bumped on every draw change; the view rebuilds on it
 var rng_s: int = 0                # the lobby draw stream's state (exposed for dumps/hashes)
 var _rng: RefCounted = null
@@ -56,7 +58,8 @@ var _gate_announced: bool = false  # EV_GATE_OPENED fired once per intermission
 ## (they are updated in place; keep the same dictionaries across intermissions).
 static func create(p_api: RefCounted, p_level_completed: int, p_purse: int, p_seed: int,
 		p_votes: Dictionary = {}, p_curses: Dictionary = {}, p_stacks: Dictionary = {},
-		p_class: String = "", p_tithes: int = 0, p_hunger: int = 0) -> RefCounted:
+		p_class: String = "", p_tithes: int = 0, p_hunger: int = 0,
+		p_last_vote: String = "") -> RefCounted:
 	var lb := new()
 	lb.content = p_api
 	lb.level_completed = p_level_completed
@@ -67,6 +70,7 @@ static func create(p_api: RefCounted, p_level_completed: int, p_purse: int, p_se
 	lb.class_chosen = p_class
 	lb.tithes = p_tithes
 	lb.hunger = p_hunger
+	lb.last_vote = p_last_vote
 	lb._rng = VoidRngScript.new(VoidRngScript.mix(p_seed, 0x10BE))
 	lb.rng_s = int(lb._rng.s)
 	lb._build_bays(p_api)
@@ -142,7 +146,8 @@ func _redraw_enemy(p_bay: Dictionary, p_bump: bool = true) -> void:
 	# the enemy gate reads the NEXT level's numbers: min_level is the level the voted
 	# enemy will appear in, so the pre-run lobby (level_completed 0) votes for level 1
 	var drawn: Dictionary = OffersScript.draw_enemy_bay(
-			content, level_completed + 1, str(p_bay.get("pool", "")), votes, _rng)
+			content, level_completed + 1, str(p_bay.get("pool", "")), votes, _rng,
+			last_vote, curses_held)
 	p_bay["drawn_kind"] = str(drawn["kind"])
 	p_bay["altars"] = drawn["altars"]
 	if p_bump:
@@ -268,6 +273,8 @@ func _select_enemy(p_bay_index: int, p_altar: int, p_player: int, p_events: Arra
 	else:
 		var eid := str(altar["id"])
 		votes[eid] = int(votes.get(eid, 0)) + 1
+		last_vote = eid      # the E x2 redraw (and the next lobby's REPEAT slot)
+		                     # must not re-offer this type (D-074)
 		_emit(p_events, p_player, bay, "enemy", eid, 0)
 	bay["cast"] = int(bay["cast"]) + 1
 	if int(bay["cast"]) >= int(bay["count"]):

@@ -139,22 +139,24 @@ static func _class_locked(p_upgrade: Dictionary, p_class: String) -> bool:
 	return only != null and str(only) != "" and p_class != str(only)
 
 
-# =============================================================================
+# ==============================================================================
 # T-023: the intermission draws (DESIGN.md section 6 bays, section 7 system).
-# Layer note: these functions never name a content id - pools come from the content
-# api and data/offering_schedule.json (the one tunable file). T-074 (NEW / REPEAT /
-# FREE altars + per-enemy caps + chaser ceiling) replaces the body of
-# enemy_candidates()/draw_enemy_bay() only; its hook is exactly that pair.
-#
-# Enemy gate table: min_level / max_votes live in content/enemies/<id>/enemy.json
-# when the enemy wave (T-030..T-041) has written it; until then the schedule file's
-# own "enemies" table (DESIGN.md section 5 CANON numbers) carries them and enemy.json
-# wins per id once present. No id is named here - only table-driven lookups.
+# T-074: the E draw implements D-074 - NEW / REPEAT / FREE slots, the per-enemy
+# caps (live in enemy_gate) and the chaser ceiling (helpers below). Layer note:
+# no content id is named here - every number comes from the schedule file's
+# "enemies" and "chaser" blocks (the one tunable file) or from callers' args.
 # =============================================================================
 
 ## Hunger fallback (DESIGN.md section 6): an E bay whose pool is exhausted offers
 ## Hunger instead; +5% enemy speed for all enemies per stack, repeatable.
 const HUNGER_SPEED_PCT := 5
+
+## D-074 fallbacks for the "chaser" block of the schedule file: the ceiling is a
+## number of never-named units (false = "no chaser tracking configured"); a
+## chaser type weighs one full body unless the cfg says otherwise. The eps keeps
+## exact-boundary fits (e.g. 5.5 + 0.5 = 6.0) inside the limit despite float noise.
+const CHASER_CAP_FALLBACK := 6.0
+const CHASER_EPS := 0.0001
 
 
 ## {id: {"min_level": int, "max_votes": int}} for every enemy the content layer knows:
@@ -200,33 +202,157 @@ static func enemy_candidates(p_api: RefCounted, p_level: int, p_pool: String,
 	return out
 
 
-## One E-bay draw (per vote: an E x2 bay re-draws between votes, caller's job).
-## Returns {"kind": "enemy", "altars": [{"kind": "enemy", "id", "name", "votes"}]}
-## (up to 3 distinct, sorted by id for a stable altar order),
-## or {"kind": "hunger", "altars": [{"kind": "hunger", "speed_pct": HUNGER_SPEED_PCT}]}
-## when no candidate is left (DESIGN.md section 6, the exhausted-pool fallback).
+# ------------------------------------------------------------------ D-074 chaser --
+
+## The schedule file's "chaser" block (D-T074-2). Shape:
+##   ceiling       - max floating lethal bodies in play (CHASER_CAP_FALLBACK);
+##   weights       - {enemy_id: bodies per vote}; ids absent or 0 = not a chaser;
+##   kitten_host   - the enemy each kitten trails (with kitten_curse held);
+##   kitten_curse  - the curse id that spawns kittens;
+##   kitten_weight - one kitten's body weight (D-074: half each).
+static func chaser_cfg(p_api: RefCounted) -> Dictionary:
+	return p_api.data("offering_schedule").get("chaser", {})
+
+
+static func _chaser_ceiling(p_cfg: Dictionary) -> float:
+	return float(p_cfg.get("ceiling", CHASER_CAP_FALLBACK))
+
+
+## One voted type's body weight under the curses held (p_curses: {curse_id: stacks}):
+## its weight, plus the kitten weight on the host type while the kitten curse is
+## held - every cat then trails its kitten (D-T074-3); a NEW cat voted while the
+## curse is already held adds weight + kitten in one go, same function.
+static func chaser_weight(p_cfg: Dictionary, p_id: String, p_curses: Dictionary) -> float:
+	var w := float(p_cfg.get("weights", {}).get(p_id, 0.0))
+	if w <= 0.0:
+		return 0.0
+	var host := str(p_cfg.get("kitten_host", ""))
+	var curse := str(p_cfg.get("kitten_curse", ""))
+	if p_id == host and curse != "" and int(p_curses.get(curse, 0)) > 0:
+		w += float(p_cfg.get("kitten_weight", 0.0))
+	return w
+
+
+## Floating lethal bodies in play right now under the held curses (D-074).
+static func chaser_load(p_cfg: Dictionary, p_votes: Dictionary, p_curses: Dictionary) -> float:
+	var load := 0.0
+	for id in p_votes.keys():
+		load += float(int(p_votes[id])) * chaser_weight(p_cfg, str(id), p_curses)
+	return load
+
+
+## True when drawing p_id stays at or under the ceiling (non-chasers always fit).
+static func _chaser_fits(p_cfg: Dictionary, p_id: String, p_curses: Dictionary,
+		p_load: float, p_ceiling: float) -> bool:
+	var w := chaser_weight(p_cfg, p_id, p_curses)
+	if w <= 0.0:
+		return true
+	return p_load + w <= p_ceiling + CHASER_EPS
+
+
+## One E-bay draw (D-074 slots; per vote: an E x2 bay re-draws between votes, the
+## caller passes the just-picked id as p_prev_vote on the re-draw - D-074).
+## Slots, in order:
+##   new    - the eligible type with 0 votes with the lowest gate min_level,
+##            ties by seeded draw; empty -> the slot becomes a FREE pick;
+##   repeat - an eligible type already in play, below its cap (the gate filter
+##            did that), NEVER the type of the previous vote; empty -> FREE;
+##   free   - a seeded pick from everything eligible and not already shown.
+## A pick that would push the chaser load (D-074) past the ceiling is not drawn.
+## Every enemy altar carries its slot in the "slot" field.
+## Returns {"kind": "enemy", "altars": [{"kind": "enemy", "slot", "id", "name",
+## "votes"}]} (up to 3 DISTINCT types, in slot order), or {"kind": "hunger",
+## "altars": [{"kind": "hunger", "speed_pct": HUNGER_SPEED_PCT}]} when no altar
+## can be drawn at all (DESIGN.md section 6, the exhausted-pool fallback).
 static func draw_enemy_bay(p_api: RefCounted, p_level: int, p_pool: String,
-		p_votes: Dictionary, p_rng: RefCounted) -> Dictionary:
+		p_votes: Dictionary, p_rng: RefCounted, p_prev_vote: String = "",
+		p_curses: Dictionary = {}) -> Dictionary:
 	var gate := enemy_gate(p_api)
-	var cands := enemy_candidates(p_api, p_level, p_pool, p_votes, gate)
-	var ids: Array = []
-	while ids.size() < 3 and not cands.is_empty():
-		var roll: int = p_rng.urange(cands.size())
-		ids.append(cands[roll])
-		cands.remove_at(roll)
-	ids.sort()
+	var cfg := chaser_cfg(p_api)
+	var ceiling := _chaser_ceiling(cfg)
+	var load := chaser_load(cfg, p_votes, p_curses)
+	var eligible := enemy_candidates(p_api, p_level, p_pool, p_votes, gate)
+
+	var picked: Array = ["", "", ""]
+	# pass 1 - each slot's own category, in slot order
+	if not eligible.is_empty():
+		# slot 0 = NEW: vote-less types, lowest min_level first, ties seeded.
+		var best := -1
+		var cands: Array = []
+		for id in eligible:
+			var eid := str(id)
+			if int(p_votes.get(eid, 0)) != 0:
+				continue
+			if not _chaser_fits(cfg, eid, p_curses, load, ceiling):
+				continue
+			var lv := int(gate[eid]["min_level"])
+			if best < 0 or lv < best:
+				best = lv
+				cands = [eid]
+			elif lv == best:
+				cands.append(eid)
+		if not cands.is_empty():
+			picked[0] = str(cands[p_rng.urange(cands.size())])
+		# slot 1 = REPEAT: in play, below cap, never the previous vote's type.
+		if eligible.size() > used_count(picked):
+			var rep: Array = []
+			for id in eligible:
+				var eid := str(id)
+				if _taken(picked, eid) or eid == p_prev_vote:
+					continue
+				if int(p_votes.get(eid, 0)) <= 0:
+					continue
+				if not _chaser_fits(cfg, eid, p_curses, load, ceiling):
+					continue
+				rep.append(eid)
+			if not rep.is_empty():
+				picked[1] = str(rep[p_rng.urange(rep.size())])
+	# pass 2 - empty slots fill left to right as FREE picks (D-074: an empty
+	# category's altar becomes FREE; "shown" = already on this bay).
+	for i in picked.size():
+		if str(picked[i]) != "" or eligible.size() <= used_count(picked):
+			continue
+		var rest: Array = []
+		for id in eligible:
+			var eid := str(id)
+			if _taken(picked, eid):
+				continue
+			if not _chaser_fits(cfg, eid, p_curses, load, ceiling):
+				continue
+			rest.append(eid)
+		if rest.is_empty():
+			break
+		picked[i] = str(rest[p_rng.urange(rest.size())])
+
 	var altars: Array = []
-	for id in ids:
-		var e: Dictionary = p_api.enemy(id)
+	for i in picked.size():
+		var eid := str(picked[i])
+		if eid == "":
+			continue
+		var e: Dictionary = p_api.enemy(eid)
 		altars.append({
 			"kind": "enemy",
-			"id": str(id),
-			"name": str(e.get("name", "")) if not e.is_empty() else str(id),
-			"votes": int(p_votes.get(str(id), 0)),
+			"slot": ["new", "repeat", "free"][i],
+			"id": eid,
+			"name": str(e.get("name", "")) if not e.is_empty() else eid,
+			"votes": int(p_votes.get(eid, 0)),
 		})
 	if altars.is_empty():
 		return {"kind": "hunger", "altars": [{"kind": "hunger", "speed_pct": HUNGER_SPEED_PCT}]}
 	return {"kind": "enemy", "altars": altars}
+
+
+## How many slots of the picked list are filled.
+static func used_count(picked: Array) -> int:
+	var n := 0
+	for p in picked:
+		if str(p) != "":
+			n += 1
+	return n
+
+
+static func _taken(picked: Array, p_id: String) -> bool:
+	return (picked as Array).has(p_id)
 
 
 ## The tithe (DESIGN.md section 7): 100 + 75 per tithe already paid this run.

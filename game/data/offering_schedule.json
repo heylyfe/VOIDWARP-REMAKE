@@ -3,6 +3,14 @@
   "mode": "standard",
   "repeat_from": 25,
   "repeat_to": 30,
+  "chaser": {
+    "_doc": "D-074 chaser ceiling (FINAL): an E altar is not drawn when picking it would push the floating lethal bodies in play past 'ceiling'. Weights per voted type; with the kitten curse held, each kitten_host vote earns one extra kitten worth kitten_weight bodies (D-T074-3). Ids mirror the 'enemies' gate table above.",
+    "ceiling": 6,
+    "weights": { "kiwi_cat": 1.0, "you": 1.0, "toucher": 1.0, "seal": 1.0 },
+    "kitten_host": "kiwi_cat",
+    "kitten_curse": "litter",
+    "kitten_weight": 0.5
+  },
   "starter_pool": ["kiwi_cat", "coil", "thicc_ben", "seal"],
   "enemies": {
     "kiwi_cat":   { "min_level": 1, "max_votes": 4 },
