@@ -71,7 +71,7 @@ func _test_lobby_plaque_carries_t001_disclaimer(f: Array[String]) -> void:
 
 
 func _test_menu_entries(f: Array[String]) -> void:
-	if MenuScript.MENU_ENTRIES != ["Play", "Settings", "About", "Quit"]:
-		f.append("menu: MENU_ENTRIES is %s, want [Play, Settings, About, Quit]" % str(MenuScript.MENU_ENTRIES))
+	if MenuScript.MENU_ENTRIES != ["PLAY", "HOW TO PLAY", "QUIT"]:
+		f.append("menu: MENU_ENTRIES is %s, want [PLAY, HOW TO PLAY, QUIT]" % str(MenuScript.MENU_ENTRIES))
 
 
