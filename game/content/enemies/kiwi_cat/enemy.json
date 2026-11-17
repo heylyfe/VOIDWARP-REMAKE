@@ -1,0 +1,29 @@
+{
+  "id": "kiwi_cat",
+  "name": "kiwi cat",
+  "min_level": 1,
+  "max_votes": 4,
+  "vote_effect": "+1 cat",
+  "anchor_kinds": ["nook"],
+  "stats": {
+    "world_height": 1.0,
+    "body_height": 1.0,
+    "hit_diameter": 0.9,
+    "base_speed": 5.6,
+    "pursuit_ceiling": 0.8,
+    "burst_ceiling": 1.0,
+    "climb_u_per_s": 2.0,
+    "meow_period_ticks": 180,
+    "meow_range_u": 14.0,
+    "meow_ticks": 12,
+    "contact_kill": true,
+    "death_code": "D-KIWI",
+    "audio_cues": ["meow", "meow_double"],
+    "frames": 1
+  },
+  "behavior": "Floats toward the nearest player at 5.6 u/s (pursuit ceiling 0.80 - never above 7.2 u/s after multipliers); contact kills. Meows every 3 s while within 14 u.",
+  "counter_play": "Open ground - walk away. Thin path or dead end - hurdle it as it arrives: a jump exceeds its 1.5 u reach from 0.16 s to 0.59 s of the jump.",
+  "tell": "Meows every 3 s while within 14 u - a slow clock that never stops.",
+  "sprites": "res://content/enemies/kiwi_cat/sprites.json",
+  "script": true
+}

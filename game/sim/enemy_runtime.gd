@@ -107,8 +107,8 @@ class Api:
 	# The kill API. kill saves nothing and subtracts nothing: the player's controller (T-012)
 	# answers - it may still be suppressed by respawn/Last Light invulnerability, which is the
 	# controller's call, never the enemy's.
-	func kill(player, killer_id: String) -> bool:
-		return rt.kill(player, killer_id)
+	func kill(player, killer_id: String, code: String = "") -> bool:
+		return rt.kill(player, killer_id, code)
 
 	func push(player, dir: Vector3, speed: float) -> void:
 		rt.push(player, dir, speed)
@@ -480,10 +480,16 @@ func _spawn_one(plan_row: Dictionary, spot: Dictionary, copy_index: int, copies:
 	var cfg: Dictionary = plan_row["cfg"]
 	var body: Dictionary = cylinder_from_sheet(cfg.get("world_height", 1.0),
 			cfg.get("frame_w", 256), cfg.get("frame_h", 256), cfg.get("body_rect", [0, 0, 256, 256]))
+	# D-T030-2: an explicit cfg hit_diameter (world u) pins the row's diameter -
+	# DESIGN.md SR-2's FINAL per-enemy values win over the art derivation (the T-016
+	# placeholder body_rect is interchangeable stand-in art)
+	var diameter_u: float = float(body["diameter_u"])
+	if cfg.has("hit_diameter"):
+		diameter_u = maxf(float(cfg["hit_diameter"]), 0.0)
 	var row := {
 		"id": plan_row["id"], "name": plan_row["name"], "behavior": plan_row["behavior"],
 		"cfg": cfg, "x": float(spot["x"]), "y": float(spot["y"]), "z": float(spot["z"]),
-		"height_u": body["height_u"], "diameter_u": body["diameter_u"],
+		"height_u": body["height_u"], "diameter_u": diameter_u,
 		"contact_kill": bool(cfg.get("contact_kill", true)),
 		"cycle_ticks": int(cfg.get("cycle_ticks", 0)),
 		"copy_index": copy_index, "copies": copies,
@@ -668,14 +674,16 @@ func _resolve_player(p) -> Variant:
 	return null
 
 
-func kill(player, killer_id: String) -> bool:
+func kill(player, killer_id: String, code: String = "") -> bool:
 	var ctl = _resolve_player(player)
 	if ctl == null or world.is_empty():
 		return false
-	# death code from the killer id alone: "an enemy either kills or applies a non-killing
-	# effect" - the code names the killer, never a damage number (D-T027-5)
-	var code := "D-%s" % str(killer_id).to_upper().replace(" ", "_")
-	return ctl.try_kill(code, str(killer_id), world, events)
+	# death code: an explicit cfg death_code (passed verbatim by the caller, D-T030-1) wins
+	# over the name derivation; DESIGN.md section 3.1's FINAL code list is the contract
+	var death_code := code
+	if death_code == "":
+		death_code = "D-%s" % str(killer_id).to_upper().replace(" ", "_")
+	return ctl.try_kill(death_code, str(killer_id), world, events)
 
 
 func push(player, dir: Vector3, speed: float) -> void:
@@ -769,7 +777,8 @@ func _contact_kills() -> void:
 				var api := Api.new()
 				api.rt = self
 				api.row = e
-				api.kill(i, str(e["name"]))
+				# D-T030-1: cfg death_code (verbatim) wins over the name derivation
+				api.kill(i, str(e["name"]), str(e["cfg"].get("death_code", "")))
 
 
 # ---- projectiles (kill on hit - KILL RULE; no partial effect) --------------------------------

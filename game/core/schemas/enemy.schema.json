@@ -12,6 +12,9 @@
     "anchor_kinds": {"type": "array", "items": {"type": "string"}},
     "stats": {"type": "object"},
     "sprites": {"type": ["string", "null"], "$comment": "resource path of this enemy's sprites.json (enemies/<id>/sprites.json), when frames exist"},
-    "script": {"type": "boolean", "$comment": "true when the behavior needs an enemies/<id>/enemy.gd beyond defaults"}
+    "script": {"type": "boolean", "$comment": "true when the behavior needs an enemies/<id>/enemy.gd beyond defaults"},
+    "behavior": {"type": "string", "$comment": "one-line behavior summary, shown on the lobby altar panel (antechamber.gd); mirrors ENEMIES.md's behavior sentence"},
+    "counter_play": {"type": "string", "$comment": "one-line counter-play, shown on the lobby altar panel; from DESIGN.md section 5"},
+    "tell": {"type": "string", "$comment": "the enemy's audio/visual tell, one line"}
   }
 }

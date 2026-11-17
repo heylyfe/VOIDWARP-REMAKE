@@ -2446,6 +2446,95 @@ tripmine is a stationary slot occupant, not a body that arrives. WHY: applying t
 would show an invisible mine slot for 30 ticks that the table explicitly rules out. Arguable either
 way; recorded as decided, not contested.
 
+### D-T030-1 - sim/enemy_runtime honors cfg `death_code` (verbatim) on the contact-kill path (T-030).
+DESIGN.md section 3.1 (FINAL) lists every enemy's death code: kiwi cat is `D-KIWI`. T-027's
+`_contact_kills` derived the code from the display name (`"D-" + name.to_upper()`), which yields
+`D-KIWI_CAT` for "kiwi cat" - a code DESIGN.md never lists. `Api.kill` / `rt.kill` now take an
+optional explicit `code` parameter; `_contact_kills` passes `row["cfg"]["death_code"]` verbatim
+when present (gift_larper's enemy.json already carried `stats.death_code: "D-MINE"` - the data
+path existed, the runtime ignored it). No `death_code` in cfg: the derivation is unchanged
+(T-027's fixtures, `D-TBD`, stay green). WHY: section 3.1's code list is FINAL and the
+run-over screen maps codes through `sim/death.gd`'s closed map - a derived `D-KIWI_CAT` would
+ever show the raw fallback instead of "kiwi cat".
+
+### D-T030-2 - sim/enemy_runtime honors cfg `hit_diameter` on the body row (T-030).
+DESIGN.md SR-2 (FINAL, D-065) pins kiwi cat's hit diameter at **0.9 u** (body height 1.0 u).
+`cylinder_from_sheet` derives the diameter as 0.8 x body width from the PNG's `body_rect`; the
+T-016 TBD placeholder sheet carries a square 224x224 body, which derives 0.8 u - not the FINAL
+0.9. `_spawn_one` now reads an explicit cfg `hit_diameter` (world u) and, when present, uses it
+verbatim for the row's `diameter_u` (the height stays `world_height`, the width stays the
+derivation and remains informational). No `hit_diameter` in cfg: the derivation is unchanged.
+WHY: SR-2 is FINAL and the placeholder art is explicitly interchangeable (D-T027-6) - the data
+that carries the FINAL number must win over a derivation whose input art is a stand-in; the real
+kiwicat.png may or may not re-derive the same 0.9.
+
+### D-T030-3 - [CONTESTABLE] kiwi cat's meow rides the sim telegraph channel; the shape is a zero-radius circle (T-030).
+ENEMIES.md ("cat meow when near player") + DESIGN.md section 5.1 ("Meows every 3 s while within
+14 u") + the T-083 anim block (state "telegraph (meow)", 12 ticks, every 180 ticks (3.0 s,
+binding) within 14 u, scale pulse 1.0 -> 1.12 -> 1.0) give the timings; no document states the
+transport. Built: the behavior calls `api.telegraph("meow", {"shape": "circle", "cx": x, "cz": z,
+"r": 0.0}, 12)` - a 12-tick cue the view renders as the scale pulse and the audio layer renders as
+the 0.35 s meow. The radius-0 circle carries no targeted footprint (`point_in_shape` covers only
+its own centre point), so SR-4's `no_targeted_telegraph` requirement for address me is unaffected;
+this is deliberately NOT a damage telegraph (the cat's kill is the body contact, framework-checked).
+CONTESTABLE: the owner may prefer a dedicated non-tac `meow` event channel instead of the telegraph
+bus; the swap is one `api` call in the behavior plus the view/audio subscriptions. Zoomies' double
+meow (two "meow_double" telegraphs 12 ticks apart) is driven by the Zoomies script curse (T-051),
+not by this behavior.
+
+### D-T030-4 - [CONTESTABLE] kiwi cat audio: cue names `meow` / `meow_double`, files under `assets/audio/enemies/kiwi_cat/`, placeholders until T-055 (T-030).
+No document states an audio asset layout. enemy.json `stats.audio_cues = ["meow", "meow_double"]`
+(cue names = file names, per the section 3 sound brief: cue `meow` 0.35 s every 180 ticks within
+14 u; `meow_double` - two meows 12 ticks apart, pitched up a fourth). The view-side hook
+(`game/view/audio/kiwi_cat_audio.gd`) loads `res://assets/audio/enemies/kiwi_cat/meow.wav` and
+`res://assets/audio/enemies/kiwi_cat/meow_double.wav` and **no-ops silently while a file is
+absent** - T-055 synthesises the placeholders (stdlib `wave`) and owns the files. TBD.md rows 28/29
+record both as placeholders. CONTESTABLE: the owner may want a single generic `enemy_cue(name)`
+hook instead of per-enemy scripts.
+
+### D-T030-5 - [CONTESTABLE] the meow re-arms on range entry: the first tick back inside 14 u meows at once (T-030).
+"Meows every 3 s while within 14 u" (DESIGN.md section 5.1) does not state the phase of the first
+meow. Built: `row["meow_left"]` initialises to 0, so the first tick the cat is within 14 u of the
+nearest player it meows, and re-initialises to 0 on leaving the radius - re-entering re-arms the
+immediate meow; afterwards one meow every 180 ticks while the radius holds. WHY [gameplay reason]:
+the meow IS ENEMIES.md's entire proximity tell ("cat meow when near player"); a 3 s silent grace
+after crossing into 14 u would mute the tell exactly when the player first needs it, and
+re-entering the radius without a meow would read as a new enemy. CONTESTABLE: the owner may prefer
+the first meow one full period after entry.
+
+### D-T030-6 - enemy.schema.json gains optional `behavior` / `counter_play` / `tell` top-level strings; test_content counts bumped (T-030).
+`game/view/lobby/antechamber.gd` renders each enemy's altar panel from `sheet.get("behavior")`
+and `sheet.get("counter_play")` (the curse schema already carries `rule`/`counter_play` top-level;
+this mirrors it). The schema's `additionalProperties: false` would otherwise reject the panel
+lines, so the three keys are added as optional strings - nothing else changed, and the registry
+still refuses unknown keys and any id/folder mismatch. `test_content.gd`'s launch counts move
+1 -> 2 enemies and 88 -> 89 content_ids (the check stays exact, not loosened; wave-3 tickets keep
+it current in merge order). WHY: the lobby exhibit line is part of every T-030..T-041 ticket's
+done-when, and it reads from these two keys.
+
+### D-T030-7 - kiwi_cat_view.gd: the first enemy-specific view file; anim-block effects applied client-side from ticks (T-030).
+`game/view/kiwi_cat_view.gd` (Node3D) owns the enemy's billboard (`game/view/billboard.gd`,
+unchanged) and applies the T-083 anim-block effects itself, read from `sprites.json`'s `anim`
+block (never hard-coded): spawn = 30-tick alpha 0 -> 1 fade with scale 0.8 -> 1.0; idle/chase =
+bob +-0.08 u at 1.0 Hz; telegraph (meow) = scale pulse 1.0 -> 1.12 -> 1.0 across the 12-tick cue
+(keyed off the 12-tick telegraph window the sim announced). View layer only; reads sim events,
+never writes sim state (DESIGN.md section 13). The frame set is the T-016 TBD placeholder for the
+real `kiwicat.png` (TBD.md row 1); swapping art changes no code here. WHY: the anim block is the
+one source of effect timings (T-083) - duplicating them as view constants would drift.
+
+### D-T030-8 - The hurdle window is asserted against the engine's tick-quantized arc, not the spec's continuous formula (T-030).
+DESIGN.md section 5.1 and FLEET_PACK.md express the jump's clearing window as continuous physics
+(y(t) = 12.0t - 16.0t^2 >= 1.5 u between 0.16 s and 0.59 s, apex 2.25 u, a 0.43 s window). The
+controller (sim/controller.gd) integrates at 60 Hz with semi-implicit Euler (gravity subtracted
+before the position update), so the REALIZED window is ticks 9..33 (feet above 1.5 u), apex
+2.15 u, a 25-tick (0.42 s) window - measured headless from the running controller, not derived.
+The test asserts the realized window +/-1 tick and a ~0.43 s window length +/-1 tick instead of
+the unreachable continuous values. WHY: a test against 0.16/0.59 s continuous would encode a
+jump the engine never produces and would fail on correct code; the spec numbers are honoured as
+"the same arc, tick-quantized". The gameplay content (hurdle the cat during the jump) is
+unchanged. [CONTESTABLE]: the owner may instead ask the integrator (gravity after position) to
+match continuous physics more closely; that is a controller change (T-012), outside this ticket.
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
