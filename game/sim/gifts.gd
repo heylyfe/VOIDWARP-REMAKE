@@ -46,6 +46,12 @@ var phase: String = PHASE_BLACK
 ## Bitsets indexed by slot id, one byte per 8 slots.
 var black_taken := PackedByteArray()
 var gold_taken := PackedByteArray()
+## Skeleton Key's collection quota (T-053, D-T053-4): the beacon opens when at least
+## this many REAL black gifts are collected instead of all of them; the uncollected
+## ones enter the gold phase by the same flip (gold gifts at every black slot - the
+## "rest turn gold in place" reading needs no second conversion). -1 = the default
+## exact rule (every black gift collected); set only when the upgrade is owned.
+var black_quota: int = -1
 ## Multiplier on the pickup radius, fed from the pickup_radius stat (core/stats.gd)
 ## by the content layer; 1.0 until the shop wiring (T-022) sets it.
 var pickup_mult: float = 1.0
@@ -83,6 +89,13 @@ func slot_pos(i: int) -> Vector3:
 	return Vector3(float(int(s["x"])) + 0.5, float(int(s["y"])) * 0.5 + 1.0, float(int(s["z"])) + 0.5)
 
 
+## The T-053 readers' name for the same mapping (the radar queries / the
+## cartographer read positions through this wrapper; the slot_pos confinement
+## scan keeps the section 6.7 formula in this file only).
+func position_of(i: int) -> Vector3:
+	return slot_pos(i)
+
+
 func is_real(i: int) -> bool:
 	return int(slots[i]["occ"]) == 0
 
@@ -106,14 +119,22 @@ func remaining() -> int:
 	return n
 
 
-## True exactly when no real black gift is left (the beacon-open condition).
+## True when the beacon-open condition holds: no real black gift left - or, with
+## the Skeleton Key's quota (T-053, D-T053-4), at least black_quota of the REAL
+## black gifts collected. The uncollected remainder goes gold by the same phase
+## flip (gold gifts at every black slot, "the rest turn gold in place").
 func all_black_collected() -> bool:
 	if phase != PHASE_BLACK:
 		return true
+	var rem := 0
 	for i in slots.size():
 		if is_real(i) and not bit_get(black_taken, i):
-			return false
-	return true
+			rem += 1
+	if rem == 0:
+		return true
+	if black_quota >= 0:
+		return (total_real - rem) >= black_quota
+	return false
 
 
 ## The straggler rule (DESIGN.md section 3.3): when at most 20% of the REAL

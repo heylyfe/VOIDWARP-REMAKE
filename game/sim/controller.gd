@@ -41,6 +41,12 @@ const DEFAULTS := {
 	"pad_launch_vel": 16.0,
 }
 
+# T-053 Updraft (D-T053-6): the rise apex is exactly 3.0 u under gravity 32.0
+# (vy = sqrt(2 x 32 x 3.0)); the cooldown is 6 s.
+const UPDRAFT_RISE_U := 3.0
+const UPDRAFT_VY := 13.856406460551018
+const UPDRAFT_CD := 6.0
+
 const KITS := ["dasher", "glider", "athletic"]
 
 
@@ -143,6 +149,20 @@ var air_jumps := 0
 var air_jumps_max := 0
 var air_card_height := 1.0
 var speed_base_add := 0.0
+# T-053 Twin Dash (D-T053-5): dasher-only second
+# dash stock with its own 3 s regen, frozen under ability lock like the primary;
+# granted charged at purchase.
+var bonus_dashes := 0
+var bonus_dashes_max := 0
+var bonus_cd := 0.0
+# T-053 Updraft (D-T053-6): glider-only rise of 3.0 u
+# on a re-pressed jump while gliding; apex exactly 3.0 u under gravity 32, once per
+# glide engagement, 6 s cooldown frozen under ability lock like the dash. Granted
+# (ready) ONLY by apply_updraft - the base glider has no updraft.
+var updraft_ready := false
+var updraft_cd := 0.0
+var updraft_used := false
+var updraft_owned := false
 
 # void charges (D-050): charges carry over between levels (D-063).
 var charges := 2
@@ -245,6 +265,19 @@ func step(dt: float, a_in: Dictionary, w: Dictionary) -> Array:
 	if not dash_ready and lock <= 0.0:
 		dash_cd -= dt
 		dash_ready = dash_cd <= 0.0
+	# T-053 Twin Dash (D-T053-5): the bonus stock regenerates on its own 3 s timer,
+	# frozen under ability lock exactly like the primary.
+	if bonus_dashes_max > 0 and bonus_dashes < bonus_dashes_max and lock <= 0.0:
+		bonus_cd -= dt
+		if bonus_cd <= 0.0:
+			bonus_dashes += 1
+			bonus_cd = 0.0
+	# T-053 Updraft (D-T053-6): 6 s cooldown, frozen under ability lock. The
+	# cooldown only ever runs on a GRANTED updraft (updraft_owned) - an unowned
+	# controller (ready=false, cd=0) must not re-arm itself out of the regen math.
+	if updraft_owned and not updraft_ready and lock <= 0.0:
+		updraft_cd -= dt
+		updraft_ready = updraft_cd <= 0.0
 
 	if dead:
 		prev_buttons = buttons
@@ -269,7 +302,10 @@ func step(dt: float, a_in: Dictionary, w: Dictionary) -> Array:
 		vy *= float(C["jump_cut"])
 
 	# ---- dash (Dasher) ------------------------------------------------------------
-	if kit == "dasher" and ability_pressed and dash_ready and not ability_locked(w):
+	# T-053 Twin Dash (D-T053-5): primary charge first, then the bonus stock; the
+	# consumed charge's own 3 s regen starts on consumption.
+	if kit == "dasher" and ability_pressed and not ability_locked(w) \
+			and (dash_ready or bonus_dashes > 0):
 		var in_x := float(a_in.get("move_x", 0))
 		var in_z := float(a_in.get("move_z", 0))
 		var ax := float(a_in.get("aim_x", 0))
@@ -294,8 +330,13 @@ func step(dt: float, a_in: Dictionary, w: Dictionary) -> Array:
 		# an integer tick count, not a float timer: 0.20 s at 60 Hz is exactly 12 ticks,
 		# so the dash span is exactly 6 u with no float residue
 		dash_ticks = int(round(float(C["dash_time"]) * 60.0))
-		dash_ready = false
-		dash_cd = float(C["dash_regen"])
+		if dash_ready:
+			dash_ready = false
+			dash_cd = float(C["dash_regen"])
+		else:
+			# Twin Dash's second stock (D-T053-5): its own 3 s regen begins here.
+			bonus_dashes -= 1
+			bonus_cd = float(C["dash_regen"])
 		ev.append({"e": "dash_start"})
 
 	# ---- jumps (ground, coyote, buffered on landing, air) ---------------------------
@@ -320,11 +361,14 @@ func step(dt: float, a_in: Dictionary, w: Dictionary) -> Array:
 			ev.append({"e": "jump"})
 
 	# ---- glide engage (Glider) (the fall cap itself is applied after gravity) -------
+	var was_gliding := gliding
 	gliding = false
 	if kit == "glider" and (buttons & BTN_JUMP) != 0 and not grounded and vy < 0.0 \
 			and glide_energy > 0.0 and not ability_locked(w) and not pad_flight \
 			and dash_ticks <= 0:
 		gliding = true
+		if not was_gliding:
+			updraft_used = false   # once per glide ENGAGEMENT (D-T053-6)
 		var h_spd: float = sqrt(vx * vx + vz * vz)
 		var cap := float(C["glide_speed"])
 		if h_spd > cap:
@@ -335,6 +379,21 @@ func step(dt: float, a_in: Dictionary, w: Dictionary) -> Array:
 		glide_energy -= dt
 		if glide_energy < 0.0:
 			glide_energy = 0.0
+
+	# ---- updraft (Glider, T-053, D-T053-6) -----------------------------------------
+	# A re-pressed jump while gliding rises exactly 3.0 u: vy = sqrt(2 x g x 3 u)
+	# under gravity 32 (apex = vy^2 / (2 g) = 3.0 u), ends the glide, once per
+	# glide engagement, 6 s cooldown frozen under ability lock like the dash (D-070).
+	if gliding and jump_pressed and kit == "glider" and updraft_ready \
+			and not updraft_used and not ability_locked(w):
+		# + gravity x dt: gravity runs after this block, so the step's EXIT vy is
+		# the exact apex velocity and the rise is exactly 3.0 u (D-T053-6).
+		vy = UPDRAFT_VY + float(C["gravity"]) * dt
+		gliding = false
+		updraft_used = true
+		updraft_ready = false
+		updraft_cd = UPDRAFT_CD
+		ev.append({"e": "updraft"})
 
 	# ---- horizontal acceleration (addendum R4) --------------------------------------
 	var dashing_move := false
@@ -695,6 +754,22 @@ func apply_double_jump(card_height: float = 1.0) -> void:
 	air_jumps_max += 1
 	air_jumps = air_jumps_max
 	air_card_height = card_height
+
+
+# T-053 Twin Dash (D-T053-5): the second dash stock, granted charged (usable on
+# the next ability press); its 3 s regen runs from each consumption.
+func apply_twin_dash() -> void:
+	bonus_dashes_max = 1
+	bonus_dashes = 1
+	bonus_cd = 0.0
+
+
+# T-053 Updraft (D-T053-6): the 3 u rise is granted ready; once per glide.
+func apply_updraft() -> void:
+	updraft_owned = true
+	updraft_ready = true
+	updraft_cd = 0.0
+	updraft_used = false
 
 
 # Ability lock (D-070, SR-6): the toucher's floor and coil's shockwave call this.
