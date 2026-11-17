@@ -36,6 +36,9 @@ const CHAIN_CAP := 200
 const PUSH_WINDOW := 120
 
 var path: String = ""
+## T-081 (D-T081-2): where the log file goes. Default stays user://runs; a batch that
+## wants the logs inside the repo (a gitignored folder) overrides this before run_started.
+var dir_base: String = "user://runs"
 var open_ok: bool = false
 var total_t: int = 0
 var level_number: int = 0
@@ -54,6 +57,12 @@ var push_hist: Array = []
 # A mine_contact's outcome arrives later IN THE SAME tick's array (the contact ladder);
 # buffered here across feed_tick's batch, flushed as "killed" if nothing else said it.
 var _pending_mine_contact: int = -1
+# T-081 (D-T081-1) movement counters, per level: every controller "jump" event (a jump
+# input that left the ground - ground, coyote, buffered-on-landing and air jumps alike;
+# the event carries no sub-kind) and every "step_up" event (a walked ground rise of
+# >= 1 HU, sim/controller.gd). Reported in level_clear's "jumps" / "stepups".
+var jump_count: int = 0
+var stepup_count: int = 0
 
 var _fh: FileAccess = null
 
@@ -64,8 +73,8 @@ var _fh: FileAccess = null
 ## start_tick is the accumulated tick this log begins at (0 for a fresh run).
 func run_started(p_run_seed: int, class_id: String, p_start_tick: int = 0) -> void:
 	total_t = p_start_tick
-	path = "user://runs/%d_%d.jsonl" % [p_run_seed, p_start_tick]
-	DirAccess.make_dir_recursive_absolute("user://runs")
+	path = "%s/%d_%d.jsonl" % [dir_base, p_run_seed, p_start_tick]
+	DirAccess.make_dir_recursive_absolute(dir_base)
 	_fh = FileAccess.open(path, FileAccess.WRITE)
 	open_ok = _fh != null
 	phase = "lobby"
@@ -86,6 +95,9 @@ func level_started(p_level: int, slots: int, real_gifts: int, mines: int,
 	gold_available = int(real_gifts)
 	cur_overtime = 0
 	_pending_mine_contact = -1
+	# T-081 (D-T081-1): the per-level movement counters the level_clear record reports.
+	jump_count = 0
+	stepup_count = 0
 	_record("level_start", {"slots": int(slots), "real_gifts": int(real_gifts),
 			"mines": int(mines), "enemies": int(enemies_in_play)})
 
@@ -176,7 +188,8 @@ func _feed_one(ev: Dictionary) -> void:
 	if ty == "level_complete":
 		_record("level_clear", {"black_ticks": beacon_open_t - level_start_t,
 				"gold_ticks": total_t - beacon_open_t,
-				"total_ticks": total_t - level_start_t})
+				"total_ticks": total_t - level_start_t,
+				"jumps": jump_count, "stepups": stepup_count})
 		return
 	# the mines ladder's typed events: the contact, then its outcome in the same tick's
 	# batch (D-058's fixed order); a pass is logged sim-side (the 1.4 u bypass zone)
@@ -202,6 +215,10 @@ func _feed_one(ev: Dictionary) -> void:
 		return
 	# controller/runtime raw dicts below.
 	var e := str(ev.get("e", ""))
+	if e == "jump":
+		jump_count += 1
+	elif e == "step_up":
+		stepup_count += 1
 	if e == "void_fall":
 		var before2: int = int(ev.get("charges_before", int(ev.get("charges", 0))))
 		var after2: int = int(ev.get("charges", 0))

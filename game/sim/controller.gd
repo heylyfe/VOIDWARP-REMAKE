@@ -461,6 +461,7 @@ func step(dt: float, a_in: Dictionary, w: Dictionary) -> Array:
 	# ---- move + collide (D-047) -----------------------------------------------------
 	var ox := x
 	var oz := z
+	var oy := y
 	var was_g := grounded
 	var r: Dictionary = CollisionScript.move_body(w, x, y, z, vx * dt, vy * dt, vz * dt,
 			float(C["height"]), float(C["step_up"]), was_g)
@@ -493,6 +494,16 @@ func step(dt: float, a_in: Dictionary, w: Dictionary) -> Array:
 			vy = float(C["jump_velocity"])
 			buffer = 0.0
 			ev.append({"e": "jump"})
+
+	# T-081 step-up counter (D-T081-1): ground height GAINED while WALKING (grounded
+	# contact on both sides of the move) of at least 1 HU = 0.5 u - the tread-then-step
+	# stairs the shape contract produces. A jump, a landing from the air, a ramp's slope
+	# (0.5 u per 1 u horizontal = 0.075 u per tick at run speed) and a launch pad never
+	# reach 1 HU in one tick, so no guard against them is needed.
+	if was_g and grounded:
+		var rise: float = y - oy
+		if rise >= 0.5 - 1e-4 and absf(x - ox) + absf(z - oz) > 0.01:
+			ev.append({"e": "step_up", "hu": int(round(rise * 2.0))})
 
 	# ---- launch pads (TERRAIN_SPEC section 4) ---------------------------------------
 	if grounded and not pad_flight:
