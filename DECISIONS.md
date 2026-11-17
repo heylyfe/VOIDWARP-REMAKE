@@ -2326,6 +2326,125 @@ address_me, claude, gin (ANIM-DATA 6 passed 6 failed, exit 1). That is a correct
 state: the other half of T-083 is in flight on the same spec; the checker is its gate too.
 Mine are done and green: ANIM-DATA 6 passed 0 failed, exit 0 (see the response file for the
 full command output).
+### D-T083-1 - Frame naming: anim blocks reference the T-016 file names, never the spec's names (T-083).
+
+DECISION (T-083): research/fable-tickets.md section 1.0 pre-authorizes this ("if T-016 produced
+different names, T-083 renames in `sprites.json`, never in this spec"). The anim blocks name the
+files that exist on disk today: gift_larper `larper_00..04` -> `sprites/cycle_00..04.png`;
+toucher `toucher_00..02` -> `sprites/cycle_00..02.png`, `glitchfloor_00..04` ->
+`sprites/floor_00..04.png`; seal `seal_00` -> `sprites/idle_00.png`, `seal_01` + the `seal_02/03`
+flap overlay -> `sprites/dash_00.png` / `sprites/dash_01.png` (no mouth-open frame exists);
+address_me `addressme_00/01` -> `sprites/cycle_00/01.png`; claude `claude_00` ->
+`sprites/idle_00.png`, `plushie_00..02` -> `sprites/idle_00..02.png` (stand-in); gin
+`gin_idle_00`/`gin_launch_00` -> `sprites/idle_00.png` / `sprites/launch_00.png`. The spec's names
+are unchanged (D-040). TBD.md carries one row per enemy.
+
+### D-T083-2 - [CONTESTABLE] All art is TBD, so multi-frame spec sequences collapse onto the placeholder frames (T-083).
+
+DECISION (T-083): where the TBD sheet produces ONE frame (seal `idle_00.png`, thicc_ben, kiwi_cat,
+address_me normal), the state entry holds that single frame and keeps the table's tick counts
+exactly (seal idle 9 ticks/frame, seal telegraph 45 ticks held, seal dash 4 ticks/frame); where the
+sheet produces N frames (toucher 3, larper 5, claude 3, gin 1+1, address_me 2, seal dash 2), the
+entries use them in spec order. WHY [CONTESTABLE]: section 1.0's "every state uses the TBD frame"
+reads singular; the alternative reading renames placeholder files, which changes no pixels and
+orphanes the `animations[]` block the pipeline emitted. The owner may rule frame renames when the
+real art lands; the anim block then names the real files (section 1.0). Frame-count mismatches
+vs the tables are inherent to the TBD placeholders and are logged in TBD.md, never papered over by
+inventing frames.
+
+### D-T083-3 - [CONTESTABLE] fps rows convert to ticks exactly (T-083).
+
+DECISION (T-083): the tables state animation rates in fps and ticks; ticks win (section preamble).
+fps -> ticks per frame is 60/fps: 20 fps -> 3, 10 fps -> 6, 8 fps -> 7.5, 12 fps -> 5, 16 fps ->
+3.75, 6 fps -> 10. "7-8 ticks per frame" (YOU?!, 8 fps) is encoded 7.5; the other worker's anim
+blocks should do the same (the checker enforces 7.5/3.75). WHY [CONTESTABLE]: an alternating 7/8
+tick pattern would be marginally closer to the words, at the cost of an irregular period the sim's
+fixed-rate tables do not otherwise use; 7.5 keeps the loop period regular (60 ticks per frame set).
+
+### D-T083-4 - [CONTESTABLE] No invented numbers: unstated cells are null; VFX-only states are "frames": [] (T-083).
+
+DECISION (T-083): every anim entry carries `ticks_per_frame` and `duration_ticks`; where the table
+states no number for the cell, the value is `null` with the stated timing in `timing_note` (never an
+invented figure). States the table draws with no frames (gift Larper detonation, toucher touch,
+address_me recover, gin void zone, kiwi cat/nuke rows with "-", ...) carry `"frames": []` and
+`duration_ticks` from the table where stated (18 / 600 / 300 / ...) or null. WHY [CONTESTABLE]: the
+ticket demands "ticks per frame or explicit tick ranges" per entry; a strict null is the only
+encoding that neither invents a number nor drops the cell. The checker skips null cells rather than
+inventing (it FAILS only on numbers the table states).
+
+### D-T083-5 - [CONTESTABLE] gin attack_launch: the launch frame is held for the 18-tick spear flight (T-083).
+
+DECISION (T-083): the table says gin_launch_00 is "shown on tick 120; spears travel for 18 ticks
+(0.3 s)" and is otherwise silent on how long the pose holds. The anim entry holds the launch frame
+for the 18-tick flight (`duration_ticks: 18`, `ticks_per_frame: 18`); recover (loop, tiles fade back
+over 30 ticks, cooldown 840 ticks) takes over at tick 138. WHY [CONTESTABLE]: one could hold the
+launch pose into recover and split at the first idle re-entry; nothing states the pose's exit tick.
+18 is the only number the table gives the attack.
+
+### D-T083-6 - address_me telegraph loops a single held frame for the full 300 ticks; stillness arc stays "green" (T-083).
+
+DECISION (T-083): the table's loop cell for the countdown is "loop" and there is no second frame for
+the state, so the entry holds `cycle_00.png` looping for the 300-tick cue (`ticks_per_frame: 300`).
+The ring drain, the tint neutral -> amber (tick 150) -> red (tick 240), the green stillness arc
+(90 ticks = 1.5 s to fill, empties on the first motion input) and the rumble's 1 -> 6 Hz tremolo are
+`effect_params` verbatim from the table and DESIGN.md section 5.10. The arc's colour is recorded as
+the word "green" - no document states its hex, and no hex was invented.
+
+### D-T083-7 - claude plushie_idle stands in with the TBD logo frames; 6 fps kept exactly (T-083).
+
+DECISION (T-083): no plushie frames exist (the ENEMIES.md clawd Crab source was never fetched, TBD
+fallback). `plushie_idle` loops `idle_00..02.png` - the only three-frame set the TBD sheet carries -
+at the table's 6 fps = exactly 10 ticks per frame, with bob +-0.1 u, the soft white glow and
+collected = pop 9 ticks as `effect_params`. TBD.md carries the row; the owner replaces it by fetching
+the clawd Crab sprite and rebuilding the pipeline (the anim block then points at the real
+plushie_00..02). The three logo frames doubling as plushie stand-ins is acknowledged as visibly
+wrong on screen until replaced.
+
+### D-T083-8 - check_anim_data.gd embeds the section 1.x tables 1:1 and is strict only on stated numbers (T-083).
+
+DECISION (T-083): `game/tools/check_anim_data.gd` transcribes every section 1.x table (all 12
+enemies, enemies 7-12 = this ticket, 1-6 = the sibling half) into an embedded SPEC. It enforces,
+exactly, the cells the tables state: the state list, `loop` where stated, `ticks_per_frame` where
+stated (fps converted exactly), `tick_ranges` (coil flight) exactly, `duration_ticks` where stated,
+and existence on disk of every frame referenced by `frames`, by `tick_ranges[].frame`, or by any
+`.png` string anywhere in `effect_params`. TBD sheets are existence-checked but relaxed on
+names/frame-counts (section 1.0); non-TBD sheets additionally require at least as many distinct
+referenced frames as the table lists. States not in the table are printed as NOTE, never failed;
+enemy ids outside the 12 are a usage error (exit 2). Exit 0 iff every checked enemy passes; 1
+otherwise. The tables win on any disagreement (D-040); the file is the transcription, not a second
+spec.
+
+### D-T083-9 - Anim state keys are snake_case of the table's row labels; the checker normalizes before matching (T-083).
+
+DECISION (T-083): anim block keys are the table row labels snake_cased: `attack_detonation`,
+`attack_flight`/`attack_landing` (coil), `attack_arrival`/`attack_ring` (thicc ben),
+`telegraph_tracking`/`telegraph_locked` (nuke), `telegraph_drums`/`attack_drums`/
+`telegraph_strings`/`attack_strings`/`attack_wind`/`deadline`/`plushie_idle` (claude),
+`attack_launch`/`attack_void_zone` (gin), `attack_infect`/`attack_touch` (toucher), `leaves`
+(address me), `defused` (gift Larper), and plain `spawn`/`idle`/`telegraph`/`attack`/`recover`
+elsewhere. The checker normalizes both sides (lowercase, non-alphanumeric runs -> `_`, trailing `_`
+stripped) so `attack_flight` and "Attack - Flight" are the same state. This naming is part of the
+T-083 contract; tools that read anim blocks should expect it.
+
+### D-T083-10 - toucher's glitched floor is a section 2.2 world decal, wired in effect_params, not a body state (T-083).
+
+DECISION (T-083): the table's toucher states are body states only. The glitchfloor frames are a
+tile-top decal: they are referenced from `attack_infect.effect_params.glitchfloor_frames`
+(`floor_00..04.png`, 8 fps cycle, `(x + z) mod 5` per-tile frame offset, alpha 0 -> 1 over 12 ticks,
+1-tile tear flash in danger red for 6 ticks, life 12 s / 18 s from level 14, last 60 ticks flicker at
+10 Hz then fade over 12 ticks, 8 u ben-ring cleanse, squelch on the infection tick). The floor never
+becomes a state in the body anim block, because the table defines none for it. The existing
+`animations[].name == "floor"` pipeline block is untouched and still drives the decal.
+
+### D-T083-11 - gift Larper's spawn is not the common fade (T-083).
+
+DECISION (T-083): the table says the spawn state is "present from level start (it is a slot
+occupant, no fade)". The entry therefore uses `spawn` (present from level start, `loop: false`,
+no fade/scale parameters, `effect: "none"`) rather than the section 1.0 common fade the other
+eleven use. The 30-tick contact-blocking rule does not apply: there is no fade to complete and a
+tripmine is a stationary slot occupant, not a body that arrives. WHY: applying the common fade here
+would show an invisible mine slot for 30 ticks that the table explicitly rules out. Arguable either
+way; recorded as decided, not contested.
 
 ## Handover log
 
