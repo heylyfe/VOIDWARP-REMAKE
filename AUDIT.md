@@ -562,3 +562,156 @@ prose and are not counted twice.
 `D-T075-4` (the answer lab's reaction timing), `D-T024-4` (two disclaimer wordings),
 `D-T083-2` (art was TBD when the anim block was written), and the ten `D-ART-*` derivation-constant
 entries (art judgment the owner may re-tone).
+
+---
+
+## 9. Retro defect classes checked
+
+Six classes, each with what was looked for and what was found.
+
+### 9.1 Was a threshold moved to fit data? — **No.**
+
+- The 5,000-seed harness limits are the documented ones and none was relaxed: D1 max dev 0.00576 vs limit 0.01000; D4 0.3935 vs 0.5; D6 0.0179 vs 0.1; D8 10.374 vs 50 and 75.0 vs 80; D9 112.5 vs 250 and 1139.5 vs 2000.
+- A11's caps are unchanged: `afford1 99.5% >= 80%`, `afford3 29.3% <= 30%`. The 30% cap was **not** widened to fit the 29.3% result.
+- A12's bounds are unchanged: `void_fall_to_respawn 0.800 s <= 0.80 s` sits **exactly on** the bound. It passes; it was not moved to 0.85.
+- The one place a threshold could have been moved is DESIGN.md section 10's "tripmine particles vs platform light >= 3.0" row, which `D-T054-2` proves is unsatisfiable by any `platform_light` hex. It was **left as INFO-only in `fog_check.gd` and parked**, not deleted and not lowered. That is the correct handling and it is recorded.
+- **Risk, not a move:** two criteria pass with margins of 0.7 points (A11 afford3) and 0.0 s (A12 void fall). A future tuning pass that touches either will flip a PASS to a FAIL with no warning.
+
+### 9.2 Is any dead time over its budget? — **No.**
+
+`tools/feel_probe.gd`, all six rows PASS, `T-061 RESULT: OK`:
+
+| row | measured | budget |
+|---|---|---|
+| loading_screen_hold | 5.050 s | >= 5.0 s |
+| loading_screen_total_l30 | 5.050 s | <= 8.0 s |
+| gate_to_level | 0.160 s | <= 2.0 s |
+| death_to_run_over | 0.0044 s | <= 2.0 s |
+| void_fall_to_respawn | 0.800 s | <= 0.80 s |
+| generate_mesh_l30 | 0.159 s | <= 1.5 s |
+
+The 5.0 s loading hold is a mandated minimum (DESIGN section 2 `[CANON]`), not dead time. No mandatory non-interactive wait exceeds its budget.
+
+### 9.3 Is a gift inside geometry? — **No.**
+
+- The generator's own invariant forbids it: `terrain_ref/validate.py:507-516` — "the beacon and every real gift slot must survive the cylinder: a gift inside it is uncollectable, so a mine may never create one" — and the 5,000-seed harness passes 32/32.
+- Gift reachability is measured per level bucket and passes in all six: `gift_density`, `first_gift`, `starve_p95`, `starve_max` all PASS (e.g. bucket 26-30: first_gift 215.56, starve_p95 142.30, starve_max 246.73, all inside their limits).
+- `test_gifts.gd` additionally runs a slot-position confinement scan (no file under `sim/` or `core/` other than `sim/gifts.gd` mentions `slot_pos`).
+
+### 9.4 Is a check weakened or skipped? — **Yes, five instances.**
+
+| # | what | where | effect |
+|---|---|---|---|
+| 1 | `KNOWN_CONTENT_IDS` is an **empty array** | `game/tests/test_boundaries.gd` | the "names content id" half of the boundary scan asserts nothing; the gate's boundary step is green vacuously |
+| 2 | the boundary scan reads only `*.gd` | `test_boundaries.gd` `_gd_files()` | `game/core/schemas/*.json` is outside it, which is why the 12 hardcoded enemy ids in `curse.schema.json` are invisible |
+| 3 | `test_disclaimer.gd` never reads the lobby plaque | `game/tests/test_disclaimer.gd` | A15's "lobby About plaque" half has no test; the ASCII-hyphen/em-dash difference is exactly what it would catch |
+| 4 | A4 says 10 recorded bot runs; the test records 1 | `game/tests/test_replay.gd` | determinism is proven on one 3,600-tick run with 60 checkpoints, not on ten runs |
+| 5 | `bot_run.gd` silently ignores unknown flags | `game/tools/bot_run.gd` | FLEET_PACK section 4's stale `--seed/--levels/--class` command does not error; it runs a 200-run level-18 sweep (defect D1) |
+
+Also noted, not counted: the gate prints `WARN resource import did not finish cleanly; continuing` before step 3. The import step is non-fatal by design and every downstream step still ran and passed.
+
+### 9.5 Does any test assert something it documents as broken? — **Yes, three.**
+
+| # | test | what it documents | what it asserts |
+|---|---|---|---|
+| 1 | `game/tests/test_enemy_nuke.gd:24-27` | "the sim never expires telegraph footprints (the ring's footprint stays live after it resolved) - both are the runtime's to fix, never this test's" | the test passes while the stale-footprint defect (PARKED.md #8, #9) is live |
+| 2 | `game/tests/test_spawn_rule.gd:90-95` | PARKED.md #5: DESIGN.md section 5's note says `""` skips steps (a)/(b); the merged code runs (b) | the test pins `""` -> the farthest in-range lane (anchor index 2), i.e. the behaviour the doc contradicts |
+| 3 | `game/tests/test_enemy_toucher.gd:240` | "rows in `rt.telegraphs` never expire and would pair across cycles" | the test works around the same defect rather than failing on it |
+
+None of these is a false pass on a criterion the audit gates on, but all three are tests that encode a known defect as expected behaviour. They will keep passing after the defect is fixed unless they are rewritten.
+
+### 9.6 Is any placeholder still magenta? — **Yes. Three frames.**
+
+`game/content/enemies/claude/sprites/plushie_00.png`, `plushie_01.png`, `plushie_02.png` are the
+`make_tbd_png.gd` output. Decoded pixel census (8-bit RGBA, 256x256, 50,176 opaque pixels each):
+
+```
+plushie_00.png  opaque px 50176  top colours [((255, 0, 255), 45872), ((168, 0, 168), 3520), ((5, 5, 5), 784)]
+plushie_01.png  opaque px 50176  top colours [((255, 0, 255), 45872), ((168, 0, 168), 3520), ((5, 5, 5), 784)]
+plushie_02.png  opaque px 50176  top colours [((255, 0, 255), 45872), ((168, 0, 168), 3520), ((5, 5, 5), 784)]
+```
+
+`(255,0,255)` is `#FF00FF` magenta, `(168,0,168)` is the darker rim, `(5,5,5)` is the "TBD" ink — exactly
+`make_tbd_png.gd`'s `BODY := 0xFF00FFFF`, `BODY_EDGE := 0xA800A8FF`, `INK := 0x050505FF`. For contrast,
+claude's real logo frame `idle_00.png` is `(217,119,87)`-dominant.
+
+This is the **documented** TBD (TBD.md row 15 and row 26: the clawd Crab plushie source was never
+fetched), so it is not a hidden defect and it is judged under A16, not A8. But the plushie is a
+gameplay element — ENEMIES.md: "pick up clawd Crab to calm it down" — so **three magenta blocks ship in
+the alpha build**, and the player will see them.
+
+---
+
+## 10. Appendix — T-081's fun-risk report (information only, not gated)
+
+PARKED.md #17 records that T-081's done-when wanted this report pasted into AUDIT.md, which did not
+exist. It is pasted here. Source: `tickets/T-081.response.md`, the `out/run_report.txt` block, 100 bot
+runs with `--dodge`, seeds 0-99.
+
+```
+FUN-RISK REPORT (T-081, research/fable-funrisks.md; INFORMATION ONLY - no pass/fail, no threshold)
+runs: 100
+1. terrain vs enemy (risk 3)
+  overall   charges spent    176 | terrain-caused   175 ( 99.4%) | enemy-caused     1 (  0.6%)
+  overall   deaths           99 | terrain-caused    59 ( 59.6%) | every other code    40 ( 40.4%)
+3. unseen deaths (risk 2)
+  overall   deaths     99 | killer on screen = no    59 ( 59.6%)
+4. level length and pressure (risk 4)
+  1-5       black-phase median   36.9 s (n=14) | gold-phase median    3.6 s (n=14)
+  6-10 .. 26-30   n=0 (no run reached level 6)
+```
+
+**The headline, and it is a design signal for the owner, not an acceptance criterion:** of 176 charges
+spent across 100 bot runs, **175 (99.4%) were terrain-caused and 1 (0.6%) enemy-caused**; of 99 deaths,
+**59 (59.6%) were `D-VOID`**. Every one of the 100 runs died on levels 1-5; none reached level 6. The
+terrain is killing the player, not the enemies — and the audit's own A3 sample agrees (8 of 9 level-1
+deaths were `D-VOID`).
+
+---
+
+## 11. Final verdict
+
+**A1-A16: 12 PASS, 3 PARTIAL, 1 FAIL.**
+
+| verdict | criteria |
+|---|---|
+| PASS (12) | A1, A2, A5, A6, A7, A8, A9, A10, A11, A12, A13, A16 |
+| PARTIAL (3) | A4 (1 recorded run, not 10), A14 (boundary scan vacuous for content ids), A15 (plaque not verbatim, untested) |
+| FAIL (1) | **A3** — the bot completes level 1 in 1 of 10 seeds (10%), against a required 95 of 100 |
+
+12 + 3 + 1 = 16.
+
+**THE ALPHA GATE DOES NOT PASS. The tag `v0.1.0-alpha.1` was NOT created.**
+
+A3 is the blocking failure and it is not a measurement artefact: PARKED.md #4 (T-026) already recorded
+`BOT-RUNS completed=0 failed=4`, and this audit's independent 10-seed sample reproduces it at 1/10. The
+bot cannot finish level 1, so the game's core loop has never been demonstrated end-to-end by an
+automated player. A4, A14 and A15 are conformance gaps in the *proofs*, not in the behaviour, and each
+is a small fix (record ten runs; populate `KNOWN_CONTENT_IDS` and scan the schemas; add the plaque to
+`test_disclaimer.gd` and make the dash match).
+
+### The three findings that matter most for the owner
+
+1. **The game cannot be finished by the bot, and the terrain is what kills it.** 1 of 10 seeds completes
+   level 1; 8 of the 9 level-1 deaths are `D-VOID`. T-081's 100-run report says the same thing at scale:
+   175 of 176 charges (99.4%) are terrain-caused, 59 of 99 deaths (59.6%) are `D-VOID`, and **no run
+   reached level 6**. This is the single largest risk to the alpha being fun, and it is a design signal
+   the owner must rule on — the audit does not gate on it, but A3 does fail because of it.
+2. **The boundary scan is a green light wired to nothing.** `KNOWN_CONTENT_IDS` is empty and the scan
+   reads only `.gd` files, so the "no core file names a content id" rule is unenforced. It is already
+   violated: `game/core/schemas/curse.schema.json` hardcodes all 12 enemy ids, `game/sim/death.gd`
+   hardcodes the 12 roster display names, and two sim files name upgrade ids. The same schema is why
+   `twin_fangs`'s `requires_enemy: "gin_ichimaru"` (the enemy id is `gin`) passes validation — **one of
+   the 46 curses can never be offered in play**, and no test notices.
+3. **Three magenta placeholder blocks ship in the alpha.** `claude`'s `plushie_00..02.png` are still
+   `make_tbd_png.gd` output (`#FF00FF`, 45,872 of 50,176 opaque pixels). It is documented in TBD.md, so
+   it is not a hidden defect — but the plushie is the mechanic that calms Claude down, so the player will
+   meet three magenta rectangles in the first Claude fight.
+
+### What the audit did not do
+
+- It did not fix anything. Every defect above is written here and left in place.
+- It did not create the tag.
+- It did not run A3's literal 100-seed sweep (the bot does not finish; a 30-seed extension ran ~60
+  minutes without completing and was stopped). The 10-seed sample is decisive at 10% vs 95%.
+- It did not visually verify anything except A1's menu.
