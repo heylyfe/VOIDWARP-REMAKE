@@ -5810,6 +5810,54 @@ levels" (lobby gate -> next level <= 2.0 s) while the ticket says the screen app
 the flow": the screen object supports any call site, the choice of call sites is the flow's, and the apparent
 conflict is parked (PARKED.md #21), not resolved here.
 
+### D-FIX-APP-BOUNDARY-1 - The three app/ files FIX-A14 landed are made content-derived (FIX-APP-BOUNDARY)
+DECISION (each hit, by route):
+- app/world.gd enemy-factory table -> probed at load, no id named: module-level `behavior()` /
+  `new_behavior()` static factories first, then the single inner script constant whose value is a
+  Script whose name ends in "Behavior", else the module script itself. Verified against the shipped
+  roster: coil/toucher resolve via `behavior()`, thicc_ben via `new_behavior()`, gift_larper/isagi/
+  kiwi_cat/seal via the inner-class probe, and the five file-as-behavior modules via `K.new()` -
+  the same objects the old match arms constructed.
+- app/world.gd `if id == "isagi"` (nested stats for one behavior) -> the behavior module declares its
+  own nested-stats cfg key as a `cfg_stats` constant on its script; isagi's inner Behavior declares
+  `cfg_stats := "stats"` and no other module declares one. `_cfg_for` nests entry.stats under the
+  declared key. Verified: only isagi gets the nested dict, exactly the old behavior. A future module
+  that wants the same nesting declares the same constant and is picked up without an edit.
+- app/world.gd comments naming curse ids (the time-of-day family), five file-as-behavior enemy ids, and
+  the isagi parenthetical -> reworded (D-FIX-A14-1: comments carry no exemption).
+- app/loading_gags.gd gag roster (the SPRITES const) -> moved to a new content file,
+  res://content/loading_gags.json (content/ is not scanned, and content ids belong to the content
+  tree): gag id -> [enemy_id, sprite_name] pairs, first-appearance order fixing each gag's cast slots.
+  The file is read at run time (`sprites_for` / `cast_for`); the gag builders take the cast as a
+  parameter and fall back to drawing nothing if the manifest is missing, never a crash. test_loading.gd's
+  one SPRITES reference now calls `sprites_for(id)` - same assertions, new accessor. The look is
+  unchanged: same sprites, same choreography, same pick order.
+- app/menu_stage.gd `BIOME` const -> picked from the content tree at run time by a palette field: the
+  biome whose `palette.void` equals the menu backdrop's void colour (#02030F, menu.gd C_VOID), with the
+  level set to that biome's first level (fog_env reads the act density from it). Fallback when no void
+  matches: the deepest act (highest first level) - a content drift, not a crash. TODAY'S PICK IS
+  UNCHANGED (the void match resolves to the same biome the island already wore, level 19), so the menu
+  keeps its look. [CONTESTABLE] the fallback rule - owner may flip to hard-fail; and the choice to key
+  on `palette.void` rather than act order: `palette.void` is the colour the menu actually renders, so
+  the island and the column share one constant; act order picks the same biome today but would
+  silently re-pick on any content reorder.
+- app/menu_stage.gd "the nuke" comment -> reworded.
+- app/menu.gd C_VOID comment naming the biome -> reworded ("the void backdrop").
+- app/loading_screen.gd "more" (two comments) -> "longer" (English-prose collision; D-FIX-A14-1's
+  reword rule - content ids can't carry prose exemptions).
+- app/menu_howto.gd "you" (six player-facing strings) -> reworded to third person / imperative
+  ("the player respawns", "after a tell worth learning", "is fatal - even mid-jump", "while the player
+  holds"). Every phrase test_menu.gd pins in the panel is kept verbatim ("%d void charges",
+  "restores 1 charge", "0 charges", "kill on contact - instantly", "opens the beacon", "Last Light").
+No PARKED rows, no allowlist, no exemption anywhere. game/tests/test_boundaries.gd untouched;
+game/core/roster.gd untouched and its contract unchanged; no content file's ids touched (the one new
+file is game/content/loading_gags.json, a manifest, not a rename).
+WHY derivation over rewording for the named ids: prose cannot reword away a name a file genuinely
+depends on, and D-FIX-A14-1's rule is that the check grows with the content tree. The manifest and the
+probes carry the same information from the content tree, so FIX-A14 holds for the app layer too. The two
+English-prose hits were un-derivable by definition (they are prose) and were reworded per D-FIX-A14-1.
+Gate evidence: pending at commit time; recorded in the handover entry once the gate run completes.
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)

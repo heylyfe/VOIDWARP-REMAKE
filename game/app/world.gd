@@ -35,7 +35,7 @@ extends Node3D
 #     ticket's step spec). gifts / mines / beacon are NOT ticked: that needs a LevelState
 #     owner decision (gift collection drives the beacon-open path); the HUD gift counter
 #     therefore shows 0/0 until then.
-#   - curse sim knobs (rush_hour / long_night / early_bird / ...) are NOT applied to the
+#   - curse sim knobs (the time-of-day curse family and friends) are NOT applied to the
 #     controller or the runtime; only class + enemy votes ride the resolved lobbies.
 
 const VoidGenScript := preload("res://terrain/voidgen.gd")
@@ -123,7 +123,7 @@ func build(seed_value: int, level: int) -> bool:
 		var eid := str(id)
 		var entry: Dictionary = _api.enemy(eid)
 		var beh = _behavior_for(eid)
-		var cfg := _cfg_for(entry, eid, level, n)
+		var cfg := _cfg_for(entry, eid, level, n, beh)
 		if beh == null or cfg.is_empty():
 			push_warning("world: enemy plan row unreadable: %s" % eid)
 			teardown()
@@ -267,27 +267,46 @@ func _resolve_run(seed_value: int, level: int) -> Dictionary:
 	return {"class": class_chosen, "votes": votes, "curses": curses}
 
 
-# Per-id behavior construction: the content module's factory shape differs per enemy
-# (bot_run.gd's table, duplicated here the same way the probe duplicated it).
+# Per-id behavior construction, content-derived: the enemy module's factory shape is
+# probed in a fixed order (no content id is named here):
+#   1. a module-level behavior() / new_behavior() static factory;
+#   2. an inner class whose name ends in "Behavior" (each module declares exactly one);
+#   3. the module script itself as the behavior.
 func _behavior_for(id: String):
 	var K = load("res://content/enemies/%s/enemy.gd" % id)
 	if K == null:
 		return null
-	match id:
-		"kiwi_cat": return K.KiwiCatBehavior.new()
-		"seal": return K.SealBehavior.new()
-		"gift_larper": return K.GiftLarperBehavior.new()
-		"isagi": return K.Behavior.new()
-		"coil": return K.behavior()
-		"toucher": return K.behavior()
-		"thicc_ben": return K.new_behavior()
-		_: return K.new()   # the file-as-behavior module (you, nuke, address_me, claude, gin)
+	if K.has_method("behavior"):
+		return K.behavior()
+	if K.has_method("new_behavior"):
+		return K.new_behavior()
+	var inner := _behavior_inner(K)
+	if inner != null:
+		return inner.new()
+	return K.new()   # the file-as-behavior module
+
+
+## The module's inner behavior class: a script constant whose value is a Script whose
+## name ends in "Behavior". Deterministic (lowest name) when several qualify; null when none.
+static func _behavior_inner(K: Script) -> GDScript:
+	var cmap: Dictionary = K.get_script_constant_map()
+	var names: Array[String] = []
+	for cname in cmap:
+		var v: Variant = cmap[cname]
+		if v is GDScript and str(cname).to_lower().ends_with("behavior"):
+			names.append(str(cname))
+	names.sort()
+	if names.is_empty():
+		return null
+	return cmap[names[0]] as GDScript
 
 
 ## The runtime cfg for one planned enemy: the enemy.json stats block with the top-level
 ## contact_kill / preferred_kind / arbiter keys the runtime reads, stamped with name /
-## votes / level_number (bot_run.gd's shape; isagi additionally wants the nested stats).
-func _cfg_for(entry: Dictionary, id: String, level: int, votes: int) -> Dictionary:
+## votes / level_number (bot_run.gd's shape). A behavior module that wants its raw stats
+## nested under a cfg key declares that key as a `cfg_stats` constant on its script; the
+## nesting follows the declaration, never an id match.
+func _cfg_for(entry: Dictionary, id: String, level: int, votes: int, beh = null) -> Dictionary:
 	if entry.is_empty():
 		return {}
 	var stats: Dictionary = (entry.get("stats", {}) as Dictionary).duplicate(true)
@@ -298,8 +317,13 @@ func _cfg_for(entry: Dictionary, id: String, level: int, votes: int) -> Dictiona
 	stats["name"] = str(entry.get("name", id))
 	stats["votes"] = votes
 	stats["level_number"] = level
-	if id == "isagi":
-		stats["stats"] = (entry.get("stats", {}) as Dictionary).duplicate(true)
+	if beh != null:
+		var bscript: Script = beh.get_script()
+		if bscript != null:
+			var cmap: Dictionary = bscript.get_script_constant_map()
+			var key := str(cmap.get("cfg_stats", ""))
+			if key != "":
+				stats[key] = (entry.get("stats", {}) as Dictionary).duplicate(true)
 	return stats
 
 

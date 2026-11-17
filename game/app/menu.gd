@@ -52,7 +52,7 @@ const HowToScript := preload("res://app/menu_howto.gd")
 const InputCaptureScript := preload("res://app/input_capture.gd")
 
 ## Palette (data/palette.json roles; D-MENU-2).
-const C_VOID := Color(0.0078, 0.0118, 0.0588)        # #02030F indigo_trench void
+const C_VOID := Color(0.0078, 0.0118, 0.0588)        # #02030F the void backdrop
 const C_WHITE := Color(0.910, 1.0, 1.0)              # #E8FFFF beacon_open
 const C_GOLD := Color(1.0, 0.784, 0.239)             # #FFC83D gold_gift
 const C_MUTED := Color(0.545, 0.620, 0.718)          # unselected entry text

@@ -101,20 +101,20 @@ static func sections(bindings: Dictionary = {}) -> Array:
 	var out: Array = []
 	out.append({"title": "THE LEVEL", "body": (
 		"You start on the beacon dais. The beacon is [b]closed[/b].\n"
-		+ "Collect every [b]black gift[/b]. The last one [color=%s]opens the beacon[/color]: a white column of light you can see through the fog.\n" % WHITE
+		+ "Collect every [b]black gift[/b]. The last one [color=%s]opens the beacon[/color]: a white column of light visible through the fog.\n" % WHITE
 		+ "Step into the open beacon (within %s u of it) to clear the level. Nothing else ends a level - there is no timer." % _num(f["beacon_radius"]))})
 	out.append({"title": "VOID CHARGES  %s" % pips.strip_edges(), "body": (
-		"A run starts with [color=%s]%d void charges[/color]. Falling into the void spends one: you respawn on the last safe tile after %s s, untouchable for %s s.\n" % [GOLD, int(f["charges_start"]), _num(f["respawn_delay"]), _num(f["respawn_invuln"])]
+		"A run starts with [color=%s]%d void charges[/color]. Falling into the void spends one: the player respawns on the last safe tile after %s s, untouchable for %s s.\n" % [GOLD, int(f["charges_start"]), _num(f["respawn_delay"]), _num(f["respawn_invuln"])]
 		+ "A fall with [b]0 charges[/b] ends the run. Charges carry over between levels.\n"
 		+ "[color=%s]Entering the open beacon restores 1 charge[/color] (never above %d). Nothing else gives one back." % [GOLD, int(f["charge_cap"])])})
 	out.append({"title": "CONTACT KILLS", "body": (
-		"[color=%s]Most enemies kill on contact - instantly.[/color] No health bar, no second hit. Others kill with what they fire, drop or set off, after a tell you can learn.\n" % DANGER
-		+ "Tripmines sit on gift slots: a black box with a six-pointed star and [color=%s]pink sparks[/color]. Coming within %s u kills you - even mid-jump. Walk around them.\n" % [PINK, _num(f["mine_contact"])]
-		+ "[b]Last Light[/b]: once per run, while you hold at least 1 charge, a killing blow sends you back to the beacon dais instead, untouchable for %s s. At 0 charges it does nothing." % _num(f["last_light_invuln"]))})
+		"[color=%s]Most enemies kill on contact - instantly.[/color] No health bar, no second hit. Others kill with what they fire, drop or set off, after a tell worth learning.\n" % DANGER
+		+ "Tripmines sit on gift slots: a black box with a six-pointed star and [color=%s]pink sparks[/color]. Coming within %s u is fatal - even mid-jump. Walk around them.\n" % [PINK, _num(f["mine_contact"])]
+		+ "[b]Last Light[/b]: once per run, while the player holds at least 1 charge, a killing blow sends the player back to the beacon dais instead, untouchable for %s s. At 0 charges it does nothing." % _num(f["last_light_invuln"]))})
 	out.append({"title": "GOLD - STAY OR GO", "body": (
 		"When the beacon opens, every black gift's slot turns into a [color=%s]gold gift[/color] worth %s g.\n" % [GOLD, _gold(int(f["gift_centi"]))]
 		+ "Take the next one within %s s to grow the chain +%s x, up to %s x. A void fall breaks the chain.\n" % [_num(f["chain_window"]), _gold(int(f["chain_step_centi"])), _gold(int(f["chain_cap_centi"]))]
-		+ "Every %s s you stay, enemies move %d%% faster (up to %d times). Leaving pays %d + %d x level g." % [_num(f["overtime_period"]), int(roundf(float(f["overtime_speed"]) * 100.0)), int(f["overtime_max"]), int(f["stipend_base"]), int(f["stipend_per_level"])])})
+		+ "Every %s s the player stays, enemies move %d%% faster (up to %d times). Leaving pays %d + %d x level g." % [_num(f["overtime_period"]), int(roundf(float(f["overtime_speed"]) * 100.0)), int(f["overtime_max"]), int(f["stipend_base"]), int(f["stipend_per_level"])])})
 	var mv := "%s %s %s %s" % [keys_for(bindings, "move_forward"), keys_for(bindings, "move_left"),
 			keys_for(bindings, "move_back"), keys_for(bindings, "move_right")]
 	out.append({"title": "CONTROLS", "body": (

@@ -29,16 +29,49 @@ const PAPER := Color(0.97, 0.97, 1.0)
 
 const GAG_IDS: Array[String] = ["toucher_slip", "seal_giftbox", "coil_launch", "kiwi_larper", "ben_bonk"]
 
-## Sprite folder of every enemy a gag draws: gag id -> Array of [enemy_id, sprite_name].
-const SPRITES := {
-	"toucher_slip": [["toucher", "cycle_00"], ["toucher", "cycle_01"], ["toucher", "cycle_02"],
-			["toucher", "floor_00"], ["toucher", "floor_01"], ["toucher", "floor_02"],
-			["toucher", "floor_03"], ["toucher", "floor_04"]],
-	"seal_giftbox": [["seal", "idle_00"], ["seal", "idle_01"]],
-	"coil_launch": [["coil", "cycle_00"]],
-	"kiwi_larper": [["kiwi_cat", "cycle_00"], ["gift_larper", "cycle_00"]],
-	"ben_bonk": [["thicc_ben", "cycle_00"]],
-}
+## res:// path of the gag cast + sprite sheets: gag id -> Array of [enemy_id, sprite_name].
+## The app layer may not name a content id (the FIX-A14 boundary scan), so the cast lives
+## in the content tree and is read at run time; first appearance order fixes each gag's
+## cast slots (the timeline code indexes cast in that order).
+const GAG_DATA := "res://content/loading_gags.json"
+
+static var _gag_data: Dictionary = {}
+static var _gag_loaded := false
+
+
+static func _data() -> Dictionary:
+	if _gag_loaded:
+		return _gag_data
+	_gag_loaded = true
+	_gag_data = {}
+	var text := FileAccess.get_file_as_string(GAG_DATA)
+	var parsed: Variant = JSON.parse_string(text)
+	if parsed is Dictionary:
+		for key in (parsed as Dictionary):
+			var k := str(key)
+			if k.begins_with("_"):
+				continue   # metadata fields such as _doc
+			_gag_data[k] = (parsed as Dictionary)[key]
+	return _gag_data
+
+
+## gag id -> the [enemy_id, sprite_name] pairs it draws ([] when the gag is unknown or
+## the manifest is unreadable).
+static func sprites_for(id: String) -> Array:
+	var pairs: Variant = _data().get(id, [])
+	return (pairs as Array).duplicate(true) if pairs is Array else []
+
+
+## gag id -> Array[String] of the enemies it draws, first-appearance order (the cast slots
+## the timeline code indexes).
+static func cast_for(id: String) -> Array[String]:
+	var out: Array[String] = []
+	for ref in sprites_for(id):
+		if ref is Array and not (ref as Array).is_empty():
+			var e := str((ref as Array)[0])
+			if not out.has(e):
+				out.append(e)
+	return out
 
 
 ## Gag for a load: seeded, deterministic, never the same as the previous load's gag.
@@ -64,17 +97,18 @@ static func cycle_time(t: float) -> float:
 ## All items to draw for gag `id` at display time `t`. Unknown id -> [].
 static func items(id: String, t: float) -> Array[Dictionary]:
 	var tt := cycle_time(t)
+	var cast := cast_for(id)
 	match id:
 		"toucher_slip":
-			return _toucher_slip(tt)
+			return _toucher_slip(tt, cast)
 		"seal_giftbox":
-			return _seal_giftbox(tt)
+			return _seal_giftbox(tt, cast)
 		"coil_launch":
-			return _coil_launch(tt)
+			return _coil_launch(tt, cast)
 		"kiwi_larper":
-			return _kiwi_larper(tt)
+			return _kiwi_larper(tt, cast)
 		"ben_bonk":
-			return _ben_bonk(tt)
+			return _ben_bonk(tt, cast)
 	var none: Array[Dictionary] = []
 	return none
 
@@ -149,16 +183,19 @@ static func _pop(t: float, a: float, b: float) -> float:
 	return minf(minf((t - a) / 0.12, (b - t) / 0.12), 1.0)
 
 
-# ---- gag 1: the toucher slips on its own glitched floor ---------------------------------------
+# ---- gag 1: the lead slips on its own glitched floor ------------------------------------------
 # A: it strolls in, steps on the one glitching tile, and tumbles into the air. The "!" lands at 0.9.
 # B: it flops flat, announces it meant to do that, gets up with dignity and leaves.
 
-static func _toucher_slip(tt: float) -> Array[Dictionary]:
+static func _toucher_slip(tt: float, cast: Array[String]) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
+	if cast.size() < 1:
+		return out
+	var lead := cast[0]
 	var tile_x := 660.0
-	# the glitched tile: a toucher floor decal that will not hold still
+	# the glitched tile: a floor decal that will not hold still
 	var fl := "floor_0%d" % (int(tt * 14.0) % 5)
-	out.append(_spr("toucher", fl, tile_x + 5.0 * sin(tt * 41.0), GROUND_Y + 22.0, 74.0,
+	out.append(_spr(lead, fl, tile_x + 5.0 * sin(tt * 41.0), GROUND_Y + 22.0, 74.0,
 			{"shadow": false, "a": 0.95}))
 	var x := 0.0
 	var y := GROUND_Y
@@ -201,7 +238,7 @@ static func _toucher_slip(tt: float) -> Array[Dictionary]:
 		y = GROUND_Y - 10.0 * absf(sin(tt * 11.0))
 		rot = -TAU + 0.05 * sin(tt * 11.0)
 	var tpos := Vector2(x, y)
-	out.append(_spr("toucher", frame, tpos.x, tpos.y - 70.0, 150.0,
+	out.append(_spr(lead, frame, tpos.x, tpos.y - 70.0, 150.0,
 			{"rot": rot, "sx": sx, "sy": sy, "flip": flip, "p": 0.5, "shadow": true}))
 	if tt >= 0.9 and tt < 1.5:
 		out.append(_text("!", x, GROUND_Y - 300.0, 70, RED, _pop(tt, 0.9, 1.5)))
@@ -210,8 +247,8 @@ static func _toucher_slip(tt: float) -> Array[Dictionary]:
 	return out
 
 
-# ---- gag 2: the seal gets its head stuck in a gift box ----------------------------------------
-# A: waddles in, a black gift drops on its head, it staggers blind: "mfph!".
+# ---- gag 2: the waddler gets its head stuck in a gift box --------------------------------------
+# A: it waddles in, a black gift drops on its head, it staggers blind: "mfph!".
 # B: carries on staggering, rates the box, leaves with it on.
 
 static func _seal_x(tt: float) -> float:
@@ -222,8 +259,11 @@ static func _seal_x(tt: float) -> float:
 	return lerpf(780.0 + 120.0 * sin(2.9 * 3.0), -380.0, _ei(_u(tt, 3.9, 5.0)))
 
 
-static func _seal_giftbox(tt: float) -> Array[Dictionary]:
+static func _seal_giftbox(tt: float, cast: Array[String]) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
+	if cast.size() < 1:
+		return out
+	var lead := cast[0]
 	var h := 170.0
 	var sx_pos := _seal_x(tt)
 	var moving_right := false
@@ -241,7 +281,7 @@ static func _seal_giftbox(tt: float) -> Array[Dictionary]:
 		sy = 1.0 - 0.18 * _hop(us)
 		sxs = 1.0 + 0.1 * _hop(us)
 	var head_dx := -70.0 if not moving_right else 70.0
-	out.append(_spr("seal", frame, sx_pos, y, h, {"rot": rot, "flip": moving_right, "sy": sy, "sx": sxs,
+	out.append(_spr(lead, frame, sx_pos, y, h, {"rot": rot, "flip": moving_right, "sy": sy, "sx": sxs,
 			"p": 0.0}))
 	# the box: falls from above onto the head (0.55-0.95), then rides it
 	var head_y := GROUND_Y - 0.4 * h
@@ -265,12 +305,15 @@ static func _seal_giftbox(tt: float) -> Array[Dictionary]:
 	return out
 
 
-# ---- gag 3: the coil launches itself into the void --------------------------------------------
+# ---- gag 3: the spring-loaded one launches itself into the void ---------------------------------
 # A: winds up, BOING, gone - straight off the top of the screen.
 # B: comes back down somewhere else, bounces, says it was worth it, and goes again.
 
-static func _coil_launch(tt: float) -> Array[Dictionary]:
+static func _coil_launch(tt: float, cast: Array[String]) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
+	if cast.size() < 1:
+		return out
+	var lead := cast[0]
 	var h := 210.0
 	if tt < 1.15:
 		var x := 640.0
@@ -290,9 +333,9 @@ static func _coil_launch(tt: float) -> Array[Dictionary]:
 			sx = 0.65
 			for g in 3:
 				var ga := 0.32 - 0.1 * float(g)
-				out.append(_spr("coil", "cycle_00", x, y + 80.0 * float(g + 1), h,
+				out.append(_spr(lead, "cycle_00", x, y + 80.0 * float(g + 1), h,
 						{"sx": sx, "sy": sy, "a": ga, "shadow": false}))
-		out.append(_spr("coil", "cycle_00", x, y, h, {"sx": sx, "sy": sy}))
+		out.append(_spr(lead, "cycle_00", x, y, h, {"sx": sx, "sy": sy}))
 		if tt >= 0.85:
 			out.append(_text("BOING", 640.0, 250.0, 84, CYAN, _pop(tt, 0.85, 1.5)))
 	if tt >= 1.55 and tt < 2.9:
@@ -301,26 +344,30 @@ static func _coil_launch(tt: float) -> Array[Dictionary]:
 		var lx := 900.0
 		if tt < 3.5:                            # falls back in, spinning
 			var uf := _u(tt, 2.9, 3.5)
-			out.append(_spr("coil", "cycle_00", lx, lerpf(-260.0, GROUND_Y, _ei(uf)), h,
+			out.append(_spr(lead, "cycle_00", lx, lerpf(-260.0, GROUND_Y, _ei(uf)), h,
 					{"rot": TAU * 3.0 * uf, "p": 0.5}))
 		else:                                    # lands: damped spring
 			var k := tt - 3.5
 			var sy2 := 1.0 - 0.45 * exp(-5.0 * k) * cos(22.0 * k)
 			var sx2 := 1.0 / sqrt(sy2)
 			var fade := 1.0 - _u(tt, 4.55, 4.75)
-			out.append(_spr("coil", "cycle_00", lx, GROUND_Y, h, {"sx": sx2 * fade, "sy": sy2 * fade}))
+			out.append(_spr(lead, "cycle_00", lx, GROUND_Y, h, {"sx": sx2 * fade, "sy": sy2 * fade}))
 			if tt >= 3.65 and tt < 4.6:
 				out.append(_say("worth it.", lx, GROUND_Y - 260.0, _pop(tt, 3.65, 4.6)))
 	return out
 
 
-# ---- gag 4: the kiwi cat meets a gift that is not a gift --------------------------------------
-# A: the cat floats up to a black gift, the gift pops its lid and a gift Larper springs out - the cat
+# ---- gag 4: the cat meets a gift that is not a gift ----------------------------------------------
+# A: the cat floats up to a black gift, the gift pops its lid and an impostor springs out - the cat
 #    leaves at speed.
-# B: the Larper tries to act natural, the lid drops back, the cat peeks in, the box hops.
+# B: the impostor tries to act natural, the lid drops back, the cat peeks in, the box hops.
 
-static func _kiwi_larper(tt: float) -> Array[Dictionary]:
+static func _kiwi_larper(tt: float, cast: Array[String]) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
+	if cast.size() < 2:
+		return out
+	var cat := cast[0]
+	var impostor := cast[1]
 	var bx := 900.0
 	var box_w := 150.0
 	var box_y := GROUND_Y
@@ -349,7 +396,7 @@ static func _kiwi_larper(tt: float) -> Array[Dictionary]:
 	# the Larper inside: grows out of the box at 1.6-1.9, turns once per 4.0 s, sinks back 3.7-3.9
 	var lg := _eo(_u(tt, 1.6, 1.9)) * (1.0 - _u(tt, 3.7, 3.95))
 	if lg > 0.0:
-		out.append(_spr("gift_larper", "cycle_00", bx, box_y - box_w * 0.5 - 95.0 * lg, 200.0,
+		out.append(_spr(impostor, "cycle_00", bx, box_y - box_w * 0.5 - 95.0 * lg, 200.0,
 				{"rot": tt * TAU / 4.0, "p": 0.5, "sx": lg, "sy": lg, "shadow": false}))
 	if not lid_on:
 		out.append(_lid(bx + 30.0 * lg, lid_y, box_w, lid_rot))
@@ -382,7 +429,7 @@ static func _kiwi_larper(tt: float) -> Array[Dictionary]:
 	else:
 		visible = false
 	if visible:
-		out.append(_spr("kiwi_cat", "cycle_00", cx, cy, h, {"rot": rot, "flip": flip}))
+		out.append(_spr(cat, "cycle_00", cx, cy, h, {"rot": rot, "flip": flip}))
 	if tt >= 1.05 and tt < 1.75:
 		out.append(_text("?", cx, cy - 150.0, 70, RED, _pop(tt, 1.05, 1.75)))
 	if tt >= 1.8 and tt < 2.3:
@@ -394,13 +441,16 @@ static func _kiwi_larper(tt: float) -> Array[Dictionary]:
 	return out
 
 
-# ---- gag 5: thicc ben teleports ... and launches himself --------------------------------------
-# A: smoke marks the destination, the chime, ben arrives and the arrival launch sends him through the
+# ---- gag 5: the teleporter teleports ... and launches itself ------------------------------------
+# A: smoke marks the destination, the chime, it arrives and the arrival launch sends it through the
 #    top of the screen.
-# B: he comes back down, the whole stage shakes, "ow.", and he teleports out.
+# B: it comes back down, the whole stage shakes, "ow.", and it teleports out.
 
-static func _ben_bonk(tt: float) -> Array[Dictionary]:
+static func _ben_bonk(tt: float, cast: Array[String]) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
+	if cast.size() < 1:
+		return out
+	var lead := cast[0]
 	var h := 300.0
 	var dest_x := 300.0
 	var home_x := 950.0
@@ -416,16 +466,16 @@ static func _ben_bonk(tt: float) -> Array[Dictionary]:
 	# ben at home: appears, then vanishes into the smoke
 	if tt < 1.05:
 		var grow := _eo(_u(tt, 0.0, 0.2)) * (1.0 - _u(tt, 0.9, 1.05))
-		out.append(_spr("thicc_ben", "cycle_00", home_x, GROUND_Y, h, {"sx": grow, "sy": grow}))
+		out.append(_spr(lead, "cycle_00", home_x, GROUND_Y, h, {"sx": grow, "sy": grow}))
 	# arrival at the destination, ring, then the launch
 	if tt >= 1.15 and tt < 1.5:
 		var ua := _u(tt, 1.15, 1.3)
 		var sy := 0.85 + 0.15 * _eo(ua)
-		out.append(_spr("thicc_ben", "cycle_00", dest_x, GROUND_Y, h, {"sx": _eo(ua), "sy": sy * _eo(ua)}))
+		out.append(_spr(lead, "cycle_00", dest_x, GROUND_Y, h, {"sx": _eo(ua), "sy": sy * _eo(ua)}))
 		out.append(_ring(dest_x, GROUND_Y, 260.0 * _u(tt, 1.15, 1.6), 0.8 * (1.0 - _u(tt, 1.15, 1.6)), CYAN))
 	elif tt >= 1.5 and tt < 1.95:
 		var ul := _ei(_u(tt, 1.5, 1.95))
-		out.append(_spr("thicc_ben", "cycle_00", dest_x, GROUND_Y - ul * 1100.0, h, {"sx": 0.9, "sy": 1.12}))
+		out.append(_spr(lead, "cycle_00", dest_x, GROUND_Y - ul * 1100.0, h, {"sx": 0.9, "sy": 1.12}))
 	if tt >= 1.85 and tt < 2.7:
 		out.append(_text("BONK", dest_x, 70.0, 80, RED, _pop(tt, 1.85, 2.7)))
 	# B: the fall
@@ -433,12 +483,12 @@ static func _ben_bonk(tt: float) -> Array[Dictionary]:
 		var land := 3.5
 		if tt < land:
 			var uf := _ei(_u(tt, 2.95, land))
-			out.append(_spr("thicc_ben", "cycle_00", dest_x, lerpf(-420.0, GROUND_Y, uf), h,
+			out.append(_spr(lead, "cycle_00", dest_x, lerpf(-420.0, GROUND_Y, uf), h,
 					{"sx": 0.92, "sy": 1.1}))
 		else:
 			var k := tt - land
 			var sy2 := 1.0 - 0.25 * exp(-6.0 * k) * cos(20.0 * k)
-			out.append(_spr("thicc_ben", "cycle_00", dest_x, GROUND_Y, h, {"sx": 1.0 / sqrt(sy2), "sy": sy2}))
+			out.append(_spr(lead, "cycle_00", dest_x, GROUND_Y, h, {"sx": 1.0 / sqrt(sy2), "sy": sy2}))
 			out.append(_shake(14.0 * exp(-7.0 * k)))
 			if k < 0.5:
 				for i in 4:
@@ -450,7 +500,7 @@ static func _ben_bonk(tt: float) -> Array[Dictionary]:
 	# the exit: teleports away in a puff
 	if tt >= 4.5 and tt < 5.0:
 		var ux := _u(tt, 4.5, 4.7)
-		out.append(_spr("thicc_ben", "cycle_00", dest_x, GROUND_Y, h,
+		out.append(_spr(lead, "cycle_00", dest_x, GROUND_Y, h,
 				{"sx": 1.0 - ux, "sy": 1.0 - ux, "a": 1.0 - ux}))
 		out.append(_puff(dest_x, GROUND_Y - 120.0, 120.0 * _eo(ux), 0.8 * (1.0 - _u(tt, 4.7, 5.0))))
 	return out

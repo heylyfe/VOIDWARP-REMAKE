@@ -5,7 +5,7 @@ extends Control
 #
 #   THE TWO-DURATION LAW (D-LOAD-5, owner ruling, FINAL): the session's FIRST launch shows the screen
 #   for FIRST_LAUNCH_SECONDS = 5.0 s (it doubles as onboarding); EVERY RESTART shows it for exactly
-#   RESTART_SECONDS = 2.0 s - never less, never more. The hold is a pure function of one explicit flag:
+#   RESTART_SECONDS = 2.0 s - never less, never longer. The hold is a pure function of one explicit flag:
 #   hold_seconds_for(first_launch). It never reads wall time or a global, so the headless test proves
 #   both branches. A load that finishes faster than the hold completes AT the hold (and shown_time()
 #   is exactly the hold - the last step is clamped, so a coarse frame cannot overshoot it); a slower
@@ -30,7 +30,7 @@ const LoadingStageScript := preload("res://app/loading_stage.gd")
 
 ## The first launch of a session: the loading screen is also the onboarding (D-LOAD-5).
 const FIRST_LAUNCH_SECONDS := 5.0
-## Every restart: exactly this long, never less, never more (D-LOAD-5).
+## Every restart: exactly this long, never less, never longer (D-LOAD-5).
 const RESTART_SECONDS := 2.0
 ## T-024's name for the 5.0 s hold; the first-launch hold. Kept so existing readers keep working.
 const MIN_DISPLAY_SECONDS := FIRST_LAUNCH_SECONDS

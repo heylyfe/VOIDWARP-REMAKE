@@ -518,7 +518,7 @@ func _test_gags_model(f: Array[String]) -> void:
 	if not is_equal_approx(LoadingGagsScript.BEAT_A_SECONDS, LoadingScreenScript.RESTART_SECONDS):
 		f.append("gags: beat A must be exactly the restart hold (the joke lands in 2.0 s)")
 	for id in LoadingGagsScript.GAG_IDS:
-		var refs: Array = LoadingGagsScript.SPRITES.get(id, [])
+		var refs: Array = LoadingGagsScript.sprites_for(id)
 		if refs.is_empty():
 			f.append("gag %s: no SPRITES entry" % id)
 			continue
