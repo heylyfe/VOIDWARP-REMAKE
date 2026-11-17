@@ -139,8 +139,10 @@ func _bump() -> void:
 
 
 func _redraw_enemy(p_bay: Dictionary, p_bump: bool = true) -> void:
+	# the enemy gate reads the NEXT level's numbers: min_level is the level the voted
+	# enemy will appear in, so the pre-run lobby (level_completed 0) votes for level 1
 	var drawn: Dictionary = OffersScript.draw_enemy_bay(
-			content, level_completed, str(p_bay.get("pool", "")), votes, _rng)
+			content, level_completed + 1, str(p_bay.get("pool", "")), votes, _rng)
 	p_bay["drawn_kind"] = str(drawn["kind"])
 	p_bay["altars"] = drawn["altars"]
 	if p_bump:
