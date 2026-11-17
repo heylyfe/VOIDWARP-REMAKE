@@ -1,0 +1,42 @@
+{
+  "_doc": "Deepwater reference palette (TERRAIN_SPEC.md section 12.2, sRGB hex). data/palette.json holds the full Deepwater role set; content/biomes/<id>.json files override the platform/walkway/fog/void roles for their act and inherit every other role from here (DESIGN.md section 10). Emission factors are stated in the section 12.2 notes and kept next to the hex. Checker rule, texel density, slab heights and the trim band are section 12.2 facts. The fog-readability thresholds of section 12.3 are intentionally NOT copied here - tools/fog_check.gd (T-011) implements section 12.3 from the spec directly.",
+  "units": { "color": "sRGB hex", "distance": "u", "fog_density": "per u" },
+  "fog": { "color": "#021416", "type": "exponential_depth", "density": 0.012 },
+  "void_clear": "#010B0C",
+  "roles": {
+    "void": { "hex": "#010B0C", "note": "void / clear colour" },
+    "fog": { "hex": "#021416", "note": "exponential depth fog, density 0.012 per u" },
+    "platform_light": { "hex": "#2FB7B0", "emission": 0.35, "note": "emission 0.35 x albedo" },
+    "platform_dark": { "hex": "#0A2E30" },
+    "walkway_light": { "hex": "#2A5BFF", "emission": 0.35, "note": "emission 0.35 x albedo" },
+    "walkway_dark": { "hex": "#0B1A66" },
+    "dead_end_light": { "hex": "#8FE8E0", "note": "paler = something is here" },
+    "slab_side": { "hex": "#0E3F42", "note": "1 u tall" },
+    "slab_trim": { "hex": "#1C6E70", "note": "top 0.125 u of the slab side" },
+    "hub_dais": { "hex": "#1C6E70", "sigil_hex": "#031A1B", "note": "12-point star, 5x5 tiles" },
+    "prop_block": { "hex": "#12474A", "trim_hex": "#1C6E70", "note": "walls, pillars; side trim listed" },
+    "prop_crate": { "hex": "#1A5A52" },
+    "support_spike": { "hex": "#0A2E30" },
+    "launch_pad": { "hex": "#2A5BFF", "note": "top face; emission pulses 0.5-1.5 at 1 Hz" },
+    "black_gift_body": { "hex": "#050608" },
+    "black_gift_rim": { "hex": "#7CFFF4", "emission": 1.5, "note": "rim emission x 1.5" },
+    "gold_gift": { "hex": "#FFC83D", "emission": 2.0, "note": "emission x 2.0" },
+    "tripmine_particles": { "hex": "#FF4FD8", "note": "the only pink in the level" },
+    "beacon_closed": { "hex": "#3A4A55", "emission": 0.0 },
+    "beacon_open": { "hex": "#E8FFFF", "emission": 4.0, "note": "light column to Y +60 u" },
+    "danger": { "hex": "#FF2A2A", "note": "danger text / kill indicators" },
+    "ambient": { "hex": "#0B3A3C", "energy": 1.0, "note": "no sun, no directional shadows" },
+    "player_fill_light": { "hex": "#BFFFF8", "type": "omni", "range": 18.0, "energy": 1.2, "note": "follows the player" }
+  },
+  "checker": {
+    "tile_squares": 1,
+    "light_when": "(x + z) & 1 == 0",
+    "texel_density_px_per_u": 8,
+    "filter": "nearest",
+    "grain_lightness_pct": 6,
+    "grain_note": "per-texel value noise +/-6% lightness (hash of texel coords; static, not animated)",
+    "source": "TERRAIN_SPEC.md section 12.2"
+  },
+  "slab": { "side_height": 1.0, "trim_band_height": 0.125, "source": "TERRAIN_SPEC.md section 12.2" },
+  "source": "TERRAIN_SPEC.md section 12.2"
+}

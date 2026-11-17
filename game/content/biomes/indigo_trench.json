@@ -1,0 +1,18 @@
+{
+  "_doc": "Biome 'Indigo Trench' - palette family + fog for act IV (DESIGN.md section 10). Geometry is unaffected (view-layer only, D-048). Roles not listed here (slab side, trim, props, dais, gifts, beacon, ambient, fill light, tripmine particles) inherit from data/palette.json (the Deepwater section 12.2 reference), including the 0.35 emission factor for platform/walkway light. Danger stays red/pink and gold stays gold in every biome (DESIGN.md section 10 rules); the tripmine tells (#FF4FD8 particles, six-pointed star) and the straggler/rim colour (#7CFFF4) never change.",
+  "id": "indigo_trench",
+  "name": "Indigo Trench",
+  "act": "IV",
+  "levels": [19, 24],
+  "fog_density": 0.014,
+  "palette": {
+    "platform_light": "#4C6BFF",
+    "platform_dark": "#0A1040",
+    "walkway_light": "#2FE0D0",
+    "walkway_dark": "#06332F",
+    "fog": "#03061C",
+    "void": "#02030F"
+  },
+  "inherits": "data/palette.json",
+  "source": "DESIGN.md section 10"
+}

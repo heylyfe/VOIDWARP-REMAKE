@@ -1,0 +1,18 @@
+{
+  "_doc": "Biome 'Violet Hour' - palette family + fog for act III (DESIGN.md section 10). Geometry is unaffected (view-layer only, D-048). Roles not listed here (slab side, trim, props, dais, gifts, beacon, ambient, fill light, tripmine particles) inherit from data/palette.json (the Deepwater section 12.2 reference), including the 0.35 emission factor for platform/walkway light. Danger stays red/pink and gold stays gold in every biome (DESIGN.md section 10 rules); the tripmine tells (#FF4FD8 particles, six-pointed star) and the straggler/rim colour (#7CFFF4) never change. Note: DESIGN.md section 10 fixes this biome's walkway light at #FF3C7A (hot pink-red); the mines keep #FF4FD8 particles AND the star, and the fog-readability check (TERRAIN_SPEC section 12.3) includes tripmine particles vs platform light >= 3.0 contrast.",
+  "id": "violet_hour",
+  "name": "Violet Hour",
+  "act": "III",
+  "levels": [13, 18],
+  "fog_density": 0.013,
+  "palette": {
+    "platform_light": "#C13CFF",
+    "platform_dark": "#2A0A3A",
+    "walkway_light": "#FF3C7A",
+    "walkway_dark": "#4A0A22",
+    "fog": "#12021A",
+    "void": "#0A0110"
+  },
+  "inherits": "data/palette.json",
+  "source": "DESIGN.md section 10"
+}

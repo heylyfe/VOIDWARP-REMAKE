@@ -994,7 +994,7 @@ alone (Godot can exit 0 after failing to load a script). Global class_name does 
 `--headless --script` (addenda R18a), so preload-by-path is the only reliable reference. The parity
 script is excluded from discovery so it is not run twice and not parsed as a run()-style test.
 
-### D-T001-2 — Empty directories of the FLEET_PACK section 3 tree are committed with a .gitkeep placeholder.
+### D-T001-2 - Empty directories of the FLEET_PACK section 3 tree are committed with a .gitkeep placeholder.
 DECISION (T-001): every otherwise-empty directory of the section 3 tree (game/sim, game/core/schemas,
 game/view/*, game/app, game/content/*, game/assets/*, game/tests/fixtures/dropin, assets_src/blender)
 carries a one-line `.gitkeep` placeholder until real files land.
@@ -1031,6 +1031,34 @@ WHY: T-013's schema is not merged yet, so section 12 is the only contract; these
 keep the data lossless (verbatim texts, exact table numerics — verified by
 `tools/verify_curses.py`, which re-parses the section 7 tables and fails on any mismatch) and
 keep every curse either declarative or explicitly flagged for a script.
+### D-T014c-1 - [CONTESTABLE] - Fog density for levels 31+ (the cycled acts).
+DECISION (T-014c): the DESIGN.md section 10 table's last row ("31+ | cycles I->V ... density 0.015")
+is read as: act ORDER cycles I->V from level 31, and the 31+ row's single fog density (0.015) applies
+to the cycled acts - i.e. cycled acts do NOT snap back to 0.012/0.013/0.014, they keep 0.015. The 5
+biome files ship with their act densities exactly as the section 10 table states (I 0.012, II 0.012,
+III 0.013, IV 0.014, V 0.015) and no 31+ density is written into any file, so the reading costs
+nothing to reverse: T-054/T-T011 wire biome->act and can flip the cycle density in one line.
+WHY (gameplay reason): 0.015 fog hides distance, never the next step (TERRAIN_SPEC section 12.1 rule 6);
+pinning the endless tail at the densest density keeps the endless game fair on the planning horizon
+as votes pile up, whereas snapping back to 0.012 would make late acts easier to read than act V. The
+table literally gives one number for the 31+ row, so this reading invents no number.
+ALTERNATIVE READING (owner may flip): cycled acts keep their own act densities (I..V as listed) and the
+31+ row's 0.015 is a typo for 0.014/V-only. No biome file depends on either reading today.
+
+### D-T014c-2 - Data file layouts for data/tips.json, data/player.json, data/palette.json, content/biomes/*.json.
+DECISION (T-014c): no document fixes the field names for these files (the T-013 schemas are not merged);
+layouts follow the DESIGN.md section 12 field names and the game/data/offering_schedule.json house style
+(_doc first, snake_case keys, units in u/s/u-per-s). Biome files carry only the roles DESIGN.md section
+10 states per act (platform/walkway light+dark, fog, void) plus fog_density, and inherit every other
+role from data/palette.json (the Deepwater section 12.2 reference) - including the 0.35 emission factor
+for platform/walkway light, which section 12.2 states for Deepwater's light roles and which a palette
+swap does not restate. palette.json keeps the full Deepwater role set (23 roles) plus the checker/texel
+facts; it deliberately does NOT copy the section 12.3 fog-readability thresholds - tools/fog_check.gd
+(T-011) implements section 12.3 from the spec, and a copied threshold table would drift. tips.json
+schema: {id, text, tags[], source}; source cites DESIGN.md sections 3.3/5 only, per the ticket.
+WHY: T-011/T-012 consume palette.json/player.json in parallel right now, so the stable surface is the
+role keys and the constant names; anything not stated in the spec is a layout choice, recorded here so
+the T-013 schema can pin it later.
 
 ---
 
