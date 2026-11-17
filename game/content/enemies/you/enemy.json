@@ -1,0 +1,46 @@
+{
+	"id": "you",
+	"name": "YOU?!",
+	"min_level": 3,
+	"max_votes": 2,
+	"vote_effect": "+1 YOU?!",
+	"anchor_kinds": [
+		"open"
+	],
+	"stats": {
+		"world_height": 1.8,
+		"frame_w": 256,
+		"frame_h": 256,
+		"body_rect": [
+			16,
+			16,
+			224,
+			224
+		],
+		"base_speed": 3.4,
+		"pursuit_ceiling": 0.55,
+		"burst_ceiling": 1.0,
+		"cycle_s": 0.625,
+		"contact_kill": true,
+		"death_code": "D-YOU",
+		"preferred_kind": "open",
+		"trigger_distance": 10.0,
+		"rumble_ticks": 90,
+		"ring_speed_u_per_s": 9.0,
+		"ring_max_radius": 14.0,
+		"ring_thickness": 0.6,
+		"ring_height": 1.0,
+		"ring_below_feet": 1.5,
+		"ring_cooldown_ticks": 240,
+		"attack_hold_ticks": 18,
+		"recover_ticks": 240,
+		"behavior": "Floats toward the nearest player at 3.4 u/s; within 10 u, a corrupted rumble 1.5 s, then a shockwave ring expands 9 u/s to 14 u (1.0 u tall, 0.6 u thick, plane of its feet). Hit = kill. Touch = kill.",
+		"counter_play": "Jump as the ring reaches you (jump height > 1.0 u from 0.10 s to 0.65 s), or stand >= 1.5 u above or below its feet.",
+		"tell": "A corrupted rumble ~1.5 s before every shockwave",
+		"audio_cues": [
+			"you_corrupted_rumble"
+		]
+	},
+	"sprites": "res://content/enemies/you/sprites.json",
+	"script": true
+}
