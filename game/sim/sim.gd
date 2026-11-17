@@ -16,6 +16,10 @@ extends RefCounted
 
 const InputScript := preload("res://sim/input.gd")
 const EventsScript := preload("res://sim/events.gd")
+# T-020: gift-slot pickup + the beacon open flip (beacon ENTRY is controller-
+# driven via sim/beacon.gd try_enter - the T-010 placeholder rows carry no
+# charge state, D-T020-4).
+const GiftsScript := preload("res://sim/gifts.gd")
 
 ## D-012 movement constants (carried over from v1 unchanged).
 const DT := 1.0 / 60.0
@@ -97,3 +101,7 @@ static func _step_player(events: Array, lv: RefCounted, i: int, inp: RefCounted)
 	p["x"] = nx
 	p["y"] = ny
 	p["z"] = nz
+
+	# T-020: gift pickup from the settled position; the last real black gift
+	# opens the beacon on the same tick (sim/beacon.gd owns the state machine).
+	GiftsScript.tick(lv, i, events)

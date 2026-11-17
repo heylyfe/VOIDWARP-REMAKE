@@ -10,6 +10,9 @@ extends RefCounted
 # parity lock) is stored once and enters the state dump as a single line.
 
 const VoidGenScript := preload("res://terrain/voidgen.gd")
+# T-020: gift slots + the beacon state machine, built once from the Level dict.
+const GiftsScript := preload("res://sim/gifts.gd")
+const BeaconScript := preload("res://sim/beacon.gd")
 
 ## Height (world u) of a tile's top surface; HU = 0.5 u (TERRAIN_SPEC.md section 4).
 const HU := 0.5
@@ -23,6 +26,10 @@ var tick: int = 0
 var columns: Dictionary = {}
 ## Player rows, one Dictionary per player index (insertion-ordered, read by sim.gd and the dump).
 var players: Array = []
+## T-020: gift-slot state (two bitsets by slot id + phase) and the beacon
+## state machine, both pure functions of the Level dict and the inputs.
+var gifts: RefCounted = null
+var beacon: RefCounted = null
 
 
 ## level_number is 1-based (the run's current level). player_count in 1..8 (TERRAIN_SPEC.md spawns).
@@ -32,6 +39,8 @@ static func build(level: Dictionary, p_level_number: int, p_player_count: int) -
 	st.level_hash = VoidGenScript.level_hash(level) if not level.is_empty() else ""
 	_build_columns(st, level)
 	_spawn_players(st, level, p_player_count)
+	st.gifts = GiftsScript.create(level)
+	st.beacon = BeaconScript.create(level)
 	return st
 
 

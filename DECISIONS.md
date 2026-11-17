@@ -1430,6 +1430,74 @@ and section 12.3's 3.0 threshold is the thing to revisit. Reverting is these two
 section 12.2 was NOT edited, so the spec and the data now differ on this one value by design until
 the owner rules.
 
+### D-T020-1 - Gift state is two slot-id bitsets; positions exist in exactly one place outside terrain/ (T-020)
+sim/gifts.gd holds the whole gift state: two PackedByteArray bitsets indexed by slot id (black,
+gold) plus the phase string. Positions are read ONLY from Level.gifts; the single application of
+TERRAIN_SPEC section 6.7's world-position formula (x + 0.5, y*0.5 + 1.0, z + 0.5) outside terrain/
+lives in sim/gifts.gd slot_pos(). Every other consumer (views, tests, later tickets) calls
+slot_pos() or reads Level.gifts directly; no placement, shuffling or RNG exists outside terrain/
+(proven by grep + a runtime confinement check inside test_gifts.gd that fails if any other sim/ or
+core/ file mentions slot_pos). Gold is not a second placement: entering the gold phase just changes
+which bitset collected() reads - the slots themselves never move.
+WHY: the owner's canon "gold gifts replace exactly the same positions" and T-021's "hazards inherit
+slots" both require one immutable slot table; any second position source would break the A5/A6
+invariants.
+
+### D-T020-2 - [CONTESTABLE] The pickup test point is the player's centre (feet + 0.9 u) (T-020)
+TERRAIN_SPEC section 6.7 gives the pickup radius (0.4 u) and the gift position (1.0 u above the
+tile top) but not the point on the player the radius is measured from. Feet-anchored, the 0.4 u
+radius could never reach a gift hovering 1.0 u up - nothing would ever be collectible - so the
+test point is the body centre: feet + half of the 1.8 u body (0.9 u, data/player.json height),
+full 3D distance <= 0.4 x pickup_radius stat. Standing on the gift's tile gives distance 0.1 u.
+SPEC GAP [CONTESTABLE]: the owner may prefer a feet-anchored cylinder or a larger radius; the
+constant is sim/gifts.gd BODY_CENTER and the radius math is one line.
+
+### D-T020-3 - [CONTESTABLE] "Last 20%" reads as remaining * 5 <= total_real (floor semantics) (T-020)
+The straggler beam switches on when remaining REAL gifts of the current phase satisfy
+remaining * 5 <= total_real (i.e. at most floor(20%) remain), computed in integer math only.
+With the section 6.7 slot counts (S >= 40, real >= S - S//5) the band is wide enough that floor vs
+ceil never differs by more than one gift. The threshold is a named constant (STRAGGLER_DEN = 5) so
+the Straggler Scope upgrade (DESIGN.md section 8: "last 35% instead of 20%") and the Unmarked curse
+(no beam) can re-point or disable it without touching the rule. Hazards can never appear in the set:
+only occ == 0 slots are iterated, and the denominator is total_real, never the slot count.
+
+### D-T020-4 - Beacon entry is controller-driven; the T-010 placeholder path does pickup + open only (T-020)
+The charge restore lives in controller.beacon_enter (T-012's tested API: exactly +1, capped at the
+player's charge cap, never a reset) - sim/beacon.gd never touches charges itself. sim/beacon.gd
+owns: the CLOSED/OPEN flag (opened exactly on the tick sim/gifts.gd collects the last real black
+gift), the r 1.5 / h 3 trigger cylinder test, the Subspacial Barrier shield store (per-player flag,
+restored on entry, consumed by T-021's contact ladder), and the one-shot level_complete event.
+sim.gd's T-010 placeholder player rows carry no charge state, so the placeholder integration path
+does gift pickup + the beacon open only; entry/level-complete runs wherever the controller runs
+(the app loop, T-026's bot). When controllers are integrated into sim.gd the same try_enter call
+moves there unchanged.
+WHY: one charge implementation, already proven by test_charges.gd; no duplicate arithmetic to
+drift. The barrier's initial value is false until the content layer grants Subspacial Barrier
+(stats.gd barrier_shields default 0); T-021 wires the grant.
+
+### D-T020-5 - The gift/beacon state joins the replay hash (T-020; strengthens T-010's dump)
+state_hash.gd gains two lines after the player block: "GIFTS <phase> <black hex> <gold hex>"
+(PackedByteArray.hex_encode()) and "BEACON <opened> <completed>". This grows the dump (the header
+documents the addition) - it changes no previously hashed field, so test_replay.gd's comparisons
+stay self-consistent, and the A4 replay gate now covers the black->gold transition and the beacon
+latch instead of trusting them as derived data.
+WHY: the gold phase flip is gameplay state a desynced client would get wrong; hashing it costs two
+lines and makes the replay proof cover it.
+
+### D-T020-6 - Emission is an additive vertex-colour overlay; the beacon has no door to animate (T-020)
+Gift rim emission (black x1.5, gold x2.0, TERRAIN_SPEC section 12.2) is rendered as an additive
+material_overlay pass that re-draws each gift mesh with its vertex colours: the near-black body
+(#050608) adds ~nothing, the rim ribbon (#7CFFF4) adds its colour times the factor - no second
+mesh, no per-instance material overrides. The open beacon (beacon_open #E8FFFF, emission x4.0)
+is a full material_override plus the light column (#E8FFFF, 1.5 u wide, alpha 0.6, to Y +60 u,
+fog-exempt), both ramping in over 0.6 s. The T-015 beacon model (D-T015-1) has NO doorway - the
+"doorway filled by a dark slab / slab splits and slides" line of the older presentation spec
+(research/fable-tickets.md section 2.3) describes a model variant that was never built, so there
+is no door slab to animate; the open ramp is the 0 -> 4.0 emission + the rising column, which is
+the part of that spec the shipped model can express. The closed-beacon progress ring (8 segments
+around the dais edge, one lit per 12.5% of real black gifts) uses #7CFFF4 for the lit segments -
+[CONTESTABLE], no document states the lit colour.
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
