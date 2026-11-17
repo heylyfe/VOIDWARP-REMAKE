@@ -1,51 +1,70 @@
-﻿{
-	"id": "address_me",
-	"name": "address me",
-	"min_level": 9,
-	"max_votes": 3,
-	"vote_effect": "only one exists; each extra vote -5 s on its return interval",
-	"anchor_kinds": [],
-	"arbiter": {
-		"appear_requires": [
-			{ "no_enemy_body_within": 12.0 },
-			{ "no_targeted_telegraph": true },
-			{ "player_grounded": true },
-			{ "not_on_glitched_floor": true }
-		],
-		"yields_to": [ "address_me" ]
-	},
-	"stats": {
-		"world_height": 2.5,
-		"frame_w": 256,
-		"frame_h": 256,
-		"body_rect": [16, 16, 224, 224],
-		"base_speed": 0.0,
-		"pursuit_ceiling": 0.0,
-		"burst_ceiling": 0.0,
-		"contact_kill": false,
-		"death_code": "D-ADDR",
-		"preferred_kind": "none",
-		"countdown_ticks": 300,
-		"still_ticks": 90,
-		"still_speed_u_per_s": 0.5,
-		"appear_height_u": 6.0,
-		"appear_not_before_level_tick": 600,
-		"return_min_ticks": 1800,
-		"return_max_ticks": 2700,
-		"return_vote_discount_ticks": 300,
-		"return_min_floor_ticks": 900,
-		"return_max_floor_ticks": 1800,
-		"away_y_u": 1000.0,
-		"votes": 1,
-		"audio_cues": ["spawn_trumpet", "rumble_build", "explode_boom"],
-		"tbd_audio": true,
-		"tbd_art": true
-	},
-	"sprites": "res://content/enemies/address_me/sprites.json",
-	"script": true,
-	"contact_kill": false,
-	"preferred_kind": "none",
-	"behavior": "appears 6 u in front of the player under the SR-4 gate and rumbles for 5.0 s - hold still (no input, speed < 0.5 u/s) for 1.5 s or it explodes and kills you",
-	"counter_play": "stop at once - do nothing for 1.5 s of the 5.0 s rumble; it never arrives while a chaser, ring, patch, jump or glitched floor would make stillness lethal (SR-4)",
-	"tell": "elephant trumpet on appearance; a low rumble building over the 5 s countdown"
+{
+  "id": "address_me",
+  "name": "address me",
+  "min_level": 9,
+  "max_votes": 3,
+  "vote_effect": "only one exists; each extra vote -5 s on its return interval",
+  "anchor_kinds": [],
+  "arbiter": {
+    "appear_requires": [
+      {
+        "no_enemy_body_within": 12.0
+      },
+      {
+        "no_targeted_telegraph": true
+      },
+      {
+        "player_grounded": true
+      },
+      {
+        "not_on_glitched_floor": true
+      }
+    ],
+    "yields_to": [
+      "address_me"
+    ]
+  },
+  "stats": {
+    "world_height": 2.5,
+    "frame_w": 256,
+    "frame_h": 256,
+    "body_rect": [
+      16,
+      16,
+      224,
+      224
+    ],
+    "base_speed": 0.0,
+    "pursuit_ceiling": 0.0,
+    "burst_ceiling": 0.0,
+    "contact_kill": false,
+    "death_code": "D-ADDR",
+    "preferred_kind": "none",
+    "countdown_ticks": 300,
+    "still_ticks": 90,
+    "still_speed_u_per_s": 0.5,
+    "appear_height_u": 6.0,
+    "appear_not_before_level_tick": 600,
+    "return_min_ticks": 1800,
+    "return_max_ticks": 2700,
+    "return_vote_discount_ticks": 300,
+    "return_min_floor_ticks": 900,
+    "return_max_floor_ticks": 1800,
+    "away_y_u": 1000.0,
+    "votes": 1,
+    "audio_cues": [
+      "spawn_trumpet",
+      "rumble_build",
+      "explode_boom"
+    ],
+    "tbd_audio": true,
+    "tbd_art": true
+  },
+  "sprites": "res://content/enemies/address_me/sprites.json",
+  "script": true,
+  "contact_kill": false,
+  "preferred_kind": "none",
+  "behavior": "appears 6 u in front of the player under the SR-4 gate and rumbles for 5.0 s - hold still (no input, speed < 0.5 u/s) for 1.5 s or it explodes and kills you",
+  "counter_play": "stop at once — do nothing for 1.5 s, 3.5 s of slack. SR-4 guarantees it never arrives while a chaser, a nuke ring, a gin patch or a coil ring makes stillness lethal.",
+  "tell": "Appears 6 u in front of the player with an elephant trumpet"
 }

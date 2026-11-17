@@ -27,11 +27,14 @@
     "detonation_ticks": 18,
     "defused_ticks": 24,
     "defuse_drop_u": 0.5,
-    "audio_cues": ["explosion", "pff"]
+    "audio_cues": [
+      "explosion",
+      "pff"
+    ]
   },
   "behavior": "Stationary: it lives in gift slots as the tripmine. 5-frame rotation cycle, one revolution per 4.0 s. Contact at any height detonates it (D-MINE) - the walkable bypass is the only way past.",
-  "counter_play": "Look for the star and the pink sparkles within 12 u - the tell is a black gift with a six-pointed star. Walk around it, never over or through it (jumping does not clear it).",
-  "tell": "Black framed box, six-pointed star centre, constant pink particles inside 12 u; beyond 12 u it reads as an ordinary black gift's rim glow.",
+  "counter_play": "A tripmine is a wall on its tile: the walkable bypass is the only way past it.",
+  "tell": "black framed box, six-pointed star centre, constant pink particles (#FF4FD8), slow rotation",
   "sprites": "res://content/enemies/gift_larper/sprites.json",
   "script": true
 }

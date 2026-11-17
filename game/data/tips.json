@@ -1,5 +1,5 @@
 {
-  "_doc": "Loading-screen tip pool (DESIGN.md section 14; ticket T-014c). 18 tips; the 11 tagged hazard_tell are weighted x3 by the loading screen. Every tip is written from DESIGN.md sections 3.3 and 5 only and carries its source section; any change must keep every tip true under the current design. Rotating display (one tip per 5 s, min 5.0 s screen) is app/loading_screen.gd (T-024), not this file.",
+  "_doc": "Loading-screen tip pool (DESIGN.md section 14; ticket T-014c, tips extended by T-076). 21 tips; the 11 tagged hazard_tell are weighted x3 by the loading screen. Every tip is written from DESIGN.md sections 3, 3.3 and 5 only and carries its source section; any change must keep every tip true under the current design. Rotating display (one tip per 5 s, min 5.0 s screen) is app/loading_screen.gd (T-024), not this file.",
   "tips": [
     { "id": "tip_mine_tell", "text": "Black box, six-pointed star, constant pink particles (#FF4FD8), slow rotation. That is a tripmine, not a gift.", "tags": ["hazard_tell", "mine"], "source": "DESIGN.md section 3.3" },
     { "id": "tip_mine_range", "text": "Beyond 12 u a tripmine only shows the same rim glow as a black gift. Inside 12 u the star and particles are visible - look before you grab.", "tags": ["hazard_tell", "mine"], "source": "DESIGN.md section 3.3" },
@@ -18,6 +18,9 @@
     { "id": "tip_ben_launch", "text": "thicc ben can never kill you by touch - the launch is the danger: 18 u/s upward, about 5 u of apex. Mind the void, other enemies, and low slabs.", "tags": ["enemy"], "source": "DESIGN.md section 5.3" },
     { "id": "tip_isagi_volley", "text": "Isagi fires in volleys of at most 3 balls, 0.15 s apart, volleys 0.75 s apart. A jump or a 2 HU step clears the line; a 1 HU step does not.", "tags": ["enemy"], "source": "DESIGN.md section 5.4" },
     { "id": "tip_address_me", "text": "address me only appears when no enemy body is within 12 u, no ring or patch is on you, and you are grounded on clean floor. When it arrives: stop completely and hold still for 1.5 s.", "tags": ["enemy"], "source": "DESIGN.md section 5.10" },
-    { "id": "tip_claude_drums", "text": "Claude plays at 100 BPM - one attack per bar. The drums land on beats 1 and 3: jump on the beat.", "tags": ["enemy"], "source": "DESIGN.md section 5.11" }
+    { "id": "tip_claude_drums", "text": "Claude plays at 100 BPM - one attack per bar. The drums land on beats 1 and 3: jump on the beat.", "tags": ["enemy"], "source": "DESIGN.md section 5.11" },
+    { "id": "tip_hurdle", "text": "Hurdle what is low: a clean jump clears the kiwi cat (1.0 u), the toucher (1.4 u), the seal (0.6 u) and an idle coil. thicc ben (4.0 u) and Isagi stay solid - go around them.", "tags": ["enemy"], "source": "DESIGN.md section 5 (SR-2)" },
+    { "id": "tip_void_dive", "text": "Out of options with a charge in hand: jump. A void fall costs 1 charge and respawns you on your last safe tile with 1.0 s of invulnerability and a chain reset. Never at 0 charges.", "tags": ["charges"], "source": "DESIGN.md section 3.1" },
+    { "id": "tip_last_light_dim", "text": "Last Light is dim at 0 charges - it only fires while you hold at least 1 void charge. At 0 charges every death is real; nothing resurrects you.", "tags": ["charges"], "source": "DESIGN.md section 3.1" }
   ]
 }

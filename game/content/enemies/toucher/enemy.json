@@ -4,7 +4,9 @@
   "min_level": 7,
   "max_votes": 2,
   "vote_effect": "+1 toucher",
-  "anchor_kinds": ["lane"],
+  "anchor_kinds": [
+    "lane"
+  ],
   "stats": {
     "world_height": 1.4,
     "body_height": 1.4,
@@ -24,15 +26,17 @@
     "contact_kill": true,
     "death_code": "D-TOUCH",
     "level_number": 1,
-    "audio_cues": ["toucher_squelch"],
+    "audio_cues": [
+      "toucher_squelch"
+    ],
     "tbd_audio": true,
     "tbd_art": true,
     "frames": 3,
     "frames_floor": 5
   },
   "behavior": "creates glitched floor tiles that slow the player and lock abilities while they stand on them; its body kills instantly on contact; an audio cue plays whenever new glitched tiles appear. Avoid the glitched zones entirely.",
-  "counter_play": "keep off its floor, keep height between you (it rises 2.0 u/s at most; you jump 2.25 u in 0.375 s), and hurdle it on a path - its 1.4 u body meets a clean jump with 0.85 u to spare at apex. Its glitched tiles invalidate the newest safe-tile ring entries, so a void dive near it respawns you farther back.",
-  "tell": "corrupted squelch - wet glitch gurgle and digital distortion - whenever new glitched tiles appear, under an 18-tick glitch pulse of the finger",
+  "counter_play": "keep off its floor, keep height between you (it rises 2.0 u/s at most; you jump 2.25 u in 0.375 s), and hurdle it on a path — its 1.4 u body meets a clean jump with 0.85 u to spare at apex (SR-2). Its glitched tiles invalidate the newest safe-tile ring entries, so a void dive near it respawns you farther back — a real cost, and the tip text says so.",
+  "tell": "it infects all tiles within 3 u below it (squelch cue when new tiles appear)",
   "preferred_kind": "lane",
   "sprites": "res://content/enemies/toucher/sprites.json",
   "script": true

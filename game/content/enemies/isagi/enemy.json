@@ -34,8 +34,9 @@
     "death_code": "D-ISAGI",
     "fps": 60
   },
-  "counter_play": "get a 2 HU step between you and him, or jump after the release flash, or sidestep >= 0.9 u; on a lane anchor a jump per volley (0.75 s apart) clears even Egoist bursts, and he is gone within 4.0 s",
-  "tell": "the idle pose flashes with an accelerating red rim, a thin red aim line snaps onto you, and the direct-shot voice cue plays 1.2 s before the balls",
   "sprites": "res://content/enemies/isagi/sprites.json",
-  "script": true
+  "script": true,
+  "behavior": "fires rapid projectile bursts in your direction; an audio cue precedes each burst, short cooldown between bursts. Time your movement between bursts.",
+  "tell": "wind-up 1.2 s (idle sprite flashes + voice cue)",
+  "counter_play": "get a 2 HU step between you and him, or jump after the release flash (the jump stays above 1.5 u for 0.43 s — longer than a volley's 0.30 s spread), or sidestep ≥ 0.9 u where the path allows; on a lane anchor a jump per volley (0.75 s apart) clears Egoist bursts too, and he is gone within 4.0 s."
 }

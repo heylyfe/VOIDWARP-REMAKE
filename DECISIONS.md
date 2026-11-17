@@ -4021,6 +4021,82 @@ listed as TBD + all-placeholder in TBD.md section 8. Cue timings are never
 driven by audio length - the sim's telegraph events own timing; T-087 owns
 binding lengths and per-cue tick offsets.
 
+### D-T076-1 - Enemy altar panels carry one tell line and one counter-play line, both VERBATIM from DESIGN.md (T-076).
+
+DECISION (T-076): every enemy's top-level `tell` and `counter_play` in enemy.json is now a verbatim
+substring of DESIGN.md (markdown emphasis markers `**` and backticks stripped, all whitespace
+collapsed - the file wraps mid-sentence, so a raw byte line match is impossible; the words,
+numbers and punctuation are otherwise exactly the document's). The altar panel (antechamber.gd)
+also gained the tell line between the behavior line and the counter-play line, so the enemy
+panel reads: name / the one-line behavior / the tell / the counter-play / `In play: ×N`.
+WHY [gameplay reason]: the panel is the only place the player learns the counter before the
+vote; paraphrase drifted per ticket (the merge wave left four enemies with empty or
+stats-buried lines - coil, isagi, nuke, you - whose panels fell back to "Behavior: TBD (enemy
+wave pending)"). Verbatim plus a proof test is the only reading of the ticket's "verbatim from
+DESIGN.md" that survives the next content edit. DESIGN.md was NOT edited: where section 5 has
+no *Answer:* paragraph (thicc ben, gift Larper) the line is drawn from the closest verbatim
+passage (D-T076-2), and the gap is recorded here rather than patched into the design doc.
+
+### D-T076-2 - thicc ben and gift Larper use the closest verbatim DESIGN.md answer passage (T-076).
+
+DECISION (T-076): DESIGN.md section 5.3 (thicc ben) and 5.7 (gift Larper) carry no *Answer:*
+line, so for those two only, the counter-play line is the closest verbatim passage that is a
+complete answer: ben takes "Destination is locked at smoke start = player position + velocity
+x 0.5 s; a player who is >= 4 u from the locked point at arrival has broken the lock (ben
+appears where they were)." (section 5.3, the teleport-lock rule - kept over the section 5.0 SR-2
+row "touching him is the way past (the eject is the answer, section 5.3)", which was the other
+candidate; the tie was broken in favour of the passage the merged T-032 test pins: its
+counter_play assertion requires "smoke"). gift Larper takes "A tripmine is a wall on its tile:
+the walkable bypass is the only way past it." (section 3.3). WHY [gameplay reason]: both lines
+state the one decision the player actually makes against these enemies, and both leave the
+existing merged tests green without editing or weakening them (thicc_ben: counter_play contains
+"smoke"; gift_larper: non-empty). CONTESTABLE: the owner may prefer the SR-2 "touch ben to get
+past him" reading for ben's panel line; the trade is one wording for a red merged test, not
+behavior. The touch-ben answer stays in the rotating tip pool via tip_ben_launch (D-T076-3).
+
+### D-T076-3 - Five named T-076 tips: three shipped, two already existed (T-076).
+
+DECISION (T-076): the five named tips map onto the pool as follows. Ships new: tip_hurdle (a
+jump clears the kiwi cat 1.0 u, the toucher 1.4 u, the seal 0.6 u and an idle coil; thicc ben
+4.0 u and Isagi stay solid), tip_void_dive ("Out of options with a charge in hand: jump." -
+a void fall costs 1 charge, respawn on the last safe tile with 1.0 s invulnerability and a chain
+reset; never at 0 charges), tip_last_light_dim ("Last Light is dim at 0 charges - it only fires
+while you hold at least 1 void charge. At 0 charges every death is real"). Already shipped by
+T-014c and NOT duplicated: "jump on the bark" IS tip_seal_bark (hazard_tell), and "touch ben to
+get past him" IS tip_ben_launch ("thicc ben can never kill you by touch - the launch is the
+danger"). WHY [gameplay reason]: a rotating 5 s pool double-weights whatever it carries twice;
+re-adding the two existing tips would show ben and the bark twice as often as every other enemy.
+Pool is now 21 tips, hazard_tell stays 11 (>= 8 kept), the new tags are enemy/charges - none of
+the three new tips is a gift-vs-hazard tell, so the x3 hazard weighting is unchanged. The five
+ids are asserted present by test_panel_lines.gd. test_loading.gd's >= 15 floor and the x3
+arithmetic are untouched.
+
+### D-T076-4 - Markdown emphasis is stripped for panel text; lines render without labels (T-076).
+
+DECISION (T-076): `**` emphasis markers and backticks are removed from the stored panel lines
+(DESIGN.md uses them liberally; Label3D would render the asterisks literally). Em-dashes,
+>=, <=, x, section signs and arrows are kept. The panel renders the tell and counter-play
+lines with no prefix label (no "Tell: "), so the five rendered lines are exactly the proven
+strings; the proof (game/tests/test_panel_lines.gd) normalises DESIGN.md the same way
+(emphasis strip + whitespace collapse) and checks substring membership, then calls
+altar_details() itself and asserts the rendered array contains the exact enemy.json strings -
+a hostile panel cannot pass by shipping different text than the data the check reads.
+CONTESTABLE: the owner may want visible "Tell:" / "Answer:" prefixes on the panel; the cost is
+that the rendered line is no longer byte-equal to the proven line (the prefix would live outside
+the proof). The proof test is auto-discovered by run_all.gd and runs in the gate.
+
+### D-T076-5 - coil, isagi, nuke and you gain top-level behavior lines (T-076).
+
+DECISION (T-076): those four enemies carried their panel data only inside the closed "stats"
+object (T-035/T-040 precedents), so the antechamber's top-level read rendered "Behavior: TBD
+(enemy wave pending)" for them. They now carry top-level behavior strings, copied from the
+ENEMIES.md Behavior (1:1) sentence (coil, isagi, nuke) and from the YOU?! stats line (you);
+the schema already allows the key (D-T030-6), nothing under stats moved, and no sim code reads
+top-level behavior. WHY [gameplay reason]: a panel that says "TBD (enemy wave pending)" for a
+quarter of the roster teaches the player nothing at the vote - the wave has landed, the lobby
+already renders the rest of the roster, and the owner spec is "an enemy shown off with a
+description". All 12 enemies now render name / behavior / tell / counter-play / In play.
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)

@@ -35,6 +35,6 @@
   "contact_kill": false,
   "preferred_kind": "none",
   "behavior": "teleports to the closest player every 13.35 s; touch blurs the screen 3.0 s and launches you 18 u/s upward; never kills",
-  "counter_play": "be 4+ u from the smoke when it clears (keep moving, or steer the 18 u/s launch mid-air)",
-  "tell": "Westminster bongs 0.5 s before he lands; black smoke stands at the destination 1.25 s ahead"
+  "counter_play": "Destination is locked at smoke start = player position + velocity × 0.5 s; a player who is ≥ 4 u from the locked point at arrival has broken the lock (ben appears where they were).",
+  "tell": "Telegraph: black smoke at the destination for 1.25 s, Westminster chime during the final 0.5 s."
 }
