@@ -568,6 +568,8 @@ static func _play_level(api: RefCounted, ledger: Dictionary, seed: int, level: i
 		var ev: Array = []
 		for e in ctl.step(DT, a_in, w):
 			ev.append(e)
+		if bool(ctl.grounded):
+			mem["ground_tile"] = _tile_under(w, ctl)
 		var p0: Dictionary = lv.players[0]
 		p0["x"] = ctl.x
 		p0["y"] = ctl.y
@@ -625,6 +627,16 @@ static func _play_level(api: RefCounted, ledger: Dictionary, seed: int, level: i
 			var ek := str(e.get("e", ""))
 			if ek == "gift_collected" or ek == "respawn" or ek == "last_light_save":
 				mem["repath"] = true
+			if ek == "void_fall":
+				# a charge just bought a respawn: make the burned fall unrepeatable
+				# (D-FIX-A3-1) - ban the edge the bot was following when it fell
+				var gt2 := int(mem.get("ground_tile", -1))
+				var lwp := int(mem.get("last_wp", -1))
+				if gt2 >= 0 and lwp >= 0 and gt2 != lwp:
+					var bk := "%d>%d" % [gt2, lwp]
+					if not bool((mem["banned"] as Dictionary).get(bk, false)):
+						(mem["banned"] as Dictionary)[bk] = true
+						mem["repath"] = true
 			if TRACE:
 				if ek == "respawn" or ek == "last_light_save" or ek == "mine_detonated" \
 						or ek == "death" or ek == "void_fall" or ek == "chain_reset" or ek == "screen_blur":
@@ -809,15 +821,7 @@ static func _dodge_vector(mem: Dictionary, rt, ctl, tick: int, w) -> Variant:
 			best_shape = shape
 	if best_shape.is_empty():
 		return null
-	var esc := _escape_vector(best_shape, float(ctl.x), float(ctl.z))
-	if not _dir_has_support(w, ctl, esc):
-		for k in range(1, 12):
-			var ang := float(k) * PI / 6.0
-			for s in [1.0, -1.0]:
-				var dir2 := esc.rotated(ang * s)
-				if _dir_has_support(w, ctl, dir2):
-					return dir2
-	return esc
+	return _safe_dir(w, ctl, _escape_vector(best_shape, float(ctl.x), float(ctl.z)))
 
 
 # ---------------------------------------------------------------- routing brain --
@@ -846,6 +850,62 @@ static func _tile_under(w, ctl) -> int:
 			best_top = top
 			best = int(t["i"])
 	return best
+
+
+## The best supported direction close to `ideal`: rotated in 30-degree steps, nearest
+## first, both ways, until one keeps ground support; `ideal` itself when every other
+## direction runs off a ledge - a strike beats a D-VOID fall.
+static func _safe_dir(w, ctl, ideal_v: Variant) -> Vector2:
+	if ideal_v is Vector2:
+		var ideal: Vector2 = ideal_v
+		if ideal != Vector2.ZERO:
+			var n := ideal.normalized()
+			if _dir_has_support(w, ctl, n):
+				return n
+			for k in range(1, 12):
+				var ang := float(k) * PI / 6.0
+				for s in [1.0, -1.0]:
+					var dir2 := n.rotated(ang * s)
+					if _dir_has_support(w, ctl, dir2):
+						return dir2
+			return n
+	return Vector2.ZERO
+
+
+## Contact-kill enemy avoidance (D-FIX-A3-2): the router is terrain-only, so the bot
+## happily walks straight into a following kiwi cat (4 of 10 probe deaths after the
+## edge-discipline fix). Within AVOID_DIST of a contact-kill body (and within 1.5 u of
+## its own height) the bot steers around it instead of through it: pure flee when it
+## is close, away-plus-goal-bias otherwise (the cat is slower; a circle takes the gift).
+static func _avoid_vector(rt, ctl, w, move: Vector2) -> Variant:
+	var mx := float(ctl.x)
+	var mz := float(ctl.z)
+	for e in rt.enemies:
+		if not bool(e.get("contact_kill", true)):
+			continue
+		var dx := mx - float(e["x"])
+		var dz := mz - float(e["z"])
+		var d2 := dx * dx + dz * dz
+		if d2 > AVOID_DIST * AVOID_DIST or d2 < 1e-8:
+			continue
+		if absf(float(e.get("y", 0.0)) - float(ctl.y)) > 1.5:
+			continue
+		var away := Vector2(dx, dz) / sqrt(d2)
+		if d2 < 1.7 * 1.7:
+			# close: run AROUND it, on the side the goal lies - pure flee never takes
+			# a gift out from under a cat sitting on it, and the orbit outruns a
+			# 5.6 u/s chaser (D-FIX-A3-2)
+			var to_goal := move.normalized() if move != Vector2.ZERO else Vector2.ZERO
+			var perp := Vector2(-away.y, away.x)
+			var perp2 := Vector2(away.y, -away.x)
+			if to_goal != Vector2.ZERO and perp2.dot(to_goal) > perp.dot(to_goal):
+				perp = perp2
+			return _safe_dir(w, ctl, perp)
+		if move == Vector2.ZERO:
+			return _safe_dir(w, ctl, away)
+		return _safe_dir(w, ctl, away + move.normalized() * 0.45)
+	return null
+
 
 ## True when walking from the feet toward `dir` keeps ground support over the next
 ## ~0.9 u (a same-level straight walk may only be commanded onto ground that exists).
@@ -961,7 +1021,13 @@ static func _jump_arc(ctl, w, wp_x: float, wp_z: float) -> Dictionary:
 					var p = {"x": x, "y": y, "z": z}
 					var ti := _tile_under_sim(w, p)
 					if ti >= 0 and ti != ct_takeoff:
-						return {"v": v_max, "hold": k + 1}
+						# ACCEPT only arcs that land ON the waypoint (D-FIX-A3-1): the old
+						# "any tile but the takeoff" rule validated garbage arcs (a 5-cell
+						# jump at approach speed 2 u/s lands on the takeoff's neighbour,
+						# looks valid, misses the far tile, D-VOID)
+						var lxz := Vector2(wp_x, wp_z).distance_to(Vector2(float(x), float(z)))
+						if lxz <= 1.15:
+							return {"v": v_max, "hold": k + 1}
 					break
 				if y < -40.0:
 					break
@@ -1183,6 +1249,7 @@ static func _routing(mem: Dictionary, lv, ctl, w, w2, gtiles: Array, adj: Array,
 			return {"move": d4.normalized(), "buttons": buttons}
 		return {"move": Vector2.ZERO, "buttons": buttons}
 	var wp: int = int(path[pi])
+	mem["last_wp"] = wp
 	var wt: Array = tiles[wp]
 	var wp_pos := Vector2(float(wt[0]) + 0.5, float(wt[1]) + 0.5)
 	var d2 := wp_pos - Vector2(ctl.x, ctl.z)
@@ -1216,10 +1283,16 @@ static func _routing(mem: Dictionary, lv, ctl, w, w2, gtiles: Array, adj: Array,
 		mag = float(plan["mag"])
 		var exitp := _cell_exit(ct, dir)
 		var D := exitp.distance_to(wp_pos)
-		# the coyote window IS the jump window: the player leaves ground on every
-		# step-down; at_exit is valid for those 0.1 s after leaving the takeoff tile
-		var at_exit: bool = pi >= 1 and float(ctl.coyote) > 0.0
-		var jump := (bool(ctl.grounded) or float(ctl.coyote) > 0.0) and at_exit and int(plan["hold"]) > 0
+		var d_exit := Vector2(float(ctl.x), float(ctl.z)).distance_to(exitp)
+		# Takeoff window (D-FIX-A3-1): grounded within half a tile of the cell exit
+		# (the arc sim assumes takeoff at the CURRENT pos/v, so a grounded press is
+		# exactly valid), or in the post-step-off coyote window. The old gate
+		# (pi >= 1 AND coyote > 0) never fired on the ground, so the bot stepped off
+		# every gap edge, missed the 0.1 s coyote deadline while pi was still 0, and
+		# could not jump at all - the trace's grounded=false coyote=0.00 death state.
+		var at_exit: bool = (bool(ctl.grounded) and d_exit <= 0.55) or float(ctl.coyote) > 0.0
+		var jump: bool = (bool(ctl.grounded) or float(ctl.coyote) > 0.0) and at_exit \
+				and int(plan["hold"]) > 0
 		if TRACE:
 			print("PLAN t=%d pi=%d cur=%d wp=%d dy=%d D=%.2f at_exit=%s grounded=%s coyote=%.2f jump=%s" % [
 				mem.get("tick", -1), pi, cur, wp, dy, D, str(at_exit), str(ctl.grounded),
@@ -1239,7 +1312,10 @@ static func _routing(mem: Dictionary, lv, ctl, w, w2, gtiles: Array, adj: Array,
 ## both paths (jump-cut bookkeeping must survive a dodge mid-hop). A contact-kill enemy
 ## on the bot's tile line is hurdled (the roster's own counter-play, enemy.json's
 ## "hurdle it as it arrives"): the bot jumps when one is within HURDLE_DIST horizontally.
+## Contact-kill bodies within AVOID_DIST also bend the bot's heading away from them
+## (D-FIX-A3-2) - the router cannot see them, and a fast player outruns a chaser.
 const HURDLE_DIST := 1.6
+const AVOID_DIST := 3.0
 
 static func _bot_input(mem: Dictionary, lv, rt, ctl, w, w2, gtiles: Array, adj: Array,
 		L: Dictionary) -> Dictionary:
@@ -1257,6 +1333,9 @@ static func _bot_input(mem: Dictionary, lv, rt, ctl, w, w2, gtiles: Array, adj: 
 		var r: Dictionary = _routing(mem, lv, ctl, w, w2, gtiles, adj, L)
 		move = r["move"]
 		buttons = int(r["buttons"])
+		var avoid = _avoid_vector(rt, ctl, w, move)
+		if avoid != null:
+			move = avoid
 	# hurdle a contact-kill enemy on the tile line (grounded only; the arc clears 0.9 u
 	# bodies) - but never hurdle off a ledge (D-FIX-A3-1): with a heading that has no
 	# support ahead the bot jumps in place instead of leaping into the void
