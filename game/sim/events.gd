@@ -9,6 +9,11 @@ const EV_SPAWN := "spawn"
 const EV_JUMP := "jump"
 const EV_LAND := "land"
 const EV_FALL := "fall"
+# T-020 (gifts, beacon, straggler beam):
+const EV_GIFT_COLLECTED := "gift_collected"  # + slot: int, phase: "black"|"gold"
+const EV_BEACON_OPENED := "beacon_opened"    # player -1: a world event
+const EV_BEACON_ENTER := "beacon_enter"      # + charges: int (after the restore)
+const EV_LEVEL_COMPLETE := "level_complete"
 
 
 static func make(p_type: String, p_tick: int, p_player: int) -> Dictionary:

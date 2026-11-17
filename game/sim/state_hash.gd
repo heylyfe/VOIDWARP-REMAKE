@@ -17,6 +17,8 @@ extends RefCounted
 #   X <hex> Y <hex> Z <hex> VX <hex> VY <hex> VZ <hex>
 #   GROUNDED <0|1>
 #   PREV_BUTTONS <int>
+#   GIFTS <phase> <black hex> <gold hex>   (T-020) phase + the two slot-id bitsets, hex encoded
+#   BEACON <opened> <completed>            (T-020) the beacon machine flags
 # Level content itself is NOT dumped: it is a pure function of the seed and enters the hash once,
 # via LEVELHASH.
 
@@ -60,6 +62,19 @@ static func dump(rs: RefCounted) -> PackedStringArray:
 		])
 		out.append("GROUNDED %d" % (1 if bool(p["grounded"]) else 0))
 		out.append("PREV_BUTTONS %d" % int(p["prev_buttons"]))
+	# T-020: the gift bitsets + phase and the beacon flags are live state, so they
+	# join the dump (D-T020-7); PackedByteArray.hex_encode() is deterministic.
+	if lv.gifts != null:
+		out.append("GIFTS %s %s %s" % [
+			str(lv.gifts.phase),
+			(lv.gifts.black_taken as PackedByteArray).hex_encode(),
+			(lv.gifts.gold_taken as PackedByteArray).hex_encode(),
+		])
+	if lv.beacon != null:
+		out.append("BEACON %d %d" % [
+			1 if bool(lv.beacon.opened) else 0,
+			1 if bool(lv.beacon.completed) else 0,
+		])
 	return out
 
 
