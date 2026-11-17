@@ -1,0 +1,97 @@
+extends RefCounted
+#
+# APP-FLOW test (headless, no real-time sleeps): the app orchestrator's MENU -> LOADING ->
+# WORLD transitions, driven through the loading screen's own advance() clock.
+#
+#   1. the app starts in MENU (menu created and visible, play/quit wired)
+#   2. a simulated play_requested moves it to LOADING (menu hidden, loading screen created,
+#      the world built in the same frame and reporting level 1)
+#   3. driving advance() moves it to WORLD (loading screen released, world added to the app)
+#   4. ESC returns to MENU (world freed, menu shown again)
+#   5. quit_requested is wired (is_connected - emitting it would flag the real tree to quit)
+#
+# Registered like every other test: extends RefCounted, run() -> Array[String], preloads by
+# path (no class_name). The app node is NOT added to the SceneTree: under
+# `--headless --script`, Engine.get_main_loop() does not hand the test a usable SceneTree
+# (probed: the object answers as a bare Object, `is SceneTree` is false), so the test calls
+# _ready() itself and asserts on the node's own wiring (parent/child, visibility, signals)
+# instead of tree membership. The real scene instantiation is covered by app.tscn loading
+# headless.
+
+const AppScript := preload("res://app/app.gd")
+const MenuScript := preload("res://app/menu.gd")   # preload keeps the type check meaningful
+
+
+func run() -> Array[String]:
+	var failures: Array[String] = []
+
+	var app = AppScript.new()
+	app._ready()   # the engine would call this on tree entry; the tree is unavailable here
+
+	# ---- 1. starts in MENU --------------------------------------------------------------
+	if app.state() != "MENU":
+		failures.append("app starts in %s, want MENU" % app.state())
+	var menu = app._menu
+	if menu == null:
+		failures.append("menu was not created in _ready")
+	else:
+		if not menu.visible:
+			failures.append("menu not visible in MENU state")
+		if not (menu is MenuScript):
+			failures.append("menu is not a res://app/menu.gd instance")
+		if not menu.play_requested.is_connected(app._on_play_requested):
+			failures.append("play_requested is not wired to the app")
+		if not menu.quit_requested.is_connected(app._on_quit_requested):
+			failures.append("quit_requested is not wired to the app")
+
+	# ---- 2. simulated play_requested -> LOADING ------------------------------------------
+	if menu != null:
+		menu.play_requested.emit()
+	if app.state() != "LOADING":
+		failures.append("play_requested moved app to %s, want LOADING" % app.state())
+	if menu != null and menu.visible:
+		failures.append("menu still visible in LOADING state")
+	var loading = app._loading
+	if loading == null:
+		failures.append("loading screen was not created on play_requested")
+	elif loading.is_complete():
+		# set_load_progress(1.0) is called right after the world build; is_complete also
+		# needs the 5 s hold, so it must be false here.
+		failures.append("loading screen reports complete before any advance()")
+	var world = app._world
+	if world == null:
+		failures.append("world was not built in the same frame as the loading screen")
+	elif world.level_number() != 1:
+		failures.append("world reports level %d, want 1" % world.level_number())
+
+	# ---- 3. drive the loading clock -> WORLD ----------------------------------------------
+	if loading != null:
+		var guard := 0
+		while app.state() == "LOADING" and guard < 400:
+			loading.advance(0.25)
+			guard += 1
+		if app.state() != "WORLD":
+			failures.append("loading never finished after %d advances (state=%s)"
+					% [guard, app.state()])
+	if app._loading != null:
+		failures.append("loading screen not released after loading_finished")
+	if app._world == null:
+		failures.append("world missing after loading_finished")
+	elif app._world.get_parent() != app:
+		failures.append("world not added to the app after loading_finished")
+
+	# ---- 4. ESC returns to MENU ------------------------------------------------------------
+	var esc := InputEventKey.new()
+	esc.keycode = KEY_ESCAPE
+	esc.pressed = true
+	app._unhandled_input(esc)
+	if app.state() != "MENU":
+		failures.append("ESC left app in %s, want MENU" % app.state())
+	if app._world != null:
+		failures.append("world not freed on ESC")
+	if app._menu == null or not app._menu.visible:
+		failures.append("menu not shown again after ESC")
+
+	# ---- cleanup --------------------------------------------------------------------------
+	app.free()
+	return failures
