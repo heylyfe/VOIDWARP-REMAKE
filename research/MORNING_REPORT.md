@@ -4,9 +4,10 @@ Written at the end of the run. Every number below comes from a command run in th
 something could not be measured, it says so instead of guessing.
 
 - **Repository:** https://github.com/heylyfe/VOIDWARP-REMAKE (public)
-- **Branch:** `main`, 337 commits
-- **Pushed head:** recorded in `RUNLOG.md` and on GitHub — see the "PUSHED" lines there. The first push
-  of the night was `90212f9` (323 commits); the final push follows the final commit.
+- **Branch:** `main`, 341 commits
+- **Pushed head:** **`53672e3`** — `git rev-parse HEAD` and `git ls-remote origin main` both return
+  `53672e347dd6c84a0eaafdf78964d2c6da2a5965`, and `git branch -vv` shows `main` in sync with
+  `origin/main`. The first push of the night was `90212f9` (323 commits); this is the final one.
 - **Alpha tag `v0.1.0-alpha.1`: NOT created.** A3 fails, so the gate does not pass. See below.
 
 ---
