@@ -206,20 +206,24 @@ func _check_enemy(game_dir: String, enemy_id: String) -> Array[String]:
 	var exp: Dictionary = EXPECTED[enemy_id]
 	var json_path: String = game_dir + "/" + CONTENT_REL + "/" + enemy_id + "/sprites.json"
 	if not FileAccess.file_exists(json_path):
-		return ["sprites.json missing at %s" % json_path]
+		var miss: Array[String] = ["sprites.json missing at %s" % json_path]
+		return miss
 	var text := FileAccess.get_file_as_string(json_path)
 	var doc = JSON.parse_string(text)
 	if doc == null or not (doc is Dictionary):
-		return ["sprites.json does not parse as a dictionary"]
+		var bad: Array[String] = ["sprites.json does not parse as a dictionary"]
+		return bad
 	var anim = doc.get("anim", null)
 	if anim == null or not (anim is Dictionary):
-		return ["no 'anim' block (T-083) in sprites.json"]
+		var noanim: Array[String] = ["no 'anim' block (T-083) in sprites.json"]
+		return noanim
 	var section := str(anim.get("section", ""))
 	if section != str(exp["section"]):
 		failures.append("anim.section '%s' != table section '%s'" % [section, str(exp["section"])])
 	var states = anim.get("states", null)
 	if states == null or not (states is Dictionary):
-		return failures + ["anim.states missing or not a dictionary"]
+		failures.append("anim.states missing or not a dictionary")
+		return failures
 	# no unexpected states: one entry per table row, no more
 	for key in states.keys():
 		if not exp["states"].has(key):
