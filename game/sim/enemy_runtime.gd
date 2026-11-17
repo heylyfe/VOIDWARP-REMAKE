@@ -17,6 +17,7 @@ extends RefCounted
 const CollisionScript := preload("res://sim/collision.gd")
 const VoidRngScript := preload("res://terrain/void_rng.gd")
 const VoidGenScript := preload("res://terrain/voidgen.gd")
+const ArbiterScript := preload("res://sim/enemy_arbiter.gd")   # T-072: the scheduling gate
 
 # ---- spec numbers (DESIGN.md section 5, section 3.2 Overtime) ----------------------------
 const TICKS_PER_SECOND := 60.0
@@ -114,6 +115,13 @@ class Api:
 
 	func lock_abilities(player, ticks: int) -> void:
 		rt.lock_abilities(player, ticks)
+
+	# T-072: this row's declarative scheduling gate (the cfg `arbiter` block, DATA) against
+	# the live sim state - {"may_appear": bool, "deferred": bool}. `pending` carries this
+	# row's own caller-side countdown ids (behaviors keep that state on their row; a rumble
+	# that is not a telegraph shape passes through here) - ids are data, never this file.
+	func arbiter_gate(pending: Array = []) -> Dictionary:
+		return rt.arbiter_evaluate(row.get("cfg", {}), row.get("target_player", 0), pending)
 
 	func rng() -> RefCounted:
 		return row["rng"]
@@ -691,8 +699,22 @@ func lock_abilities(player, ticks: int) -> void:
 	var ctl = _resolve_player(player)
 	if ctl == null:
 		return
-	# SR-6 / D-070: the controller's single lock (seconds) backs every lock source
-	ctl.apply_lock(float(int(ticks)) / TICKS_PER_SECOND)
+	# T-072: the controller's data-driven entry (player.json, ability_lock.lock_effect)
+	# carries which class abilities the window disables - the dispatch lives there
+	ctl.lock_abilities(int(ticks))
+
+
+# T-072: this row's declarative scheduling gate - its cfg `arbiter` block (plain DATA:
+# appear_requires + yields_to) evaluated against the live sim state, {"may_appear",
+# "deferred"}. The player is the row's target (player 0 - the nearest player, D-T072-5);
+# deferral answers this row's yields_to ids (DATA) against the live telegraph/caller
+# countdown sources: no id is named here, this runtime only assembles the state.
+func arbiter_evaluate(cfg: Dictionary, player_index: int = 0) -> Dictionary:
+	var target = null
+	if player_index >= 0 and player_index < controllers.size():
+		target = controllers[player_index]
+	var busy: Array = ArbiterScript.busy_sources(telegraphs)
+	return ArbiterScript.evaluate(cfg, target, world, telegraphs, busy)
 
 
 # ---- body contact (the KILL RULE: every body contact kills) ---------------------------------

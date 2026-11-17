@@ -90,6 +90,12 @@
       "run_speed_locked": 9.0,
       "run_speed_locked_on_glitched_floor": 7.2,
       "source": "DESIGN.md sections 4 and 5 (SR-6, D-070)"
+    },
+    "lock_effect": {
+      "dasher": ["dash_disabled"],
+      "glider": ["glide_disabled"],
+      "athletic": ["class_multipliers_off"],
+      "source": "DESIGN.md sections 4 and 5 (SR-6, D-070); T-072 reads this block"
     }
   }
 }
