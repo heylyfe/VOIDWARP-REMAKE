@@ -4563,6 +4563,43 @@ the p99 frame-time row is a CPU-side frame cost ONLY (the pinned 1080p window / 
 rendering cost is absent), so a headless PASS on that row is a weak signal and the probe
 marks frame rows `headless` in its table. A windowed run of the same tool does render.
 
+### D-T061-6 - spawn-plan retry: no dropped tail, no duplicated copies, SR-3 scoped to one entry (T-061)
+
+Building the pinned 22-enemy scene exposed two defects in sim/enemy_runtime.gd's
+_spawn_planned() retry path, fixed (tests still 47/0; regression pinned in
+test_spawn_rule.gd _deferral_keeps_the_plan):
+  1. The old code `return`-ed on the first entry whose spot pick returned null, so every
+     planned entry BEHIND it was silently dropped (never retried); D-056 says candidates
+     run "in plan order", D-T027-4 says a spawn lands on the first tick a legal tile
+     exists - neither reading drops the tail. Now every entry is attempted each tick in
+     plan order; only the unplaceable ones wait.
+  2. A partially-spawned entry (copy 1 placed, copy 2's spot null) was re-appended WHOLE,
+     so the next tick re-spawned the already-placed copies (observed: coil x6 from a x2
+     plan). plan rows now carry `spawned_copies`; a retry schedules only the missing
+     copies.
+  3. The spot pick passed min_sep = COPY_SEP with the WHOLE roster's positions as exclude,
+     so a 22-body vote list starved (no round-trip tile cleared 8+ circles of radius 30 u)
+     and deferral became permanent (each retry re-scanning the whole movement graph).
+     SR-3's sentence is "copies of one chaser are >= 30 u apart" and _pick_round_trip's
+     own comment already says "the earlier copies": min_sep is now enforced against the
+     entry's OWN live copies, not against other entries. [CONTESTABLE] - with all 22
+     bodies placing exactly per the pinned vote list (probe CONTEXT line), the probe's
+     scene needs this reading; a whole-roster separation would need a PARKED row.
+
+### D-T061-7 - The reference machine's display adapter is a virtual one - frame rows, read with care (T-061)
+
+The windowed run DOES execute the pinned scene (real Forward+ Vulkan window, 1920x1080,
+v-sync off, level meshes + Camera3D + 22 billboards): GPU line "AMD Radeon RX 9060
+XT (vendor AMD)". BUT the session's desktop runs on a "Parsec Virtual Display Adapter",
+and every frame logs "Couldn't get Vulkan surface capabilities (VkResult error -13)" -
+the swapchain cannot surface. The windowed p99 frame row therefore still does not include
+a real presented swapchain; it is (sim + camera + billboard + engine overhead) with a
+broken present path. The trustworthy rows on this box are mean_sim_tick (0.7-0.8 ms, a
+pure CPU measurement) and the p99's CPU-side upper bound. A number from a machine whose
+swapchain presents (the owner's) is the real A13 reading. The billboard also learned to
+tolerate the T-016 schema's world_height null (the nuke launcher has no body row; it
+previously crash-parsed every windowed run).
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
