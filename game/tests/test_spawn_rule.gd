@@ -40,7 +40,44 @@ func run() -> Array[String]:
 	_order_and_distances(f)
 	_tie_break_and_determinism(f)
 	_separation_and_round_trip(f)
+	_deferral_keeps_the_plan(f)
 	return f
+
+
+# D-T061-6 regression: a deferral reschedules only the missing copies, keeps the plan's
+# order, and never drops the entries behind it (the old code `return`-ed on the first
+# spot==null and silently dropped the whole tail of the planned queue, plus re-appended
+# the WHOLE entry - already-spawned copies then spawned again every retry).
+func _deferral_keeps_the_plan(f: Array[String]) -> void:
+	# a lone 2x2 platform: no legal spawn tile can ever exist (every tile is < 25 u from
+	# the player and the spawn point) - both entries defer forever
+	var lv := _level()
+	lv["anchors"] = []
+	lv["tiles"] = [[0, 0, 0, 0, 0], [1, 0, 0, 0, 0], [0, 1, 0, 0, 0], [1, 1, 0, 0, 0]]
+	var w := {"cols": {}, "prop_cols": {}, "pads": {}, "dais": [0, 0, 0], "glitched": {},
+			"slippery": {}, "removed": {}, "kill_y": -40.0, "enemies": [], "projectiles": [],
+			"hazards": []}
+	var Util := preload("res://tests/sim_testutil.gd")
+	var ctl = Util.ControllerScript.new()
+	ctl.setup("dasher", Util.consts())
+	ctl.place(w)
+	var rt = EnemyRuntime.new()
+	rt.setup(lv, w, [ctl], 3, {"spawn_delay_ticks": 1})
+	rt.plan("aaa", "AAA", EnemyRuntime.FixtureBehavior.new(), {}, 2)
+	rt.plan("bbb", "BBB", EnemyRuntime.FixtureBehavior.new(), {}, 1)
+	for i in range(100):
+		ctl.step(Util.DT, {"move_x": 0, "move_z": 0, "buttons": 0, "aim_x": 0.0, "aim_z": 1.0}, w)
+		rt.step(Util.DT)
+	var left: Array = rt.planned.map(func(p): return p["id"])
+	if left.size() != 2 or left[0] != "aaa" or left[1] != "bbb":
+		f.append("deferral: planned holds %s, want [aaa, bbb] in order (the tail must survive)"
+				% str(left))
+	if not rt.enemies.is_empty():
+		f.append("deferral: %d rows spawned from an unsatisfiable plan, want 0"
+				% rt.enemies.size())
+	if left.has("aaa") and rt.enemies.size() == 0 and int(rt.planned[0].get("spawned_copies", 0)) != 0:
+		f.append("deferral: spawned_copies %d on a fully-unsatisfied entry, want 0"
+				% int(rt.planned[0]["spawned_copies"]))
 
 
 func _order_and_distances(f: Array[String]) -> void:

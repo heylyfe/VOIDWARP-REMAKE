@@ -4492,8 +4492,127 @@ end tick, not a frame later. WHY: a frame-driven blink would drift against the
 sim's 60 Hz tick and could leave the rim one frame past the end; a tick function
 cannot.
 
+### D-T061-1 - The probes live in game/tools/ (T-061)
+
+FLEET_PACK A12/A13 name the tools `tools/feel_probe.gd` and `tools/perf_probe.gd`; the
+repo convention for A11 already puts `tools/economy_audit.gd` at `game/tools/economy_audit.gd`
+(the Godot script root is `game/`, the top-level `tools/` holds the ps1 harness). Both probes
+are therefore `game/tools/feel_probe.gd` and `game/tools/perf_probe.gd`, run headless with
+`--path game --script res://tools/feel_probe.gd` (and the perf probe likewise). Both print
+`PASS <row> <number> <bound>` / `FAIL <row> <number> <bound>` per row, then
+`T-061 RESULT: OK` / `T-061 RESULT: FAIL n rows`, exit 1 on any FAIL (exit 0 otherwise).
+
+### D-T061-2 - A12's five rows measured at component level ([CONTESTABLE]) (T-061)
+
+A12's rows ARE fully specified in DESIGN.md section 2 (no row inventing was needed). But the
+app orchestrator that owns the real transitions does not exist yet (game/app/menu.gd states
+"no boot scene exists yet - the loading screen is wired to one in a later ticket"), so the
+probe measures each row against the real deliverable code path that exists today:
+  - loading screen (>= 5.0 s hold, <= 8.0 s total at level 30): the REAL
+    app/loading_screen.gd component is driven (start/advance) with the measured level-30
+    build time (voidgen.generate + collision.make_world + level_mesher.build +
+    LevelState.build, seed 7); the probe asserts the component's hold/total law with that
+    real number inside.
+  - gate -> next level controllable (<= 2.0 s): the same whole-pipeline build time for the
+    next level. Reading: with no loading screen between levels, "controllable" begins when
+    the built level + its collision world + sim state exist; the app-side glue (fade,
+    teleport-from-antechamber) is not built to measure. [CONTESTABLE] - once the app
+    orchestrator lands this number must be re-measured with the real transition.
+  - death -> run-over screen (<= 2.0 s): sim-side; the killing blow lands through the real
+    DONE path (runtime body contact -> controller) and death.gd screen_data() is read the
+    same tick (0.000 s measured). The run-over HUD cell exists (view/hud/run_over.gd);
+    the app delay between them is not built. [CONTESTABLE] for the same reason.
+  - void fall -> respawn (<= 0.8 s): the real controller stepped on a real world, the
+    void_fall event tick to the respawn event tick, sim time. Fully wired in sim - this row
+    measures shipped code end to end.
+  - generate + mesh level 30 (<= 1.5 s): voidgen.generate(seed 7, 30) +
+    level_mesher.build, median of 5 wall-clocked runs. Fully wired - ships as measured.
+
+### D-T061-3 - The perf probe runs the 22-enemy scene as one real sim hour ([CONTESTABLE]) (T-061)
+
+The fixed vote list is exactly as pinned (kiwi 3, coil 2, ben 2, seal 2, YOU?! 1, nuke 2,
+Larper 2, toucher 1, address me 2, Isagi 1, Claude 1, gin 3 = 22). Plan order = vote-list
+order (D-056 plan order); each id plans `copies = vote count`. cfg comes from each
+enemy.json (stats block, topped with top-level contact_kill / preferred_kind / arbiter and
+`votes` = the list's count); the behavior instance comes from the content script's own
+export shape (static cfg()/behavior()/new_behavior() factories, the inner Behavior class,
+or the file-as-behavior pattern). The probe pins opts.spawn_delay_ticks = 1 (instead of the
+game's 6.0 s D-056 delay) ONLY so every one of the 120 warm-up + 600 measured frames runs
+all 22 live bodies - the game's spawn rule itself is untouched. [CONTESTABLE].
+
+### D-T061-4 - The probe's dodge bot is built in, pending the real bot ([CONTESTABLE]) (T-061)
+
+The ticket says "the bot playing with --dodge", but bot_run.gd (A3) does not exist yet
+(pending T-026). The perf probe embeds a deterministic stand-in driver with the dodge
+behavior: full-speed move target = the beacon, steer away from the nearest live enemy body
+within 12 u of the player, jump press every 1.5 s (when grounded). It is a pure function of
+the sim state and the tick counter (no wall clock, no RNG) so the run is replayable.
+When bot_run.gd lands, the probe should take it over. [CONTESTABLE].
+
+### D-T061-5 - p99 formula, frame composition, and the headless rendering caveat (T-061)
+
+A frame = one main-loop pass: bot input, controller.step + enemy runtime.step (the mean
+sim tick is timed exactly around these two), the third-person camera rig update, and the
+per-enemy animation advance; when a real window exists the engine also renders that frame.
+p99 over the 600 measured frames = the sorted frame time at index round(0.99 * 599) = 593
+(0-based), i.e. the 594th of 600. The probe reports OS name, CPU (OS.get_processor_name()),
+GPU (RenderingServer.get_video_adapter_name/_vendor) and the renderer (DisplayName). 
+HEADLESS CAVEAT (must be read on every number): a headless run uses the dummy renderer -
+no window, no GPU submission, no vsync. The sim-tick row is then a valid CPU measurement;
+the p99 frame-time row is a CPU-side frame cost ONLY (the pinned 1080p window / v-sync off
+rendering cost is absent), so a headless PASS on that row is a weak signal and the probe
+marks frame rows `headless` in its table. A windowed run of the same tool does render.
+
+### D-T061-6 - spawn-plan retry: no dropped tail, no duplicated copies, SR-3 scoped to one entry (T-061)
+
+Building the pinned 22-enemy scene exposed two defects in sim/enemy_runtime.gd's
+_spawn_planned() retry path, fixed (tests still 47/0; regression pinned in
+test_spawn_rule.gd _deferral_keeps_the_plan):
+  1. The old code `return`-ed on the first entry whose spot pick returned null, so every
+     planned entry BEHIND it was silently dropped (never retried); D-056 says candidates
+     run "in plan order", D-T027-4 says a spawn lands on the first tick a legal tile
+     exists - neither reading drops the tail. Now every entry is attempted each tick in
+     plan order; only the unplaceable ones wait.
+  2. A partially-spawned entry (copy 1 placed, copy 2's spot null) was re-appended WHOLE,
+     so the next tick re-spawned the already-placed copies (observed: coil x6 from a x2
+     plan). plan rows now carry `spawned_copies`; a retry schedules only the missing
+     copies.
+  3. The spot pick passed min_sep = COPY_SEP with the WHOLE roster's positions as exclude,
+     so a 22-body vote list starved (no round-trip tile cleared 8+ circles of radius 30 u)
+     and deferral became permanent (each retry re-scanning the whole movement graph).
+     SR-3's sentence is "copies of one chaser are >= 30 u apart" and _pick_round_trip's
+     own comment already says "the earlier copies": min_sep is now enforced against the
+     entry's OWN live copies, not against other entries. [CONTESTABLE] - with all 22
+     bodies placing exactly per the pinned vote list (probe CONTEXT line), the probe's
+     scene needs this reading; a whole-roster separation would need a PARKED row.
+
+### D-T061-7 - The reference machine's display adapter is a virtual one - frame rows, read with care (T-061)
+
+The windowed run DOES execute the pinned scene (real Forward+ Vulkan window, 1920x1080,
+v-sync off, level meshes + Camera3D + 22 billboards): GPU line "AMD Radeon RX 9060
+XT (vendor AMD)". BUT the session's desktop runs on a "Parsec Virtual Display Adapter",
+and every frame logs "Couldn't get Vulkan surface capabilities (VkResult error -13)" -
+the swapchain cannot surface. The windowed p99 frame row therefore still does not include
+a real presented swapchain; it is (sim + camera + billboard + engine overhead) with a
+broken present path. The trustworthy rows on this box are mean_sim_tick (0.7-0.8 ms, a
+pure CPU measurement) and the p99's CPU-side upper bound. A number from a machine whose
+swapchain presents (the owner's) is the real A13 reading. The billboard also learned to
+tolerate the T-016 schema's world_height null (the nuke launcher has no body row; it
+previously crash-parsed every windowed run).
+
 ## Handover log
 
+(append one line per session: date, who, what is finished, what is next)
+- 2026-11-17 T-061 (zai-glm-5-3-flash, this session): tools/feel_probe.gd (A12: 6 rows,
+  all PASS) + tools/perf_probe.gd (A13: the pinned 22-enemy scene - all 22 place per the
+  fixed vote list, dodge bot, third-person rig, 600/120 frames, 1920x1080 v-sync off,
+  OS/CPU/GPU printed; p99 1.20 ms <= 16.6, mean sim tick 0.733 ms <= 2.0, both PASS) -
+  D-T061-1..7. The scene exposed and fixed two sim/enemy_runtime.gd spawn-plan defects
+  (dropped tail + duplicated copies + SR-3 scope, D-T061-6, regression in
+  test_spawn_rule.gd) and view/billboard.gd's world_height-null crash (T-016 schema's
+  documented no-body row). CAVEAT (D-T061-7): this box renders through a Parsec virtual
+  display (VkResult -13 every frame) - the frame rows are CPU-side costs; mean_sim_tick
+  is the solid number. Response: tickets/T-061.response.md. TESTS 47 passed 0 failed.
 - 2026-11-17 GLM (T-051): scripted curses, GENERAL family (the 11 `script: true` /
   `requires_enemy: null` curses: cold_start, crowded_dais, crumbling, curfew, dull_gifts,
   early_bird, leaky_purse, no_refunds, rearguard, slow_door, unmarked). One

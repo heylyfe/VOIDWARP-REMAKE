@@ -33,7 +33,10 @@ var body_feet_shift := 0.0            # world u the sprite must rise so the body
 ## folder; folder_dir is that folder's absolute res:// path (no uid - D-T016 res rule).
 func setup_from_sheet(doc: Dictionary, folder_dir: String) -> void:
 	sheet = doc
-	world_height = float(doc.get("world_height", 1.0))
+	# The T-016 schema stores world_height null where the design gives the enemy no body
+	# row (the nuke launcher, SR-2) - null must read as 0.0, not float-crash.
+	var wh: Variant = doc.get("world_height", 1.0)
+	world_height = float(wh) if (wh is float or wh is int) else 0.0
 	anims.clear()
 	for a in doc.get("animations", []):
 		var texs: Array = []
@@ -43,7 +46,9 @@ func setup_from_sheet(doc: Dictionary, folder_dir: String) -> void:
 				texs.append(load(full))
 			else:
 				texs.append(null)
-		anims[str(a.get("name", ""))] = {"frames": texs, "fps": float(a.get("fps", 1.0)),
+		var fps: Variant = a.get("fps", 1.0)
+		anims[str(a.get("name", ""))] = {"frames": texs,
+				"fps": float(fps) if (fps is float or fps is int) else 1.0,
 				"loop": bool(a.get("loop", true)),
 				"body_rect": a.get("body_rect", [[0, 0, 256, 256]])}
 	anim_name = ""
