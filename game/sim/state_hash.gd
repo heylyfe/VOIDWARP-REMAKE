@@ -19,6 +19,7 @@ extends RefCounted
 #   PREV_BUTTONS <int>
 #   GIFTS <phase> <black hex> <gold hex>   (T-020) phase + the two slot-id bitsets, hex encoded
 #   BEACON <opened> <completed>            (T-020) the beacon machine flags
+#   MINES <consumed hex>                   (T-021) the tripmine consumed bitset, hex encoded
 # Level content itself is NOT dumped: it is a pure function of the seed and enters the hash once,
 # via LEVELHASH.
 
@@ -75,6 +76,10 @@ static func dump(rs: RefCounted) -> PackedStringArray:
 			1 if bool(lv.beacon.opened) else 0,
 			1 if bool(lv.beacon.completed) else 0,
 		])
+	# T-021: the tripmine consumed bitset is live state (D-T021-3); the mine SET
+	# itself is not hashed - it is a pure function of the Level hash (occ fields).
+	if lv.mines != null:
+		out.append("MINES %s" % (lv.mines.consumed as PackedByteArray).hex_encode())
 	return out
 
 

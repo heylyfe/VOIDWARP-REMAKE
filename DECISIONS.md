@@ -1886,6 +1886,72 @@ spawn_text (D-T027-7: the enemy's own display name, 1.5 s) both fire on the same
 enemy_spawn event - two in-world texts, two specs; deleting either is the owner's call.
 WHY: the owner's spec names the verb form and the red; the spawn-line row is the only
 stated per-enemy text. Both are carried over from the old build's look per section 14.
+### D-T021-1 - The mine's point of record is the slot's tile centre; the blast measures from the box point (T-021)
+The mine set is EXACTLY the Level.gifts slots with occ == 1 (the owner's HAZARD
+SPAWN RULE: hazards that replace gifts inherit validated gift spawn positions -
+never their own placement logic). The mine's CONTACT point is the slot's tile
+centre (x + 0.5, z + 0.5); the BOX point lifts that centre to TERRAIN_SPEC
+6.7's occupancy height (y*0.5 + 1.0) - the point the view renders and the blast
+measures from. Reference pattern follows D-T020-1: consumers read Level.gifts
+directly or call sim/gifts.gd slot_pos(); no second placement source exists.
+WHY: contact is horizontal by spec (D-058) so the x/z centre is the only number
+the trigger needs; the box point keeps ONE occupancy-height formula in play.
+
+### D-T021-2 - No collision prop is added: the 0.9 u trigger cylinder IS the wall (T-021)
+"A tripmine is a wall on its tile" is implemented as the contact test itself,
+not as a solid prop in sim/collision.gd: entering the 0.9 u cylinder at any
+height triggers the ladder, so walking into the tile is never survivable and
+the walkable bypass (generator guarantee, D-026 / TERRAIN_SPEC 6.8.2-6.8.4,
+validator H23) stays the only way past. A solid prop would instead let the
+player stand ON the box (step-up 0.5 u) beyond the cylinder's purpose, and
+would need its own height band the spec never gives.
+WHY: the spec gives no collision shape for the box, only the trigger cylinder;
+adding an unstated prop would create a second, conflicting wall.
+
+### D-T021-3 - The mine state joins the replay hash as one MINES line (T-021)
+sim/mines.gd holds one PackedByteArray bitset by slot id (consumed by defuse /
+shield / Last Light / detonation). state_hash.gd gains "MINES <consumed hex>"
+after the BEACON line (the D-T020-5 pattern; the dump header documents the
+line). It changes no previously hashed field, so test_replay.gd stays
+self-consistent, and desynced-client coverage now includes a consumed mine.
+The mine SET itself is not hashed: it is a pure function of the Level object
+(the occ fields) and enters through LEVELHASH.
+
+### D-T021-4 - The blast hits every player in radius; victims never re-roll the defuse (T-021)
+When the ladder reaches step 4 (death), the detonating mine kills every OTHER
+player whose centre is within 3 u of the box point; each victim runs shield ->
+Last Light -> death. The defuse roll is fixed per (run_seed, level, slot_id,
+stacks) (D-051) and is consulted exactly once, by the contacting player: a
+blast only exists because that roll failed, so victims cannot re-roll it.
+[CONTESTABLE] the blast is a 3 u SPHERE about the box point; no document says
+horizontal vs 3D for the blast radius (contact being horizontal is the spec).
+One scene consequence: in multiplayer, standing near a mine that someone else
+triggers is the same hazard as touching it, so the bypass discipline of D-058
+applies to spectators too.
+
+### D-T021-5 - An invulnerable player neither triggers the ladder nor consumes the mine (T-021)
+DESIGN.md 3.1: "tripmines and the nuke do not kill during [respawn
+invulnerability]". Implementation: while respawn invulnerability or Last Light
+invulnerability holds (or the respawn delay runs), the mine tick skips the
+player completely - the mine stays armed and consumes nothing. A mine walked
+through during a save window detonates later, when the window ends.
+WHY: consuming a mine a player "passed through" unhurt would silently change
+the level's mine count (and the A6 invariants) without any blast; skipping the
+ladder keeps the mine an ongoing threat, which is the sentence's intent.
+
+### D-T021-6 - View tells: 1 rev / 4 s turn, constant pink particles, rim glow beyond 12 u (T-021; [CONTESTABLE] on the turn rate)
+The view (game/view/tripmine_view.gd) renders the T-015 tripmine_box model
+(black frame, six-pointed star - D-T015-2) rotating one full revolution per
+4.0 s, the section 3.3 cycle ("5-frame rotation cycle, 1 rev / 4 s"); the
+sprite pipeline's fps 10 default in sprites.json is a build default, not the
+in-game playback rate, so the view owns 4.0 s/rev. The pink tell (#FF4FD8
+particles, palette role tripmine_particles) is a small constant emitter; beyond
+TELL_DISTANCE (12 u) the box wears the same additive rim overlay as a black
+gift (emission x1.5, TERRAIN_SPEC 12.2) and the emitter is off; inside 12 u the
+particles and star show. Boundary read as inclusive (<= 12 u shows the tell).
+[CONTESTABLE] no document states whether "1 rev / 4 s" or the sprites.json fps
+10 wins for the 5-frame cycle; the view picks DESIGN.md section 3.3 (CANON).
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
