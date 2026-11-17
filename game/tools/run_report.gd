@@ -170,7 +170,8 @@ static func _one_run(rows: Array) -> Dictionary:
 			run["contacts"].append({"t": t, "level": lvn, "outcome": str(pl.get("outcome", "")),
 					"chain": _chain_at(t, gold_t, gold_chain)})
 		elif ty == "lobby_enter":
-			lobby = {"after": lvn, "kinds": [], "next_t": -1, "beacon_t": last_enter_t}
+			lobby = {"after": lvn, "kinds": [], "picks": [], "next_t": -1,
+					"beacon_t": last_enter_t}
 		elif ty == "offer":
 			run["offers"].append({"level": lvn, "bay": str(pl.get("bay", "")),
 					"ids": pl.get("ids", [])})
@@ -272,38 +273,39 @@ static func aggregate(runs: Array, p_sev: Dictionary = {}) -> Dictionary:
 					target[str(raw)] = int(target.get(str(raw), 0)) + 1
 		for c in run["charges"]:
 			var ch: Dictionary = c
-			var b: Dictionary = buckets[_bucket(int(ch["level"]))]
-			b["charges"] = int(b["charges"]) + 1
-			if not bool(ch["paired"]):
-				b["charges_unpaired"] = int(b["charges_unpaired"]) + 1
-			if not bool(ch["enemy_near"]) and not bool(ch["pushed"]):
-				b["charges_terrain"] = int(b["charges_terrain"]) + 1
+			for b in _into(buckets, int(ch["level"])):
+				b["charges"] = int(b["charges"]) + 1
+				if not bool(ch["paired"]):
+					b["charges_unpaired"] = int(b["charges_unpaired"]) + 1
+				if not bool(ch["enemy_near"]) and not bool(ch["pushed"]):
+					b["charges_terrain"] = int(b["charges_terrain"]) + 1
 		for d in run["deaths"]:
 			var dd: Dictionary = d
-			var b2: Dictionary = buckets[_bucket(int(dd["level"]))]
-			b2["deaths"] = int(b2["deaths"]) + 1
-			b2["run_deaths"] = int(b2["run_deaths"]) + 1
 			var terrain := str(dd["code"]) == VOID_CODE and not bool(dd["e_near"])
-			if terrain:
-				b2["deaths_terrain"] = int(b2["deaths_terrain"]) + 1
-			if bool(dd["unseen"]):
-				b2["deaths_unseen"] = int(b2["deaths_unseen"]) + 1
+			for b2 in _into(buckets, int(dd["level"])):
+				b2["deaths"] = int(b2["deaths"]) + 1
+				b2["run_deaths"] = int(b2["run_deaths"]) + 1
+				if terrain:
+					b2["deaths_terrain"] = int(b2["deaths_terrain"]) + 1
+				if bool(dd["unseen"]):
+					b2["deaths_unseen"] = int(b2["deaths_unseen"]) + 1
 		for c2 in run["clears"]:
 			var cl: Dictionary = c2
-			var b3: Dictionary = buckets[_bucket(int(cl["level"]))]
-			b3["black"].append(float(cl["black_s"]))
-			b3["gold"].append(float(cl["gold_s"]))
-			b3["clears"] = int(b3["clears"]) + 1
-			if int(cl["jumps"]) >= 0 and int(cl["total_ticks"]) > 0:
-				var mins := float(int(cl["total_ticks"])) / 3600.0
-				b3["jumps"] = int(b3["jumps"]) + int(cl["jumps"])
-				b3["jump_rates"].append(float(int(cl["jumps"])) / mins)
-				if int(cl["stepups"]) >= 0:
-					b3["stepups"] = int(b3["stepups"]) + int(cl["stepups"])
-					b3["step_rates"].append(float(int(cl["stepups"])) / mins)
+			for b3 in _into(buckets, int(cl["level"])):
+				b3["black"].append(float(cl["black_s"]))
+				b3["gold"].append(float(cl["gold_s"]))
+				b3["clears"] = int(b3["clears"]) + 1
+				if int(cl["jumps"]) >= 0 and int(cl["total_ticks"]) > 0:
+					var mins := float(int(cl["total_ticks"])) / 3600.0
+					b3["jumps"] = int(b3["jumps"]) + int(cl["jumps"])
+					b3["jump_rates"].append(float(int(cl["jumps"])) / mins)
+					if int(cl["stepups"]) >= 0:
+						b3["stepups"] = int(b3["stepups"]) + int(cl["stepups"])
+						b3["step_rates"].append(float(int(cl["stepups"])) / mins)
 		for e in run["enters"]:
 			var be: Dictionary = e
-			buckets[_bucket(int(be["level"]))]["tiers"].append(int(be["tier"]))
+			for b5 in _into(buckets, int(be["level"])):
+				b5["tiers"].append(int(be["tier"]))
 		for l in run["lobbies"]:
 			var lb: Dictionary = l
 			var b4: Dictionary = buckets[_bucket(int(lb["after"]) + 1)]
@@ -312,21 +314,34 @@ static func aggregate(runs: Array, p_sev: Dictionary = {}) -> Dictionary:
 				combo = "none"
 			var m: Dictionary = b4["lobbies"]
 			m[combo] = int(m.get(combo, 0)) + 1
+			var m7: Dictionary = buckets[BUCKETS.size()]["lobbies"]
+			m7[combo] = int(m7.get(combo, 0)) + 1
 		for mp in run["passes"]:
-			_mine_event(buckets[_bucket(int((mp as Dictionary)["level"]))], false,
-					float((mp as Dictionary)["chain"]))
+			var mpd: Dictionary = mp
+			for b8 in _into(buckets, int(mpd["level"])):
+				_mine_event(b8, true, false, float(mpd["chain"]))
 		for mc in run["contacts"]:
 			var mc2: Dictionary = mc
-			_mine_event(buckets[_bucket(int(mc2["level"]))],
-					str(mc2["outcome"]) == "killed", float(mc2["chain"]))
+			var killed := str(mc2["outcome"]) == "killed"
+			for b9 in _into(buckets, int(mc2["level"])):
+				_mine_event(b9, false, killed, float(mc2["chain"]))
 	return {"buckets": buckets, "overall": buckets[BUCKETS.size()], "runs": runs.size(),
 			"levels": levels, "curse_offers": curse_offers, "curse_picks": curse_picks,
 			"up_offers": up_offers, "up_picks": up_picks, "brutal_runs": brutal_runs}
 
-# @@CHUNK3@@
 
-static func _mine_event(b: Dictionary, killed: bool, chain: float) -> void:
-	b["mines_contact"] = int(b["mines_contact"]) + 1
+## The two stat buckets a record accumulates into: its level's bucket AND the overall
+## (the array's last slot). Every accumulation site writes both - the overall row is
+## the sum of the buckets, never a separate pass.
+static func _into(buckets: Array, level: int) -> Array:
+	return [buckets[_bucket(level)], buckets[BUCKETS.size()]]
+
+
+static func _mine_event(b: Dictionary, p_pass: bool, killed: bool, chain: float) -> void:
+	if p_pass:
+		b["mines_pass"] = int(b["mines_pass"]) + 1
+	else:
+		b["mines_contact"] = int(b["mines_contact"]) + 1
 	var low := chain < CHAIN_SPLIT
 	if low:
 		b["m_low_events"] = int(b["m_low_events"]) + 1
@@ -527,4 +542,5 @@ static func _content_rows(L: Array[String], offers: Dictionary, picks: Dictionar
 		var sev: String = str(p_sev.get(sid, ""))
 		var sev_txt := " [%s]" % sev if sev != "" else ""
 		L.append("      %s%s: %d picks / %d offers (%.1f%%)" % [sid, sev_txt, p, o, _pct(p, o)])
+
 
