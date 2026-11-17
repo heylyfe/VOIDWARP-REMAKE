@@ -2872,9 +2872,148 @@ could not express that row. The conflict is parked as PARKED.md row 5 - test_spa
 merged T-027 and was not edited. enemy.json carries `"preferred_kind": "none"`; the schema
 gains the optional string with the same meaning documented.
 
+﻿
+### D-T-035-1 - [CONTESTABLE] YOU?!'s ring vertical kill window: feet-based, (feet_e - 1.5, feet_e + 1.0).
+DECISION (T-035): the ring kill requires the player's FEET to sit strictly inside
+(ring_feet - 1.5 u, ring_feet + 1.0 u) - the head is ignored. All three vertical escape
+clauses of DESIGN.md section 5.6 then hold EXACTLY: (a) jump clears - jump height > 1.0 u
+leaves feet_p > feet_e + 1.0 (the 0.10-0.65 s window); (b) stand >= 1.5 u above its feet -
+feet_p >= feet_e + 1.5 satisfies the window's upper edge; (c) stand >= 1.5 u below its feet -
+feet_p <= feet_e - 1.5 satisfies the lower edge. The drawn band stays the 1.0 u tall
+translucent red band at [feet, feet + 1.0] (ENEMIES.md 1:1: its plane must be readable), and
+the below-feet tolerance is therefore MORE forgiving than the draw - it never kills unfairly,
+but a one-terrace drop below the ring can leave the player's body touching the drawn band
+without dying; the spec's above/below clauses are the spec's answer line and are kept verbatim.
+WHY: the three clauses cannot all be met by a body-vs-band overlap (that needs feet_p <=
+feet_e - 1.8 to escape below) nor by a symmetric +/-1.5 u band (jump needs > 1.5 u, breaking
+the stated 0.10-0.65 s window). This is a SPEC GAP (the section names "travels in the
+horizontal plane of its feet +/- 1.5 u" without defining the kill interval); the drawing and
+the kill window are recorded here, not merged into one rule.
+
+### D-T-035-2 - [CONTESTABLE] Ring radial kill window: |d - r| <= 0.7 u.
+DECISION (T-035): the ring's hit test uses the framework's expansion convention - the
+0.6 u thick band (half-thickness 0.3 u) expanded by the player's 0.4 u half-width:
+|horizontal distance from the ring centre - r| <= 0.7 u. The spec's "0.16 s crossing"
+checks out exactly with this rule: the band plus the player's 0.8 u width is a 1.4 u
+pass at 9 u/s = 0.156 s. A raw 0.6 u band would cross in 0.067 s and contradict the spec's
+own number. The 0.16 s figure in section 5.6 is the tie-breaker that pins this reading.
+WHY: DESIGN.md section 5.6 and the T-035 answer-window line in FLEET_PACK.md both state
+the crossing as 0.16 s; only the expansion reading reproduces it.
+
+### D-T-035-3 - [CONTESTABLE] The ring-release (attack) hold is 18 ticks.
+DECISION (T-035): the anim block's `attack` state (you_04, ring_release effect) shows from
+the tick the ring launches "until the sim leaves the attack state", with no bound stated.
+The state is held for 18 ticks (0.3 s), matching the roster's other short attack holds
+(thicc ben attack_ring 18 ticks; Isagi attack 30). It then enters `recover` for the
+240-tick (4.0 s) cooldown cycle. WHY: an unbounded attack state would hold the release
+frame forever; 18 ticks is the roster's short-release convention, and the 240-tick recover
+is stated in both the spec and the anim block. game/tools/check_anim_data.gd is not edited
+(the `attack` state it hardcodes carries total_ticks: null, unchanged).
+
+### D-T-035-4 - Death attribution: the ring kill passes killer_id "YOU" (D-YOU); the framework contact path's '?' wart is logged for T-073.
+DECISION (T-035): every kill the behavior itself commits (the ring) calls
+api.kill(player, "YOU"), giving code "D-YOU" (sim/death.gd's closed map, roster name
+"YOU?!"). The framework's body-contact path (sim/enemy_runtime.gd _contact_kills) passes
+the row's DISPLAY name to try_kill, so a row named "YOU?!" yields "D-YOU?!" - unknown to
+the closed map (killer_for falls back to the raw code; never an empty screen). This ticket
+does not edit sim/enemy_runtime.gd (T-027's file, unmerged waves depend on it). The
+spawning integration (Wave 4 T-073) should pass a name that normalises to the closed code
+("you" -> "YOU" -> "D-YOU"), or strip punctuation in kill(). Recorded here so T-073 does
+not have to rediscover it.
+
+### D-T-035-5 - [CONTESTABLE] The 10 u rumble trigger is the 3D nearest-player distance.
+DECISION (T-035): "Within 10 u" (DESIGN.md section 5.6) is measured with
+api.nearest_player()'s own metric - the 3D distance between the enemy's position and the
+player's position. No horizontal-only alternative is stated for this enemy (the 4-12 u
+horizontal window is seal's dash telegraph, a different rule), and the floater's altitude
+easing (2.0 u/s) makes the two converge within a second or two of pursuit anyway.
+
+### D-T-035-6 - [CONTESTABLE] YOU?! keeps floating during its rumble.
+DECISION (T-035): the behavior does not stop horizontal movement for the 1.5 s rumble -
+ENEMIES.md describes it as "a slow mover that creates shockwave rings that kill instantly
+when it gets close" and DESIGN.md section 5.6's float clause ("Floats toward the nearest
+player at 3.4 u/s") carries no rumble-standstill exception. The SR-5 pursuit ceiling and
+the SR-1 vertical easing apply unchanged during telegraph, attack and recover phases.
+
+### D-T-035-7 - [CONTESTABLE] Burst ceiling recorded as 1.00 - YOU?! has no burst.
+DECISION (T-035): YOU?! has no telegraphed sprint (no Zoomies interaction is defined for
+it and its anim block carries no burst frame row), so begin_burst() is never called. The
+pursuit ceiling (0.55) is the only binding ceiling; the burst ceiling is recorded as 1.00
+(the SR-5 absolute burst bound) so that any later script-curse burst it might gain can
+never outrun base run speed.
+
+﻿
+### D-T-035-8 - The ring is NOT registered in world["hazards"] - the Enemy API has no world-write for hazards.
+DECISION (T-035): an earlier draft of this entry registered each live ring as a tagged
+footprint in world["hazards"]. That is impossible from the content layer: the section 12
+Enemy API exposes no world-write call (telegraphs are one-shot events nobody materialises
+into world hazards anywhere in the sim yet), and this ticket does not add one (the Enemy
+API is closed). The ring is therefore drawn and kill-resolved entirely inside the behavior;
+valid_safe_tile() does not see it, so a void-dive respawn may land near a live ring. That
+is the same state every other ring enemy is in (nuke's ground ring, coil's landing ring,
+Claude's drums are likewise unregistered), and it is an integration gap for the Wave 4
+hazard bus / T-073, not a weakening this ticket can or should paper over. Recorded so the
+integration knows to read live rings from the row (row["rings"], {"x","y","z","r"}) instead
+of a world hazard dictionary when it lands.
+WHY: only the API may be touched from behavior code; nothing else in the sim exposes the
+world to a RefCounted behavior.
+### D-T-035-9 - counter_play / tell / behavior / preferred_kind live inside "stats" (closed enemy schema).
+DECISION (T-035): the enemy JSON schema (core/schemas/enemy.schema.json) is
+additionalProperties:false over {id, name, min_level, max_votes, vote_effect, anchor_kinds,
+stats, sprites, script}, so the exhibit-facing lines ("counter_play": jump the ring as it
+reaches you / height escape; "tell": the corrupted rumble ~1.5 s before each shockwave;
+"behavior"; "preferred_kind" mirrored for the runtime's D-056 spawn read; "death_code":
+"D-YOU") are carried in the open "stats" object, the T-021 (gift Larper) precedent.
+view/lobby/antechamber.gd's enemy panel reads TOP-LEVEL counter_play/behavior
+(lobby.content.enemy(id)[...]), which the closed schema forbids this ticket to add without a
+schema edit; the exhibit still renders the sprite + name + votes, with the behavior line at
+its built-in TBD fallback. Opening those two top-level keys is a schema change shared with
+the parallel Wave-3 tickets and Wave 4 (T-073); it is flagged here, not resolved by editing
+another wave's shared file in this ticket.
+
+### D-T-035-10 - vote_effect is the literal roster table text; Echo Ring is not built into the behavior.
+DECISION (T-035): vote_effect is "+1 YOU?!" (the DESIGN.md vote table row 6 wording); the
+content layer's votes -> bodies wiring is the T-073 integration's. Echo Ring (double_ring,
+"every shockwave is followed by a second ring 0.6 s later") is T-051's enemy-linked curse;
+this behavior does not implement it. To keep it implementable without touching the closed
+hook list (on_tick only), every live ring release is observable on the row: "ring_seq"
+(incrementing) and "last_ring_tick" (row-local 60 Hz tick count) advance together, so an
+on_tick handler can detect a release and schedule the follow-up 36 ticks later.
+
+### D-T-035-11 - Placeholder audio: one cue named for the ENEMIES.md New sound line.
+DECISION (T-035): the only sound ENEMIES.md 1:1-assigns to YOU?! is the pre-shockwave build:
+"quiet corrupted static + reversed glitch screech building up before each shockwave - like
+the player model screaming through the corruption." The placeholder-cue hook is named
+"you_corrupted_rumble" (enemy.json stats.audio_cues). No .wav ships in this ticket:
+synthesizing placeholders for every cue named in the roster is T-055's scope, and no other
+enemy ships one yet. TBD.md row 28 records the cue as a T-055 synthesis target.
+
+### D-T-035-12 - The kill test runs Last Light spent (D-057), and asserts the two readings of "its death code".
+DECISION (T-035): tests/test_enemy_you.gd spends the controller's Last Light for real and
+clears the arrival state before any kill assertion (the test_kill_api.gd fixture pattern),
+so no save can mask a kill. Death-code assertions: (a) the behavior's ring kill passes
+killer_id "YOU" -> "D-YOU" (in death.gd's closed map, shown as YOU?!); (b) the framework's
+contact kill passes the row's display name - the test spawns one body as "you" to assert the
+"D-YOU" mapping the integration should reproduce, and separately asserts the kill itself with
+the display name "YOU?!" (D-T-035-4).
+
+
+
+﻿
+### D-T-035-13 - [CONTESTABLE] The ring kill fans out over nearest_player() only (the section 12 API has no players-in-radius).
+DECISION (T-035): the ring's hit test reads api.nearest_player() - the only player-query on
+the section 12 surface - and applies the kill to that player. The framework's body-contact
+path, by contrast, loops every controller (sim/enemy_runtime.gd _contact_kills), because the
+runtime owns that list internally. There is no players_in_radius / all-players call in the
+Enemy API, and this ticket does not add one (adding to the closed Enemy API is a core
+change). VOIDWRAP is single-player today (DESIGN.md section 13), so the behavior is complete
+as built; when multiplayer lands, the ring needs the same fan-out the frame already gets.
+
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
+- 2026-11-17 T-035 (spawn, inkling-2-small-free): YOU?! landed - content/enemies/you/enemy.json (min_level 3, 2 votes, open anchor, D-YOU) + enemy.gd (EnemyBehavior; 3.4 u/s pursuit ceiling 0.55, 10 u trigger, 90-tick rumble, 9 u/s ring to 14 u, 240-tick cooldown, feet-window kill rule D-T-035-1) + view/you_view.gd (frames/telegraph/band wired to the T-083 anim block, RGB split + shake + feet ring + translucent red band) + tests/test_enemy_you.gd (D-057-compliant; TESTS 28 passed 0 failed; GATE OK 9 ran 0 skipped 57 s) + DECISIONS D-T-035-1..13, TBD.md row 28. T-073 to read live rings from row["rings"] when the hazard bus lands. No PARKED rows; no push.
 - 2026-11-17 T-083-enemies 1-6 (Anim/PNG animation specs, inkling-2-small-free): anim blocks added to the six T-016 sprites.json (kiwi_cat, coil, thicc_ben, isagi, nuke, you) - one entry per section 1.x table row, spec_frames + on-disk TBD frames, binding 60 Hz tick counts; new game/tools/check_anim_data.gd proves all 12 roster tables (hardcoded, CLI id list); DECISIONS D-T083-1..6 appended. Gate green (GATE OK, 9 ran, TESTS 27 passed 0 failed); ANIM-DATA 6 passed 0 failed. The other six report "no 'anim' block" until their half lands. No PARKED rows; no push, branch t3/enemies-1-6-anim-data.
 - 2026-11-17 T-074 (spawn, GLM): the D-074 offer draw is live. sim/offers.gd draw_enemy_bay
   rebuilt (NEW / REPEAT / FREE slots + "slot" field on altars, per-enemy caps via enemy_gate,
