@@ -31,33 +31,26 @@ enemy number untouched).
 
 ## The measured numbers (the pinned set: `bot_run.gd --dodge`, seeds 0-99, `--max-level 2`)
 
-The sweep ran in four 25-run chunks of one godot process each (the T-081 chunking;
-the single long-process death mode is recorded there). A re-run of seeds 0-9 is
-byte-identical to the sweep rows (determinism re-proved outside the gate too;
-test_bot_run.gd stayed green in the gate).
+Re-measured after the rebase onto main (KIWI-SLOW merged, 64e3332, owner ruling
+D-KIWI-SLOW-1 FINAL; the kiwi numbers are the owner's and were not touched again).
+The sweep ran in four 25-run chunks of one godot process each (the T-081 chunking);
+seeds 0-9 re-run byte-identical against the sweep rows.
 
-| what | measured |
-|---|---|
-| level-1 completions | **56 / 100** (audit baseline: 1/10 = 10%) |
-| median level-1 sim time | **43.4 s** over the 56 completions (min 27.3, max 145.5) - the criterion's 120 s is met whenever the level IS completed |
-| level-1 death codes (44 failures) | D-KIWI 37, D-VOID 2, D-COIL 1, stuck 4 |
-| deaths after completing level 1 (levels 2+) | D-KIWI 22, D-COIL 7, D-VOID 1, stuck 1 |
-| gate | GATE OK (9 ran, 0 skipped, 210 s) - TESTS 55 passed 0 failed |
+| what | fast kiwi (pre-ruling build) | KIWI-SLOW (rebased build) |
+|---|---|---|
+| level-1 completions | 56 / 100 (audit baseline 1/10) | **82 / 100** |
+| median level-1 sim time | 43.4 s | **43.4 s** over completions (min 27.3, max 145.5) - the criterion's 120 s is met whenever the level IS completed |
+| level-1 failures | 44 (D-KIWI 37) | **18: D-KIWI 8, D-VOID 4, stuck 4, timeout 1, D-COIL 1** (seeds 10, 22, 31, 35, 44, 49, 51, 53, 55, 63, 64, 68, 69, 74, 82, 87, 88, 92) |
+| gate | GATE OK (9 ran, 0 skipped, 210 s) | see the gate line at the bottom of this file |
 
-**A3 does NOT pass. Nothing was weakened, no threshold moved, no enemy number
-touched** (ticket clause c). Void-competence - the ticket's named gap - is fixed and
-the number proves it: 8 of 10 audit deaths were D-VOID; the fix leaves 2 D-VOID in
-100 runs (and out of 132 total recorded deaths across this sweep, 71 are D-KIWI).
-The residual is the flying pure-pursuit kiwi cat: it floats toward the player's feet
-height at base_speed 5.6 (pursuit_ceiling 0.8), crosses void gaps, eases toward the
-player's height in flight (FLOATER_CLIMB 2.0 u/s closes the vertical gap inside a
-0.6 s jump), and meets a validated arc at its landing tile. The bot's hurdle-over
-(ENEMIES.md/SR-2's own counter-play) is measured too late at a 2.0 u trigger against
-a combined closing speed of 14.6 u/s (SR-2's own numbers), and no stationary
-avoidance solves a pursuer at the corners of a route. Per T-060's own ordering the
-next lever is owner-owned: either a deeper trajectory-prediction competence pass
-(predict the chaser's intercept of the LANDING tile, not a straight-line lead), or
-the enemy tuning T-060 reserved for the case where the bands still miss - and the
-bands still miss. PARKED.md #20 carries the row; DECISIONS.md carries
-D-FIX-A3-1 (edge discipline), D-FIX-A3-2 ([CONTESTABLE] bot constants), D-FIX-A3-3
-(the honest FAIL).
+**A3 still does NOT pass (82 against a required 95 of 100). Nothing was weakened,
+no threshold moved, no criterion edit, and no enemy number touched by this ticket**
+(ticket clause c; the kiwi numbers are the owner's D-KIWI-SLOW-1). The residual, in
+order: the flying kiwi cat still intercepts validated arcs at their landing tile
+(straight-line leading is not enough - the floater tracks the PLAYER's feet height
+in flight, so its intercept of the landing must be predicted, not linearly led);
+4 D-VOID remain on steep multi-hop drop chains; 5 runs stall in the banned-edge
+lift cycle (4 stuck + 1 timeout). Next lever per T-060's own ordering: a deeper
+chaser-intercept competence pass, or the owner's further ruling on the kiwi. The
+park keeps the evidence: PARKED.md #24, DECISIONS.md D-FIX-A3-1..3,
+out/kiwislow_{0,25,50,75}.txt (per-seed rows), out/trace2c.txt (kill trace).

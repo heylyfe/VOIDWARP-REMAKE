@@ -6079,17 +6079,22 @@ the arc-landing tolerance 1.15 u, and the ban-lift cooldown 300 ticks. These are
 bot-policy estimates of what a human player does, not sim numbers; ENEMIES.md and the
 enemy.json stats are untouched.
 
-### D-FIX-A3-3 - A3 remains FAIL at the FIX-A3 build: parked (see PARKED.md #20)
+### D-FIX-A3-3 - A3 remains FAIL at the FIX-A3 build: parked (see PARKED.md #24)
 
-The full pinned sweep (bot_run.gd --dodge, seeds 0..99, --max-level 2, the current
-build, verified byte-identical on a re-run) measures 56 of 100 level-1 completions
-(audit baseline: 1 of 10) with median level-1 sim time 43.4 s over completions
-(criterion 120 s: met whenever the level is completed). The residual cause is NOT
-void falls (2 D-VOID level-1 deaths, was 8 of 10) but the flying pure-pursuit kiwi
-cat: 37 of the 44 level-1 failures are D-KIWI, 4 are stuck, 2 D-VOID, 1 D-COIL -
-evidence in tickets/FIX-A3.response.md and PARKED.md #20. Enemy tuning is parked for
-the owner per T-060's own ordering (bot competence first, re-measure, then enemy
-tuning if the bands still miss - the bands still miss).
+Re-measured on the rebased build (main with KIWI-SLOW, merge 64e3332, owner ruling
+D-KIWI-SLOW-1 FINAL): 82 of 100 seeds complete level 1 (was 56/100 with the fast
+kiwi; audit baseline 1/10), median level-1 sim time 43.4 s over completions
+(criterion 120 s: met whenever the level is completed). Level-1 failures (44 at the
+old kiwi, 18 now): D-KIWI 8, D-VOID 4, stuck 4, timeout 1, D-COIL 1. The criterion
+still misses; parked - no threshold moved, no criterion edit, no enemy number
+touched by this ticket (the kiwi numbers are the owner's, D-KIWI-SLOW-1).
+
+Pre-ruling sweep (the build before KIWI-SLOW): 56 of 100 level-1 completions,
+median 43.4 s; back then 37 of the 44 level-1 failures were D-KIWI. The rebase onto
+KIWI-SLOW (owner ruling D-KIWI-SLOW-1) re-measured 82/100; the kiwi's remaining 8
+level-1 kills, the 4 D-VOID, the 4 stuck and the 1 timeout are the kept evidence -
+the level-1 failure list with the current build is: seeds 10, 22, 31, 35, 44, 49,
+51, 53, 55, 63, 64, 68, 69, 74, 82, 87, 88, 92.
 
 ## Handover log
 
@@ -6448,3 +6453,5 @@ WHY record before code: this entry is committed before any line that implements 
 diff order shows the ruling first.
 
 - 2026-11-17 FIX-A3 (zai-glm-5-3-flash, this session): bot edge discipline + enemy-awareness in game/tools/bot_run.gd ONLY; A3 measured 56/100 level-1 completions (was 1/10), median 43.4 s of completions, GATE OK (9 ran, 0 skipped, 210 s) TESTS 55 passed 0 failed; A3 remains FAIL - parked PARKED.md #20; DECISIONS.md D-FIX-A3-1..3; next: owner lever per T-060 ordering (deeper chaser-intercept competence or enemy tuning).
+
+- 2026-11-17 FIX-A3 re-measure (zai-glm-5-3-flash, this session): rebased onto KIWI-SLOW main (64e3332); pinned sweep re-measured 82/100 level-1 completions (was 56/100 with the fast kiwi), median 43.4 s of completions; failures 18: D-KIWI 8, D-VOID 4, stuck 4, timeout 1, D-COIL 1. A3 still FAIL - PARKED.md #24 updated; GATE OK (9 ran, 0 skipped, 233 s) TESTS 58 passed 0 failed; no threshold/criterion/enemy number touched.
