@@ -3869,6 +3869,64 @@ DECISION (T-050): this ticket's dispatch addendum appends, verbatim: "Slippery =
 
 DECISION (T-050): curse.schema.json makes "script" optional, and the gate suite's convention (test_enemy_coil.gd: bool(doc.get("script", false))) reads absent as declarative. All 11 curses without "script": true — brittle, hasty, hungry_void, inflation, lights_out, long_night, rush_hour, short_chain, tarnish, thick_fog, weighed_down — carry exactly the modifiers their DESIGN.md section 7.2 rows state (per stack and at max stacks), their severity / min_level / max_stacks / requires_enemy all match the rows, and their hooks are empty. No curse JSON was changed: every row agreed with DESIGN.md (checked modifier-by-modifier against the table before writing the test). tests/test_curses_decl.gd loads the real content, applies each declarative curse through the real modifier path (core/content_api.gd apply_modifiers / mods_for_stacks), and asserts the table deltas, plus the three section 7 safety assertions over ALL 46 curses: (1) no curse names jump_velocity or gravity (neither is in the closed list, both asserted absent from STATS and from every modifier); (2) the total run-speed reduction with every curse applied at max stacks stays <= 10% (>= 0.90) in the always / black_phase / gold_phase contexts — weighed_down (-10%, gold phase only) is the only run-speed curse, and the glitched floor's -20% is the toucher's enemy effect (glitch_slow_mul, D-075), asserted explicitly to be absent from every curse and to keep its 0.8 closed default; (3) void_charges_max is touched only by Hungry Void (op set, value 1), asserted over every curse and re-asserted against a base cap of 2. The declarative id set is asserted exact: a curse gaining or losing "script" or landing new without a DECL_ROWS / DECL_META row fails the build with instructions. The eleven declarative JSONs were deliberately NOT normalized to spell "script": false — the schema default carries the meaning, the JSON matches the shipped T-014a state, and the difference is asserted, not hidden.
 
+### D-T052-1 - Declarative upgrades are proven through the real modifier path, and the script:false partition is pinned (T-052).
+DECISION (T-052): tests/test_upgrades_decl.gd proves every script:false upgrade by applying
+its modifiers through core/content_api.gd (mods_for_stacks + apply_modifiers, the DESIGN.md
+section 12 math: per stat (base + sum of adds) x product of muls, then `set` wins) and
+asserting the resulting stat delta against an expectation literal written from its DESIGN.md
+section 8 table row (at 1 stack and at max stacks, plus the tier/price/max_stacks row
+identity and the empty-modifiers-at-0-stacks rule). The 11 declarative ids are pinned as a
+set: the script:false set on disk must equal ROWS' keys and the script:true set must equal
+T-053's 25, so a flipped `script` flag fails the test loudly with the id in the message.
+Declarative also means modifiers-only: every script:false upgrade must carry a non-empty
+modifiers list and no hooks (T-053 owns anything with a hook or a script). Expected values
+are table-derived literals, never pow() re-derivation of the implementation; the compounding
+reading for mul modifiers (1.1^2 = 1.21 at 2 stacks, etc.) is the section 12 semantics and
+matches the T-013 drop-in fixture's asserted round-trip. No [CONTESTABLE] entry was needed:
+every number asserted is stated in the section 8 table, section 3.1/3.2, or the R4 addendum.
+WHY: the ticket's stated job is the declarative PROOF, not a rewrite of the merged,
+schema-validated 36 files; pinning the partition is what keeps the proof honest when the
+two parallel upgrade tickets (T-052 declarative / T-053 scripted) both merge.
+
+### D-T052-2 - The R4 addendum's centi-gold floor rule is asserted through an exact integer oracle (T-052).
+ADDENDUM (R4, appended verbatim): "All gold arithmetic is in integer centi-gold and rounds
+DOWN. A stacked price is `floor(price x 1.5^n)` in whole gold. A bounty is `floor(base x
+(20 + level) / 20)` in whole gold."
+DECISION (T-052): the rule is now asserted three ways. (1) data/economy.json
+gold_arithmetic declares unit centi_gold / rounding floor / the two formulas; the test pins
+those exact strings. (2) OffersScript.price_for is checked over every upgrade on disk for
+every stack count 0..max_stacks against the exact integer oracle (price x 3^n) / 2^n -
+3^n/2^n is dyadic, so the floor in whole gold is exact in integer arithmetic and truncating
+division equals flooring for non-negative values - plus five pins from the section 8 table
+(gilded_touch 150 x 1.5^3 = 506, more 50 x 1.5^3 = 168, paycheck 40 x 1.5 = 60 and
+40 x 1.5^3 = 135, yearn_for_speed 60 x 1.5^4 = 303). (3) api.curse_bounty is checked over
+all 46 curses at levels 0/1/4/9/17/26/30 against (base x (20 + level)) / 20 integer division
+(mild 20 / harsh 45 / brutal 90), with the D-T013 pins harsh@1 = 47 and mild@0 = 20.
+EconomyScript.to_centi is pinned at 2.675 -> 267 (the binary-floating-point trap:
+2.675 x 100 is 267.49999..., a round-half-up would say 268) and at -0.01 -> -1 (floor, not
+truncation). ONE floor per final amount stands (D-T022-5): no per-factor flooring anywhere.
+WHY: the R4 addendum is binding arithmetic; a float round-trip anywhere in the price or
+bounty path would drift the replay-relevant purse by a gold over a 5-stack buy.
+
+### D-T052-3 - insulation.json's modifier was rewritten to the section 8 row (the one genuine DESIGN.md disagreement) (T-052).
+DECISION (T-052): insulation's modifier changed from {stat glitch_slow_mul, op mul, value
+0.5} to {stat glitch_slow_mul, op add, value 0.1}. DESIGN.md section 8's row reads
+"glitched floor slows 10% instead of 20% and no longer disables class abilities"; under the
+section 12 modifier math with core/stats.gd's documented base (glitch_slow_mul = 0.8, the
+D-075 / D-051 -20% floor effect) the shipped expression produced 0.8 x 0.5 = 0.4 - a -60%
+slow, not "10% instead of 20%". The add-0.1 reading yields exactly 0.9 under the same math,
+is minimal, and composes. T-014b's note claimed mul 0.5 was "the 10%-instead-of-20% half";
+that claim does not hold under the modifier semantics that actually exist (final = base x
+muls), which is why this is filed as a rewrite, not a re-reading. Nothing else in the 36
+files disagreed with its section 8 row (all 11 declarative rows plus the tiers / prices /
+stack counts matched). insulation remains script: true - T-053's .gd half
+("no longer disables class abilities") is untouched and T-053's worker must re-read the
+JSON's 0.9 when it wires the floor interaction. The JSON was the only file changed; no
+content/upgrades/*.gd was created or edited.
+WHY: the ticket allows rewriting a row that genuinely disagrees with DESIGN.md; shipping a
+-60% floor slow as "Insulation" would be invisible until playtest. Flagged for the
+orchestrator and for T-053 in tickets/T-052.response.md.
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
@@ -4043,3 +4101,4 @@ DECISION (T-050): curse.schema.json makes "script" optional, and the gate suite'
   run in the generator (cheaper acceptance of elevation/path-share), never by raising the limit.
   NEXT: owner go-ahead, commit, then FLEET_PACK.md from T-001. Nothing committed since ab471d8.
 - 2026-11-16 GLM 4.6 (T-012): player controller and classes DONE on t3/94aebde7 - sim/collision.gd (AABB 0.4/1.8 vs slabs/ramps/props, step-up 0.5), sim/controller.gd (kits, void charges, 8-tile safe ring, Last Light, pads), tests envelope/classes/charges/last_light all green (TESTS 5 passed 0 failed), D-T012-1..4 appended; gate run pending in this session.
+- 2026-11-17 T-052 (inkling-2-small-free, this session): the upgrade declarative proof landed on t3/upgrades-declarative-proof - game/tests/test_upgrades_decl.gd (every script:false upgrade through the real modifier path; stat deltas from the DESIGN.md section 8 rows; the pinned script:false/script:true partition; Athletic x1.5 speed / x1.3 air-jump height wired through the real Yearn for Speed card into controller.gd; the R4 centi-gold floor rule over the whole catalog and all 46 bounties via an exact integer dyadic oracle, plus to_centi(2.675) = 267) - insulation.json mul 0.5 -> add 0.1 (D-T052-3) - DECISIONS D-T052-1..3 appended. TESTS 42 passed 0 failed. No content ids added (counts stay 12/99). No PARKED rows. No push.
