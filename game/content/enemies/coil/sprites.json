@@ -65,5 +65,79 @@
 		}
 	],
 	"tbd": true,
-	"world_height": 2.0
+	"world_height": 2.0,
+	"anim": {
+		"_doc": "T-083. Spec: research/fable-tickets.md section 1.2 (the 1.x tables are the spec; ENEMIES.md behavior sentences are frozen per D-040). One entry per table row, keyed by a snake_case state id; 'row' repeats the exact table row label. spec_frames are the section 1.2 frame names in table order; frames are the files that exist on disk, relative to this folder (T-016 produced TBD placeholders - coil_NN maps 1:1 onto cycle_NN, see frame_map and DECISIONS D-T083-1/D-T083-2). Timings are in 60 Hz ticks and are binding; the attack frame lands on the tick the kill resolves. Effects are shader/transform effects on the billboard and never change body_rect.",
+		"section": "1.2",
+		"frame_map": {
+			"coil_00": "sprites/cycle_00.png",
+			"coil_01": "sprites/cycle_01.png",
+			"coil_02": "sprites/cycle_02.png",
+			"coil_03": "sprites/cycle_03.png",
+			"coil_04": "sprites/cycle_04.png"
+		},
+		"states": {
+			"spawn": {
+				"row": "spawn",
+				"spec_frames": ["coil_02"],
+				"frames": ["sprites/cycle_02.png"],
+				"loop": false,
+				"total_ticks": 30,
+				"ticks_per_frame": 30,
+				"tick_ranges": null,
+				"effect": { "name": "common_fade", "params": { "alpha_from": 0.0, "alpha_to": 1.0, "scale_from": 0.8, "scale_to": 1.0, "ticks": 30, "contestable": true } }
+			},
+			"idle": {
+				"row": "idle",
+				"spec_frames": ["coil_01", "coil_02"],
+				"frames": ["sprites/cycle_01.png", "sprites/cycle_02.png"],
+				"loop": true,
+				"total_ticks": null,
+				"ticks_per_frame": 30,
+				"tick_ranges": null,
+				"cycle_ticks": 180,
+				"effect": { "name": "none", "params": { "note": "coil_01 <-> coil_02 swapped every 30 ticks; 180 ticks (3.0 s) full cycle" } }
+			},
+			"telegraph": {
+				"row": "telegraph (pre-jump)",
+				"spec_frames": ["coil_02", "coil_01", "coil_00"],
+				"frames": ["sprites/cycle_02.png", "sprites/cycle_01.png", "sprites/cycle_00.png"],
+				"loop": false,
+				"total_ticks": 36,
+				"ticks_per_frame": 12,
+				"tick_ranges": [["coil_02", 0, 11], ["coil_01", 12, 23], ["coil_00", 24, 35]],
+				"effect": { "name": "red_ring", "params": { "radius_u": 3.0, "color": "#FF2A2A", "at": "the target (the tile the player most recently stood on when the cue started)", "visible": "for the whole cue and the flight", "note": "coil_00 is reached on tick 24 and held through tick 35; 12 ticks per frame; 36 ticks (0.6 s) total" } }
+			},
+			"attack_flight": {
+				"row": "attack — flight",
+				"spec_frames": ["coil_03", "coil_04", "coil_03"],
+				"frames": ["sprites/cycle_03.png", "sprites/cycle_04.png", "sprites/cycle_03.png"],
+				"loop": false,
+				"total_ticks": 165,
+				"ticks_per_frame": null,
+				"tick_ranges": [["coil_03", 0, 20], ["coil_04", 21, 144], ["coil_03", 145, 164]],
+				"effect": { "name": "none", "params": { "note": "165 ticks (2.75 s); coil_04 (fully extended) spans ticks 21-144, the apex; the red landing ring persists through the flight" } }
+			},
+			"attack_landing": {
+				"row": "attack — landing",
+				"spec_frames": ["coil_00"],
+				"frames": ["sprites/cycle_00.png"],
+				"loop": false,
+				"total_ticks": null,
+				"ticks_per_frame": null,
+				"tick_ranges": null,
+				"effect": { "name": "shockwave", "params": { "radius_u": 6.0, "expands_over_ticks": 12, "color": "#FF2A2A", "note": "shown on tick 165 = the tick the landing kill and the shockwave resolve; the ring expands to 6 u over the following 12 ticks" } }
+			},
+			"recover": {
+				"row": "recover",
+				"spec_frames": ["coil_00", "coil_01"],
+				"frames": ["sprites/cycle_00.png", "sprites/cycle_01.png"],
+				"loop": false,
+				"total_ticks": 24,
+				"ticks_per_frame": 12,
+				"tick_ranges": null,
+				"effect": { "name": "none", "params": { "note": "the first 24 ticks of the next idle" } }
+			}
+		}
+	}
 }

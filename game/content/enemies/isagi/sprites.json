@@ -75,5 +75,66 @@
 		}
 	],
 	"tbd": true,
-	"world_height": 1.8
+	"world_height": 1.8,
+	"anim": {
+		"_doc": "T-083. Spec: research/fable-tickets.md section 1.4 (the 1.x tables are the spec; ENEMIES.md behavior sentences are frozen per D-040). One entry per table row, keyed by a snake_case state id; 'row' repeats the exact table row label. spec_frames are the section 1.4 frame names in table order; frames are the files that exist on disk, relative to this folder (T-016 produced TBD placeholders - see frame_map and DECISIONS D-T083-1/D-T083-2: isagi_idle_00 -> fire_00, isagi_shoot_00 -> fire_02, isagi_ball_00 -> shot_00; fire_01 exists on disk but is unreferenced). Timings are in 60 Hz ticks and are binding; the attack frame lands on the tick its kill resolves. Effects are shader/transform effects on the billboard and never change body_rect.",
+		"section": "1.4",
+		"frame_map": {
+			"isagi_idle_00": "sprites/fire_00.png",
+			"isagi_shoot_00": "sprites/fire_02.png",
+			"isagi_ball_00": "sprites/shot_00.png"
+		},
+		"states": {
+			"spawn": {
+				"row": "spawn / relocate-in",
+				"spec_frames": ["isagi_idle_00"],
+				"frames": ["sprites/fire_00.png"],
+				"loop": false,
+				"total_ticks": 30,
+				"ticks_per_frame": 30,
+				"tick_ranges": null,
+				"effect": { "name": "common_fade", "params": { "alpha_from": 0.0, "alpha_to": 1.0, "scale_from": 0.8, "scale_to": 1.0, "ticks": 30, "contestable": true, "note": "relocation: fade out 18 ticks, fade in 30 ticks" } }
+			},
+			"idle": {
+				"row": "idle",
+				"spec_frames": ["isagi_idle_00"],
+				"frames": ["sprites/fire_00.png"],
+				"loop": true,
+				"total_ticks": null,
+				"ticks_per_frame": null,
+				"tick_ranges": null,
+				"effect": { "name": "none", "params": {} }
+			},
+			"telegraph": {
+				"row": "telegraph (wind-up)",
+				"spec_frames": ["isagi_idle_00"],
+				"frames": ["sprites/fire_00.png"],
+				"loop": false,
+				"total_ticks": 72,
+				"ticks_per_frame": 72,
+				"tick_ranges": null,
+				"effect": { "name": "red_rim_flash", "params": { "period_ticks": [24, 12, 6], "period_note": "red rim flash, period 24 -> 12 -> 6 ticks (three accelerating thirds)", "aim_line": { "color": "#FF2A2A", "from": "1.0 u above his tile", "to": "the player", "reaim": "each tick until release" }, "note": "the wind-up is the idle pose with a telegraph flash - ENEMIES.md: no prepare frame exists" } }
+			},
+			"attack": {
+				"row": "attack (burst)",
+				"spec_frames": ["isagi_shoot_00"],
+				"frames": ["sprites/fire_02.png"],
+				"loop": false,
+				"total_ticks": 30,
+				"ticks_per_frame": null,
+				"tick_ranges": [["isagi_shoot_00", 0, 30]],
+				"effect": { "name": "volley", "params": { "release_ticks_local": [0, 9, 18], "release_ticks_global": [72, 81, 90], "ball_frame": "isagi_ball_00", "ball_width_u": 1.0, "spin_deg_per_s": 720, "trail": "blue, 0.6 u", "note": "isagi_shoot_00 shown from tick 72; balls leave on ticks 72, 81, 90 (0.15 s apart); held until tick 102. total_ticks 30 is derived from the binding 72 -> 102 window; tick_ranges are local to this state (0 = global tick 72)" } }
+			},
+			"recover": {
+				"row": "recover (cooldown)",
+				"spec_frames": ["isagi_idle_00"],
+				"frames": ["sprites/fire_00.png"],
+				"loop": true,
+				"total_ticks": 150,
+				"ticks_per_frame": null,
+				"tick_ranges": null,
+				"effect": { "name": "dim", "params": { "brightness": 0.7, "note": "sprite at 70% brightness = 'cannot fire'; 150 ticks (2.5 s) cooldown" } }
+			}
+		}
+	}
 }

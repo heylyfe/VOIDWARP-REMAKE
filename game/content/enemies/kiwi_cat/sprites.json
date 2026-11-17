@@ -30,5 +30,66 @@
 		}
 	],
 	"tbd": true,
-	"world_height": 1.0
+	"world_height": 1.0,
+	"anim": {
+		"_doc": "T-083. Spec: research/fable-tickets.md section 1.1 (the 1.x tables are the spec; ENEMIES.md behavior sentences are frozen per D-040). One entry per table row, keyed by a snake_case state id; 'row' repeats the exact table row label. spec_frames are the section 1.1 frame names in table order; frames are the files that exist on disk, relative to this folder (T-016 produced TBD placeholders - see frame_map and DECISIONS D-T083-1/D-T083-2). Timings are in 60 Hz ticks; the sim drives frame = table lookup from ticks_in_state (section 1.0), never a wall clock; the attack frame lands on the tick its kill resolves. Effects are shader/transform effects on the billboard and never change body_rect. Timings are binding; frame art is not (all frames today are TBD placeholders, so every state uses the TBD frame and the timings stay exactly as the table says).",
+		"section": "1.1",
+		"frame_map": {
+			"kiwicat_00": "sprites/cycle_00.png"
+		},
+		"states": {
+			"spawn": {
+				"row": "spawn",
+				"spec_frames": ["kiwicat_00"],
+				"frames": ["sprites/cycle_00.png"],
+				"loop": false,
+				"total_ticks": 30,
+				"ticks_per_frame": 30,
+				"tick_ranges": null,
+				"effect": { "name": "common_fade", "params": { "alpha_from": 0.0, "alpha_to": 1.0, "scale_from": 0.8, "scale_to": 1.0, "ticks": 30, "contestable": true } }
+			},
+			"idle_chase": {
+				"row": "idle / chase",
+				"spec_frames": ["kiwicat_00"],
+				"frames": ["sprites/cycle_00.png"],
+				"loop": true,
+				"total_ticks": null,
+				"ticks_per_frame": null,
+				"tick_ranges": null,
+				"effect": { "name": "bob", "params": { "axis": "y", "amplitude_u": 0.08, "hz": 1.0, "contestable": true } }
+			},
+			"telegraph": {
+				"row": "telegraph (meow)",
+				"spec_frames": ["kiwicat_00"],
+				"frames": ["sprites/cycle_00.png"],
+				"loop": false,
+				"total_ticks": 12,
+				"ticks_per_frame": 12,
+				"tick_ranges": null,
+				"repeat_every_ticks": 180,
+				"repeat_when": "while within 14 u of the player",
+				"effect": { "name": "scale_pulse", "params": { "from": 1.0, "peak": 1.12, "to": 1.0, "ticks": 12, "note": "scale pulse 1.0 -> 1.12 -> 1.0 over the 12 ticks; every 180 ticks (3.0 s, binding) while within 14 u", "zoomies": "Zoomies (curse): the double meow = two pulses 12 ticks apart, then a red outline for the 180-tick sprint" } }
+			},
+			"attack": {
+				"row": "attack",
+				"spec_frames": [],
+				"frames": [],
+				"loop": false,
+				"total_ticks": null,
+				"ticks_per_frame": null,
+				"tick_ranges": null,
+				"effect": { "name": "none", "params": { "note": "contact kills on the tick the hit cylinders overlap; the cat has no wind-up - its tell is its presence" } }
+			},
+			"recover": {
+				"row": "recover",
+				"spec_frames": [],
+				"frames": [],
+				"loop": false,
+				"total_ticks": null,
+				"ticks_per_frame": null,
+				"tick_ranges": null,
+				"effect": { "name": "none", "params": {} }
+			}
+		}
+	}
 }
