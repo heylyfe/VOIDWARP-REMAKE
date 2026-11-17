@@ -5415,6 +5415,21 @@ Deleting one and pointing both consumers at the other would also work, but the c
 sheet's [cycle_00, cycle_01] layout and index 1 pin live in shipped view code, and the
 anim block's file names are its own contract - the duplication costs 266 KB and keeps both
 interfaces byte-stable. The four state frames are otherwise distinct art.
+
+### D-FIX-A15-1 - the T-001 disclaimer punctuation is the em dash (U+2014), plaque wraps at render time [CONTESTABLE]
+FIX-A15 closes AUDIT.md section 6 / A15. FLEET_PACK.md line 163 (T-001's spec), README.md
+line 7 and AUDIT.md section 6 all write the dash in "non-commercial project — no money is
+involved" as the em dash U+2014; the ticket brief transcribed it with an ASCII hyphen, which
+is not what any repo document states. The lobby About plaque (game/view/lobby/antechamber.gd)
+therefore pins DISCLAIMER byte-identical to README.md's disclaimer sentence (em dash included)
+and the test pins the same string; the plaque label wraps at render time instead of the text
+carrying newlines (Label3D width 1000 px at pixel_size 0.004, derived from the 4.2 u board:
+4.2 / 0.004 = 1050 px, 1000 px keeps a margin) so the rendered text stays byte-identical to the
+spec. The 1000 px wrap width is a layout number no document states, hence [CONTESTABLE]; it is
+a display detail, not a sim or gameplay number, and nothing moves a check. The ENEMIES.md
+paragraph (game/app/menu.gd ABOUT_DISCLAIMER) is a different wording by design (PARKED.md #2)
+and is unchanged by this ticket.
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
