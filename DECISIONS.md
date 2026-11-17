@@ -3109,6 +3109,112 @@ and the reaction arithmetic (12.0 u at 9.0 u/s run speed = 80 ticks = 1.33 s of 
 WHY [gameplay reason]: the counter-play is looking and walking around - a motion assertion would
 test a mine that does not exist.
 
+### D-T-038-1 - the seal's dash rides its body CENTRE on the fixed 3D line (row y = centre - 0.3 u), so the section 5.9 clear rules fall out of the framework's cylinder check (T-038).
+DESIGN.md section 5.9 (D-069): the dash line is fixed at telegraph start as the straight 3D
+segment from the seal's body centre through the player's centre (0.9 u above the feet),
+extended to 20 u. Built: at telegraph start the row stores the line origin (the body
+centre) and the fixed unit direction; during the 60-tick dash the body centre advances
+1/3 u per tick along it (20 u in 1.0 s) and the row's feet ride at centre - 0.3 u. WHY:
+the spec's clear rules ("the player is missed if their feet sit more than 1.2 u above the
+height they had at telegraph start, or their head is below the line") then hold against the
+ordinary upright-cylinder contact check with NO special case - at the crossing the seal's
+band is [centre-0.3, centre+0.3] = [feet+0.6, feet+1.2] relative to the telegraph-start
+frame, so a player whose feet are > 1.2 u up simply does not overlap it (a jump clears
+1.2 u from 0.12 s to 0.63 s - a 0.51 s window for the 0.07 s body crossing; a 3 HU step is
+1.5 u; a head below the line no longer reaches it either). The dash is fixed kinematics,
+NOT a FloatBody burst (SR-5 bounds bursts only); flapping uses FloatBody with the SR-5
+0.60 pursuit ceiling.
+
+### D-T-038-2 - the seal telegraphs only between 4.0 u and 12.0 u (inclusive, 3D); no arbiter block (T-038).
+DESIGN.md section 5.9: "The seal starts a telegraph only when it is between 4 u and 12 u
+from its target - closer than 4 u it keeps flapping (a chaser problem with a chaser
+answer: hurdle it, SR-2)." Built: distance is the 3D `api.nearest_player` distance; both
+bounds are inclusive (the document does not bound exclusivity - recorded as decided); below
+4 u the seal never telegraphs, above 12 u it keeps flapping toward the target. WHY: the
+4-12 u band is what makes the dash readable - the answer (jump on the bark) needs the
+fixed line fixed from a readable distance, and inside 4 u the body is a hurdling problem,
+not a dash problem. The "dash_line" telegraph's footprint is a radius-0 circle at the
+seal's position, so SR-4's `no_targeted_telegraph` requirement (address me) is unaffected;
+SR-4's scheduling gates are address me's and gin ichimaru's alone (D-067), so the seal
+carries NO arbiter block. Telegraph-range inclusivity at exactly 4.0/12.0 u is [CONTESTABLE]
+(the owner may prefer 4.0 exclusive / 12.0 inclusive).
+
+### D-T-038-3 - telegraph and recover are stationary; recover is SR-5 tempo-shortened, the telegraph and dash are binding ticks (T-038).
+The telegraph holds the seal still for 45 ticks (the dash line is drawn from a planted
+body - a moving origin would detach the dashes from the telegraph source every frame) and
+the 45-tick recover holds it still after the dash. Recover length is
+`api.tempo_ticks(45)`, so overtime/Hunger tempo (the part of a speed multiplier the SR-5
+ceiling removes) shortens it, bounded at TEMPO_FLOOR (0.6x, 27 ticks); the telegraph (45)
+and the dash (60) are the T-083 binding ticks and are never shortened. The spec's "~1s
+high-pitched cry before it attacks" (ENEMIES.md) is the telegraph + the bark on dash tick 0
+(the VOIDWRAP_RUN replacement line); there is no separate cry cue (D-T-038-7).
+
+### D-T-038-4 - seal audio cues `bark` / `flipper_flap`; flipper_flap is view-driven, bark is a 1-tick "bark" telegraph on dash tick 0 (T-038).
+ENEMIES.md "New sound", verbatim: "actual seal barks (arf arf) on the dash, wet flipper
+flaps while it moves." Cue names = file names (T-055's contract):
+`assets/audio/enemies/seal/bark.wav` (fires on tick 0 of the dash; DESIGN.md section 5.9's
+binding "bark on tick 0 of the dash") and `assets/audio/enemies/seal/flipper_flap.wav`
+(one per flap cycle - the T-083 anim block's 9 ticks per frame / 6.6 Hz telegraph flap
+cadence) while flapping or telegraphing. The flap is AMBIENT and is driven by the view on
+the sim tick counter (no sim telegraph spam); the bark is a 1-tick "bark" telegraph from
+the behavior - the same cue channel the meow uses, zero-radius footprint, never a damage
+telegraph. Both hooks no-op silently until T-055 synthesises the placeholders (TBD.md rows
+30/31). [CONTESTABLE]: the owner may prefer both cues on the sim telegraph channel.
+
+### D-T-038-5 - burst_ceiling 1.0 with no telegraphed sprint; the dash never routes through FloatBody (T-038).
+The seal has no Zoomies-style sprint. The field is kept at 1.0 for cfg/FloatBody parity
+(the runtime requires consistent kinematic data) and is unreachable: the dash runs on its
+own fixed 20 u/60 ticks kinematics and FloatBody is only stepped while flapping. WHY:
+SR-5's burst bound exists for telegraphed sprints; the seal's attack is its dash, and it
+beats 9.0 u/s exactly because the section 5.9 numbers say 20 u in 1.0 s - classifying it
+as a burst would silently paper the attack into the 1.00 ceiling.
+
+### D-T-038-6 - the dashed red telegraph VFX: 0.5 u dashes every 0.9 u along the fixed 3D line, additive #FF2A2A, brightening 0.35 -> 0.95 alpha across the 45 ticks (T-038).
+`game/view/seal_view.gd` builds one thin box per dash (0.5 u long, 0.08 u thick) along the
+fixed segment from the telegraph event's `dash_line` parameter, each aligned with an
+X-axis basis along the line (never flattened onto the ground - DESIGN.md section 5.9 draws
+the dashes along the 3D line), fog-exempt, unshaded additive #FF2A2A (the T-083 block's
+color and dash_segment_u 0.5), and re-alphas the shared material as the telegraph counts
+down (the block's `brightens_over_ticks: 45`). The attack state alternates
+dash_00/dash_01 every 4 ticks (the block's ticks_per_frame, fps 15.0) while the TBD
+mouth-open stand-in (idle_00) is held underneath; telegraph and recover hold idle_00;
+spawn is the common 30-tick fade. GAP 0.4 u between dashes is a draw contract no document
+states - SPEC GAP, reasoned from readability at fog distance - [CONTESTABLE]. The TBD
+frame substitutions follow TBD.md row 24 and were NOT re-derived from the PNGs (the anim
+block is authoritative).
+
+### D-T-038-7 - the ENEMIES.md seal line and the DESIGN.md section 5.9 paragraph are the same attack; no separate cry exists (T-038).
+ENEMIES.md: "~1s high-pitched cry before it attacks. VOIDWRAP_RUN: the cry is replaced by
+a real seal bark when it dashes - it opens its mouth and flaps." DESIGN.md section 5.9
+(FINAL): "Attack: telegraph 0.75 s (dashed 3D line, mouth-open frame) -> bark on tick 0 of
+the dash + dash 20 u in 1.0 s along the fixed line -> idle 0.75 s." Built: the 0.75 s
+telegraph is the wind-up (mouth-open frame held, red dashes), the bark fires on tick 0 of
+the dash, the cry does not exist as a cue. WHY: the VOIDWRAP_RUN replacement sentence names
+exactly one audio event for the attack (the bark); a second cry would double the tell and
+contradict the 1:1 VOIDWRAP_RUN mapping of the section. Not a PARKED row - the two
+documents agree once section 5.9's wind-up is read as the cry's carrier.
+
+### D-T-038-8 - the lobby exhibit needed no new wiring; test_content.gd counts 2 -> 3 enemies / 89 -> 90 content_ids (T-038).
+`antechamber._exhibit_enemy` reads each enemy slot's sprites.json live, so the seal's
+exhibit (billboard from the T-016 TBD sheet, body scaled to the 1.6 u exhibit height, panel
+lines from enemy.json's behavior/counter_play) is live the moment the content lands -
+verified headless: the sheet parses, its "idle"/"dash" animation blocks load, and the full
+view cycle (spawn -> telegraph with the dashed line -> bark -> attack -> recover) runs
+clean. `test_content.gd`'s launch counts move 2 -> 3 enemies and 89 -> 90 content_ids,
+exact, not loosened (comments name T-021/T-030/T-038; D-T030-6's contract).
+
+### D-T-038-9 - the 1.2 u jump window is asserted against the engine's tick-quantized arc (T-038).
+DESIGN.md section 5.9 and FLEET_PACK express the answer as continuous physics (y(t) =
+12.0t - 16.0t^2 > 1.2 u between 0.12 s and 0.63 s after take-off, a 0.51 s window). The
+controller (sim/controller.gd) integrates at 60 Hz with semi-implicit Euler and applies
+the variable-height jump cut on release, so the REALIZED hold-jump window is ticks 7..35
+(feet above 1.2 u), ~29 ticks (~0.48 s), apex 2.15 u - measured headless from the running
+controller, not derived (the mirror of D-T030-8 for the seal's 1.2 u threshold). The test
+asserts the realized window +/-1 tick and ~0.51 s window length +/-1 tick instead of the
+unreachable continuous values, and the end-to-end "jump on the bark" survival through the
+fixed dash line. WHY: a test against 0.12/0.63 s continuous would encode a jump the
+engine never produces. [CONTESTABLE], same shape as D-T030-8.
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
