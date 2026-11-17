@@ -162,6 +162,7 @@ var bonus_cd := 0.0
 var updraft_ready := false
 var updraft_cd := 0.0
 var updraft_used := false
+var updraft_owned := false
 
 # void charges (D-050): charges carry over between levels (D-063).
 var charges := 2
@@ -271,8 +272,10 @@ func step(dt: float, a_in: Dictionary, w: Dictionary) -> Array:
 		if bonus_cd <= 0.0:
 			bonus_dashes += 1
 			bonus_cd = 0.0
-	# T-053 Updraft (D-T053-6): 6 s cooldown, frozen under ability lock.
-	if not updraft_ready and lock <= 0.0:
+	# T-053 Updraft (D-T053-6): 6 s cooldown, frozen under ability lock. The
+	# cooldown only ever runs on a GRANTED updraft (updraft_owned) - an unowned
+	# controller (ready=false, cd=0) must not re-arm itself out of the regen math.
+	if updraft_owned and not updraft_ready and lock <= 0.0:
 		updraft_cd -= dt
 		updraft_ready = updraft_cd <= 0.0
 
@@ -763,6 +766,7 @@ func apply_twin_dash() -> void:
 
 # T-053 Updraft (D-T053-6): the 3 u rise is granted ready; once per glide.
 func apply_updraft() -> void:
+	updraft_owned = true
 	updraft_ready = true
 	updraft_cd = 0.0
 	updraft_used = false
