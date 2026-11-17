@@ -1645,6 +1645,74 @@ to trust the model or the bands. If the bands are what matter, the model needs a
 justification, or a second differently-shaped model, before A11 means anything. No document states
 how a player buys; the buying policies are inventions.
 
+### D-T071-1 - FloatBody reads its kinematics from the cfg; the SR-5 cap is ceiling x BASE run speed (T-071).
+`sim/enemy_runtime.gd` gains `FloatBody`: per-floater kinematics whose numbers come from the
+content cfg (the future enemy.json, T-073 copies the field names verbatim). SPEC GAP - no
+document states the key names: `base_speed` (u/s), `pursuit_ceiling`, `burst_ceiling`
+(fractions of BASE run speed); defaults 0.0/1.0/1.0 so a body without data simply never
+clamps. The cap is ceiling x 9.0 (BASE run speed, never the player's current speed - and
+never fraction x the body's OWN speed: the toucher row proves it, 0.75 x 6.75 = 5.06 but
+the SR-5 table states 6.75). Order: raw = base_speed x speed_mul (overtime) x
+curse_speed_mul (curses + repeatable +5% stacks, a new runtime field the engine layer keeps
+from the stats system's `enemy_speed_mul`), clamp AFTER all of it. Bursts: begin_burst(mult,
+ticks) clamps the duration to 180 ticks (3.0 s) and the per-tick speed to burst_ceiling x
+9.0, so overtime cannot push a burst past 9.0 either. Vertical easing stays in
+rt.move_toward at 2.0 u/s, never multiplied (D-068 unchanged).
+WHY (gameplay reason): one code path for "how fast may this body move" means no Wave-3
+behavior can reintroduce the unbeatable-chaser bug by forgetting one multiplier in the chain.
+
+### D-T071-2 - The SR-5 overflow becomes tempo_mul, floored at the conversion (T-071).
+FloatBody exposes `tempo_mul` = raw/clamped from the PURSUIT path (a burst rides on top of
+it and has its own bound), clamped to [1.0, 1/0.6]; `api.tempo_ticks(base_ticks)` divides a
+cycle by it and never returns below ceil(0.6 x base) - the floor lives at the conversion so
+every behavior reads the same bounded value, and returns the base unchanged while
+tempo_mul <= 1.0. Checked: overtime tier 8 + the +8%/stack speed curse x 3 leaves the
+6.75 u/s body at exactly 6.75 u/s with its 120-tick cycle at 72 ticks (1.2 s).
+WHY: overtime, curses and speed stacks must keep biting when the speed clamp saturates, or
+late-run difficulty silently disappears behind the ceiling.
+
+### D-T071-3 - stack_phase is the one stagger arithmetic; spawn step (c) separation bug fixed (T-071).
+`stack_phase(cycle, k, n) = cycle x k / n` (static, unit-agnostic); `_spawn_one` derives both
+`anim_t` and a new `phase_ticks` row field from it instead of inline arithmetic (same values
+T-027 produced). Copy separation was already D-056-ordered with the 30 u rule; while testing
+the fallback cascade (nook -> lane -> round-trip, 3 copies) the step (c) loop turned out to
+check `min_sep` against the PLAYER position instead of the excluded copies - a 2-copy plan
+with no anchors could land both 5 u apart at the far end of the level. Fixed to compare
+against the exclude list (a bug fix, never a weakening; the T-027 tests stay green).
+WHY: SR-3's rhythm is the point of stacking - copies that clump are one blob with two HP bars.
+
+### D-T071-4 - [CONTESTABLE] - Volley reading: start-to-start 45 ticks, balls 9 apart, remainder on the last volley (T-071).
+D-064 says "volleys of at most 3 balls, 0.15 s apart, consecutive volleys separated by 0.75 s
+(45 ticks)" but not measured from what to what. Implemented in the generic `volley_plan` /
+`VolleyClock`: balls inside a volley 9 ticks apart (0.15 s - matches the documented "3 balls
+over 0.30 s"), volleys start-to-start exactly 45 ticks apart (one full jump of cadence, so
+"one jump per volley" stays the correct play; the gap between a volley's last ball and the
+next volley's first is then 27 ticks), remainder on the LAST volley (D-064's own 3+1, 3+2,
+3+3+1). A 7-ball burst fires at relative ticks 0, 9, 18, 45, 54, 63, 90.
+CONTESTABLE - the last-ball-to-first reading (gaps of a full 45 between volleys) is equally
+grammatical; the swap is one constant in VolleyClock.
+
+### D-T071-5 - [CONTESTABLE] - SalvoClock: budget from the FIRST tracking tick, restart never resets, expires ON tick 360 (T-071).
+D-064: one salvo (tracking including every restart after a broken lock, plus the descent)
+lasts at most 360 ticks "from its first tracking tick". Implemented as the generic
+`SalvoClock` the Wave-3 launcher behavior keeps in its row: `start()` only initializes when
+not already active (a restart keeps the budget), `tick()` returns false from the 360th tick
+on and sets `expired`, and expiry is harmless - the caller stops tracking and descending
+and starts its own 5.0 s pause. CONTESTABLE - "expires by tick 360" could read as "may act
+during tick 360"; the one-off difference is a single tick, the harness (T-075) will not
+feel it, and "at most 360 ticks of tracking" reads as the tighter bound.
+
+### D-T071-6 - [CONTESTABLE] - Projectiles report where and why they ended (T-071).
+`_step_projectiles` now appends a `projectile_end` event {"cause": "solid"|"life"|"hit",
+position, tick} for every dying projectile (T-027 removed them silently). No new blocking
+code: a launch pad's tiles are tile slabs in the collision world, so the existing
+point-in-column check already stops a descending missile on the pad slab [top-1, top] -
+proven by test_ranged.gd (a missile over a 4 u pad ends at y in [3, 4], the same descent
+over flat ground ends at y in [-1, 0]).
+CONTESTABLE - no document names the event; the view needs the detonation point for the
+explosion flash, and tests need to observe "detonates on the pad" without guessing
+positions.
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
