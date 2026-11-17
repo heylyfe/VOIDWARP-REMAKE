@@ -45,6 +45,10 @@
       "type": "string",
       "$comment": "one-line counter-play, shown on the lobby altar panel; from DESIGN.md section 5"
     },
+    "contact_kill": {
+      "type": "boolean",
+      "$comment": "D-T027-5 opt-out: false for the one enemy whose body contact never kills (thicc ben, T-032)"
+    },
     "id": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9_]*$"
@@ -59,6 +63,10 @@
     },
     "name": {
       "type": "string"
+    },
+    "preferred_kind": {
+      "type": "string",
+      "$comment": "spawn anchor kind; \"none\" skips (a) and (b) - the initial position is fallback (c) (DESIGN.md section 5; thicc ben, T-032)"
     },
     "script": {
       "type": "boolean",

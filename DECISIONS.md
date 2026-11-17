@@ -2713,6 +2713,164 @@ layer when that curse's ticket lands, without a behavior edit. The cue (36) and 
 (165) stay constants: no document permits lengthening or shortening them.
 WHY: a curse that edits a behavior constant would break the moment the curse shipped;
 a curse that edits cfg is the data pass working as designed.
+### D-T-032-1 - [CONTESTABLE] thicc ben's touch re-trigger is cooldowned at 30 ticks (T-032).
+
+DECISION (T-032): a player standing inside ben's body is ejected/blurred/belled at most once
+per 30 ticks (0.5 s) per player, kept on the row as `touch_cooldown`. ENEMIES.md and §5.3
+state the touch effect but no re-trigger cadence; with no cooldown the 60 Hz overlap re-fires
+the push, the blur, the bell, the chain_reset and the cleanse EVERY tick the player stands in
+the body (event spam, chain_reset spam, a permanent vy = 18 u/s pin). WHY 30: the spec's own
+0.5 s unit (the lock lead and the chime tail are both 0.5 s). No document states any cadence;
+[CONTESTABLE] if the owner wants a different rhythm.
+
+### D-T-032-2 - [CONTESTABLE] the 13.35 s teleport interval is not shortened by overtime or tempo (T-032).
+
+DECISION (T-032): ben's cycle stays the §5.3 binding 801 ticks at every overtime tier and under
+every curse; ben attaches no FloatBody (his cfg carries no base_speed) and SR-5 tempo overflow
+has no cycle to shorten. Overtime's "enemy cooldowns -5% per tier" is generic language; §5.3's
+"Every 13.35 s" is the binding number this ticket's test asserts within ±1 tick. Quarter Chimes
+(min_level 4, "ben's teleport interval 13.35 → 9 s") exists in the curse list precisely as the
+sanctioned interval knob. [CONTESTABLE]: one could read the overtime cooldown cut into the
+interval; that reading makes the ±1-tick assertion on a bare 13.35 s wrong at tier >= 1.
+
+### D-T-032-3 - [CONTESTABLE] the ben-ring cleanse radius is horizontal (XZ) distance (T-032).
+
+DECISION (T-032): "thicc ben's ring cleanses glitched tiles within 8 u" (§5.8, toucher
+paragraph; T-083 anim block attack_ring: "a ring wave expands to 8 u (the cleanse radius) in
+18 ticks") reads as XZ distance from ben's feet row to the tile centre <= 8.0 u. The ring is a
+horizontal wave (the attack_ring rock is a spin around the vertical axis), so the cleanse plane
+is the ring plane. [CONTESTABLE]: 3D distance is a one-line change if the owner rules it.
+
+### D-T-032-4 - §12 API extension: api.eject_player announces ben's touch (T-032).
+
+DECISION (T-032): the section 12 Enemy API gains `api.eject_player(player, why, blur_ticks)`.
+It appends exactly two events to the runtime's events array (the same array step() returns):
+`{"e": "chain_reset", "why": why, "tick": tick, "player": index}` and
+`{"e": "screen_blur", "ticks": blur_ticks, "tick": tick, "player": index, "source": <id>}`.
+WHY: the section 12 surface has no emit channel for a non-kill announcement, and ben's touch
+is canonically chain-breaking (data/economy.json gold_phase.chain.break_events lists
+`thicc_ben_eject`; DESIGN.md 3.2) with a player-side blur of 180 ticks (T-083 anim block,
+binding). `sim/mines.gd` emits chain_reset into the same events array from sim code, so the
+engine caller's consume path (scan events, call economy.break_chain(why)) is unchanged; the
+`why` string is DATA owned by economy.json's whitelist, never code. Additive only: no existing
+method, event shape or consumer changes; no content id is named. The engine caller wires
+screen_blur to the HUD blur overlay (view/hud/screen_blur.gd, T-032).
+
+### D-T-032-5 - §12 API extension: api.cleanse_glitched_within removes glitched tiles in a radius (T-032).
+
+DECISION (T-032): the section 12 Enemy API gains `api.cleanse_glitched_within(pos, r) -> int`:
+it deletes from `world["glitched"]` every key whose tile centre (x + 0.5, z + 0.5, XZ) sits
+within `r` u of `pos` (D-T-032-3 axis), returns the number removed, and appends
+`{"e": "glitched_cleanse", "count": n, "r": r, "tick": tick, "x": pos.x, "z": pos.z}` to the
+events array. WHY: §5.8 (toucher) states "thicc ben's ring cleanses glitched tiles within
+8 u" and the T-083 anim block draws the ring expanding to exactly 8 u; no closed-surface path
+could delete a glitched tile, so the promise was unimplementable. Additive only; no content id
+is named (the caller passes the radius).
+
+### D-T-032-6 - nearest_player's return gains vx, vy, vz (T-032).
+
+DECISION (T-032): `rt.nearest_player(pos)` now also returns the queried player's
+`vx`, `vy`, `vz`. §5.3 locks the destination at smoke start as "player position + velocity x
+0.5 s"; the section 12 API returns a position but no velocity, so the lock was uncomputable
+through the closed surface. Additive: every existing reader reads only index/dist/x/y/z.
+
+### D-T-032-7 - enemy.schema.json gains OPTIONAL top-level behavior / counter_play / tell (T-032).
+
+DECISION (T-032): `core/schemas/enemy.schema.json` gains three optional string properties,
+`behavior`, `counter_play`, `tell` (the file keeps `additionalProperties: false`; nothing becomes
+required, no existing key changes). WHY: the lobby adversary panel (view/lobby/antechamber.gd)
+reads exactly `sheet.get("behavior")` and `sheet.get("counter_play")` off the parsed enemy.json
+to fill the ENEMY bay panel - with the old schema the keys were refused at boot, so every panel
+would have printed "Behavior: TBD (enemy wave pending)". The ticket's deliverable 1 requires the
+counter-play line and the tell line to live in enemy.json. This is additive schema growth, not
+a weakened check; the registry still refuses any file violating the remaining shape.
+
+### D-T-032-8 - [CONTESTABLE] ben's stats carry pursuit_ceiling = burst_ceiling = 0.0 and no base_speed (T-032).
+
+DECISION (T-032): enemy.json's stats block records `pursuit_ceiling: 0.0` and
+`burst_ceiling: 0.0` and NO `base_speed` (so the runtime attaches no FloatBody). The ticket
+asks for both ceilings; no document states values for a body that never pursues (ben teleports;
+the eject is the only motion in his kit). 0.0 is the honest "no pursuit" value - under SR-5's
+clamp it would cap horizontal speed at 0 u/s, which is exactly what ben's body does - and it is
+never exercised, because FloatBody is attached only when cfg carries `base_speed`. If a real
+number is ever wanted, this row is the one to change. [CONTESTABLE].
+
+### D-T-032-9 - [CONTESTABLE] ben's teleport cycle counts from on_spawn, not from level start (T-032).
+
+DECISION (T-032): `row["cycle_t"]` starts at 0 in on_spawn; the first telegraph begins at
+cycle_t 726 (13.35 s - 1.25 s) and the first arrival lands at cycle_t 801 (13.35 s after spawn).
+§5.3 gives the interval but no phase origin; level start would make the spawn tick (360, or 120
+under Early Bird) leak into the enemy's own cadence. The spawn is the enemy's birth; its clock
+starts there. [CONTESTABLE]: anchoring to level start is a two-line change.
+
+### D-T-032-10 - [CONTESTABLE] telegraph kind "teleport", circle r = 1.2 u at the locked point (T-032).
+
+DECISION (T-032): ben's smoke posts a telegraph to the runtime via api.telegraph with
+`kind = "teleport"`, `shape = {"shape": "circle", "cx", "cz", "r": 1.2}` and `ticks = 75`.
+r = the T-083 anim block smoke `width_u` (1.2 u). No y band (the column spans the body's
+height; the arbiter's nearest-point shape check still applies on XZ). Known and recorded, not
+fixed here: the runtime never decrements telegraph entries (D-T072-4's recorded gap), so the
+entry persists in rt.telegraphs; ben declares NO arbiter block and yields to nothing (SR-4
+names only address me and gin), so the persistent entry is inert for every gate in the sim.
+Fixing the runtime's telegraph lifetime is a shared-sim change beyond this ticket.
+
+### D-T-032-11 - [CONTESTABLE] lock break is measured 3D from the locked point to the player's feet (T-032).
+
+DECISION (T-032): at arrival, `dist3d(lock_point, player feet) >= 4.0 u` marks
+`row["lock_broken"] = true` (ben still appears AT the locked point - "ben appears where they
+were"); otherwise false. §5.3 states the 4 u threshold but not the metric; 3D-to-feet is the
+D-T072-1 convention the rest of the sim uses for body-to-player distance (and prevents a
+pure-height approach from reading as "far" while standing on the smoke). [CONTESTABLE]: XZ is a
+one-line change.
+
+### D-T-032-12 - the chain_reset reason for ben's touch is the data whitelist string (T-032).
+
+DECISION (T-032): ben emits `chain_reset` with `why = "thicc_ben_eject"` verbatim -
+data/economy.json gold_phase.chain.break_events and core whitelist both carry exactly that
+string (DESIGN.md 3.2). Not a design choice, recorded so nobody renames it in the behavior.
+`scripts`/views/economy consume it; this ticket does not touch any of them.
+
+### D-T-032-13 - [CONTESTABLE] ben's touch has no blur "strength" state in the sim; the strength curve lives in the view (T-032).
+
+DECISION (T-032): the sim emits one `screen_blur` event with `ticks = 180`; the strength curve
+(1.0 from tick 0..119, linear 1 -> 0 over ticks 120..179) is view-side math in
+view/hud/screen_blur.gd (`strength_for(elapsed_ticks)`), binding from the T-083 anim block's
+player-side note. The sim tracks only `row["blur_ticks_left"]` as a cooldown-adjacent counter
+for tests; it never scales movement or damage. WHY: the blur is a render effect; the sim
+announces, the view renders (DESIGN.md 13/14).
+
+### D-T-032-14 - enemy.schema.json gains OPTIONAL top-level contact_kill (T-032).
+
+DECISION (T-032): `core/schemas/enemy.schema.json` gains one optional boolean, `contact_kill`
+(default true semantics at the runtime). WHY: the D-T027-5 opt-out flag is read by
+`enemy_runtime.gd` from the cfg top level (`cfg.get("contact_kill", true)`) and thicc ben is
+the one enemy whose body contact never kills (DESIGN.md 5.3 / KILL RULE's third listed
+non-killing effect); the closed schema previously refused the key at boot, so the data could
+not express D-T027-5's own opt-out. Additive, optional, one key; the registry still refuses
+everything else the old shape refused. (T-032 also extends the same schema with OPTIONAL
+`behavior` / `counter_play` / `tell` - see D-T-032-7.)
+
+### D-T-032-15 - world["enemies"] mirror back-reference + sync_body_mirror for instant repositions (T-032).
+
+DECISION (T-032): the runtime now stores `row["body_mirror"]` = the exact dictionary it
+appended to `world["enemies"]` at spawn (same reference), and gains `sync_body_mirror(row)`
+which copies row x/y/z/hit-radius into that dictionary in place; the Api exposes it as
+`api.sync_body()`. WHY: the mirror is written once at spawn and never again - movers update
+only the row - so a TELEPORT (ben's whole kit) would leave the safe-tile distance check (6 u)
+and the D-073 dais body-push reading the position ben left, not the one he occupies. Entries
+keep the exact {x, y, z, r} shape every reader expects; no reader changes. Floaters keep the
+old behavior (callers there don't sync); only instant repositioning uses this.
+
+### D-T-032-16 - `preferred_kind: "none"` is the additive sentinel for DESIGN.md's `none` rows (T-032).
+
+DECISION (T-032): `pick_spawn_tile` treats `preferred_kind == "none"` as "skip (a) AND (b),
+straight to fallback (c)" (implemented by extracting step (c) into `_pick_round_trip`, called
+by both paths). `""` keeps the merged T-027 semantics (skip (a); still run (b)) that
+test_spawn_rule.gd pins. DESIGN.md section 5 states: "`none` means the enemy has no preferred
+anchor kind: it skips (a) and (b). Ben's initial position is fallback (c)"; the merged runtime
+could not express that row. The conflict is parked as PARKED.md row 5 - test_spawn_rule.gd is
+merged T-027 and was not edited. enemy.json carries `"preferred_kind": "none"`; the schema
+gains the optional string with the same meaning documented.
 
 ## Handover log
 

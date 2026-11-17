@@ -1,0 +1,40 @@
+{
+  "id": "thicc_ben",
+  "name": "thicc ben",
+  "min_level": 1,
+  "max_votes": 2,
+  "vote_effect": "+1 ben",
+  "anchor_kinds": [],
+  "stats": {
+    "world_height": 4.0,
+    "hit_diameter": 1.2,
+    "pursuit_ceiling": 0.0,
+    "burst_ceiling": 0.0,
+    "teleport_interval_s": 13.35,
+    "teleport_interval_ticks": 801,
+    "telegraph_ticks": 75,
+    "chime_tail_ticks": 30,
+    "lock_lead_s": 0.5,
+    "lock_break_dist": 4.0,
+    "blur_ticks": 180,
+    "blur_tail_ticks": 60,
+    "eject_speed": 18.0,
+    "ring_ticks": 18,
+    "cleanse_radius": 8.0,
+    "touch_cooldown_ticks": 30,
+    "apex_u": 5.0625,
+    "audio": {
+      "teleport_chime": "thicc_ben_chime",
+      "touch_bell": "thicc_ben_bell"
+    },
+    "tbd_audio": true,
+    "tbd_art": true
+  },
+  "sprites": "res://content/enemies/thicc_ben/sprites.json",
+  "script": true,
+  "contact_kill": false,
+  "preferred_kind": "none",
+  "behavior": "teleports to the closest player every 13.35 s; touch blurs the screen 3.0 s and launches you 18 u/s upward; never kills",
+  "counter_play": "be 4+ u from the smoke when it clears (keep moving, or steer the 18 u/s launch mid-air)",
+  "tell": "Westminster bongs 0.5 s before he lands; black smoke stands at the destination 1.25 s ahead"
+}
