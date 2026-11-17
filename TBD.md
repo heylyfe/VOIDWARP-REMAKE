@@ -13,7 +13,7 @@ wired in full, the entry is marked `"tbd": true` in its JSON, and the row appear
 | 6 | T-016 | YOU?! sprites - REAL ART (`tools/art/you.gd`, 2026-11-17) | Image 8 present since the art wave; the module derives one frame per anim-block state | none - done; rebuild = rerun `tools/godot/godot.exe --headless --path game --script res://tools/art/you.gd` |
 | 7 | T-016 | gift Larper sprites - REAL ART (tools/art/gift_larper.gd, 2026-11-17) | Image 9 `tripine.png` present (corners already alpha 0; near-black body needed an art-side grade to clear the fog rule) | done; rebuild = rerun `tools/godot/godot.exe --headless --path game --script res://tools/art/gift_larper.gd` |
 | 8 | T-016 | toucher sprites - LANDED (T-ART): 17 real frames from `toucher.jpeg` / `glitchedground.jpeg` (all body states + 5 floor decals) | Images 10/11 landed via game/tools/art/toucher.gd | none - real art in game/content/enemies/toucher/sprites/; `"tbd": false` |
-| 9 | T-016 | seal sprites - all frames TBD | Image 12 `babehseal.webp` absent | drop the PNG in, rebuild |
+| 9 | T-016 | seal sprites - REAL ART (2026-11-17, `game/tools/art/seal.gd`) | Image 12 `babehseal.webp` present; the shared corner flood fill cannot cut out this photo (background is an opaque blue-grey gradient), so the art module owns the cutout (per-column gradient model + luminance floor + largest component + seeded fluff fringe); all five anim-block states ship distinct derived frames | none - sealed (D-ART-SEAL-1) |
 | 10 | T-016 | address me sprites - all frames TBD | Images 13/14 (`address me elephant.png`, `explosionsffect.jpg`) absent | drop both PNGs in, rebuild |
 | 11 | T-016 | Claude sprites - all frames TBD | Image 15 `claudelogo.png` absent (clawd Crab plushie source unfetched -> TBD) | drop the PNG in, rebuild |
 | 12 | T-016 / T-ART-GIN | gin ichimaru sprites - REAL ART (T-ART-GIN): `idle_00`, `spawn_00`, `telegraph_00`, `launch_00`, `recover_00` | Images 16/17 are present; the shared pipeline cannot cut the opaque sources, so `game/tools/art/gin.gd` owns the frames | none - re-run the module to regenerate; `attack_void_zone` keeps no frames by design (the void zone is VFX) |
@@ -71,7 +71,7 @@ unchanged, fog contrast 3.05-3.87 at 40 u (palette fog; per-biome 4.3+).
 | 9 | gift Larper | `tripine.png` | REAL ART - `game/tools/art/gift_larper.gd` (2026-11-17); frames `cycle_00..04` (5 distinct idle cycle) + `defused_00`; `tbd: false`; fog contrast 3.05-3.87 at 40 u |
 | 10 | toucher | `toucher.jpeg` | LANDED (game/tools/art/toucher.gd; 12 real frames) |
 | 11 | toucher (floor) | `glitchedground.jpeg` | LANDED (game/tools/art/toucher.gd; 5 real decal frames) |
-| 12 | seal | `babehseal.webp` | MISSING -> TBD |
+| 12 | seal | `babehseal.webp` | REAL -> frames derived by `game/tools/art/seal.gd` (2026-11-17): idle_00/01, spawn_00, telegraph_00, dash_00/01, recover_00 |
 | 13 | address me | `address me elephant.png` | MISSING -> TBD |
 | 14 | address me (explosion) | `explosionsffect.jpg` | MISSING -> TBD |
 | 15 | Claude | `claudelogo.png` (+ clawd Crab plushie) | MISSING -> TBD |
