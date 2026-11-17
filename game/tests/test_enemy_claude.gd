@@ -68,8 +68,14 @@ func _tiles_full(extra: Array = []) -> Array:
 
 
 func _level(extra_tiles: Array = []) -> Dictionary:
+	# the runtime's round_trip_set reads 5-element tile rows; world_from_tiles wants
+	# the [x, z, y_hu] triple - pad for the level dict, keep the triple for the world
+	var flat := _tiles_full(extra_tiles)
+	var padded: Array = []
+	for t in flat:
+		padded.append([t[0], t[1], t[2], 0, 0])
 	return {"beacon": [0, 0, 0], "spawns": [[0, 0, 0]], "anchors": [],
-			"tiles": _tiles_full(extra_tiles), "props": [], "pads": []}
+			"tiles": padded, "props": [], "pads": []}
 
 
 # Last Light spent for real, then the arrival state cleared: the fixture is
@@ -217,13 +223,36 @@ func _roster_data(f: Array[String]) -> void:
 		f.append("audio: claude_audio.gd cue names drifted from enemy.json's audio_cues")
 	if AudioScript.play(null, "ui_chime"):
 		f.append("audio: play() with no node must no-op false")
-	# the mirror in the behavior agrees with the json (kiwi/seal cfg-mirror convention)
+	# the mirror in the behavior agrees with the json (kiwi/seal cfg-mirror convention);
+	# JSON parses 4 as 4.0 while the cfg holds the int 4, so the comparison is numeric
 	var mirror: Dictionary = ClaudeEnemy.cfg()
 	for k in mirror.keys():
-		if st.has(k) and str(st[k]) != str(mirror[k]):
-			f.append("mirror: stats.%s = %s, behavior cfg says %s" % [str(k), str(st[k]), str(mirror[k])])
+		if not st.has(k):
+			continue
+		if _vals_agree(st[k], mirror[k]):
+			continue
+		f.append("mirror: stats.%s = %s, behavior cfg says %s" % [str(k), str(st[k]), str(mirror[k])])
 	if str(DeathScript.killer_for("D-CLAUDE")) != "Claude":
 		f.append("data: death.gd maps D-CLAUDE to %s, want Claude" % str(DeathScript.killer_for("D-CLAUDE")))
+
+
+## Numeric-tolerant value agreement: scalars compare as numbers, arrays element-wise,
+## strings (audio cue names, death codes) as strings.
+func _vals_agree(jv: Variant, cv: Variant) -> bool:
+	if jv is Array and cv is Array:
+		var ja: Array = jv
+		var ca: Array = cv
+		if ja.size() != ca.size():
+			return false
+		for i in range(ja.size()):
+			if not _vals_agree(ja[i], ca[i]):
+				return false
+		return true
+	if jv is String or cv is String:
+		return str(jv) == str(cv)
+	if (jv is float or jv is int) and (cv is float or cv is int):
+		return absf(float(jv) - float(cv)) <= 0.000001
+	return str(jv) == str(cv)
 
 
 # ---- SR-5 pursuit (section 5.11: 4.0 u/s, ceiling 0.55 -> 4.95 u/s) -----------
@@ -834,17 +863,27 @@ func _deadline(f: Array[String]) -> void:
 		row["agitation"] = 100.0
 		rt.step(DT)
 	var seen := {"rings": [], "shots": [], "sweeps": []}
-	var marks := {"rings": 0, "shots": 0, "sweeps": 0}
+	var marks := {"rings": [], "shots": [], "sweeps": []}
+	var step_n := 0
 	while float(row["beat_pos"]) < 12.0:
 		row["agitation"] = 100.0
 		rt.step(DT)
-		_absorb_new(seen, marks, row["rings"], "rings", 0)
-		_absorb_new(seen, marks, row["shots"], "shots", 0)
-		_absorb_new(seen, marks, row["sweeps"], "sweeps", 0)
-	# two bars at the Deadline: drums x2 + strings x1 + wind x3, twice
-	_num(f, "deadline rings / 2 bars", float((marks["rings"] as Array).size()), 4.0)
-	_num(f, "deadline shots / 2 bars", float((marks["shots"] as Array).size()), 6.0)
-	_num(f, "deadline sweeps / 2 bars", float((marks["sweeps"] as Array).size()), 2.0)
+		step_n += 1
+		_absorb_new(seen, marks, row["rings"], "rings", step_n)
+		_absorb_new(seen, marks, row["shots"], "shots", step_n)
+		_absorb_new(seen, marks, row["sweeps"], "sweeps", step_n)
+	# two bars at the Deadline: drums x2 + strings x1 + wind x3, twice. Bar 0's
+	# hazards are still live when the window opens (the settle runs pinned through
+	# bar 0), and _absorb_new records them at step 1 - so the evidence of the window
+	# schedule is only the objects BORN inside the window (birth step > 1).
+	var born := {"rings": 0, "shots": 0, "sweeps": 0}
+	for k in ["rings", "shots", "sweeps"]:
+		for m in marks[k]:
+			if int(m) > 1:
+				born[k] = int(born[k]) + 1
+	_num(f, "deadline rings / 2 bars", float(born["rings"]), 4.0)
+	_num(f, "deadline shots / 2 bars", float(born["shots"]), 6.0)
+	_num(f, "deadline sweeps / 2 bars", float(born["sweeps"]), 2.0)
 	# the anim state never rests at the Deadline: the schedule never shows "idle"
 	var saw_idle := false
 	for _i in range(90):

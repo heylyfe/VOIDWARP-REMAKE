@@ -125,7 +125,7 @@ static func cfg() -> Dictionary:
 		"bar_beats": 4,
 		"agitation_rise_per_s": AGITATION_RISE_PER_S,
 		"agitation_max": AGITATION_MAX,
-		"drum_beats": DRUM_BEATS,
+		"drum_beats": [1, 3],                  # spec beats 1 and 3 (DESIGN 5.11); the internal DRUM_BEATS const is 0-indexed
 		"drum_ring_speed_u_per_s": DRUM_SPEED,
 		"drum_ring_max_radius": DRUM_RADIUS,
 		"drum_ring_height": DRUM_HEIGHT,

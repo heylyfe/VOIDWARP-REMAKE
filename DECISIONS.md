@@ -3791,6 +3791,23 @@ framework owns the KILL RULE; the row's diameter is the one lever the behavior l
 holds (D-T030-2 gave cfg hit_diameter the same role at spawn). The test asserts the overlap is
 harmless through tick 30 and lethal at 31+ with code D-CLAUDE.
 
+### D-T040-8 - The Deadline's 6/9/3-vs-4/6/2 gate dispute: the behavior was right, the test's window was contaminated (T-040).
+
+DECISION (T-040): the first gate run read "deadline rings/shots/sweeps / 2 bars: 6/9/3, want
+4/6/2" - exactly one extra deadline bar. A headless probe (rt.step trace over the window) showed
+the behavior exact: with agitation pinned at 100, window beats 4..11 (bars 1-2) fire drums at
+in-bar beats 0 and 2 (4 rings), strings at in-bar 0 (2 sweeps), wind at in-bar 0/1/2 (6 shots) -
+4/6/2, as DESIGN.md section 5.11's "all three attacks every bar" requires. The extras were bar 0's
+own hazards (2 rings / 3 shots / 1 sweep), still live in row["rings"]/["shots"]/["sweeps"] when the
+counting window opened, because the test's settle loop runs pinned through bar 0 and _absorb_new
+counts anything present at step 1. Fixed in the TEST ONLY (test_enemy_claude.gd): _absorb_new now
+receives a real step counter and the assertion counts only objects BORN inside the window (birth
+step > 1). No behavior number moved. Related: the cfg() mirror's "drum_beats" now speaks the
+JSON's 1-indexed spec convention ([1, 3], as DESIGN's "beats 1 and 3" reads and as "wind_shots_beats"
+[1, 2, 3] already did); the internal firing array stays 0-indexed ([0, 2]).
+Also: the JSON-to-cfg mirror comparison is numeric (JSON parses 4 as 4.0; the cfg holds int 4) -
+the JSON was never changed to satisfy a comparison.
+
 ## Handover log
 
 (append one line per session: date, who, what is finished, what is next)
