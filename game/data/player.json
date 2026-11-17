@@ -1,0 +1,95 @@
+{
+  "_doc": "Player constants (DESIGN.md sections 3.1, 4, 5/SR-6; DECISIONS D-050, D-053, D-057, D-059, D-063, D-073). All distances are in u, times in s, speeds in u/s. Values are the spec; sim/controller.gd (T-012) reads this file and nothing else for these numbers. Apex height (2.25 u) is restated from DESIGN.md section 4; jump 12 and gravity 32 are the exact source values. Hungry Void (charge cap 1) is curse data (DESIGN.md section 7.2), deliberately not here.",
+  "units": { "distance": "u", "time": "s", "speed": "u/s" },
+  "shared_kit": {
+    "run_speed": 9.0,
+    "jump_velocity": 12.0,
+    "jump_apex": 2.25,
+    "gravity": 32.0,
+    "coyote_time": 0.10,
+    "jump_buffer": 0.10,
+    "jump_cut_mul": 0.5,
+    "auto_step_up": 0.5,
+    "air_control": 1.0,
+    "source": "DESIGN.md section 4"
+  },
+  "classes": {
+    "dasher": {
+      "dash_distance": 6.0,
+      "dash_time": 0.20,
+      "dash_air_usable": true,
+      "dash_vertical_speed_during": 0.0,
+      "dash_charge_max": 1,
+      "dash_regen": 3.0,
+      "source": "DESIGN.md section 4, [CANON] regen"
+    },
+    "glider": {
+      "glide_fall_speed_cap": 2.0,
+      "glide_horizontal_speed": 10.0,
+      "glide_energy": 3.0,
+      "glide_energy_refill": "on_landing",
+      "source": "DESIGN.md section 4"
+    },
+    "athletic": {
+      "speed_bonus_mul": 1.15,
+      "run_speed": 10.35,
+      "speed_upgrade_strength_mul": 1.5,
+      "double_jump_height_mul": 1.3,
+      "source": "DESIGN.md section 4, [CANON] both multipliers"
+    }
+  },
+  "void_charges": {
+    "start": 2,
+    "max": 2,
+    "fall_cost": 1,
+    "carry_over_levels": true,
+    "respawn_delay": 0.8,
+    "respawn_invulnerability": 1.0,
+    "beacon_entry_restore": 1,
+    "beacon_restore_cap": 2,
+    "safe_tile": {
+      "must_be_solid": true,
+      "must_not_be_glitched": true,
+      "must_clear_hazard_footprints": true,
+      "min_distance_from_enemy_body_or_projectile": 6.0,
+      "revalidated_before_teleport": true,
+      "source": "DESIGN.md section 3.1, D-059"
+    },
+    "history_ring": {
+      "size": 8,
+      "min_stand_time": 0.5,
+      "tile_set": "round_trip_reachable",
+      "fallback": "beacon_dais_spawn_tile",
+      "source": "DESIGN.md section 3.1"
+    },
+    "source": "DESIGN.md section 3.1, D-050, D-063"
+  },
+  "last_light": {
+    "once_per_run": true,
+    "requires_held_charge": true,
+    "min_charges": 1,
+    "does_not_spend_charge": true,
+    "invulnerability": 2.0,
+    "destination": "beacon_dais",
+    "arrival_enemy_push_radius": 8.0,
+    "arrival_enemy_push_to": 8.0,
+    "source": "DESIGN.md sections 3.1, 5; D-053, D-073"
+  },
+  "beacon_entry": {
+    "trigger_radius": 1.5,
+    "restores_barrier_shield": true,
+    "source": "DESIGN.md sections 3 and 3.1"
+  },
+  "ability_lock": {
+    "dasher": "cannot dash; cooldown does not tick",
+    "glider": "cannot start a glide; an active glide ends",
+    "athletic_stride_lock": {
+      "speed_bonus_suspended": true,
+      "speed_upgrade_mul": 1.0,
+      "double_jump_height_mul": 1.0,
+      "run_speed_locked": 9.0,
+      "run_speed_locked_on_glitched_floor": 7.2,
+      "source": "DESIGN.md sections 4 and 5 (SR-6, D-070)"
+    }
+  }
+}
