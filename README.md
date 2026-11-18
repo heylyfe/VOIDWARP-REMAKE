@@ -16,7 +16,7 @@ The world is serious. The enemies are not.
 
 ## Play it
 
-Download `voidwrap_run.exe` from the [latest release](https://github.com/heylyfe/VOIDWARP-REMAKE/releases/latest)
+Download `voidwrap_run.exe` from the [releases page](https://github.com/heylyfe/VOIDWARP-REMAKE/releases)
 and run it. Windows x86_64, single file, no installer and no runtime to install.
 
 | input | action |
