@@ -5,3 +5,10 @@ config_version=5
 
 config/name="VOIDWRAP RUN"
 run/main_scene="res://app/app.tscn"
+
+[rendering]
+
+; macOS universal builds need the ETC2/ASTC variants to exist at all, even to be
+; told not to pack them: Godot refuses an arm64 export while this is off. Only
+; the macOS preset asks for them, so the desktop builds are unchanged.
+textures/vram_compression/import_etc2_astc=true

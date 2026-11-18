@@ -38,6 +38,8 @@ func run() -> Array[String]:
 	_json_contract(f)
 	_anim_block_is_the_source(f)
 	_spawn_tile_rule(f)
+	_fade_in_tile_height(f)
+	_second_fade_in_picks_a_new_tile(f)
 	_deferral(f)
 	_run_cycle(f)
 	_void_zone_kills(f)
@@ -196,6 +198,90 @@ func _spawn_tile_rule(f: Array[String]) -> void:
 	_smoke_behavior(f, rt, api)
 
 
+# The fade-in tile's HEIGHT is the body's y (PARKED row 27's sibling): the contact band
+# runs row y .. y + height_u, so a body left on the spawn height cannot touch a player
+# standing on the platform the 15-25 u rule picked. And the mirror follows the fade-in.
+func _fade_in_tile_height(f: Array[String]) -> void:
+	var tiles: Array = []
+	for x in range(-5, 6):
+		for z in range(-5, 6):
+			tiles.append([x, z, 0])        # flat: every one of them is < 15 u out
+	tiles.append([20, 0, 4])               # top at 2.0 u - inside the 15-25 u window
+	tiles.append([21, 0, 4])               # the farther one: the tile D-072 picks
+	var made := _runtime_with(tiles)
+	var rt = made[0]
+	var row: Dictionary = _gin_row(rt)
+	if str(row.get("id", "")) != "gin":
+		f.append("fade-in tile: no gin row in the runtime")
+		return
+	if absf(float(row["y"]) - 2.0) > 1e-9:
+		f.append("fade-in tile: gin's y is %.2f, want the chosen tile's 2.0 (not the spawn height)"
+				% float(row["y"]))
+	if absf(float(row["x"]) - 21.5) > 1e-9 or absf(float(row["z"]) - 0.5) > 1e-9:
+		f.append("fade-in tile: gin stands at (%.2f, %.2f), want the farthest qualifying tile (21.5, 0.5)"
+				% [float(row["x"]), float(row["z"])])
+	var mirror: Dictionary = row.get("body_mirror", {})
+	if mirror.is_empty():
+		f.append("fade-in tile: the row carries no body mirror (no world[enemies] entry)")
+		return
+	if absf(float(mirror["x"]) - float(row["x"])) > 1e-9 \
+			or absf(float(mirror["y"]) - float(row["y"])) > 1e-9 \
+			or absf(float(mirror["z"]) - float(row["z"])) > 1e-9:
+		f.append("fade-in tile: the body mirror sits at (%.2f, %.2f, %.2f), the row is at (%.2f, %.2f, %.2f)"
+				% [float(mirror["x"]), float(mirror["y"]), float(mirror["z"]),
+					float(row["x"]), float(row["y"]), float(row["z"])])
+
+
+# The 15-25 u tile rule is a property of EVERY fade-in (DESIGN.md: "fades in on a tile
+# 15-25 u from the player"), not of the first one: cycle 2 re-picks against where the
+# player is NOW, and the mirror moves with him.
+func _second_fade_in_picks_a_new_tile(f: Array[String]) -> void:
+	var tiles: Array = []
+	for x in range(0, 40):
+		for z in range(0, 40):
+			tiles.append([x, z, 0])
+	var made := _runtime_with(tiles)
+	var rt = made[0]
+	var ctl = made[1]
+	var row: Dictionary = _gin_row(rt)
+	if str(row.get("id", "")) != "gin":
+		f.append("second fade-in: no gin row in the runtime")
+		return
+	var api := _api_for(rt, row)
+	var first := Vector2(float(row["x"]), float(row["z"]))
+	# the first fade-in completes and the mark starts on the next tick; move the player out
+	# of the announced patch so the void zone cannot end the fixture early
+	_drive(row, api, GinBehavior.SPAWN_TICKS)
+	ctl.x = 39.5
+	ctl.z = 39.5
+	var cooldown := false
+	var back_to_spawn := false
+	for i in range(2400):
+		_drive(row, api, 1)
+		var phase := str(row.get("phase", ""))
+		if phase == GinBehavior.COOLDOWN:
+			cooldown = true
+		elif cooldown and phase == GinBehavior.SPAWN:
+			back_to_spawn = true
+			break
+	if not back_to_spawn:
+		f.append("second fade-in: the cycle never reached a second fade-in (cooldown seen: %s)"
+				% str(cooldown))
+		return
+	var second := Vector2(float(row["x"]), float(row["z"]))
+	if second.distance_to(first) < 1.0:
+		f.append("second fade-in: gin faded in at (%s) again - the tile was chosen once per level"
+				% str(second))
+	var mirror: Dictionary = row.get("body_mirror", {})
+	if mirror.is_empty():
+		f.append("second fade-in: the row carries no body mirror (no world[enemies] entry)")
+		return
+	if absf(float(mirror["x"]) - float(row["x"])) > 1e-9 \
+			or absf(float(mirror["z"]) - float(row["z"])) > 1e-9:
+		f.append("second fade-in: the body mirror sits at (%.2f, %.2f), the row is at (%.2f, %.2f)"
+				% [float(mirror["x"]), float(mirror["z"]), float(row["x"]), float(row["z"])])
+
+
 # The yields_to deferral: with a LIVE address me countdown, gin's strike start
 # defers (the gate answers deferred=true); once the countdown ends, it does not.
 func _deferral(f: Array[String]) -> void:
@@ -245,6 +331,27 @@ func _api_of(rt) -> RefCounted:
 	var row: Dictionary = {"id": "gin", "copies": 1, "cfg": _json()}
 	api.row = row
 	return api
+
+
+## An api bound to a LIVE row, the way the runtime builds one per row per tick: only
+## this binding can reach the row's world["enemies"] mirror through sync_body().
+func _api_for(rt, row: Dictionary) -> RefCounted:
+	var api = EnemyRuntime.Api.new()
+	api.rt = rt
+	api.row = row
+	return api
+
+
+## A runtime over a level built from `tiles` ([x, z, y_hu] rows), one controller.
+func _runtime_with(tiles: Array) -> Array:
+	var w: Dictionary = Util.world_from_tiles(tiles)
+	w["dais"] = [0, 0, 0]
+	var ctl = _ctl(w)
+	var lv: Dictionary = {"beacon": [0, 0, 0], "spawns": [[0, 0, 0]], "anchors": [],
+			"tiles": tiles, "props": [], "pads": []}
+	var rt: RefCounted = EnemyRuntime.new()
+	rt.setup(lv, w, [ctl], 4242)
+	return [rt, ctl]
 
 
 # A gin row in a fresh runtime (the runtime spawns him; the behavior takes it over).

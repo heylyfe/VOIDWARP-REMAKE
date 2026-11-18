@@ -1069,14 +1069,18 @@ def check_level(L):
 
     # ---- H5: mine caps ----
     mines = sum(1 for g in gifts if g["occ"])
+    real = sum(1 for g in gifts if g["occ"] == 0)
     cap = S // 5
     h5 = []
     if mines > cap:
         h5.append("mines %d > S//5 %d" % (mines, cap))
     if level < 5 and mines:
         h5.append("mines %d at level %d < 5" % (mines, level))
-    if S - mines < S - cap:
-        h5.append("real gifts %d < %d" % (S - mines, S - cap))
+    # the spec's third clause (real gifts >= S - S//5) is implied by the cap above, so restating
+    # that inequality can never fail on its own; what is checkable is that the S slots partition
+    # into real gifts and mines - a falsy but non-zero occ flag fails here and nowhere else
+    if real != S - mines:
+        h5.append("real gifts %d != S - mines %d" % (real, S - mines))
     if h5:
         fail("H5: " + "; ".join(h5))
 
@@ -1962,8 +1966,20 @@ def run_harness(a, b, jobs, out_path):
             same_recipe += 1
     sims.sort()
     simpairs.sort(reverse=True)
+    # the draws are ordered pairs drawn with replacement, so one pair arrives twice: (i,j) and
+    # (j,i). Dedupe for the printout only, so every D4/D5 statistic keeps the full draw count.
+    shown = []
+    seen = set()
+    for sp in simpairs:
+        key = (sp[3], min(sp[1], sp[2]), max(sp[1], sp[2]))
+        if key in seen:
+            continue
+        seen.add(key)
+        shown.append(sp)
+        if len(shown) == 5:
+            break
     print("D4 most similar same-level pairs (render these and look, TERRAIN_SPEC 10.3):")
-    for sp in simpairs[:5]:
+    for sp in shown:
         print("   sim=%.3f level=%d seeds=%d,%d" % (sp[0], sp[3], sp[1], sp[2]))
     p99 = sims[(99 * (len(sims) - 1)) // 100] if sims else 0.0
     high = sum(1 for v in sims if v >= 0.60)
@@ -1980,7 +1996,6 @@ def run_harness(a, b, jobs, out_path):
 
     # D6: within-level room repetition (per generated level, D6 share computed in worker)
     d6_shares = [r["d6_share"] for r in results]
-    d6_mean = sum(d6_shares) / len(d6_shares) if d6_shares else 0.0
     d6_mean = sum(d6_shares) / len(d6_shares) if d6_shares else 0.0
     dist_records.append({"id": "D6", "passed": d6_mean <= 0.10,
                          "measured": round(d6_mean, 4), "threshold": 0.10})

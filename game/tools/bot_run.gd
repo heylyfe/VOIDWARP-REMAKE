@@ -1067,8 +1067,13 @@ static func _jump_arc(ctl, w, wp_x: float, wp_z: float, rt) -> Dictionary:
 				grounded = bool(r["grounded"])
 				# enemy-aware arcs: an arc that flies through a contact-kill body's
 				# closing path is refused. The chaser heads for the JUMPER, so lead it
-				# along its line to the landing point at its own base_speed.
+				# along its line to the landing point at its own base_speed. A refused
+				# arc refuses THIS candidate only: the scan goes on to the next
+				# (k, v_max) pair (an empty return here abandoned all 35 candidates on
+				# the first clip, so one body in flight read as "no arc lands on a
+				# tile", which banned a good edge for 300 ticks - PARKED.md row 28).
 				if not grounded and rt != null:
+					var clipped := false
 					for e2 in rt.enemies:
 						if not bool(e2.get("contact_kill", true)):
 							continue
@@ -1084,7 +1089,10 @@ static func _jump_arc(ctl, w, wp_x: float, wp_z: float, rt) -> Dictionary:
 						var eh2 := float(e2.get("height_u", 1.0))
 						if dxE * dxE + dzE * dzE < 1.1 * 1.1 \
 								and y < ey2 + eh2 + 0.2 and y + 1.8 > ey2 - 0.2:
-							return {}
+							clipped = true
+							break
+					if clipped:
+						break
 				if grounded:
 					var p = {"x": x, "y": y, "z": z}
 					var ti := _tile_under_sim(w, p)
@@ -1159,6 +1167,10 @@ static func _replan(mem: Dictionary, lv, ctl, cur: int, w2, gtiles: Array, adj: 
 	var goal_slot := -1
 	var goal_kind := "gift"
 	var rm: Dictionary = mem.get("menace", {})
+	# the goal the caller is still walking: a replan that finds nothing must not erase
+	# it (the fall-through below is the promise - "keep the goal markers")
+	var prev_tile := int(mem["goal_tile"])
+	var prev_slot := int(mem["goal_slot"])
 	if bool(lv.beacon.is_open()):
 		goal_kind = "beacon"
 		var b: Array = L.get("beacon", [0, 0, 1])
@@ -1169,7 +1181,7 @@ static func _replan(mem: Dictionary, lv, ctl, cur: int, w2, gtiles: Array, adj: 
 				# the beacon is behind a banned edge: the beacon is the level's only
 				# way out, so lift the bans and try the full graph
 				mem["banned"] = {}
-				rb = _route(adj, gtiles, cur, {})
+				rb = _route(adj, gtiles, cur, {}, rm)   # the lift keeps the chaser cost
 			if int((rb["dist"] as PackedInt32Array)[goal_tile]) >= 0:
 				mem["path"] = _path_to(rb["parent"], cur, goal_tile)
 				mem["path_i"] = 0
@@ -1186,7 +1198,7 @@ static func _replan(mem: Dictionary, lv, ctl, cur: int, w2, gtiles: Array, adj: 
 			mem["banned"] = {}
 			mem["air_released"] = {}
 			mem["lift_at"] = int(lv.tick) + 300
-			route = _route(adj, gtiles, cur, {})
+			route = _route(adj, gtiles, cur, {}, rm)   # the lift keeps the chaser cost
 			pick = _nearest_gift(lv, mem, route["dist"], true)
 		goal_tile = int(pick[0])
 		goal_slot = int(pick[1])
@@ -1200,6 +1212,14 @@ static func _replan(mem: Dictionary, lv, ctl, cur: int, w2, gtiles: Array, adj: 
 	# airborne over the void, or nothing reachable: keep the goal markers, clear the
 	# path; the caller stands (or steers to a still-valid goal) instead of beelining
 	# over the void
+	# -1 markers are NOT "keep the goal markers": _goal_stale reads goal_slot < 0 as
+	# stale for ever, so the router re-ran the whole Dijkstra EVERY tick instead of
+	# every REPLAN_TICKS, and the follower refused to move (goal_slot < 0) until the
+	# 300-tick lift cooldown ran out. Restore the markers while the goal still exists.
+	if goal_kind == "gift" and goal_tile < 0 and prev_slot >= 0 \
+			and not lv.gifts.collected(prev_slot):
+		goal_tile = prev_tile
+		goal_slot = prev_slot
 	mem["path"] = []
 	mem["path_i"] = 0
 	mem["goal_kind"] = goal_kind
@@ -1407,6 +1427,7 @@ static func _routing(mem: Dictionary, lv, ctl, rt, w, w2, gtiles: Array, adj: Ar
 ## Contact-kill bodies within AVOID_DIST also bend the bot's heading away from them
 ## (D-FIX-A3-2) - the router cannot see them, and a fast player outruns a chaser.
 const HURDLE_DIST := 3.0
+const HURDLE_HOLD := 22   # ticks of JUMP to hold: past the 0.375 s apex (vy 12 / gravity 32)
 const AVOID_DIST := 3.0
 
 static func _bot_input(mem: Dictionary, lv, rt, ctl, w, w2, gtiles: Array, adj: Array,
@@ -1454,6 +1475,15 @@ static func _bot_input(mem: Dictionary, lv, rt, ctl, w, w2, gtiles: Array, adj: 
 			var closing := (evh.x * dxh + evh.y * dzh) / sqrt(maxf(d2h, 1e-8)) > 0.5
 			if evh == Vector2.ZERO or closing:
 				buttons |= BUTTON_JUMP
+				# hold it: a one-tick press is jump-cut (jump_cut_mul 0.5, applied on
+				# the tick after the press, before gravity) to a ~0.51 u apex - never in
+				# DESIGN.md section 5.1's 1.5 u window (0.16-0.59 s of the jump) and
+				# never above the body's own height_u, so enemy_runtime.gd body_contact
+				# (feet above row.y + height_u) never breaks and the bot hops INTO the
+				# cat - the "in-place hop did not clear it" of the seed 2/28 trace.
+				# HURDLE_HOLD ticks puts the release at vy ~0.3 u/s, i.e. at the apex,
+				# so the cut only re-scales that and the arc is the full ~2.2 u one.
+				mem["jump_hold"] = maxi(int(mem["jump_hold"]), HURDLE_HOLD)
 				# keep the routing move: the leap carries momentum OVER the body
 				if move != Vector2.ZERO and not _dir_has_support(w, ctl, move.normalized()):
 					move = Vector2.ZERO   # forward line runs off a ledge: hop in place

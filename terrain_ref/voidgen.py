@@ -748,7 +748,8 @@ def try_grow(W, rng, sock, arm, trait, tn, arch_count, state, drift):
         if shape not in W.shapes:
             break
     mir = rng.range(2)
-    e = socks[rng.range(len(socks))]
+    entry = rng.range(len(socks))
+    e = socks[entry]
     rot = ((d + 2) - xdir(e[2], mir, 0) + 4) % 4
     # junction step: the platform sits 0..2 HU above or below the walkway's end (section 6.3 step f)
     if gentle:
@@ -808,10 +809,13 @@ def try_grow(W, rng, sock, arm, trait, tn, arch_count, state, drift):
     state["since"] = 0
     term_roll = rng.chance(tn["term_pct"], 100)
     terminal = state["placed"] >= state["target"] or term_roll
+    # drop the entry socket by index (TERRAIN_REF porting rule 8): a value compare would also
+    # drop a second socket that happens to be equal, which the port cannot express
     out = []
-    for s in socks:
-        if s is e:
+    for si in range(len(socks)):
+        if si == entry:
             continue
+        s = socks[si]
         sx, sz = xform(s[0], s[1], mir, rot)
         sd = xdir(s[2], mir, rot)
         out.append([sx + ox, sz + oz, sd, s[3] + oy, rid, s[4], 1 if sd == d else 0])

@@ -83,6 +83,9 @@ class Behavior:
 	func tick(row: Dictionary, api, dt_ticks: int) -> void:
 		var st: Dictionary = _stats(row)
 		row["st_t"] = maxi(int(row["st_t"]) - dt_ticks, 0)
+		# the aim entry is aged before the state machine, so it reaches 0 exactly on the
+		# tick the strike lands (D-T072-4: the entry's lifetime is its caller's)
+		_age_aim(row, api, dt_ticks)
 		_run_state(row, api, st, dt_ticks)
 		_run_relocation(row, api, st, dt_ticks)
 		if str(row["st"]) == "idle":
@@ -162,9 +165,35 @@ class Behavior:
 		row["st_t"] = _windup(st)
 		# the wind-up telegraph IS the audio + flash cue (ENEMIES.md: an audio cue
 		# precedes each burst; anim block 1.4: red rim flash + aim line). The aim line
-		# is not a hazard: no hazard footprint, only the cues ride the event.
-		api.telegraph("aim", {"shape": "aim", "r": -1.0, "fx": float(row["x"]),
-				"fy": float(row["y"]) + MUZZLE_UP, "fz": float(row["z"])}, _windup(st))
+		# is not a hazard: no hazard footprint, only the cues ride the event. The
+		# footprint is a radius-0 circle at the muzzle, the seal's dash_line idiom
+		# (D-T-038-2) - an "aim" kind with an absent radius makes point_in_shape
+		# default the centre to the queried point and match EVERY point in the level.
+		# `owner` keys the entry to this row's copy so the aging below (and no sibling's)
+		# reaches it; unknown shape keys are ignored by every consumer.
+		row["aim_tg"] = "%s#%d" % [str(row["id"]), int(row.get("copy_index", 0))]
+		api.telegraph("aim", {"shape": "circle", "cx": float(row["x"]),
+				"cz": float(row["z"]), "r": 0.0, "fx": float(row["x"]),
+				"fy": float(row["y"]) + MUZZLE_UP, "fz": float(row["z"]),
+				"owner": str(row["aim_tg"])}, _windup(st))
+
+	# This row's own aim entry, aged here: enemy_arbiter.gd's contract is that a telegraph
+	# entry lives while its ticks > 0 and that "entry lifetime is the caller's" (the runtime
+	# only appends - rt.telegraphs is never pruned), so an un-aged aim row stays live for the
+	# whole level and its footprint vetoes address me's no_targeted_telegraph. Matching on the
+	# `owner` token also keeps one copy's tick() from aging a sibling's entry (every copy of
+	# an enemy shares source = row["id"]).
+	func _age_aim(row: Dictionary, api, dt_ticks: int) -> void:
+		var tok := str(row.get("aim_tg", ""))
+		if tok == "":
+			return
+		for t in api.rt.telegraphs:
+			if str(t.get("kind", "")) != "aim":
+				continue
+			var shape: Dictionary = t.get("shape", {})
+			if str(shape.get("owner", "")) != tok:
+				continue
+			t["ticks"] = maxi(int(t.get("ticks", 0)) - dt_ticks, 0)
 
 	# ---- ball release ----------------------------------------------------------------------
 
@@ -216,6 +245,10 @@ class Behavior:
 		row["x"] = float(pick["x"])
 		row["y"] = float(pick["y"])
 		row["z"] = float(pick["z"])
+		# the relocate is an instant reposition (up to a 12 s move at once), so the body
+		# mirror follows it (PARKED row 27): no_enemy_body_within and the D-059 safe tile
+		# read world["enemies"], never this row.
+		api.sync_body()
 		row["anchor_i"] = int(pick["index"])
 		row["anchor_kind"] = str(pick["kind"])
 		row["st"] = "spawn"                  # the relocate-in fade (anim block 1.4)

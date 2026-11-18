@@ -44,6 +44,14 @@ extends Node3D
 # signal level_completed()  - emitted exactly once, at the end of the tick in which
 # the beacon is entered (the sim's level_complete event fires on the same tick).
 # (The APP-LOOP tick order lives in step()'s own doc comment below.)
+#
+# signal run_over(info)  - emitted exactly once, at the end of the tick in which the
+# controller reports dead: a third void fall, an enemy contact or a tripmine - every
+# kill path lands on ctl.dead. DESIGN.md section 3: "Death ends the run." info is
+# sim/death.gd's screen_data() row (code / killer / level / purse) plus the charges
+# held at death, i.e. the keys view/hud/run_over.gd reads. A dead run never ticks
+# again: step() returns before the sim once the latch is set, so the app owns the
+# frame from there on (death black-out -> run-over screen).
 
 const VoidGenScript := preload("res://terrain/voidgen.gd")
 const CollisionScript := preload("res://sim/collision.gd")
@@ -54,6 +62,11 @@ const EnemyRuntimeScript := preload("res://sim/enemy_runtime.gd")
 const BillboardScript := preload("res://view/billboard.gd")
 const FogEnvScript := preload("res://view/fog_env.gd")
 const HudScript := preload("res://view/hud/hud.gd")
+# The core-loop views (DESIGN.md section 3): the black/gold gifts, the tripmine tell and
+# the beacon with its progress ring + light column. Nothing under app/ drew them.
+const GiftsViewScript := preload("res://view/gifts_view.gd")
+const TripmineViewScript := preload("res://view/tripmine_view.gd")
+const BeaconViewScript := preload("res://view/beacon_view.gd")
 const ContentApiScript := preload("res://core/content_api.gd")
 const IntermissionScript := preload("res://sim/intermission.gd")
 const VoidRngScript := preload("res://terrain/void_rng.gd")
@@ -64,8 +77,10 @@ const LevelStateScript := preload("res://sim/level_state.gd")
 const GiftsScript := preload("res://sim/gifts.gd")
 const MinesScript := preload("res://sim/mines.gd")
 const EconomyScript := preload("res://sim/economy.gd")
+const DeathScript := preload("res://sim/death.gd")
 
 signal level_completed()
+signal run_over(info: Dictionary)
 
 const DT := 1.0 / 60.0
 const FALLBACK_CLASS := "dasher"   # D-APPFLOW-6 when the CLASS bay somehow resolved to ""
@@ -78,12 +93,17 @@ var rig: Node3D = null
 var camera: Camera3D = null
 var fog: WorldEnvironment = null
 var hud: Control = null
+# The core-loop views: built in build(), driven from step(), freed by teardown().
+var gifts_view: Node3D = null
+var tripmine_view: Node3D = null
+var beacon_view: Node3D = null
 var boards: Array = []          # EnemyRuntime enemies index -> billboard node (or null)
 var lstate: RefCounted = null   # the sim LevelState (gifts / mines / beacon); bot_run.gd's lv
 
 var _economy: RefCounted = null   # the gold-phase economy (purse / chain); no upgrade stats yet
 var _gold_began := false          # beacon open -> begin_gold_phase + rt.on_beacon_open fire once
 var _completed_emitted := false   # level_completed fires once
+var _run_over_emitted := false    # run_over fires once; a dead run stops ticking
 
 var _hud_layer: CanvasLayer = null
 var _mesh_instances: Array = []
@@ -191,6 +211,19 @@ func build(seed_value: int, level: int) -> bool:
 	_hud_layer.add_child(hud)
 	_sync_hud()
 
+	# The core-loop views, placed from the LevelState step() ticks: a black + a gold
+	# model per REAL gift slot (the gold ones hidden until the flip), one mine per mine
+	# slot, the beacon on its dais tile. Without them the run is played blind.
+	gifts_view = GiftsViewScript.new()
+	add_child(gifts_view)
+	gifts_view.setup(lv, lstate.gifts)
+	tripmine_view = TripmineViewScript.new()
+	add_child(tripmine_view)
+	tripmine_view.setup(lv, lstate.mines)
+	beacon_view = BeaconViewScript.new()
+	add_child(beacon_view)
+	beacon_view.setup(lv)
+
 	_level_number = level
 	return true
 
@@ -201,10 +234,13 @@ func build(seed_value: int, level: int) -> bool:
 ##   (beacon open: rt.on_beacon_open + the gold phase) -> enemy runtime.
 ## Mines carry defuse stacks [0] (the app has no Defuse Kit ledger yet, exactly the bot's
 ## hardcoded stack); the last-light/respawn path rides ctl.step itself. The completion
-## signal fires at the end of the tick that entered the beacon.
+## signal fires at the end of the tick that entered the beacon; the death signal fires at
+## the end of the tick the player died on, and every later call is a no-op.
 func step(dt: float) -> void:
 	if ctl == null or rt == null or lstate == null:
 		return
+	if _run_over_emitted:
+		return   # the run is over: a dead run never ticks again (DESIGN.md section 3)
 	var a_in: Dictionary = _capture_input()
 	var ev: Array = ctl.step(dt, a_in, w)
 	# The LevelState's player row mirrors the controller (gifts/mines read lv.players).
@@ -237,7 +273,21 @@ func step(dt: float) -> void:
 	if rig != null:
 		rig.update_rig(Vector3(float(ctl.x), float(ctl.y), float(ctl.z)), dt)
 	_billboard_pass(dt)
+	_view_pass()
 	_sync_hud()
+	# Death ends the run (DESIGN.md section 3). The row is sim/death.gd's own screen_data()
+	# plus the charges held at death - the controller's death event carries the same pair.
+	# Death is checked first: a dead player cannot enter the beacon (try_enter refuses a
+	# dead controller), so the two signals never both fire on one tick.
+	if not _run_over_emitted and bool(ctl.dead):
+		_run_over_emitted = true
+		var purse := -1
+		if _economy != null:
+			purse = int(_economy.purse_centi)   # centi, the same integer the HUD shows
+		var info: Dictionary = DeathScript.screen_data(ctl, _level_number, purse)
+		info["charges"] = int(ctl.charges)
+		run_over.emit(info)
+		return
 	if not _completed_emitted and lstate.beacon != null and bool(lstate.beacon.completed):
 		_completed_emitted = true
 		level_completed.emit()
@@ -287,10 +337,14 @@ func teardown() -> void:
 	fog = null
 	hud = null
 	_hud_layer = null
+	gifts_view = null
+	tripmine_view = null
+	beacon_view = null
 	lstate = null
 	_economy = null
 	_gold_began = false
 	_completed_emitted = false
+	_run_over_emitted = false
 	lv = {}
 	w = {}
 	_level_number = 0
@@ -499,6 +553,32 @@ func _make_board(e: Dictionary):
 	bd.setup_from_sheet(doc, folder)
 	add_child(bd)
 	return bd
+
+
+## The core-loop view pass: the three views read the same LevelState step() ticks, so
+## what the player sees is what the sim holds - the black gifts go out one by one (gold
+## models at the same slots once the phase flips), a consumed mine leaves, and the beacon
+## column ramps from the tick it opened on.
+func _view_pass() -> void:
+	if lstate == null:
+		return
+	if gifts_view != null:
+		gifts_view.sync(lstate.gifts)
+	if tripmine_view != null and lstate.mines != null:
+		# the view owns no clock: sim seconds in, one turn per TURN_PERIOD (4 s)
+		tripmine_view.set_time(float(lstate.tick) * DT)
+		tripmine_view.sync(_eye_pos())
+	if beacon_view != null and lstate.beacon != null:
+		beacon_view.sync_from(lstate.beacon, lstate.gifts, lstate.tick)
+
+
+## The eye the distance-driven view ramps measure from: the rig IS the camera holder, so
+## its position is the camera. Local, not global - the mine roots the tripmine view syncs
+## are positioned in this node's own space, and the distance must not mix the two spaces.
+func _eye_pos() -> Vector3:
+	if rig == null:
+		return Vector3.ZERO
+	return rig.position
 
 
 ## HUD snapshot. gifts / purse / chain come from the LevelState and the economy this

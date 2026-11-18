@@ -4,7 +4,8 @@ extends RefCounted
 # only while holding >= 1 void charge; saves a kill by an enemy, a tripmine or the
 # nuke by teleporting to the beacon dais with the charges held and 2.0 s
 # invulnerability; never triggers at 0 charges; never triggers on a void fall; the
-# arrival pushes enemy bodies within 8 u out to exactly 8 u.
+# arrival pushes enemy bodies within 8 u out to exactly 8 u (through the controller's
+# push_hook: the dais centre as the origin and exactly 8 u as the radius).
 # HUD icon: lit while armed, dim at 0 charges, grey once spent.
 
 const Util := preload("res://tests/sim_testutil.gd")
@@ -143,30 +144,63 @@ func _test_second_hit_after_spent(f: Array[String]) -> void:
 func _test_hud_and_push(f: Array[String]) -> void:
 	var ctl = _fresh("dasher")
 	var w := _one_tile_world()
+	# dais is [x, z, y] and deliberately asymmetric here: the push origin must follow the
+	# teleport's own mapping (x = d[0] + 0.5, y = d[2] * 0.5, z = d[1] + 0.5).
+	w["dais"] = [3, 2, 1]
 	ctl.charges = 1
-	# enemies near the dais: two inside 8 u, one outside
-	var near1 := {"x": 2.0, "y": 0.0, "z": 1.5}
-	var near2 := {"x": -1.0, "y": 0.5, "z": 0.5}
-	var far1 := {"x": -30.0, "y": 0.0, "z": 0.5}
-	w["enemies"] = [near1, near2, far1]
+	# D-073's promise is the push the world's owner performs, so the test pins the CALL
+	# (the dais centre and exactly 8 u), not arithmetic on dicts the test itself built.
+	var calls: Array = []
+	ctl.push_hook = func(origin, radius) -> void:
+		calls.append({"origin": origin, "radius": radius})
+	var mirror_row := {"x": 3.6, "y": 0.5, "z": 2.5}
+	w["enemies"] = [mirror_row]
 	var ev: Array = []
 	if not ctl.try_kill("D-NUKE", "nuke", w, ev):
 		f.append("lastlight: nuke kill was not saved at 1 charge")
+	if absf(ctl.x - 3.5) > 1e-6 or absf(ctl.y - 0.5) > 1e-6 or absf(ctl.z - 2.5) > 1e-6:
+		f.append("lastlight: save did not teleport to the dais (%.2f %.2f %.2f)" % [ctl.x, ctl.y, ctl.z])
+	if calls.size() != 1:
+		f.append("lastlight: the D-073 push ran %d time(s), want exactly 1" % calls.size())
+	else:
+		var origin: Variant = calls[0]["origin"]
+		if not (origin is Vector3):
+			f.append("lastlight: the D-073 push origin is not a Vector3")
+		else:
+			var o: Vector3 = origin
+			if absf(o.x - 3.5) > 1e-6 or absf(o.y - 0.5) > 1e-6 or absf(o.z - 2.5) > 1e-6:
+				f.append("lastlight: the D-073 push origin %s, want the dais centre (3.5, 0.5, 2.5)" % str(o))
+		if absf(float(calls[0]["radius"]) - 8.0) > 1e-9:
+			f.append("lastlight: the D-073 push radius %.4f, want exactly 8" % float(calls[0]["radius"]))
+	if mirror_row["x"] != 3.6:
+		f.append("lastlight: the hook and the mirror fallback both ran (row x=%s)" % str(mirror_row["x"]))
+	if ctl.hud_last_light() != "grey":
+		f.append("lastlight: HUD %s after the save, want grey" % ctl.hud_last_light())
+	# no hook (a hand-made world with no runtime behind it): the fallback still pushes
+	# the world dict's rows, which is the only body data such a world carries.
+	var ctl2 = _fresh("dasher")
+	var w2 := _one_tile_world()
+	ctl2.charges = 1
+	var near1 := {"x": 2.0, "y": 0.0, "z": 1.5}
+	var near2 := {"x": -1.0, "y": 0.5, "z": 0.5}
+	var far1 := {"x": -30.0, "y": 0.0, "z": 0.5}
+	w2["enemies"] = [near1, near2, far1]
+	var ev2: Array = []
+	if not ctl2.try_kill("D-NUKE", "nuke", w2, ev2):
+		f.append("lastlight: nuke kill was not saved at 1 charge (fallback path)")
 	# pushed bodies sit at exactly 8 u (XZ) from the dais centre (0.5, 0.5), y untouched
 	for e in [near1, near2]:
 		var dx: float = float(e["x"]) - 0.5
 		var dz: float = float(e["z"]) - 0.5
 		var d: float = sqrt(dx * dx + dz * dz)
 		if absf(d - 8.0) > 1e-9:
-			f.append("lastlight: pushed body at %.9f u from the dais, want exactly 8" % d)
+			f.append("lastlight: fallback body at %.9f u from the dais, want exactly 8" % d)
 	if not float(near1["x"]) > 0.5:
-		f.append("lastlight: pushed body did not move radially outward")
+		f.append("lastlight: fallback: pushed body did not move radially outward")
 	if far1["x"] != -30.0:
 		f.append("lastlight: a body beyond 8 u was moved")
 	if near1["y"] != 0.0:
 		f.append("lastlight: the push changed a body's height")
-	if ctl.hud_last_light() != "grey":
-		f.append("lastlight: HUD %s after the save, want grey" % ctl.hud_last_light())
 
 
 # ---- small event helpers ------------------------------------------------------------

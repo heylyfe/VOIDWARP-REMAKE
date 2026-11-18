@@ -42,8 +42,10 @@ func _init() -> void:
 
 ## One frame's model. lv: the LevelState; p_index: the player; centre/scale: the
 ## drawn window (scale = px per u, centred on the player's x/z); colours: at least
-## {"platform": Color, "walkway": Color, "gift": Color, "mine": Color, "beacon": Color}.
-func sync(lv: RefCounted, p_index: int, scale_px: float, colours: Dictionary) -> void:
+## {"platform": Color, "walkway": Color, "gift": Color, "mine": Color, "beacon": Color};
+## facing: the player heading in radians (-PI/2 = up/north, the default).
+func sync(lv: RefCounted, p_index: int, scale_px: float, colours: Dictionary,
+		facing: float = -PI / 2.0) -> void:
 	if lv == null or lv.upgrades == null or not lv.upgrades.has("cartographer"):
 		_model = []
 		queue_redraw()
@@ -52,7 +54,7 @@ func sync(lv: RefCounted, p_index: int, scale_px: float, colours: Dictionary) ->
 	var p: Dictionary = lv.players[p_index]
 	var visited: Dictionary = lv.upgrades.visited.get(p_index, {})
 	_model = build_model(lv.level_dict, visited, float(p["x"]), float(p["z"]),
-			scale_px, colours, SIZE)
+			scale_px, colours, SIZE, facing, lv.gifts, lv.mines)
 	queue_redraw()
 
 
@@ -63,7 +65,7 @@ func sync(lv: RefCounted, p_index: int, scale_px: float, colours: Dictionary) ->
 ## +x = screen right, world +z = screen down.
 static func build_model(level_dict: Dictionary, visited: Dictionary, px: float,
 		pz: float, scale_px: float, colours: Dictionary, size_px: float,
-		facing: float = -PI / 2.0) -> Array:
+		facing: float = -PI / 2.0, gifts: RefCounted = null, mines: RefCounted = null) -> Array:
 	var out: Array = []
 	if level_dict.is_empty():
 		return out
@@ -87,7 +89,7 @@ static func build_model(level_dict: Dictionary, visited: Dictionary, px: float,
 				c + (float(t[1]) - pz) * scale_px)
 		out.append({"rect": Rect2(org, Vector2(scale_px + 0.5, scale_px + 0.5)),
 				"color": col})
-	for row in revealed_rows(level_dict, visited, px, pz):
+	for row in revealed_rows(level_dict, visited, px, pz, gifts, mines):
 		var ppos := Vector2(c + (float(row["x"]) - px) * scale_px,
 				c + (float(row["z"]) - pz) * scale_px)
 		if row["kind"] == "gift":
@@ -103,8 +105,11 @@ static func build_model(level_dict: Dictionary, visited: Dictionary, px: float,
 
 ## The sim reveal rows (gift slots / mines / beacon within the footprint range) -
 ## read straight from the level dict; the pure sim twin lives in sim/upgrades.gd.
+## gifts/mines are the LevelState's own (gifts.gd / mines.gd): when given, they drop
+## the collected gifts and the defused mines the sim twin drops too (occ alone
+## cannot say "collected" - gifts.collect() never rewrites it).
 static func revealed_rows(level_dict: Dictionary, visited: Dictionary, px: float,
-		pz: float) -> Array:
+		pz: float, gifts: RefCounted = null, mines: RefCounted = null) -> Array:
 	var out: Array = []
 	var slots: Array = level_dict.get("gifts", [])
 	for i in slots.size():
@@ -114,8 +119,12 @@ static func revealed_rows(level_dict: Dictionary, visited: Dictionary, px: float
 		if not _near_any(visited, sx, sz, CARTO_RANGE2):
 			continue
 		if int(s["occ"]) == 0:
+			if gifts != null and gifts.collected(i):
+				continue
 			out.append({"kind": "gift", "x": sx, "z": sz})
 		else:
+			if mines != null and mines.is_consumed(i):
+				continue
 			out.append({"kind": "mine", "x": sx, "z": sz})
 	var b: Array = level_dict.get("beacon", [])
 	if b.size() >= 2:

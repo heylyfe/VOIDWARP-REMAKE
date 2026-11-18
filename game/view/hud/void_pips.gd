@@ -74,6 +74,9 @@ func _init() -> void:
 func set_charges(p_held: int, p_cap: int) -> void:
 	charge_cap = maxi(1, p_cap)
 	held = clampi(p_held, 0, charge_cap)
+	if _free_t >= 0.0:
+		# a charge spent inside the FREE window: the flash follows the held count
+		_free_index = maxi(held - 1, 0)
 	offset_right = EDGE + PIP_STEP * float(charge_cap) + LL_GAP + LL_SIZE
 	custom_minimum_size = Vector2(EDGE + offset_right, ROW_HEIGHT)
 	queue_redraw()
@@ -142,6 +145,8 @@ func pip_already_full() -> void:
 ## Field Dressing (upgrade): the last held pip flashes white and stays filled; a small
 ## "FREE" tick appears for 60 ticks (binding). Sim hook absent - see PARKED.md row 3.
 func pip_free_fall() -> void:
+	if held <= 0:
+		return   # no held pip to flash (a fall with no charge is a death, not a FREE tick)
 	_free_index = maxi(held - 1, 0)
 	_free_t = FREE_TICKS
 	queue_redraw()
@@ -288,7 +293,7 @@ func _draw() -> void:
 		var pts := PackedVector2Array([
 			Vector2(cx, cy - PIP * 0.5), Vector2(cx + PIP * 0.5, cy),
 			Vector2(cx, cy + PIP * 0.5), Vector2(cx - PIP * 0.5, cy)])
-		if i == _free_index and free_flash_active():
+		if held > 0 and i == _free_index and free_flash_active():
 			# Field Dressing: the pip flashes white and stays filled (section 2.4)
 			draw_colored_polygon(_scale_pts(pts, cx, cy, 1.45), Color(1.0, 1.0, 1.0, 0.5))
 			draw_colored_polygon(pts, Color(1.0, 1.0, 1.0, 1.0))

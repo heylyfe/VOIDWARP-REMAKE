@@ -142,6 +142,10 @@ func tick(row: Dictionary, api, dt_ticks: int) -> void:
 				row["phase_t"] = 0
 				row["anim_state"] = ANIM_SPAWN
 				row["anim_state_t"] = 0
+				# D-072 is a property of every fade-in, not of the spawn alone: the tile is
+				# re-picked against where the player is NOW, so cycle 2+ does not fade in
+				# on the tile the first spawn happened to choose.
+				_place_on_fade_in_tile(row, api)
 
 
 # ---- the mark + the void zone ------------------------------------------------------------------
@@ -281,7 +285,14 @@ func _place_on_fade_in_tile(row: Dictionary, api) -> void:
 		spot = _farthest_tile(api, api.tiles_in_radius(
 				Vector3(float(hub["x"]), float(hub["y"]), float(hub["z"])), HUB_RADIUS), pp, -1.0)
 	row["x"] = float(spot["x"])
+	row["y"] = float(spot["y"])
 	row["z"] = float(spot["z"])
+	# the fade-in is an instant reposition, so the body mirror follows it (PARKED row 27):
+	# no_enemy_body_within and the D-059 safe tile read world["enemies"], not this row, and
+	# the mirror is otherwise written once at the runtime's spawn point. y is the tile's too,
+	# not the spawn point's (the contact band runs row y .. y + height_u, so a body left on a
+	# lower platform cannot touch a player standing on this one).
+	api.sync_body()
 
 
 # Farthest-from-the-player tile of `tiles` at least `min_d` away, lowest index on ties.

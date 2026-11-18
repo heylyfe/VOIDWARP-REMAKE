@@ -38,22 +38,24 @@ Gamepad works too. The menu's **HOW TO PLAY** panel shows the live bindings, rea
 - **Loading screen** — 5.0 s on a first launch, 2.0 s on every restart, with a 2D gag scene and a
   30-tip pool that never repeats the previous gag.
 - **Level 1** — generates from a seed, loads, plays, and completes. The beacon opens when every
-  black gift is collected; the exit is a real transition, not a stub.
+  black gift is collected; the exit is a real transition, not a stub. The gifts, the gold gifts,
+  the tripmines and the beacon's light column are drawn in the level itself.
 - **12 enemies**, each with its own telegraph, attack, and death. They are the joke; the void is not.
 - **Economy** — gifts, gold, void charges, tripmines, the beacon's charge refund.
 - **After a level** — the world tears down and the app returns to the menu.
 
 Known gaps, stated plainly:
 
-- **The bot completes level 1 in 82 of 100 seeds.** The acceptance bar is 95. The gap is bot
-  competence, not a crash — a human can finish the level.
+- **The bot completes level 1 in 84 of 100 seeds** (seed base 60717, the pinned 4.7.2 engine;
+  86 of 100 on the same sweep before this patch set, median 38.8 s against the 120 s criterion).
+  The acceptance bar is 95. The gap is bot competence, not a crash — a human can finish the level.
 - **No 30-level run yet.** The intermission lobby exists as a scene but is not wired into the app
   loop, so a completed level returns to the menu instead of advancing.
-- **Five parked HIGH bugs** are documented in [`PARKED.md`](PARKED.md) rows 25–29, each with the
-  test that hides it. Four are live and unfixed: the Last Light body push is inert, half the ramp
-  orientations report the wrong surface height, four enemies teleport without syncing their body
-  mirror, and two bot route regressions. The fifth — a shipped exe that predated the app loop — is
-  closed by this release, which is a fresh export from the tagged tree.
+- **Three of the five parked HIGH bugs are closed** ([`PARKED.md`](PARKED.md) rows 25–28): the
+  Last Light body push now reaches the live enemy rows, ramp kinds 3 and 4 report the slope the
+  mesh draws, and every enemy body mirror is refreshed each step so the safe-tile and SR-4 checks
+  stop reading spawn points. The bot route regressions are partly closed. One exe-related row was
+  closed by the v0.1.0-alpha.1 export.
 
 ## How a run works
 
@@ -129,8 +131,29 @@ five biomes, and a zero-`SCRIPT ERROR` requirement. Nothing merges red.
 & $G --headless --path game --export-release "Windows Desktop" ..\build\voidwrap_run.exe
 ```
 
-The preset lives in [`game/export_presets.cfg`](game/export_presets.cfg); the output lands in
-`build/`, which is gitignored.
+The presets live in [`game/export_presets.cfg`](game/export_presets.cfg) — `Windows Desktop`, `Linux`
+and `macOS` — and the output lands in `build/`, which is gitignored. `Linux` and `macOS` need the
+4.7.2 export templates installed for your engine; the Windows one already ships them.
+
+Exporting by hand needs the templates for the target platform in the engine's templates folder. CI
+does not: [`.github/workflows/build.yml`](.github/workflows/build.yml) fetches the engine and its
+templates for the pinned version on each runner, refuses to build if the binary does not report
+`4.7.2.stable.official.ed1daf0bf`, and uploads a build per platform on every push, pull request and
+tag. Tag builds are also attached to the GitHub release.
+
+| Target | Artifact | Notes |
+| --- | --- | --- |
+| Linux x86_64 | `voidwrap_run.x86_64` | single binary, pck embedded |
+| Windows x86_64 | `voidwrap_run.exe` | single binary, pck embedded |
+| macOS universal | `voidwrap_run.zip` | `VOIDWRAP RUN.app`, x86_64 + arm64, **unsigned**, cross-built on Linux |
+
+The macOS build is unsigned and not notarized, so Gatekeeper blocks it on a fresh machine until the
+user clears it (`System Settings > Privacy & Security > Open Anyway`). Signing needs an Apple
+Developer identity, which the project does not have.
+
+macOS builds only work because [`game/project.godot`](game/project.godot) imports the ETC2/ASTC
+texture variants: Godot refuses an arm64 export without them. The desktop presets do not pack those
+variants, so their builds are unchanged by it.
 
 ## Credits
 

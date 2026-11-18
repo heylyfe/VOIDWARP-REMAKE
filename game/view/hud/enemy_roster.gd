@@ -45,6 +45,7 @@ func set_roster(items: Array) -> void:
 			_items.append({"id": str(item.get("id", "")), "count": int(item.get("count", 0))})
 	visible = not _items.is_empty()
 	for c in _row.get_children():
+		_row.remove_child(c)   # queue_free alone leaves the old cell drawn this frame
 		c.queue_free()
 	for item in _items:
 		var cell: Control = _placeholder_script.new()

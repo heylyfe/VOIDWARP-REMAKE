@@ -34,6 +34,11 @@ func run() -> Array[String]:
 	_shop_purchase(f, api)
 	_reroll(f, api)
 	_hunger(f, api)
+	_out_of_range_refused(f, api)
+	_reroll_event_cost(f, api)
+	_stamp_bumps(f, api)
+	_ledgers_copied(f, api)
+	_resolved_bay_hidden(f, api)
 	return f
 
 
@@ -439,4 +444,181 @@ func _tithe(f: Array[String], api: RefCounted) -> void:
 	# the NEXT tithe costs 175 (data: base + 75 x tithes)
 	if int(OffersScript.tithe_cost(1, api)) != 175:
 		f.append("tithe: second tithe costs %d, want 175" % int(OffersScript.tithe_cost(1, api)))
+
+
+## An out-of-range Select is refused: NO_SELECT (-1) is "no choice" (sim/input.gd), and it
+## must never wrap to the table's last altar; the guard must not swallow a real index.
+func _out_of_range_refused(f: Array[String], api: RefCounted) -> void:
+	var lb: RefCounted = Intermission.create(api, 0, 0, 101)   # [CLASS, E], last row is E
+	var n := (lb.altar_table() as Array).size()
+	if n < 2:
+		f.append("range: the pre-run lobby exposes %d altars" % n)
+		return
+	var evs: Array = []
+	if lb.apply_select(0, -1, evs):
+		f.append("range: apply_select(-1) was accepted")
+	if lb.apply_select(0, n, evs):
+		f.append("range: apply_select(%d), one past the table, was accepted" % n)
+	if (evs as Array).size() != 0:
+		f.append("range: a refused Select emitted %d events" % (evs as Array).size())
+	if int(lb.votes_sum()) != 0 or str(lb.class_chosen) != "":
+		f.append("range: an out-of-range Select changed state (votes %d, class '%s')"
+				% [int(lb.votes_sum()), str(lb.class_chosen)])
+	# not over-broad: the same lobby still takes a real index
+	if not lb.apply_select(0, 0, evs):
+		f.append("range: the first altar was refused after two bad indices")
+
+
+## A paid U/REST reroll reports the gold it spent (sim/events.gd: altar_selected's
+## "cost: int (gold spent; bounty = negative cost)"), which is what game/app/run_log.gd
+## prices; the C bay's reroll is free and reports 0 (DESIGN.md section 7).
+func _reroll_event_cost(f: Array[String], api: RefCounted) -> void:
+	var lb: RefCounted = Intermission.create(api, 4, 1000, 102)   # [C, U]
+	var ri := _plinth_index(lb, "U", "reroll")
+	if ri < 0:
+		f.append("reroll-cost: the U bay offers no reroll plinth")
+		return
+	var want := int(OffersScript.reroll_cost(0, api))
+	var before := int(lb.purse)
+	var evs: Array = []
+	if not lb.apply_select(0, ri, evs):
+		f.append("reroll-cost: a %d g reroll was refused with %d g in the purse" % [want, before])
+		return
+	if int(lb.purse) != before - want:
+		f.append("reroll-cost: purse %d -> %d, want %d" % [before, int(lb.purse), before - want])
+	if _event_cost(evs) != want:
+		f.append("reroll-cost: the reroll event reports cost %d, want %d"
+				% [_event_cost(evs), want])
+	var lc: RefCounted = Intermission.create(api, 2, 0, 103)   # [C]: free
+	var ci := _plinth_index(lc, "C", "reroll")
+	if ci < 0:
+		f.append("reroll-cost: the C bay offers no free reroll plinth")
+		return
+	var cevs: Array = []
+	lc.apply_select(0, ci, cevs)
+	if _event_cost(cevs) != 0:
+		f.append("reroll-cost: the free C reroll reports cost %d" % _event_cost(cevs))
+
+
+## Resolving a bay bumps `stamp` (intermission.gd: "Every draw or ledger write bumps
+## `stamp` so the view ... can rebuild its altars"); the antechamber rebuilds on it alone.
+func _stamp_bumps(f: Array[String], api: RefCounted) -> void:
+	var lb: RefCounted = Intermission.create(api, 0, 0, 104)   # [CLASS, E]
+	var s := int(lb.stamp)
+	if not lb.apply_select(0, _offer_index(lb, "CLASS"), []):
+		f.append("stamp: the CLASS pick was refused")
+	var s2 := int(lb.stamp)
+	if s2 == s:
+		f.append("stamp: the CLASS pick left stamp at %d" % s)
+	if not lb.apply_select(0, _offer_index(lb, "E"), []):
+		f.append("stamp: the E vote was refused")
+	if int(lb.stamp) == s2:
+		f.append("stamp: the resolving E vote left stamp at %d" % s2)
+	# the C bay: a curse pick (level 8) and the tithe (level 2)
+	var lc: RefCounted = Intermission.create(api, 8, 0, 105)
+	var s3 := int(lc.stamp)
+	if not lc.apply_select(0, _offer_index(lc, "C"), []):
+		f.append("stamp: the curse pick was refused")
+	if int(lc.stamp) == s3:
+		f.append("stamp: the curse pick left stamp at %d" % s3)
+	var lt: RefCounted = Intermission.create(api, 2, 500, 106)
+	var s4 := int(lt.stamp)
+	if not lt.apply_select(0, _plinth_index(lt, "C", "tithe"), []):
+		f.append("stamp: the tithe was refused with 500 g")
+	if int(lt.stamp) == s4:
+		f.append("stamp: the tithe left stamp at %d" % s4)
+
+
+## create() copies the ledgers in: the caller's dictionaries are never written, so the
+## run's votes / curses / upgrade stacks are read back off the lobby (create()'s contract).
+func _ledgers_copied(f: Array[String], api: RefCounted) -> void:
+	var votes := {}
+	var curses := {}
+	var stacks := {}
+	var lb: RefCounted = Intermission.create(api, 6, 10000, 107, votes, curses, stacks)
+	if not lb.apply_select(0, _offer_index(lb, "E"), []):
+		f.append("ledger: the E vote was refused")
+	if not lb.apply_select(0, _offer_index(lb, "C"), []):
+		f.append("ledger: the curse pick was refused")
+	if not votes.is_empty():
+		f.append("ledger: the caller's votes dict was written: %s" % str(votes))
+	if not curses.is_empty():
+		f.append("ledger: the caller's curses dict was written: %s" % str(curses))
+	if int(lb.votes_sum()) < 1:
+		f.append("ledger: the lobby's own votes stayed empty after the E vote")
+	if (lb.curses_held as Dictionary).is_empty():
+		f.append("ledger: the lobby's own curses stayed empty after the C pick")
+	# a purchase writes the lobby's stack ledger, never the caller's
+	var st := {}
+	var lu: RefCounted = Intermission.create(api, 4, 10000, 108, {}, {}, st)
+	var ui := _offer_index(lu, "U")
+	if ui < 0:
+		f.append("ledger: the U bay drew no offer to buy")
+		return
+	if not lu.apply_select(0, ui, []):
+		f.append("ledger: a 10000 g purse refused the first U offer")
+	if not st.is_empty():
+		f.append("ledger: the caller's stacks dict was written: %s" % str(st))
+	if (lu.upgrade_stacks as Dictionary).is_empty():
+		f.append("ledger: the lobby's own stacks stayed empty after the purchase")
+
+
+## A resolved bay contributes no altar rows: altar_table() is what the view builds its
+## prompts from, so a bay the sim refuses must stop advertising its offers and plinths.
+func _resolved_bay_hidden(f: Array[String], api: RefCounted) -> void:
+	var lb: RefCounted = Intermission.create(api, 4, 10000, 109)   # [C, U]
+	if _row_count(lb, "C") < 2:
+		f.append("hidden: the C bay advertises %d rows before the pick" % _row_count(lb, "C"))
+	if not lb.apply_select(0, _plinth_index(lb, "C", "tithe"), []):
+		f.append("hidden: the tithe was refused with 10000 g")
+		return
+	if _row_count(lb, "C") != 0:
+		f.append("hidden: a resolved C bay still advertises %d rows" % _row_count(lb, "C"))
+	# per bay, not per lobby: the U bay keeps its three offers and its reroll plinth
+	if _row_count(lb, "U") < 2:
+		f.append("hidden: resolving C also emptied the U bay (%d rows)" % _row_count(lb, "U"))
+	# a fully resolved pre-run lobby advertises nothing at all
+	var l0: RefCounted = Intermission.create(api, 0, 0, 110)
+	l0.apply_select(0, _offer_index(l0, "CLASS"), [])
+	l0.apply_select(0, _offer_index(l0, "E"), [])
+	if (l0.altar_table() as Array).size() != 0:
+		f.append("hidden: a resolved pre-run lobby advertises %d altars"
+				% (l0.altar_table() as Array).size())
+
+
+## Flat-table index of the first offer of the p_bay_kind bay (-1: none).
+func _offer_index(lb: RefCounted, p_bay_kind: String) -> int:
+	var table: Array = lb.altar_table()
+	for i in table.size():
+		var entry: Dictionary = table[i]
+		if str(entry["kind"]) == "offer" and str(entry["bay"]) == p_bay_kind:
+			return i
+	return -1
+
+
+## Flat-table index of a bay's extra plinth ("tithe" / "reroll") for p_bay_kind (-1: none).
+func _plinth_index(lb: RefCounted, p_bay_kind: String, p_plinth: String) -> int:
+	var table: Array = lb.altar_table()
+	for i in table.size():
+		var entry: Dictionary = table[i]
+		if str(entry["kind"]) == p_plinth and str(entry["bay"]) == p_bay_kind:
+			return i
+	return -1
+
+
+## How many altar_table() rows the p_bay_kind bay contributes.
+func _row_count(lb: RefCounted, p_bay_kind: String) -> int:
+	var n := 0
+	for entry in lb.altar_table():
+		if str(entry["bay"]) == p_bay_kind:
+			n += 1
+	return n
+
+
+## The cost field of the first altar_selected event in p_events (-999: no such event).
+func _event_cost(p_events: Array) -> int:
+	for ev in p_events:
+		if str(ev.get("type", "")) == Events.EV_ALTAR_SELECTED:
+			return int(ev.get("cost", -999))
+	return -999
 

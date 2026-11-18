@@ -18,6 +18,8 @@ extends RefCounted
 #   subspacial_barrier - §3.3 step 2 verbatim: shield consumed AFTER the defuse roll
 #                   fails, no blast, chain resets; tripmines only - the nuke passes
 #                   straight through to death (nothing absorbs the nuke)
+#   cold_blood    - the 30 s overtime period as a mul on the existing stat
+#   last_call     - the final-20% band rule the economy's final_band caller needs
 
 const Util := preload("res://tests/sim_testutil.gd")
 const VoidGenScript := preload("res://terrain/voidgen.gd")
@@ -32,6 +34,8 @@ const MinesScript := preload("res://sim/mines.gd")
 const GiftsScript := preload("res://sim/gifts.gd")
 const BeaconScript := preload("res://sim/beacon.gd")
 const OffersScript := preload("res://sim/offers.gd")
+const EconomyScript := preload("res://sim/economy.gd")
+const ContentApiScript := preload("res://core/content_api.gd")
 const RadarMines := preload("res://content/upgrades/radar_mines.gd")
 const RadarBeacon := preload("res://content/upgrades/radar_beacon.gd")
 const RadarGifts := preload("res://content/upgrades/radar_gifts.gd")
@@ -42,6 +46,8 @@ const PocketBeacon := preload("res://content/upgrades/pocket_beacon.gd")
 const PocketBeaconContent := preload("res://content/upgrades/pocket_beacon.gd")
 const Marathon := preload("res://content/upgrades/marathon.gd")
 const T053Roles := preload("res://content/upgrades/t053_roles.gd")
+const ColdBlood := preload("res://content/upgrades/cold_blood.gd")
+const LastCall := preload("res://content/upgrades/last_call.gd")
 const RadarArrowsScript := preload("res://view/hud/radar_arrows.gd")
 const CartographerMapScript := preload("res://view/hud/cartographer_map.gd")
 
@@ -66,6 +72,8 @@ func run() -> Array[String]:
 	_test_subspacial_barrier(f)
 	_test_radar_arrows_widget(f)
 	_test_cartographer_map_widget(f)
+	_test_cold_blood(f)
+	_test_last_call(f)
 	return f
 
 
@@ -733,3 +741,68 @@ func _test_subspacial_barrier(f: Array[String]) -> void:
 			"barrier: the nuke kill did not kill at 0 charges")
 	_expect(f, bool(beacon2.has_barrier(0)),
 			"barrier: the nuke kill consumed the Subspacial Barrier - nothing absorbs the nuke")
+
+
+# ---- Section 8 rows that ship as modifiers: the promise, not the proxy --------------
+# Gilded Touch and Cold Blood are declarative effects on stats that already have a
+# consumer (core/content_api.gd's modifier path into sim/economy.gd). These read the file
+# ON DISK, run it through that path, and assert what the player is paid or waits - so a
+# declaration that drifts from the section 8 row fails here instead of paying the wrong
+# amount silently.
+
+func _test_cold_blood(f: Array[String]) -> void:
+	# DESIGN.md:720 "overtime tiers rise every 30 s instead of 20 s". overtime_period is a
+	# closed stat with DEFAULT 20.0 and sim/economy.gd create() already reads it, so the row
+	# is a modifier and it must be a mul: 20 x 1.5 = 30 s, and 14 x 1.5 = 21 s under Long
+	# Night's 14 s. A `set` wins over every other modifier on the stat, so it would flatten
+	# the curse instead of composing with it.
+	var api: RefCounted = ContentApiScript.load()
+	if not bool(api.call("is_ok")):
+		f.append("cold blood: content boot failed: %s" % " / ".join(api.call("boot_errors")))
+		return
+	var u: Dictionary = api.call("upgrade", ColdBlood.UPGRADE_ID)
+	var mods: Array = u.get("modifiers", [])
+	_expect(f, not mods.is_empty(),
+			"cold blood: no modifier, so the 30 s promise rests on a handler that does not exist")
+	var op := ""
+	var value := 0.0
+	for m in mods:
+		if str(m.get("stat", "")) == "overtime_period":
+			op = str(m.get("op", ""))
+			value = float(m.get("value", 0.0))
+	_expect(f, op == "mul" and _near(value, ColdBlood.PERIOD_MUL, 1e-9),
+			"cold blood: declares %s %.4f on overtime_period, want mul %.4f" % [op, value, ColdBlood.PERIOD_MUL])
+	var stats: Dictionary = ContentApiScript.apply_modifiers({}, ContentApiScript.mods_for_stacks(mods, 1), {"phase": "", "class": ""})
+	var period := float(stats.get("overtime_period", 0.0))
+	_expect(f, _near(period, 30.0, 1e-9),
+			"cold blood x1: overtime_period is %.4f s, DESIGN.md section 8 says 30 s" % period)
+	# the consumer honours it: no tier at 29 s, one at 30 s (20 s used to be a tier)
+	var e := EconomyScript.create(stats, api)
+	e.begin_gold_phase()
+	var before := int(e.tick_gold(29.0))
+	var at := int(e.tick_gold(1.0))
+	_expect(f, before == 0 and at == 1,
+			"cold blood: a %.1f s period tiered at 29 s (%d) then 30 s (%d), want 0 then 1" % [period, before, at])
+
+
+func _test_last_call(f: Array[String]) -> void:
+	# DESIGN.md:718 "the final 20% of gold gifts in a level are worth double". The doubling
+	# is sim/economy.gd collect_gold_gift(final_band), which the CALLER arms; the band rule
+	# is content, so it is asserted here: the last ceil(0.2 x total) gifts of the level,
+	# never zero on a level that has a gift.
+	_expect(f, _near(LastCall.BAND_PCT, 0.2, 1e-9),
+			"last call: the band is %.3f of a level's gold gifts, DESIGN.md says 0.20" % LastCall.BAND_PCT)
+	var bands := {1: 1, 3: 1, 5: 1, 10: 2, 40: 8, 0: 0}
+	for total in bands:
+		_expect(f, LastCall.band_size(int(total)) == int(bands[total]),
+				"last call: %d gold gifts give a %d-gift band, want %d" % [int(total), LastCall.band_size(int(total)), int(bands[total])])
+	# the boundary: the gift taken once the band is entered pays double, the one before it
+	# does not (10 gifts -> the 9th and 10th; 5 gifts -> the 5th only)
+	_expect(f, not LastCall.is_final_band(7, 10) and LastCall.is_final_band(8, 10),
+			"last call: with 10 gold gifts the band did not start at the 9th (7 -> %s, 8 -> %s)" % [str(LastCall.is_final_band(7, 10)), str(LastCall.is_final_band(8, 10))])
+	_expect(f, not LastCall.is_final_band(3, 5) and LastCall.is_final_band(4, 5),
+			"last call: with 5 gold gifts the band did not start at the 5th")
+	_expect(f, LastCall.is_final_band(0, 1),
+			"last call: a 1-gift level did not double its only gold gift")
+	_expect(f, not LastCall.is_final_band(0, 0),
+			"last call: an empty level doubled a gold gift that does not exist")

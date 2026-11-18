@@ -130,7 +130,9 @@ static func killer_name(p_code: String, killer: String) -> String:
 		return "curse: " + p_code.substr(8)
 	if killer.strip_edges() != "":
 		var raw := normalize_killer(killer)
-		if raw == "void":
+		# "the void" is sim/death.gd's already-resolved VOID_NAME, not a raw content id:
+		# it normalises to "the_void" and still means the void (D-VOID).
+		if raw == "void" or raw == "the_void":
 			return VOID_DISPLAY
 		var by_id := RosterScript.name_for_id(raw)
 		if by_id != "":
@@ -165,12 +167,19 @@ func curse_icon_id() -> String:
 ##   code (String) - the death code, e.g. "D-MINE" / "D-CURSE:<curse id>"
 ##   killer (String) - the sim-provided killer string ("" when unknown)
 ##   level (int), purse_centi (int), charges (int)
+##   purse (int, optional) - sim/death.gd screen_data()'s own key for the same integer
+##          (centi, the number the HUD shows); read when purse_centi is absent so the
+##          producer's row lands as it is. Negative means "not tracked yet" and renders
+##          as 0.00 rather than as a negative purse.
 ##   sprite (Texture2D, optional) - the killer at 256 px; omitted for void deaths
 func show_run_over(info: Dictionary) -> void:
 	code = str(info.get("code", ""))
 	var killer := str(info.get("killer", ""))
 	level_reached = int(info.get("level", 0))
-	purse_centi = int(info.get("purse_centi", 0))
+	var cents := int(info.get("purse_centi", -1))
+	if cents < 0:
+		cents = int(info.get("purse", 0))
+	purse_centi = maxi(cents, 0)
 	charges_held = int(info.get("charges", 0))
 	killer_text = killer_name(code, killer)
 	_name_label.text = killer_text

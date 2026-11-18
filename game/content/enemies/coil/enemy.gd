@@ -233,6 +233,11 @@ class CoilBehavior:
 		row["y"] = ly
 		row["z"] = lz
 		row["height_u"] = 1.0   # compressed on landing (coil_00)
+		# the landing is the instant reposition the mirror has to follow (PARKED row 27):
+		# no_enemy_body_within and the D-059 safe tile read world["enemies"], which still
+		# holds the spawn point. Synced at the settle, not on the flight's interpolated
+		# ticks - those are a mover's lagging snapshot, the landing is the new home.
+		api.sync_body()
 		row["state"] = "recover"
 		row["seg_left"] = RECOVER_TICKS
 		# resolve against the targeted player (D-T-031-10): horizontal circle 1.2 u, no y

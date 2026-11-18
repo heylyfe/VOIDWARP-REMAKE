@@ -141,6 +141,17 @@ func _leg_a(f: Array[String]) -> void:
 		f.append("leg A: the level stopped ticking after completion (tick did not advance)")
 	if world.ctl.dead:
 		f.append("leg A: the player died during the completion leg")
+
+	# teardown: step() after it is the null-guard no-op, and the completion signal
+	# cannot re-fire (PARKED row 29's "cannot fire after teardown"). An engine error
+	# on this path prints SCRIPT ERROR, which the gate rejects.
+	world.teardown()
+	world.step(DT)
+	world.step(DT)
+	if emitted[0] != 1:
+		f.append("leg A: level_completed re-emitted after teardown (%d times)" % emitted[0])
+	if world.lstate != null or world.ctl != null:
+		f.append("leg A: step() after teardown rebuilt the sim state (the null guard did not hold)")
 	_drop(world)
 
 

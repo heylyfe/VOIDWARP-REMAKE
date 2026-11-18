@@ -30,6 +30,7 @@ const EnemyRosterScript := preload("res://view/hud/enemy_roster.gd")
 const RunOverScript := preload("res://view/hud/run_over.gd")
 const DangerTextScript := preload("res://view/hud/danger_text.gd")
 const ScreenFxScript := preload("res://view/hud/screen_fx.gd")
+const CartographerMapScript := preload("res://view/hud/cartographer_map.gd")
 
 const SEED := 42
 const LEVEL := 25
@@ -40,6 +41,7 @@ func run() -> Array[String]:
 	_test_counter_level_25_seed(f)
 	_test_void_pips(f)
 	_test_element_set(f)
+	_test_cartographer_map(f)
 	_test_t086_animations(f)
 	return f
 
@@ -224,6 +226,19 @@ func _test_element_set(f: Array[String]) -> void:
 	ab.sync("dasher", 1.5, 3.0)
 	if ab.is_ready():
 		f.append("dasher ability reported ready mid cooldown")
+	if ab.seconds_text() != "1.5s":
+		f.append("dasher cooldown text mid cooldown: '%s', want '1.5s' (the real number, not READY)"
+				% ab.seconds_text())
+	if absf(ab.fraction() - 0.5) > 1e-6:
+		f.append("dasher cooldown bar at 1.5 of 3.0 s: %f, want 0.5 charged" % ab.fraction())
+	ab.sync("glider", 1.5, 3.0)   # glider polarity: remaining IS the airtime left
+	if ab.is_ready():
+		f.append("glider ability reported ready with 1.5 s of 3.0 s of airtime left")
+	if absf(ab.fraction() - 0.5) > 1e-6:
+		f.append("glider energy bar at half airtime: %f, want 0.5" % ab.fraction())
+	ab.sync("glider", 3.0, 3.0)
+	if not ab.is_ready():
+		f.append("glider ability not ready at full energy")
 	ab.sync("dasher", 0.0, 3.0)
 	if not ab.is_ready():
 		f.append("dasher ability not ready at 0.0 remaining")
@@ -231,6 +246,13 @@ func _test_element_set(f: Array[String]) -> void:
 	if ab.visible:
 		f.append("athletic ability element visible; the class has no active ability")
 	ab.free()
+	# the documented defaults (0.0 / 3.0) keep READY when a sync omits the ability keys
+	var hud = HudScript.new()
+	hud.sync({})
+	if not hud.ability_cooldown.is_ready() or hud.ability_cooldown.seconds_text() != "READY":
+		f.append("root HUD with no ability keys: '%s', want READY (0.0 / 3.0 defaults)"
+				% hud.ability_cooldown.seconds_text())
+	hud.free()
 	var rows = IconRowsScript.new()
 	rows.set_curses([{"id": "cold_start", "stacks": 2}])
 	rows.set_upgrades([{"id": "long_reach", "stacks": 1}])
@@ -244,6 +266,10 @@ func _test_element_set(f: Array[String]) -> void:
 	rows.toggle_collapsed()
 	if rows.is_collapsed():
 		f.append("icon rows did not re-expand on Tab")
+	# a rebuild must not leave the previous cells in the row (queue_free is end-of-frame)
+	rows.set_curses([{"id": "cold_start", "stacks": 2}])
+	if rows._curses_row.get_child_count() != 1:
+		f.append("icon rows hold %d curse cells for 1 curse" % rows._curses_row.get_child_count())
 	rows.free()
 	var roster = EnemyRosterScript.new()
 	roster.set_roster([{"id": "kiwi_cat", "count": 2}, {"id": "coil", "count": 1}, {"id": "seal", "count": 0}])
@@ -251,6 +277,10 @@ func _test_element_set(f: Array[String]) -> void:
 		f.append("roster shows %d entries, want 2 (count 0 entries hidden)" % roster.roster_count())
 	if roster.count_for("kiwi_cat") != 2:
 		f.append("roster count for kiwi_cat: %d, want 2" % roster.count_for("kiwi_cat"))
+	# the roster is re-sent every tick: a rebuild must not stack the stale cells
+	roster.set_roster([{"id": "kiwi_cat", "count": 2}, {"id": "coil", "count": 1}, {"id": "seal", "count": 0}])
+	if roster._row.get_child_count() != 2:
+		f.append("roster holds %d cells for 2 entries" % roster._row.get_child_count())
 	roster.free()
 	# diegetic danger text: the table and the TBD fallback
 	if DangerTextScript.spawn_line("kiwi_cat") != "THE KIWI CAT SHALL FOLLOW":
@@ -283,6 +313,55 @@ func _test_element_set(f: Array[String]) -> void:
 	if ro.visible:
 		f.append("run-over screen still visible after hide_run_over")
 	ro.free()
+
+
+# ---- the Cartographer map: sync feeds facing and the sim's own gift/mine state ----
+
+func _test_cartographer_map(f: Array[String]) -> void:
+	var level := {
+		"tiles": [[0, 0, 0, 0, 0]],
+		"pieces": [{"id": 0, "kind": 0}],
+		"gifts": [{"id": 0, "x": 0, "z": 0, "y": 0, "piece": 0, "tier": 0, "occ": 0},
+			{"id": 1, "x": 1, "z": 0, "y": 0, "piece": 0, "tier": 0, "occ": 1}],
+		"beacon": [0, 0, 0],
+	}
+	var colours := {"platform": Color(0.2, 0.7, 0.7), "walkway": Color(0.2, 0.4, 0.9),
+			"gift": Color(0.9, 0.8, 0.2), "mine": Color(1.0, 0.3, 0.8),
+			"beacon": Color(0.5, 1.0, 0.5)}
+	var foot: Dictionary = {Vector2i(0, 0): true}
+	# sync hands the player's heading to the model: due east turns the arrow east
+	var up := _StubMapUpgrades.new()
+	up.visited = {0: foot}
+	var lv := _StubMapLv.new()
+	lv.level_dict = level
+	lv.players = [{"x": 0.5, "z": 0.5}]
+	lv.upgrades = up
+	var map = CartographerMapScript.new()
+	map.sync(lv, 0, 2.0, colours, 0.0)
+	var east := false
+	for item in map._model:
+		if item.has("triangle"):
+			east = float(item["triangle"][0].x) > CartographerMapScript.SIZE * 0.5
+	if not east:
+		f.append("cartographer map: sync dropped facing - the player arrow does not point east")
+	map.sync(lv, 0, 2.0, colours)   # the default: north-up
+	var north := false
+	for item in map._model:
+		if item.has("triangle"):
+			north = float(item["triangle"][0].y) < CartographerMapScript.SIZE * 0.5
+	if not north:
+		f.append("cartographer map: the default facing is not up/north")
+	map.free()
+	# collected gifts and defused mines come off the map (the sim twin's own filter)
+	var plain: int = CartographerMapScript.revealed_rows(level, foot, 0.5, 0.5).size()
+	if plain != 3:
+		f.append("cartographer map: %d reveal rows with no gift/mine state, want 3 (gift, mine, beacon)" % plain)
+	var slots := _StubMapSlots.new()
+	slots.collected_ids = [0]
+	slots.consumed_ids = [1]
+	var after: int = CartographerMapScript.revealed_rows(level, foot, 0.5, 0.5, slots, slots).size()
+	if after != 1:
+		f.append("cartographer map: %d reveal rows after 1 pickup and 1 defuse, want 1 (the beacon)" % after)
 
 
 # ---- T-086: the section 2.4 stepped animations (spend/restore/free/bloom/black-out) ---
@@ -369,6 +448,18 @@ func _test_t086_animations(f: Array[String]) -> void:
 		f.append("FREE tick still active after %d ticks" % int(FREE_TICKS))
 	if pips.filled_count() != 2:
 		f.append("free fall changed the pip count: %d filled, want 2 (stays filled)" % pips.filled_count())
+	# a charge spent inside the window must move the flash to the new last held pip
+	pips.set_charges(2, 2)
+	pips.pip_free_fall()
+	pips.set_charges(1, 2)
+	if pips._free_index != 0:
+		f.append("FREE flash left on pip %d after a spend inside the window, want 0 (held is 1)"
+				% pips._free_index)
+	pips.advance(FREE_TICKS + 1.0)
+	pips.set_charges(0, 2)
+	pips.pip_free_fall()
+	if pips.free_tick_active():
+		f.append("pip_free_fall raised the FREE tick with no held charge")
 	# Last Light trigger: the icon shatters over 12 ticks
 	pips.last_light_trigger()
 	if not pips.shatter_active():
@@ -443,3 +534,32 @@ func _test_t086_animations(f: Array[String]) -> void:
 	if ro.curse_icon_id() != "":
 		f.append("tripmine death shows a curse icon: '%s', want none" % ro.curse_icon_id())
 	ro.free()
+
+
+# ---- stubs for the map's sync path (a LevelState stand-in; no ClassDB involved) ----
+
+class _StubMapUpgrades extends RefCounted:
+	var visited: Dictionary = {}
+
+	## Any key: this test pins sync()'s forwarding, not its ownership guard.
+	func has(_role: String) -> bool:
+		return true
+
+
+class _StubMapLv extends RefCounted:
+	var level_dict: Dictionary = {}
+	var players: Array = []
+	var upgrades: RefCounted = null
+	var gifts: RefCounted = null
+	var mines: RefCounted = null
+
+
+class _StubMapSlots extends RefCounted:
+	var collected_ids: Array = []
+	var consumed_ids: Array = []
+
+	func collected(i: int) -> bool:
+		return collected_ids.has(i)
+
+	func is_consumed(i: int) -> bool:
+		return consumed_ids.has(i)

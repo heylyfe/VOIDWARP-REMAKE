@@ -10,6 +10,7 @@ extends RefCounted
 # stats file - not the test - is what stays glued to section 5.4.
 
 const RT := preload("res://sim/enemy_runtime.gd")
+const ArbiterScript := preload("res://sim/enemy_arbiter.gd")
 const Isagi := preload("res://content/enemies/isagi/enemy.gd")
 const IsagiView := preload("res://view/isagi_view.gd")
 const RegistryScript := preload("res://core/registry.gd")
@@ -33,6 +34,7 @@ func run() -> Array[String]:
 	_step_clears_line(f, stats)
 	_ball_stops_on_tile(f, stats)
 	_ball_life_cap(f, stats)
+	_aim_telegraph_bounded(f, stats)
 	_body_contact_kills(f, stats)
 	_perch_relocation(f, stats)
 	_lane_dwell_and_suppression(f, stats)
@@ -357,6 +359,48 @@ func _ball_life_cap(f: Array[String], stats: Dictionary) -> void:
 					f.append("isagi: life-cap ball ended at x %.2f - it never left over the void" % bx)
 				return
 	f.append("isagi: no projectile_end at all - the ball never ended (want the 180-tick life cap)")
+
+
+# The aim line is a cue, not a hazard (the file header's own comment), and the arbiter's
+# no_targeted_telegraph answers "no live telegraph footprint covers the player". Two
+# properties follow: the footprint covers NO point of the level (an absent/negative radius
+# makes point_in_shape default the centre to the QUERIED point, so it matches everywhere),
+# and the entry expires when the wind-up ends - the runtime never prunes rt.telegraphs, so
+# an un-aged entry vetoes address me's appearance for the rest of the level.
+func _aim_telegraph_bounded(f: Array[String], stats: Dictionary) -> void:
+	var scene := _los_scene(stats)
+	var rt = scene[0]
+	var ctl = scene[1]
+	_plan_isagi(rt, stats)
+	var tg: Dictionary = {}
+	for i in range(SPAWN_LATE + 200):
+		_events(rt)
+		for t in rt.telegraphs:
+			if str(t.get("kind", "")) == "aim" and int(t.get("ticks", 0)) > 0:
+				tg = t
+				break
+		if not tg.is_empty():
+			break
+	if tg.is_empty():
+		f.append("aim telegraph: no live aim entry appeared with clear LOS")
+		return
+	var shape: Dictionary = tg.get("shape", {})
+	if ArbiterScript.point_in_shape(shape, float(ctl.x), float(ctl.y), float(ctl.z)):
+		f.append("aim telegraph: the wind-up footprint covers the player's feet (shape %s)"
+				% str(shape))
+	if ArbiterScript.point_in_shape(shape, 0.0, 0.0, 0.0):
+		f.append("aim telegraph: the wind-up footprint covers the level origin (shape %s)"
+				% str(shape))
+	# the entry dies with the wind-up: no live aim entry survives it
+	for i in range(Isagi.WINDUP_TICKS + 2):
+		_events(rt)
+	var live := 0
+	for t in rt.telegraphs:
+		if str(t.get("kind", "")) == "aim" and int(t.get("ticks", 0)) > 0:
+			live += 1
+	if live > 0:
+		f.append("aim telegraph: %d live aim entr(ies) survive the wind-up (%d ticks after it began)"
+				% [live, Isagi.WINDUP_TICKS + 2])
 
 
 func _body_contact_kills(f: Array[String], stats: Dictionary) -> void:

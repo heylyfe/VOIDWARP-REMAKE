@@ -191,6 +191,11 @@ class SealBehavior:
 		row["phase_left"] = int(row.get("phase_left", 0)) - dt_ticks
 		if int(row["phase_left"]) <= 0:
 			row["phase"] = "recover"
+			# the dash has settled: the body is 20 u down its fixed line, so the mirror
+			# (what no_enemy_body_within and the D-059 safe tile read) moves with it. Once,
+			# at the settle - mid-dash the mirror is a lagging snapshot like any mover's
+			# (PARKED row 27: the mirror is otherwise the runtime's spawn point).
+			api.sync_body()
 			# SR-5: tempo (the part of a speed multiplier the ceiling removes) shortens the
 			# idle, never below TEMPO_FLOOR of the base cycle (api.tempo_ticks applies it)
 			row["phase_left"] = api.tempo_ticks(RECOVER_TICKS)
