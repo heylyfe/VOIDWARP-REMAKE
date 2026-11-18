@@ -1,0 +1,292 @@
+name: Build
+
+# Builds the three desktop targets on every push, pull request and tag.
+#
+# The engine is pinned to the version in tools/godot/VERSION.txt, and the job
+# fails if the downloaded binary reports a different hash, so a CI build and a
+# local build are the same build.
+#
+# macOS cross-builds from a Linux runner. A macOS host would be the native
+# choice, but the hosted arm64 pool queues for tens of minutes and then cancels
+# the job without ever assigning a runner, and an unsigned universal export
+# needs nothing macOS-hosted: Godot merges the two slices itself. Adding code
+# signing would move this back to a macos runner.
+#
+# The macOS build is unsigned (codesign disabled, `Testing` distribution).
+# Gatekeeper will refuse it on a fresh machine until the user allows it; signing
+# needs an Apple Developer identity and is out of scope for a CI build.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  GODOT_VERSION: 4.7.2-stable
+  GODOT_HASH: 4.7.2.stable.official.ed1daf0bf
+  GODOT_RELEASE: https://github.com/godotengine/godot/releases/download
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux (x86_64)
+            os: ubuntu-latest
+            preset: Linux
+            editor_zip: Godot_v4.7.2-stable_linux.x86_64.zip
+            editor: Godot_v4.7.2-stable_linux.x86_64
+            artifact: voidwrap-linux-x86_64
+            out: build/voidwrap.x86_64
+          - name: Windows (x86_64)
+            os: windows-latest
+            preset: Windows Desktop
+            editor_zip: Godot_v4.7.2-stable_win64.exe.zip
+            editor: Godot_v4.7.2-stable_win64.exe
+            artifact: voidwrap-windows-x86_64
+            out: build/voidwrap.exe
+          - name: macOS (universal, cross-built)
+            os: ubuntu-latest
+            preset: macOS
+            editor_zip: Godot_v4.7.2-stable_linux.x86_64.zip
+            editor: Godot_v4.7.2-stable_linux.x86_64
+            artifact: voidwrap-macos-universal
+            out: build/voidwrap.zip
+    steps:
+      - uses: actions/checkout@v7
+
+      # The engine and its templates live in per-user directories that differ per
+      # OS. Two forms of each are emitted: the native one for actions/cache, and
+      # the POSIX one for the bash steps, because Git Bash's coreutils and GNU
+      # tar disagree about `D:/...` (tar reads it as a remote host).
+      - name: Resolve engine and template locations
+        id: dirs
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$RUNNER_OS" in
+            Linux)
+              root="$RUNNER_TEMP/godot-ci"
+              tpl="$HOME/.local/share/godot/export_templates"
+              ;;
+            macOS)
+              root="$RUNNER_TEMP/godot-ci"
+              tpl="$HOME/Library/Application Support/Godot/export_templates"
+              ;;
+            Windows)
+              root="$(cygpath -m "$RUNNER_TEMP" 2>/dev/null || echo "$RUNNER_TEMP")/godot-ci"
+              tpl="$(cygpath -m "$APPDATA" 2>/dev/null || echo "$APPDATA")/Godot/export_templates"
+              ;;
+            *)
+              echo "unsupported runner: $RUNNER_OS" >&2
+              exit 1
+              ;;
+          esac
+          if [ "$RUNNER_OS" = 'Windows' ]; then
+            root_sh="$(cygpath -u "$root")"
+            tpl_sh="$(cygpath -u "$tpl")"
+          else
+            root_sh="$root"
+            tpl_sh="$tpl"
+          fi
+          {
+            echo "root=$root"
+            echo "tpl=$tpl"
+            echo "root_sh=$root_sh"
+            echo "tpl_sh=$tpl_sh"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Cache engine and export templates
+        uses: actions/cache@v6
+        with:
+          path: |
+            ${{ steps.dirs.outputs.root }}
+            ${{ steps.dirs.outputs.tpl }}
+          key: godot-${{ env.GODOT_VERSION }}-${{ runner.os }}
+
+      - name: Install the pinned engine and its export templates
+        shell: bash
+        run: |
+          set -euo pipefail
+          root='${{ steps.dirs.outputs.root_sh }}'
+          tpl='${{ steps.dirs.outputs.tpl_sh }}'
+          editor='${{ matrix.editor }}'
+          editor_zip='${{ matrix.editor_zip }}'
+          # 4.7.2-stable on the release page, 4.7.2.stable as the templates folder
+          ver="${GODOT_VERSION/-/.}"
+
+          # Git Bash ships GNU tar, which cannot read a zip and reads the `D:` in
+          # `D:/path` as a remote host name, so Windows unzips through Python
+          # (present on the runner) with PowerShell as a last resort.
+          extract() {  # extract() <archive> <dest>
+            mkdir -p "$2"
+            case "$RUNNER_OS" in
+              Windows)
+                if command -v python3 >/dev/null 2>&1; then py=python3
+                elif command -v python >/dev/null 2>&1; then py=python
+                else py=""
+                fi
+                if [ -n "$py" ]; then
+                  "$py" -c 'import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])' \
+                    "$(cygpath -w "$1")" "$(cygpath -w "$2")"
+                else
+                  powershell -NoProfile -Command \
+                    "Expand-Archive -LiteralPath '$(cygpath -w "$1")' -DestinationPath '$(cygpath -w "$2")' -Force"
+                fi
+                ;;
+              *)
+                unzip -q -o "$1" -d "$2"
+                ;;
+            esac
+          }
+
+          mkdir -p "$root"
+
+          if [ ! -e "$root/$editor" ]; then
+            echo "fetching engine $GODOT_VERSION"
+            curl -fsSL --retry 3 -o "$root/$editor_zip" "$GODOT_RELEASE/$GODOT_VERSION/$editor_zip"
+            extract "$root/$editor_zip" "$root"
+            rm -f "$root/$editor_zip"
+          fi
+
+          if [ ! -f "$tpl/$ver/.complete" ]; then
+            echo "fetching export templates $GODOT_VERSION"
+            mkdir -p "$tpl/$ver"
+            curl -fsSL --retry 3 -o "$root/templates.tpz" \
+              "$GODOT_RELEASE/$GODOT_VERSION/Godot_v${GODOT_VERSION}_export_templates.tpz"
+            tmp="$root/tpl-extract"
+            rm -rf "$tmp"
+            extract "$root/templates.tpz" "$tmp"
+            # the tpz nests everything under templates/
+            if [ -d "$tmp/templates" ]; then
+              mv "$tmp"/templates/* "$tpl/$ver"/
+            else
+              mv "$tmp"/* "$tpl/$ver"/
+            fi
+            rm -rf "$tmp" "$root/templates.tpz"
+            chmod +x "$tpl/$ver"/* 2>/dev/null || true
+            touch "$tpl/$ver/.complete"
+          fi
+
+          chmod +x "$root/$editor" 2>/dev/null || true
+          if [ "$RUNNER_OS" = 'macOS' ]; then
+            xattr -dr com.apple.quarantine "$root/Godot.app" 2>/dev/null || true
+          fi
+
+      - name: Verify the engine matches the pinned hash
+        shell: bash
+        run: |
+          set -euo pipefail
+          engine='${{ steps.dirs.outputs.root_sh }}/${{ matrix.editor }}'
+          got="$("$engine" --headless --version | tail -1)"
+          echo "engine reports: $got"
+          if [ "$got" != "$GODOT_HASH" ]; then
+            echo "expected $GODOT_HASH (tools/godot/VERSION.txt), got $got" >&2
+            exit 1
+          fi
+
+      # A fresh checkout has no .godot import cache, so the export has nothing to
+      # pack until resources are imported. Import failures are only a warning
+      # here, same as the local gate: the export step is the real check.
+      - name: Import resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          engine='${{ steps.dirs.outputs.root_sh }}/${{ matrix.editor }}'
+          "$engine" --headless --path game --import || echo "WARN: import did not finish cleanly"
+
+      - name: Export
+        shell: bash
+        run: |
+          set -euo pipefail
+          engine='${{ steps.dirs.outputs.root_sh }}/${{ matrix.editor }}'
+          # Godot is a native binary and resolves the output path against the
+          # project dir; it gets a native path, bash gets the POSIX one.
+          out_sh="$GITHUB_WORKSPACE/${{ matrix.out }}"
+          if [ "$RUNNER_OS" = 'Windows' ]; then
+            out_arg="$(cygpath -w "$out_sh")"
+          else
+            out_arg="$out_sh"
+          fi
+          mkdir -p "$(dirname "$out_sh")"
+          "$engine" --headless --path game --export-release '${{ matrix.preset }}' "$out_arg" 2>&1 | tee export.log
+          if [ ! -s "$out_sh" ]; then
+            echo "export produced no file at $out_sh" >&2
+            exit 1
+          fi
+          bytes="$(wc -c < "$out_sh" | tr -d ' ')"
+          if [ "$bytes" -lt 1000000 ]; then
+            echo "export is only $bytes bytes; that is not a build" >&2
+            exit 1
+          fi
+          echo "wrote $out_sh ($bytes bytes)"
+
+      - name: Check the export for script errors
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -nE '^(SCRIPT )?ERROR:' export.log; then
+            echo "the export log carries engine errors (see above)" >&2
+            exit 1
+          fi
+
+      - name: Upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.out }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Summary
+        shell: bash
+        run: |
+          size="$(du -h '${{ matrix.out }}' | cut -f1)"
+          {
+            echo "### ${{ matrix.name }}"
+            echo
+            echo "- engine: \`$GODOT_HASH\`"
+            echo "- preset: \`${{ matrix.preset }}\`"
+            echo "- artifact: \`${{ matrix.artifact }}\` ($size)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Tag pushes also put the builds on the GitHub release, so the download page
+  # and the CI artifacts cannot drift apart.
+  release:
+    name: Attach builds to the release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" --title "$tag" \
+              --notes "Built from $GITHUB_SHA by the Build workflow."
+          fi
+          gh release upload "$tag" dist/* --clobber
+          ls -l dist
