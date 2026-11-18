@@ -9,10 +9,26 @@ third fall is the end of the run.
 
 The world is serious. The enemies are not.
 
-> **Status: alpha — `v0.1.0-alpha.3`.** One level, playable end to end. Not yet a 30-level run.
+> **Status: alpha — `v0.1.1-alpha.3`.** One level, playable end to end. Not yet a 30-level run.
 > See [What works today](#what-works-today) for the honest list.
 
 **VOIDWRAP RUN is a personal, non-commercial project — no money is involved, and it is not affiliated with, endorsed by, or connected to any person, brand, character, or IP referenced or depicted in the game.**
+
+## What changed in v0.1.1-alpha.3
+
+One change: **the camera is locked to the character, and neither of them turns.**
+
+Before this build the player figure rotated to face whatever direction it was moving while the
+camera stayed put, so the character spun underneath a fixed view. Now the figure is locked to the
+camera's forward: it always faces away from you and strafes. The camera does not turn either —
+there is no mouse-look, so nothing can rotate it. Movement is still camera-relative, so "forward"
+still means away from the camera.
+
+The other reading of the request — the camera swinging around behind the character as it turns —
+was built first and measured, then thrown away. It cannot work as a camera tweak: input is rotated
+by the camera yaw, the character faces its velocity, and the camera chasing that facing closes a
+loop. Holding a sideways direction spun the character at about **350°/s** and the camera never
+caught up. The numbers are in `DECISIONS.md` (D-T082-4) so nobody re-derives them.
 
 ## What changed in alpha.3
 
