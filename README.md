@@ -50,9 +50,10 @@ Known gaps, stated plainly:
 - **No 30-level run yet.** The intermission lobby exists as a scene but is not wired into the app
   loop, so a completed level returns to the menu instead of advancing.
 - **Five parked HIGH bugs** are documented in [`PARKED.md`](PARKED.md) rows 25–29, each with the
-  test that hides it. They are real and unfixed: the Last Light body push is inert, half the ramp
+  test that hides it. Four are live and unfixed: the Last Light body push is inert, half the ramp
   orientations report the wrong surface height, four enemies teleport without syncing their body
-  mirror, two bot route regressions, and the shipped exe predates the app loop.
+  mirror, and two bot route regressions. The fifth — a shipped exe that predated the app loop — is
+  closed by this release, which is a fresh export from the tagged tree.
 
 ## How a run works
 
