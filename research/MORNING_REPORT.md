@@ -18,10 +18,11 @@ Written at the end of the run. Every number below comes from a command run in th
 something could not be measured, it says so instead of guessing.
 
 - **Repository:** https://github.com/heylyfe/VOIDWARP-REMAKE (public)
-- **Branch:** `main`, 341 commits
-- **Pushed head:** **`53672e3`** — `git rev-parse HEAD` and `git ls-remote origin main` both return
-  `53672e347dd6c84a0eaafdf78964d2c6da2a5965`, and `git branch -vv` shows `main` in sync with
-  `origin/main`. The first push of the night was `90212f9` (323 commits); this is the final one.
+- **Branch:** `main`, 343 commits
+- **Pushed head:** **`a5d68de`** — `git rev-parse HEAD` and `git ls-remote origin main` both return
+  `a5d68de24f7caba1fed28d4e2605e7af5c4d9713`, and `git branch -vv` shows `main` in sync with
+  `origin/main`. The night's pushes were `90212f9` (323 commits), `f4dfcda` (the final commit) and
+  `a5d68de` (the final check's three fixes and the post-run reports).
 - **Alpha tag `v0.1.0-alpha.1`: NOT created.** A3 fails, so the gate does not pass. See below.
 
 ---
