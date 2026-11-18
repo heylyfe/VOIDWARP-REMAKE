@@ -4,9 +4,13 @@ name: Build
 #
 # The engine is pinned to the version in tools/godot/VERSION.txt, and the job
 # fails if the downloaded binary reports a different hash, so a CI build and a
-# local build are the same build. Each target is built on its own runner
-# instead of cross-exported: macOS in particular wants a macOS host to produce
-# a universal binary, and the export templates carry per-host tools.
+# local build are the same build.
+#
+# macOS cross-builds from a Linux runner. A macOS host would be the native
+# choice, but the hosted arm64 pool queues for tens of minutes and then cancels
+# the job without ever assigning a runner, and an unsigned universal export
+# needs nothing macOS-hosted: Godot merges the two slices itself. Adding code
+# signing would move this back to a macos runner.
 #
 # The macOS build is unsigned (codesign disabled, `Testing` distribution).
 # Gatekeeper will refuse it on a fresh machine until the user allows it; signing
@@ -53,11 +57,11 @@ jobs:
             editor: Godot_v4.7.2-stable_win64.exe
             artifact: voidwrap-windows-x86_64
             out: build/voidwrap.exe
-          - name: macOS (universal)
-            os: macos-latest
+          - name: macOS (universal, cross-built)
+            os: ubuntu-latest
             preset: macOS
-            editor_zip: Godot_v4.7.2-stable_macos.universal.zip
-            editor: Godot.app/Contents/MacOS/Godot
+            editor_zip: Godot_v4.7.2-stable_linux.x86_64.zip
+            editor: Godot_v4.7.2-stable_linux.x86_64
             artifact: voidwrap-macos-universal
             out: build/voidwrap.zip
     steps:
