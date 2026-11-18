@@ -63,8 +63,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # The templates directory lives in the engine's per-user data folder, which
-      # differs per OS. Resolve it once and hand the path to the cache step.
+      # The engine and its templates live in per-user directories that differ per
+      # OS. Two forms of each are emitted: the native one for actions/cache, and
+      # the POSIX one for the bash steps, because Git Bash's coreutils and GNU
+      # tar disagree about `D:/...` (tar reads it as a remote host).
       - name: Resolve engine and template locations
         id: dirs
         shell: bash
@@ -88,8 +90,19 @@ jobs:
               exit 1
               ;;
           esac
-          echo "root=$root" >> "$GITHUB_OUTPUT"
-          echo "tpl=$tpl" >> "$GITHUB_OUTPUT"
+          if [ "$RUNNER_OS" = 'Windows' ]; then
+            root_sh="$(cygpath -u "$root")"
+            tpl_sh="$(cygpath -u "$tpl")"
+          else
+            root_sh="$root"
+            tpl_sh="$tpl"
+          fi
+          {
+            echo "root=$root"
+            echo "tpl=$tpl"
+            echo "root_sh=$root_sh"
+            echo "tpl_sh=$tpl_sh"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Cache engine and export templates
         uses: actions/cache@v6
@@ -103,18 +116,35 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          root='${{ steps.dirs.outputs.root }}'
-          tpl='${{ steps.dirs.outputs.tpl }}'
+          root='${{ steps.dirs.outputs.root_sh }}'
+          tpl='${{ steps.dirs.outputs.tpl_sh }}'
           editor='${{ matrix.editor }}'
           editor_zip='${{ matrix.editor_zip }}'
           # 4.7.2-stable on the release page, 4.7.2.stable as the templates folder
           ver="${GODOT_VERSION/-/.}"
 
+          # Git Bash ships GNU tar, which cannot read a zip and reads the `D:` in
+          # `D:/path` as a remote host name, so Windows unzips through Python
+          # (present on the runner) with PowerShell as a last resort.
           extract() {  # extract() <archive> <dest>
             mkdir -p "$2"
             case "$RUNNER_OS" in
-              Windows) tar -xf "$1" -C "$2" ;;
-              *)       unzip -q -o "$1" -d "$2" ;;
+              Windows)
+                if command -v python3 >/dev/null 2>&1; then py=python3
+                elif command -v python >/dev/null 2>&1; then py=python
+                else py=""
+                fi
+                if [ -n "$py" ]; then
+                  "$py" -c 'import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])' \
+                    "$(cygpath -w "$1")" "$(cygpath -w "$2")"
+                else
+                  powershell -NoProfile -Command \
+                    "Expand-Archive -LiteralPath '$(cygpath -w "$1")' -DestinationPath '$(cygpath -w "$2")' -Force"
+                fi
+                ;;
+              *)
+                unzip -q -o "$1" -d "$2"
+                ;;
             esac
           }
 
@@ -155,7 +185,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          engine='${{ steps.dirs.outputs.root }}/${{ matrix.editor }}'
+          engine='${{ steps.dirs.outputs.root_sh }}/${{ matrix.editor }}'
           got="$("$engine" --headless --version | tail -1)"
           echo "engine reports: $got"
           if [ "$got" != "$GODOT_HASH" ]; then
@@ -170,34 +200,34 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          engine='${{ steps.dirs.outputs.root }}/${{ matrix.editor }}'
+          engine='${{ steps.dirs.outputs.root_sh }}/${{ matrix.editor }}'
           "$engine" --headless --path game --import || echo "WARN: import did not finish cleanly"
 
       - name: Export
         shell: bash
         run: |
           set -euo pipefail
-          engine='${{ steps.dirs.outputs.root }}/${{ matrix.editor }}'
-          # Godot resolves the output path against the project dir, so it has to be
-          # absolute; on Windows that means a cygpath'd workspace, not D:\ mixed
-          # with forward slashes.
-          case "$RUNNER_OS" in
-            Windows) ws="$(cygpath -m "$GITHUB_WORKSPACE" 2>/dev/null || echo "$GITHUB_WORKSPACE")" ;;
-            *)       ws="$GITHUB_WORKSPACE" ;;
-          esac
-          out="$ws/${{ matrix.out }}"
-          mkdir -p "$(dirname "$out")"
-          "$engine" --headless --path game --export-release '${{ matrix.preset }}' "$out" 2>&1 | tee export.log
-          if [ ! -s "$out" ]; then
-            echo "export produced no file at $out" >&2
+          engine='${{ steps.dirs.outputs.root_sh }}/${{ matrix.editor }}'
+          # Godot is a native binary and resolves the output path against the
+          # project dir; it gets a native path, bash gets the POSIX one.
+          out_sh="$GITHUB_WORKSPACE/${{ matrix.out }}"
+          if [ "$RUNNER_OS" = 'Windows' ]; then
+            out_arg="$(cygpath -w "$out_sh")"
+          else
+            out_arg="$out_sh"
+          fi
+          mkdir -p "$(dirname "$out_sh")"
+          "$engine" --headless --path game --export-release '${{ matrix.preset }}' "$out_arg" 2>&1 | tee export.log
+          if [ ! -s "$out_sh" ]; then
+            echo "export produced no file at $out_sh" >&2
             exit 1
           fi
-          bytes="$(wc -c < "$out" | tr -d ' ')"
+          bytes="$(wc -c < "$out_sh" | tr -d ' ')"
           if [ "$bytes" -lt 1000000 ]; then
             echo "export is only $bytes bytes; that is not a build" >&2
             exit 1
           fi
-          echo "wrote $out ($bytes bytes)"
+          echo "wrote $out_sh ($bytes bytes)"
 
       - name: Check the export for script errors
         shell: bash
