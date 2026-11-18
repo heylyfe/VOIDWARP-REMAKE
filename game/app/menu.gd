@@ -38,7 +38,7 @@ const ENTRY_HOWTO := 1
 const ENTRY_QUIT := 2
 
 ## D-MENU-5: the build's version tag (the alpha tag named in AUDIT.md was not created yet).
-const VERSION_TAG := "v0.1.0-alpha.2 pre-release"
+const VERSION_TAG := "v0.1.0-alpha.3 pre-release"
 
 ## One line under the entries, per entry (what confirming it does).
 const ENTRY_HINTS := [

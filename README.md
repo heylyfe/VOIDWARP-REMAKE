@@ -9,14 +9,14 @@ third fall is the end of the run.
 
 The world is serious. The enemies are not.
 
-> **Status: alpha — `v0.1.0-alpha.2`.** One level, playable end to end. Not yet a 30-level run.
+> **Status: alpha — `v0.1.0-alpha.3`.** One level, playable end to end. Not yet a 30-level run.
 > See [What works today](#what-works-today) for the honest list.
 
 **VOIDWRAP RUN is a personal, non-commercial project — no money is involved, and it is not affiliated with, endorsed by, or connected to any person, brand, character, or IP referenced or depicted in the game.**
 
-## What changed in alpha.2
+## What changed in alpha.3
 
-Alpha.1 shipped with the floor invisible. Six things were wrong; all six are fixed.
+Alpha.1 and alpha.2 shipped with the floor invisible. Six things were wrong; all six are fixed.
 
 | what you saw | what it was | what it is now |
 |---|---|---|
