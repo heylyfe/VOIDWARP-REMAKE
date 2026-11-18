@@ -51,6 +51,40 @@ func setup_from_sheet(doc: Dictionary, folder_dir: String) -> void:
 				"fps": float(fps) if (fps is float or fps is int) else 1.0,
 				"loop": bool(a.get("loop", true)),
 				"body_rect": a.get("body_rect", [[0, 0, 256, 256]])}
+	# The T-083 anim block (anim.states) is the authoritative per-state art: the sim's
+	# anim_state names (idle_chase, attack_touch, recover, ...) live there, not in the
+	# T-016 animations[] list. Without this merge an enemy whose sim state has no
+	# animations[] row freezes on whatever frame it last showed.
+	var fallback_rect: Variant = [[0, 0, 256, 256]]
+	for a in doc.get("animations", []):
+		fallback_rect = a.get("body_rect", fallback_rect)
+		break
+	var block: Variant = doc.get("anim")
+	if block is Dictionary:
+		var states: Variant = (block as Dictionary).get("states")
+		if states is Dictionary:
+			for state_id in (states as Dictionary).keys():
+				var key := str(state_id)
+				if anims.has(key):
+					continue
+				var st: Dictionary = (states as Dictionary)[state_id]
+				var stexs: Array = []
+				for fpath in st.get("frames", []):
+					var sfull := folder_dir.path_join(str(fpath))
+					stexs.append(load(sfull) if ResourceLoader.exists(sfull) else null)
+				if stexs.is_empty():
+					continue
+				var sfps: Variant = st.get("fps")
+				var fps_v := 10.0
+				if sfps is float or sfps is int:
+					fps_v = float(sfps)
+				else:
+					var tpf: Variant = st.get("ticks_per_frame")
+					if (tpf is float or tpf is int) and float(tpf) > 0.0:
+						fps_v = 60.0 / float(tpf)
+				anims[key] = {"frames": stexs, "fps": fps_v,
+					"loop": bool(st.get("loop", true)),
+					"body_rect": st.get("body_rect", fallback_rect)}
 	anim_name = ""
 	anim_t = 0.0
 	frame_i = 0

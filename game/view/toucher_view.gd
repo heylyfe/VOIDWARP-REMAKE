@@ -23,6 +23,15 @@ extends Node3D
 # Y-rotation only, never rotated the other way - the anim block's face_player says
 # "mirror_horizontal_only, never_rotated"); the sprite renders with the texture's
 # alpha scissor so transparent padding never draws (billboard.gd's scissor rule).
+#
+# FLOOR-ONLY MODE (the playable world's hook): setup(..., true) builds ONLY the
+# decal layer (no body billboard, no anim player) so a caller that already draws
+# the body itself can still render the corrupted floor. The node then sits at the
+# world origin: the sim's glitched entries carry ABSOLUTE tile coordinates and the
+# decals are placed there verbatim (placing this node anywhere else offsets the
+# decals by that amount). sync_floor_rows() is the one-call per-frame entry point
+# for that mode: it merges every toucher row's glitched list (one decal per tile
+# key, first listing wins) and ages them against the rows' shared rt_tick.
 
 const EnemyAnimScript := preload("res://view/enemy_anim.gd")
 const BillboardScript := preload("res://view/billboard.gd")
@@ -69,6 +78,8 @@ var _cleanse: Dictionary = {}         # the live ben cleanse wave (see on_cleans
 # per-state art is swapped in here, where the state id is known.
 var _state_frames: Dictionary = {}    # state_id -> Array[Texture2D]
 var _active_state := ""
+var _floor_only := false               # floor-only mode (see the header comment)
+var _floor_tick := 0                   # last rt_tick seen by sync_floor_rows
 
 
 ## The anim block's state ids, for callers/tests that prove the wiring.
@@ -76,26 +87,31 @@ func anim_state_ids() -> Array:
 	return (_anim_block.get("states", {}) as Dictionary).keys()
 
 
-func setup(sheet_path: String = SHEET_REL, folder: String = FOLDER_REL) -> void:
+## floor_only: build only the decal layer (no body billboard / anim player); the
+## caller draws the body itself (the playable world's boards). The node must sit at
+## the world origin in that mode - decal coordinates are the sim's absolute tiles.
+func setup(sheet_path: String = SHEET_REL, folder: String = FOLDER_REL, floor_only: bool = false) -> void:
 	for child in get_children():
 		child.free()
 	_folder = folder
+	_floor_only = floor_only
 	if FileAccess.file_exists(sheet_path):
 		var parsed = JSON.parse_string(FileAccess.get_file_as_string(sheet_path))
 		if parsed is Dictionary:
 			_doc = parsed
 	_anim_block = _doc.get("anim", {})
 	_read_anim_block()
-	_sprite_wrap = Node3D.new()
-	_sprite_wrap.name = "SpriteWrap"
-	add_child(_sprite_wrap)
-	billboard = BillboardScript.new()
-	_sprite_wrap.add_child(billboard)
-	if not _doc.is_empty():
-		billboard.setup_from_sheet(_doc, folder)
-	anim = EnemyAnimScript.new()
-	anim.setup("toucher", _doc, folder)
-	anim.bind_view(self)
+	if not _floor_only:
+		_sprite_wrap = Node3D.new()
+		_sprite_wrap.name = "SpriteWrap"
+		add_child(_sprite_wrap)
+		billboard = BillboardScript.new()
+		_sprite_wrap.add_child(billboard)
+		if not _doc.is_empty():
+			billboard.setup_from_sheet(_doc, folder)
+		anim = EnemyAnimScript.new()
+		anim.setup("toucher", _doc, folder)
+		anim.bind_view(self)
 	_build_decals()
 
 
@@ -198,9 +214,14 @@ func set_texture(tex) -> void:
 # ---- one view frame -----------------------------------------------------------------
 
 ## row is the sim row (read-only); dt is seconds elapsed. The caller places this
-## node at the enemy's feet. Frames advance through the shared player at the sim's
-## tick rate; decals read the row's glitched list against the row's rt_tick.
+## node at the world origin in floor-only mode (decals use the sim's absolute tile
+## coordinates); in full mode it may sit wherever the body should be. Frames advance
+## through the shared player at the sim's tick rate; decals read the row's glitched
+## list against the row's rt_tick.
 func sync(row: Dictionary, dt: float, cam_pos: Vector3 = Vector3.ZERO) -> void:
+	if _floor_only:
+		_sync_decals(row)
+		return
 	if billguard_free():
 		return
 	var state := str(row.get("anim_state", "idle_chase"))
@@ -218,6 +239,36 @@ func sync(row: Dictionary, dt: float, cam_pos: Vector3 = Vector3.ZERO) -> void:
 # A freed/unset player means the view is dead; keep sync harmless.
 func billguard_free() -> bool:
 	return anim == null or billboard == null
+
+
+## Floor-only one-call pass for the playable world (floor-only mode): merges the
+## glitched lists of every row in `rows` whose id is "toucher" (e.g. rt.enemies)
+## and ages one decal per tile key against the rows' shared rt_tick (the runtime
+## tick counter every row carries). First listing of a key wins, so two touchers
+## listing the same tile still draw a single decal. Safe to call every frame and
+## with an empty rows array (decals simply age against the last seen tick).
+## Returns the number of live glitched tiles seen.
+func sync_floor_rows(rows: Array) -> int:
+	var merged: Array = []
+	var seen: Dictionary = {}
+	var now := _floor_tick
+	for row in rows:
+		if not (row is Dictionary):
+			continue
+		if str(row.get("id", "")) != "toucher":
+			continue
+		now = maxi(now, int(row.get("rt_tick", 0)))
+		for entry in row.get("glitched", []):
+			if not (entry is Dictionary):
+				continue
+			var key := str(entry.get("key", ""))
+			if key == "" or seen.has(key):
+				continue
+			seen[key] = true
+			merged.append(entry)
+	_floor_tick = now
+	_sync_decals({"glitched": merged, "rt_tick": now})
+	return merged.size()
 
 
 # ---- the corrupted floor decals ------------------------------------------------------

@@ -67,10 +67,17 @@ const HudScript := preload("res://view/hud/hud.gd")
 const GiftsViewScript := preload("res://view/gifts_view.gd")
 const TripmineViewScript := preload("res://view/tripmine_view.gd")
 const BeaconViewScript := preload("res://view/beacon_view.gd")
+# The glitched-floor decal layer. The body is one of the `boards` billboards; the decals are
+# a separate world-origin node in floor-only mode, because the sim's glitched entries carry
+# absolute tile coordinates and the body node moves.
+const ToucherViewScript := preload("res://view/toucher_view.gd")
 const ContentApiScript := preload("res://core/content_api.gd")
 const IntermissionScript := preload("res://sim/intermission.gd")
 const VoidRngScript := preload("res://terrain/void_rng.gd")
 const InputCaptureScript := preload("res://app/input_capture.gd")
+# The T-015 player figure. Without it the third-person rig frames empty space and the game
+# reads first-person: the camera sits 7 u behind a body that was never drawn.
+const PLAYER_MODEL := "res://assets/models/player_figure.glb"
 # APP-LOOP: the sim LevelState (gifts / mines / beacon), the gift + mine ticks and the
 # gold-phase economy - the same pieces tools/bot_run.gd ticks on the reference surface.
 const LevelStateScript := preload("res://sim/level_state.gd")
@@ -97,8 +104,12 @@ var hud: Control = null
 var gifts_view: Node3D = null
 var tripmine_view: Node3D = null
 var beacon_view: Node3D = null
+var toucher_floor: Node3D = null   # the glitched-floor decals (floor-only mode)
 var boards: Array = []          # EnemyRuntime enemies index -> billboard node (or null)
 var lstate: RefCounted = null   # the sim LevelState (gifts / mines / beacon); bot_run.gd's lv
+var player_model: Node3D = null # the T-015 player figure, feet on the controller's position
+var _player_yaw := 0.0          # last facing yaw; kept while standing still
+var _player_light: OmniLight3D = null   # palette.json player_fill_light, rides the figure
 
 var _economy: RefCounted = null   # the gold-phase economy (purse / chain); no upgrade stats yet
 var _gold_began := false          # beacon open -> begin_gold_phase + rt.on_beacon_open fire once
@@ -134,7 +145,11 @@ func build(seed_value: int, level: int) -> bool:
 	if lv.is_empty():
 		push_warning("world: voidgen.generate(%d, %d) returned {}" % [seed_value, level])
 		return false
-	w = CollisionScript.make_world(lv["tiles"], lv["props"], lv["pads"], {"dais": lv["beacon"]})
+	# The spawn is the level's own spawn tile (the collision default, spawns[0] - the same
+	# assembly feel_probe.gd and perf_probe.gd use). The bot_run override {"dais": beacon}
+	# plants the spawn inside the beacon monument, which encloses the 1.8 u figure and
+	# buries the third-person view's subject.
+	w = CollisionScript.make_world(lv["tiles"], lv["props"], lv["pads"])
 	# The sim LevelState: one level's slice of the state tree (players + gifts + mines +
 	# beacon). Built from the same Level dict; the run seed feeds the Defuse Kit roll.
 	lstate = LevelStateScript.build(lv, level, 1, seed_value)
@@ -192,6 +207,20 @@ func build(seed_value: int, level: int) -> bool:
 	fog.configure(FogEnvScript.biome_id_for_level(level), level)
 	add_child(fog)
 
+	# The void's own glow: one soft overhead light, shadows OFF (palette.json ambient's
+	# "no sun, no directional shadows" still holds - this casts nothing). Without it the
+	# only light was the near-black ambient plus the player's 18 u fill, so everything past
+	# the player's feet rendered black and the slab detail could not be seen at all.
+	var key := DirectionalLight3D.new()
+	key.name = "VoidGlow"
+	key.light_color = Color(str(FogEnvScript.load_palette().get("roles", {})
+			.get("void_glow", {}).get("hex", "#8FE8E0")))
+	key.light_energy = float(FogEnvScript.load_palette().get("roles", {})
+			.get("void_glow", {}).get("energy", 0.55))
+	key.shadow_enabled = false
+	key.rotation_degrees = Vector3(-62.0, 34.0, 0.0)
+	add_child(key)
+
 	# Third-person camera rig (app/camera_rig.gd defaults - the "normal third-person" view).
 	rig = CameraRigScript.new()   # the rig's defaults are its D-T082-1 values
 	rig.yaw_deg = 0.0
@@ -203,6 +232,31 @@ func build(seed_value: int, level: int) -> bool:
 	cam.fov = CameraRigScript.FOV_DEFAULT
 	cam.current = true
 	camera = cam
+
+	# The player figure (T-015): feet on the controller's position, yawed to the motion.
+	# Without it the third-person rig frames empty space and the game reads first-person.
+	var ps: PackedScene = load(PLAYER_MODEL)
+	if ps != null:
+		player_model = ps.instantiate()
+		player_model.position = Vector3(float(ctl.x), float(ctl.y), float(ctl.z))
+		player_model.rotation.y = _player_yaw
+		add_child(player_model)
+	# The player fill light (palette.json roles.player_fill_light: omni #BFFFF8, range 18,
+	# energy 1.2). Nothing ever created it, so ALBEDO rendered near-black and only the light
+	# squares' emission showed - the reason the slabs read as untextured. Parented to the
+	# figure so it follows the player; held 2.0 u behind the shoulder, because an omni parked
+	# at the body's centre lights almost nothing (the falloff kills the close-range term).
+	_player_light = OmniLight3D.new()
+	var fill: Dictionary = FogEnvScript.load_palette().get("roles", {}).get("player_fill_light", {})
+	_player_light.light_color = Color(str(fill.get("hex", "#BFFFF8")))
+	_player_light.omni_range = float(fill.get("range", 18.0))
+	_player_light.light_energy = float(fill.get("energy", 1.2))
+	_player_light.position = Vector3(0.0, 1.3, 2.0)
+	if player_model != null:
+		player_model.add_child(_player_light)
+	else:
+		_player_light.position = Vector3(float(ctl.x), float(ctl.y) + 1.3, float(ctl.z) + 2.0)
+		add_child(_player_light)
 
 	# HUD (CanvasLayer: a Control child of a Node3D never reaches the canvas).
 	_hud_layer = CanvasLayer.new()
@@ -223,6 +277,13 @@ func build(seed_value: int, level: int) -> bool:
 	beacon_view = BeaconViewScript.new()
 	add_child(beacon_view)
 	beacon_view.setup(lv)
+
+	# The glitched floor, at the world origin: the sim's glitched entries carry
+	# absolute tile coordinates, so this node must not move. Floor-only mode builds just the
+	# decal layer - the body is already one of the boards above.
+	toucher_floor = ToucherViewScript.new()
+	add_child(toucher_floor)
+	toucher_floor.setup(ToucherViewScript.SHEET_REL, ToucherViewScript.FOLDER_REL, true)
 
 	_level_number = level
 	return true
@@ -272,6 +333,7 @@ func step(dt: float) -> void:
 	_economy_pass(ev)
 	if rig != null:
 		rig.update_rig(Vector3(float(ctl.x), float(ctl.y), float(ctl.z)), dt)
+	_player_pass()
 	_billboard_pass(dt)
 	_view_pass()
 	_sync_hud()
@@ -340,6 +402,10 @@ func teardown() -> void:
 	gifts_view = null
 	tripmine_view = null
 	beacon_view = null
+	toucher_floor = null
+	player_model = null
+	_player_light = null
+	_player_yaw = 0.0
 	lstate = null
 	_economy = null
 	_gold_began = false
@@ -524,6 +590,20 @@ func _capture_input():
 			"aim_x": aim_x, "aim_z": aim_z}
 
 
+## The player figure pass: stand at the controller's feet, yawed to the horizontal
+## velocity (the last yaw is kept while standing still). The figure's forward is Godot's
+## -Z, the glTF Y-up conversion of the Blender +Y visor side.
+func _player_pass() -> void:
+	if player_model == null:
+		return
+	player_model.position = Vector3(float(ctl.x), float(ctl.y), float(ctl.z))
+	var hx := float(ctl.vx)
+	var hz := float(ctl.vz)
+	if hx * hx + hz * hz > 0.01:
+		_player_yaw = atan2(-hx, -hz)
+	player_model.rotation.y = _player_yaw
+
+
 func _billboard_pass(dt: float) -> void:
 	# outside the tree, global transforms error: the rig is a direct child of this node and
 	# this node is its own world, so the local position carries the same information
@@ -570,6 +650,8 @@ func _view_pass() -> void:
 		tripmine_view.sync(_eye_pos())
 	if beacon_view != null and lstate.beacon != null:
 		beacon_view.sync_from(lstate.beacon, lstate.gifts, lstate.tick)
+	if toucher_floor != null and rt != null:
+		toucher_floor.sync_floor_rows(rt.enemies)
 
 
 ## The eye the distance-driven view ramps measure from: the rig IS the camera holder, so

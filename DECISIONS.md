@@ -6557,3 +6557,60 @@ DECISION (APP-LOOP): game/tests/test_app_loop.gd collects gifts by pinning ctl t
   signal / is_complete asserts), or mines (consumption + last_light asserts).
 WHY: honest coverage of the loop at a cost the gate can afford; the bot owns end-to-end
   playthrough measurement (A3), not this test.
+- 2026-11-18 PR-4 CLEANUP (Opus 5.5): PR #4 "Fix release asset publishing without a
+  checkout" (copilot/fix-attach-builds-to-release) MERGED 2026-11-18T20:11:58Z; local main =
+  origin/main at 7e9f3f2 (merge already pulled). Head branch already auto-deleted on GitHub;
+  stale remote-tracking refs pruned. No code touched. Untouched on purpose: the uncommitted
+  owner WIP on main (game/app/world.gd, data/palette.json, view/level_mesher.gd,
+  view/toucher_view.gd, tools/diag_mesh.gd) and remote branches t3/ci-desktop-builds,
+  t3/release-asset-names (not part of PR #4; owner to rule). Next: orchestrator resumes from
+  the status board; verify the next release run attaches build assets.
+- 2026-11-18 ALPHA.2 (owner playtest, six complaints): the owner played alpha.1 for ten seconds and
+  filed six defects. Root causes, all confirmed by direct experiment rather than by reading:
+  (1) TILES HAD NO TEXTURE - `view/level_mesher.gd` `_face_y()` had its two winding branches
+      SWAPPED. The `up=true` branch was back-facing from above, so every tile TOP was culled and
+      the player saw the slab UNDERSIDE (`slab_side`, dark, untextured) instead. Proven by forcing
+      TOP_SHADER ALBEDO magenta (no change) and SIDE_SHADER green (the whole "floor" turned green),
+      then by swapping the branches (the tops appeared). Fixed: `up=true` is now
+      [(x0,z0),(x1,z0),(x1,z1),(x0,z1)], `up=false` the reverse. The same helper draws prop tops
+      and stems, so those were culled too and are fixed with it.
+      The ramp wedge top (`_wedge`) had the SAME defect in its own quad order - the sloped top was
+      back-facing from above. Fixed by reversing it to low-edge-first, high-edge-second.
+      Pinned by a new `test_mesh.gd` `_winding()`: for every triangle of every top material the
+      geometric outward normal must point up, and no `slab_side` triangle may point up. Godot front
+      faces are clockwise, so the outward normal of (v0,v1,v2) is (v2-v0)x(v1-v0) - the reverse of
+      the usual right-hand rule; the test documents that.
+  (2) THE HUB WAS FLAT COLOUR - `HUB_SHADER` was a single fill. Rewritten to carry the same detail
+      stack as the platform tops (checker, per-texel grain, per-tile tone shift, 1-texel seam,
+      3-texel bevel, 3-octave fbm value noise, speckle, noise-derived NORMAL, noise-varied
+      ROUGHNESS/SPECULAR) while keeping the dais star sigil. No test pinned the hub shader.
+  (3) ENEMIES FROZE ON ONE FRAME - `view/billboard.gd` `setup_from_sheet()` read only the legacy
+      T-016 `animations[]` array. The sim's `anim_state` names live in the T-083 `anim.states`
+      block, and 9 of 12 enemies had sim states with no matching art animation (address_me, coil,
+      gift_larper, gin, kiwi_cat, nuke, seal, thicc_ben, toucher). Fixed: after the `animations[]`
+      loop, walk `doc.anim.states` and add any state id not already present, resolving frames to
+      textures, fps from `state.fps` else `60.0/ticks_per_frame` else 10.0, `loop` from the state,
+      `body_rect` from the state or the first `animations[]` entry. A state the legacy list already
+      covers keeps the legacy art (the merge only fills gaps). Pinned by a new `test_billboard.gd`
+      `_anim_states()`: every frameless state is legal (it holds the previous texture), every state
+      with frames must resolve, and `set_animation` must accept it.
+      NOTE for the record: the toucher BODY was never broken - a direct render shows the gold hand.
+      The black/magenta checker the owner saw is `floor_00..04.png`, the glitched-floor decal
+      derived from their own `assets_src/enemies/glitchedground.jpeg`. That is supplied art.
+  (4) FIRST PERSON, NO BODY - the camera sat in the player's head. `app/world.gd` now builds a
+      third-person player figure (`PLAYER_MODEL`), a follow camera the player can orbit, a
+      `player_fill_light` omni so the figure reads against the fog, and a `VoidGlow`
+      DirectionalLight3D (shadows off) for ambient shape. `data/palette.json` gained the
+      `void_glow` role and raised `ambient.energy` 1.0 -> 2.6 and `player_fill_light` range 18 -> 26,
+      energy 1.2 -> 1.5: enough to read the tile texture, not enough to flatten the fog.
+  (5) PHASED THROUGH A PLATFORM - already fixed by PR #1: `sim/collision.gd` gained
+      `_prop_top_over()` and `move_body` takes prop tops as landing candidates; pinned by
+      `test_classes.gd:126 _test_prop_top`.
+  (6) GIFTS INVISIBLE - they were drawn all along; on an untextured floor they could not be seen.
+      Fixed by (1). The level now builds gift, gold gift, tripmine and beacon views.
+  Also: the README hero showed the ADDRESS ME explosion instead of the enemy. `out/make_hero.py`
+  (gitignored) now prefers `idle_00.png` and crops to the alpha bbox before scaling; `docs/hero.png`
+  regenerated and visually confirmed - all twelve cells are the real art.
+  The toucher's glitched floor is now a separate world-origin node (`view/toucher_view.gd`,
+  floor-only mode) because the sim's glitched entries carry absolute tile coordinates while the
+  body node moves. `app/world.gd` no longer overrides the dais with the beacon.

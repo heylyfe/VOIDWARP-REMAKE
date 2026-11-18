@@ -25,6 +25,7 @@ func run() -> Array[String]:
 		failures.append_array(_one(int(case[0]), int(case[1])))
 	failures.append_array(_determinism())
 	failures.append_array(_grain_range())
+	failures.append_array(_winding())
 	return failures
 
 func _one(seed: int, level: int) -> Array[String]:
@@ -144,4 +145,70 @@ func _grain_range() -> Array[String]:
 	# the CPU grain and the shader must agree at a normalised probe (documented wrap rule)
 	if absf(MesherScript.grain_factor(-8 + 3, -16 + 5) - MesherScript.grain_factor(4294967288 + 3, 4294967280 + 5)) > 1e-12:
 		failures.append("grain wrap rule mismatch for negative texels")
+	return failures
+
+
+# Winding regression (owner report: "tiles look horrible, they have absolutely no texture").
+# The top faces were emitted with the two _face_y branches swapped, so every tile TOP was
+# back-facing from above and got culled: the player saw the slab UNDERSIDE (slab_side, dark,
+# untextured) instead of the textured top. Nothing caught it because no test ever looked at
+# the triangle order. This one does: for every triangle of every top material the geometric
+# outward normal must point up, and every slab_side triangle must be vertical.
+#
+# Godot front faces are clockwise, so the outward normal of (v0, v1, v2) is
+# (v2 - v0) x (v1 - v0) - the reverse of the usual right-hand rule. Verified against the
+# known-good up=true quad: [(x0,z0), (x1,z0), (x1,z1), (x0,z1)] gives outward +Y.
+const TOP_MATS := ["platform_top", "walkway_top", "deadend_top", "hub_top"]
+const WIND_CASES := [[1, 1], [7, 1], [7, 12]]
+
+
+func _winding() -> Array[String]:
+	var failures: Array[String] = []
+	for case in WIND_CASES:
+		var seed := int(case[0])
+		var level := int(case[1])
+		var L := VoidGenScript.generate(seed, level)
+		if L.is_empty():
+			failures.append("winding: seed %d level %d generator failed" % [seed, level])
+			continue
+		var r: Dictionary = MesherScript.build(L)
+		var meshes: Dictionary = r["meshes"]
+		for mat in TOP_MATS:
+			if not meshes.has(mat):
+				continue
+			failures.append_array(_check_normals(meshes[mat], mat, seed, level, 1, 0.9))
+		if meshes.has("slab_side"):
+			failures.append_array(_check_normals(meshes["slab_side"], "slab_side", seed, level, 0, 0.1))
+	return failures
+
+
+# axis 1: outward normal .y must be >= limit (a top face, seen from above). axis 0: outward
+# normal .y must be <= limit (a side or underside face - never a face you could see from above
+# through the floor). Reports the first offending triangle per material.
+func _check_normals(m: ArrayMesh, mat: String, seed: int, level: int, axis: int, limit: float) -> Array[String]:
+	var failures: Array[String] = []
+	if m.get_surface_count() == 0:
+		return failures
+	var arrays := m.surface_get_arrays(0)
+	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var idx: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+	var bad := 0
+	var first := ""
+	for t in range(0, idx.size() - 2, 3):
+		var v0 := verts[idx[t]]
+		var v1 := verts[idx[t + 1]]
+		var v2 := verts[idx[t + 2]]
+		var n := (v2 - v0).cross(v1 - v0)
+		if n.length() < 1e-9:
+			continue
+		n = n.normalized()
+		var ok := (n.y >= limit) if axis == 1 else (n.y <= limit)
+		if not ok:
+			bad += 1
+			if first == "":
+				first = "tri %d at %s normal.y=%.4f" % [t / 3, str(v0), n.y]
+	if bad > 0:
+		var want := "outward normal.y >= %.2f (top face)" % limit if axis == 1 else "outward normal.y <= %.2f (side/underside)" % limit
+		failures.append("winding: seed %d level %d mesh '%s': %d/%d triangles back-facing, want %s; first %s"
+			% [seed, level, mat, bad, idx.size() / 3, want, first])
 	return failures

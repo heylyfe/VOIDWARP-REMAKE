@@ -9,10 +9,26 @@ third fall is the end of the run.
 
 The world is serious. The enemies are not.
 
-> **Status: alpha — `v0.1.0-alpha.1`.** One level, playable end to end. Not yet a 30-level run.
+> **Status: alpha — `v0.1.0-alpha.2`.** One level, playable end to end. Not yet a 30-level run.
 > See [What works today](#what-works-today) for the honest list.
 
 **VOIDWRAP RUN is a personal, non-commercial project — no money is involved, and it is not affiliated with, endorsed by, or connected to any person, brand, character, or IP referenced or depicted in the game.**
+
+## What changed in alpha.2
+
+Alpha.1 shipped with the floor invisible. Six things were wrong; all six are fixed.
+
+| what you saw | what it was | what it is now |
+|---|---|---|
+| Tiles had no texture at all | the level mesher emitted every tile **top** with its winding reversed, so the top face was back-facing and culled. You were looking at the slab **underside** — dark, flat, untextured | winding fixed; the tops carry the full detail stack: checker, per-texel grain, per-tile tone shift, seams, bevels, three-octave value noise, and a noise-derived normal and roughness |
+| The ground you spawn on was flat colour | the hub shader was a single flat fill | the hub now runs the same detail stack as the platforms, and keeps its star sigil |
+| Enemies froze on one frame | the billboard only read the legacy `animations[]` list; the sim drives the newer `anim.states` names, and 9 of 12 enemies had states with no matching art | both lists are merged, so every state the sim can ask for resolves to real art |
+| First person, no body | the camera sat in the player's head | third person: a real player figure, a follow camera you can orbit, and a fill light so the figure reads against the fog |
+| You fell through a platform | prop tops were not landing candidates | `move_body` takes prop tops as landings; pinned by `test_classes.gd` |
+| Gifts were invisible | they were drawn, but on an untextured floor you could not see them | gifts, gold gifts, tripmines and the beacon column are all drawn in the level |
+
+The README hero used to show the wrong image for **ADDRESS ME** — the explosion instead of the
+enemy. It now shows the elephant, and all twelve cells are the real art.
 
 ## Play it
 
@@ -122,7 +138,7 @@ powershell -File tools\gate.ps1
 powershell -File tools\harness.ps1
 ```
 
-The gate is the contract: 59 test files, terrain parity, sprite validation, fog readability across
+The gate is the contract: 62 test files, terrain parity, sprite validation, fog readability across
 five biomes, and a zero-`SCRIPT ERROR` requirement. Nothing merges red.
 
 ### Build
@@ -162,4 +178,5 @@ variants, so their builds are unchanged by it.
   non-commercial project. Per-enemy provenance is in `game/content/enemies/*/SOURCES.md`.
 - **Everything else** — generated for this project: terrain, meshes, audio cues, UI.
 
-this is a personal, non-commercial project with no money involved. It is not affiliated with, endorsed by, or connected to any person, brand, character, or IP referenced or depicted in the game.
+This is a personal, non-commercial project with no money involved. It is not affiliated with,
+endorsed by, or connected to any person, brand, character, or IP referenced or depicted in the game.

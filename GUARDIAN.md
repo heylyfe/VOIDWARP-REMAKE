@@ -627,3 +627,18 @@ FINAL REQUIREMENT: be extremely thorough. Do not assume the repository is safe j
 - Repo: local main c2dea93 (= origin/main incl. PR #1/#2/#3 + d506c5d, merged by guardian at owner request, nothing pushed: guardian token has no write access). Friend's build.yml tracked. origin/main unchanged 31c9aa6+.
 - RUNLOG.md still ends 07:29Z (13 h without a line). Faults: none (workers and orchestrator moving). Actions: none.
 - Expect 20:30Z: RUNLOG lines for merges, orchestrator push of the 2 local commits. If RUNLOG still silent and local main unmoved, one nudge to orchestrator.
+
+## 2026-11-18 20:30Z check #57
+- Re-armed 21:00Z. Orchestrator 466457f6 running (run 125 = Opus-allowed notice), itemCount 7731 (was 7311, +420), updated 20:28Z, pending 0.
+- Workers: COLLISION 154 (20:24Z), BOT 162 (20:24Z) running; TILES 487, WORLD-VIEW, ENEMY-SYNC, TOUCHER, HERO completed. No Opus delegate thread visible yet.
+- Repo: local main == origin/main == 7e9f3f2 (0/0). Orchestrator merged origin/main and pushed; origin also has PR #4 (434e40d, CI release-publish fix by copilot branch). Main checkout has uncommitted edits (world.gd, billboard, level_mesher, toucher_view, tests, palette, DECISIONS.md): integration of worker results in progress.
+- RUNLOG.md still ends 07:29Z. Faults: none. Actions: none.
+- Expect 21:00Z: new commits for TILES/WORLD-VIEW/TOUCHER + RUNLOG lines. If RUNLOG still silent and no new commit, one nudge.
+
+## 2026-11-18 21:00Z check #58
+- Re-armed 21:30Z. Orchestrator 466457f6 running (run 120 active, in a 10 min "Waiting for input" on the two Opus workers, started 20:56Z), itemCount 7840 (was 7731), updatedAt 20:58Z, pending 0. Run 125 (Opus notice) shows cancelled but the orchestrator did dispatch Opus.
+- Opus workers (claude-opus-5-5, dispatched 20:44Z): OPUS-1 105 items completed 20:57Z (4 tasks committed on t3/4acad0fb b2c5fa9, gate GATE OK 260 s, TESTS 63/0, nothing pushed); OPUS-2 95 items completed 20:58Z.
+- Inkling: BOT 163 (20:58Z) running; COLLISION 189, TILES 486 completed.
+- Repo: local main == origin/main 7e9f3f2 (0/0); 12 modified files in main checkout (integration pending the gate run).
+- RUNLOG.md still ends 07:29Z. Faults: none. Actions: none.
+- Expect 21:30Z: Opus branch merged, gate, RUNLOG lines, new commit/push. If orchestrator updatedAt older than 25 min with no new item, interrupt + R10.

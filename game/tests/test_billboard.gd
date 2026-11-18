@@ -85,6 +85,7 @@ func run() -> Array[String]:
 	_frames(f, b)
 	b.free()
 	_feet_all_enemies(f)
+	_anim_states(f)
 	return f
 
 
@@ -155,3 +156,63 @@ func _frames(f: Array[String], b) -> void:
 	b.set_animation("nope")
 	if b.anim_name == "nope":
 		f.append("billboard: set_animation accepted an unknown name")
+
+
+# T-083 anim.states merge (owner report: the toucher showed a black/magenta checker instead of
+# its own art). The sim drives billboards by anim_state name, and those names live in the
+# T-083 `anim.states` block, not in the legacy T-016 `animations[]` list. Before the merge,
+# 9 of 12 enemies had sim states with no art animation and froze on their last frame.
+# This pins the contract: every state the sim can ask for must resolve to a real animation,
+# unless the sheet deliberately gives it no frames (attack_touch / recover on the toucher).
+func _anim_states(f: Array[String]) -> void:
+	var dir := DirAccess.open("res://content/enemies")
+	if dir == null:
+		f.append("anim.states: cannot open res://content/enemies")
+		return
+	var checked := 0
+	for enemy_id in dir.get_directories():
+		var folder := "res://content/enemies/" + enemy_id
+		var jf := FileAccess.open(folder + "/sprites.json", FileAccess.READ)
+		if jf == null:
+			continue
+		var doc: Variant = JSON.parse_string(jf.get_as_text())
+		if not (doc is Dictionary):
+			f.append("anim.states: %s/sprites.json did not parse" % enemy_id)
+			continue
+		var block: Variant = (doc as Dictionary).get("anim")
+		if not (block is Dictionary):
+			continue
+		var states: Variant = (block as Dictionary).get("states")
+		if not (states is Dictionary):
+			continue
+		var b := Billboard.new()
+		b.setup_from_sheet(doc, folder)
+		# a state that the legacy animations[] list already covers keeps that art (the merge
+		# only fills gaps), so its frame count is the legacy one, not the anim.states one
+		var legacy := {}
+		for a in (doc as Dictionary).get("animations", []):
+			legacy[str(a.get("name", ""))] = true
+		for state_id in (states as Dictionary).keys():
+			var key := str(state_id)
+			var st: Dictionary = (states as Dictionary)[state_id]
+			var frames: Array = st.get("frames", [])
+			checked += 1
+			if frames.is_empty():
+				# a frameless state is legal: it holds the previous texture
+				continue
+			if not b.anims.has(key):
+				f.append("anim.states: %s state '%s' has %d frames but no animation resolved"
+					% [enemy_id, key, frames.size()])
+				continue
+			var a: Dictionary = b.anims[key]
+			if not legacy.has(key) and (a["frames"] as Array).size() != frames.size():
+				f.append("anim.states: %s state '%s' resolved %d frames, sheet lists %d"
+					% [enemy_id, key, (a["frames"] as Array).size(), frames.size()])
+			if float(a["fps"]) <= 0.0:
+				f.append("anim.states: %s state '%s' has fps %s" % [enemy_id, key, str(a["fps"])])
+			b.set_animation(key)
+			if b.anim_name != key:
+				f.append("anim.states: %s set_animation('%s') did not take" % [enemy_id, key])
+		b.free()
+	if checked == 0:
+		f.append("anim.states: no enemy sheet declares an anim.states block")

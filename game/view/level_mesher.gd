@@ -5,8 +5,8 @@ extends RefCounted
 # Builds the level visuals from the generator's Level dict (section 8.1) into one ArrayMesh per
 # material. World units: 1 cell = 1 u, the top surface of tile [x, z, y] sits at y * 0.5 u, slabs
 # are 1 u thick, ramps rise 1 HU over 1 u (26.57 deg). Coplanar same-material tiles are
-# greedy-merged into rectangles; checker, grain and the hub sigil are computed in the shaders
-# from world position, so merging has no UV seams.
+# greedy-merged into rectangles; checker, grain, the slab surface (seam, bevel, noise) and the
+# hub sigil are computed in the shaders from world position, so merging has no UV seams.
 #
 # Meshes (one ArrayMesh per material):
 #   platform_top / walkway_top / deadend_top / hub_top  tile tops, light square = (x+z)&1 == 0
@@ -48,9 +48,12 @@ const GRAIN_AMP := 0.12
 
 # ---- materials --------------------------------------------------------------------------------
 
-# Tile tops: world-space checker (light when (x + z) & 1 == 0) at 8 px/u, nearest, with the
-# section 12.2 per-texel grain: lightness x (0.94 + 0.12 x (mix(x*8 + px, z*8 + pz) & 255) / 255),
-# static. umix/ufmix below mirror terrain_rng mix/fmix exactly (32-bit unsigned wrap).
+# Tile tops: world-space checker (light when (x + z) & 1 == 0) at 8 px/u, nearest. The slab look is
+# computed from world position so greedy merging has no UV seams: a 1-texel seam gap on the +x/+z
+# rims, an outer 3-texel bevel (light on the -x/-z edges, dark on +x/+z), slab-to-slab tone shift,
+# the section 12.2 per-texel grain, a 3-octave value noise light modulation (+/-12%), a sparse dark
+# speckle, a noise-derived normal perturbation (NORMAL) and noise-varied roughness/specular.
+# umix/ufmix below mirror terrain_rng mix/fmix exactly (32-bit unsigned wrap). Static - no TIME.
 const TOP_SHADER := "
 shader_type spatial;
 render_mode cull_back;
@@ -77,10 +80,38 @@ uint umix(uint a, uint b) {
 	return ufmix((a ^ um32(b + 0x9E3779B9u, 0x01000193u)));
 }
 
+float hash01(uint h) {
+	return float(h & 1023u) / 1023.0;
+}
+
+// Deterministic smooth value noise on the world grid (smoothstep-bilinear hash lattice).
+float vnoise(vec2 p) {
+	vec2 i = floor(p);
+	vec2 f = fract(p);
+	vec2 u = f * f * (3.0 - 2.0 * f);
+	float a = hash01(umix(uint(int(i.x)), uint(int(i.y))));
+	float b = hash01(umix(uint(int(i.x + 1.0)), uint(int(i.y))));
+	float c = hash01(umix(uint(int(i.x)), uint(int(i.y + 1.0))));
+	float d = hash01(umix(uint(int(i.x + 1.0)), uint(int(i.y + 1.0))));
+	return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+// 3 octaves, wavelengths 0.5 / 0.25 / 0.125 u (4 / 2 / 1 px at 8 px/u), amplitudes sum to 1.
+float fbm(vec2 p) {
+	float v = 0.55 * vnoise(p * 2.0);
+	v += 0.30 * vnoise(p * 4.0 + vec2(13.7, 7.3));
+	v += 0.15 * vnoise(p * 8.0 + vec2(41.3, 27.9));
+	return v;
+}
+
 varying vec3 v_world;
+varying mat3 v_modelview;
+varying mat3 v_modelview_t;
 
 void vertex() {
 	v_world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	v_modelview = mat3(MODELVIEW_MATRIX);
+	v_modelview_t = transpose(mat3(MODELVIEW_MATRIX));
 }
 
 void fragment() {
@@ -88,14 +119,63 @@ void fragment() {
 	float checker = mod(floor(wp.x) + floor(wp.y), 2.0);
 	vec3 albedo = mix(color_dark, color_light, 1.0 - checker);
 	vec2 texel = floor(wp * 8.0);
-	uint g = umix(uint(int(texel.x)), uint(int(texel.y))) & 255u;
-	albedo *= 0.94 + 0.12 * float(g) / 255.0;
-	ALBEDO = albedo;
-	if (checker == 0.0) {
-		EMISSION = color_light * (emission_light - 1.0);
+	vec2 tile = floor(wp);
+	vec2 ti = floor(fract(wp) * 8.0);    // 0..7 texel index inside the 8x8 square
+
+	// section 12.2 per-texel grain, static
+	uint grain_h = umix(uint(int(texel.x)), uint(int(texel.y)));
+	float grain = 0.94 + 0.12 * float(grain_h & 255u) / 255.0;
+
+	// slab-to-slab tone shift: each square sits at its own lightness
+	float tile_h = hash01(umix(uint(int(tile.x)) + 0x51B1u, uint(int(tile.y)) + 0x0E7Fu));
+	float tile_tint = 0.955 + 0.09 * tile_h;
+
+	// 1-texel seam gap on the +x/+z rim of each square (every grid line drawn once)
+	float seam = 1.0;
+	if (ti.x > 6.5 || ti.y > 6.5) {
+		seam = 0.58;
 	}
+
+	// bevel: outer 3 texels, top/left (-x/-z) raised light, bottom/right (+x/+z) dropped dark
+	float bevel = 1.0;
+	bevel *= 1.0 + 0.15 * max(0.0, 1.0 - ti.x / 3.0);
+	bevel *= 1.0 + 0.15 * max(0.0, 1.0 - ti.y / 3.0);
+	bevel *= 1.0 - 0.22 * max(0.0, 1.0 - (7.0 - ti.x) / 3.0);
+	bevel *= 1.0 - 0.22 * max(0.0, 1.0 - (7.0 - ti.y) / 3.0);
+
+	// 3-octave value-noise lightness, +/-12%
+	float n = fbm(wp);
+	float light_mod = 0.88 + 0.24 * n;
+
+	// sparse dark speckle, ~5% of texels
+	uint sp = umix(uint(int(texel.x)) + 0x9E37u, uint(int(texel.y)) + 0x7F4Au);
+	float speckle = ((sp & 255u) < 14u) ? 0.72 : 1.0;
+
+	float detail = tile_tint * grain * seam * bevel * light_mod * speckle;
+	// light squares gain back the detail deficit: their average luminance holds at ~1.03x
+	float gain = mix(1.0, 1.2, 1.0 - checker);
+	ALBEDO = albedo * detail * gain;
+	if (checker == 0.0) {
+		// mean factor ~1.16 vs the pure palette emission: detail stays visible in the dark,
+		// light squares' average luminance is raised slightly, never darkened
+		EMISSION = color_light * (emission_light - 1.0) * clamp(detail * 1.35, 0.0, 2.0);
+	}
+
+	// relief: world-space gradient of the same noise, added to the geometric normal
+	float e = 0.05;
+	float hx = fbm(wp + vec2(e, 0.0)) - fbm(wp - vec2(e, 0.0));
+	float hz = fbm(wp + vec2(0.0, e)) - fbm(wp - vec2(0.0, e));
+	vec3 base_world = v_modelview_t * NORMAL;
+	vec3 n_world = base_world + vec3(-hx * 1.1, 0.0, -hz * 1.1);
+	NORMAL = normalize(v_modelview * normalize(n_world));
+
+	// roughness/specular vary with the noise so the fill light glints unevenly
+	ROUGHNESS = clamp(0.92 - 0.50 * n, 0.42, 0.95);
+	SPECULAR = clamp(0.30 + 0.45 * n, 0.15, 0.75);
 }
 "
+# Sides carry a subtle world-space noise break-up (lightness + speckle + roughness) so they are
+# never dead flat once a light is present; the trim band rule is unchanged (UV.y < trim_height).
 const SIDE_SHADER := "
 shader_type spatial;
 render_mode cull_back;
@@ -104,12 +184,70 @@ uniform vec3 color : source_color = vec3(0.06, 0.25, 0.26);
 uniform vec3 trim_color : source_color = vec3(0.11, 0.43, 0.44);
 uniform float trim_height : hint_range(0.0, 2.0) = 0.125;
 
+uint um32(uint a, uint b) {
+	return (a & 0xFFFFu) * b + ((((a >> 16u) * b) & 0xFFFFu) << 16u);
+}
+
+uint ufmix(uint x) {
+	uint z = x;
+	z ^= z >> 16u;
+	z = um32(z, 0x85EBCA6Bu);
+	z ^= z >> 13u;
+	z = um32(z, 0xC2B2AE35u);
+	z ^= z >> 16u;
+	return z;
+}
+
+uint umix(uint a, uint b) {
+	return ufmix((a ^ um32(b + 0x9E3779B9u, 0x01000193u)));
+}
+
+float hash01(uint h) {
+	return float(h & 1023u) / 1023.0;
+}
+
+float vnoise(vec2 p) {
+	vec2 i = floor(p);
+	vec2 f = fract(p);
+	vec2 u = f * f * (3.0 - 2.0 * f);
+	float a = hash01(umix(uint(int(i.x)), uint(int(i.y))));
+	float b = hash01(umix(uint(int(i.x + 1.0)), uint(int(i.y))));
+	float c = hash01(umix(uint(int(i.x)), uint(int(i.y + 1.0))));
+	float d = hash01(umix(uint(int(i.x + 1.0)), uint(int(i.y + 1.0))));
+	return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+float fbm(vec2 p) {
+	return 0.6 * vnoise(p * 2.0) + 0.4 * vnoise(p * 5.0 + vec2(13.7, 7.3));
+}
+
+varying vec3 v_world;
+varying vec3 v_nw;
+
+void vertex() {
+	v_world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	v_nw = mat3(MODEL_MATRIX) * NORMAL;
+}
+
 void fragment() {
+	vec3 albedo;
 	if (UV.y < trim_height) {
-		ALBEDO = trim_color;
+		albedo = trim_color;
 	} else {
-		ALBEDO = color;
+		albedo = color;
 	}
+	// sample the face plane (z,y) for x-facing walls, (x,y) for z-facing walls
+	vec2 sp = (abs(v_nw.x) > 0.5) ? v_world.zy : v_world.xy;
+	float n = fbm(sp);
+	albedo *= 0.91 + 0.18 * n;
+	vec2 texel = floor(sp * 8.0);
+	uint hs = umix(uint(int(texel.x)) + 0x9E37u, uint(int(texel.y)) + 0x7F4Au);
+	if ((hs & 255u) < 12u) {
+		albedo *= 0.75;
+	}
+	ALBEDO = albedo;
+	ROUGHNESS = clamp(0.90 - 0.35 * n, 0.5, 1.0);
+	SPECULAR = clamp(0.25 + 0.40 * n, 0.15, 0.65);
 }
 "
 
@@ -126,23 +264,110 @@ uniform vec2 star_centre = vec2(0.5, 0.5);
 uniform float star_r_out = 2.4;
 uniform float star_r_in = 1.0;
 
+uint um32(uint a, uint b) {
+	return (a & 0xFFFFu) * b + ((((a >> 16u) * b) & 0xFFFFu) << 16u);
+}
+
+uint ufmix(uint x) {
+	uint z = x;
+	z ^= z >> 16u;
+	z = um32(z, 0x85EBCA6Bu);
+	z ^= z >> 13u;
+	z = um32(z, 0xC2B2AE35u);
+	z ^= z >> 16u;
+	return z;
+}
+
+uint umix(uint a, uint b) {
+	return ufmix((a ^ um32(b + 0x9E3779B9u, 0x01000193u)));
+}
+
+float hash01(uint h) {
+	return float(h & 1023u) / 1023.0;
+}
+
+float vnoise(vec2 p) {
+	vec2 i = floor(p);
+	vec2 f = fract(p);
+	vec2 u = f * f * (3.0 - 2.0 * f);
+	float a = hash01(umix(uint(int(i.x)), uint(int(i.y))));
+	float b = hash01(umix(uint(int(i.x + 1.0)), uint(int(i.y))));
+	float c = hash01(umix(uint(int(i.x)), uint(int(i.y + 1.0))));
+	float d = hash01(umix(uint(int(i.x + 1.0)), uint(int(i.y + 1.0))));
+	return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+float fbm(vec2 p) {
+	float v = 0.55 * vnoise(p * 2.0);
+	v += 0.30 * vnoise(p * 4.0 + vec2(13.7, 7.3));
+	v += 0.15 * vnoise(p * 8.0 + vec2(41.3, 27.9));
+	return v;
+}
+
 varying vec3 v_world;
+varying mat3 v_modelview;
+varying mat3 v_modelview_t;
 
 void vertex() {
 	v_world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	v_modelview = mat3(MODELVIEW_MATRIX);
+	v_modelview_t = transpose(mat3(MODELVIEW_MATRIX));
 }
 
 void fragment() {
-	vec2 tex = (floor(v_world.xz * 8.0) + 0.5) / 8.0;
+	vec2 wp = v_world.xz;
+	float checker = mod(floor(wp.x) + floor(wp.y), 2.0);
+	vec3 albedo = mix(color * 0.52, color, 1.0 - checker);
+	vec2 texel = floor(wp * 8.0);
+	vec2 tile = floor(wp);
+	vec2 ti = floor(fract(wp) * 8.0);
+
+	uint grain_h = umix(uint(int(texel.x)), uint(int(texel.y)));
+	float grain = 0.94 + 0.12 * float(grain_h & 255u) / 255.0;
+
+	float tile_h = hash01(umix(uint(int(tile.x)) + 0x51B1u, uint(int(tile.y)) + 0x0E7Fu));
+	float tile_tint = 0.955 + 0.09 * tile_h;
+
+	float seam = 1.0;
+	if (ti.x > 6.5 || ti.y > 6.5) {
+		seam = 0.58;
+	}
+
+	float bevel = 1.0;
+	bevel *= 1.0 + 0.15 * max(0.0, 1.0 - ti.x / 3.0);
+	bevel *= 1.0 + 0.15 * max(0.0, 1.0 - ti.y / 3.0);
+	bevel *= 1.0 - 0.22 * max(0.0, 1.0 - (7.0 - ti.x) / 3.0);
+	bevel *= 1.0 - 0.22 * max(0.0, 1.0 - (7.0 - ti.y) / 3.0);
+
+	float n = fbm(wp);
+	float light_mod = 0.88 + 0.24 * n;
+
+	uint sp = umix(uint(int(texel.x)) + 0x9E37u, uint(int(texel.y)) + 0x7F4Au);
+	float speckle = ((sp & 255u) < 14u) ? 0.72 : 1.0;
+
+	float detail = tile_tint * grain * seam * bevel * light_mod * speckle;
+	ALBEDO = albedo * detail;
+
+	// the dais sigil, drawn on the nearest texel centre so it stays crisp
+	vec2 tex = (texel + 0.5) / 8.0;
 	vec2 d = tex - star_centre;
 	float r = length(d);
 	float x12 = (atan(d.y, d.x) * 12.0) / 6.2831853;
 	float wave = abs(fract(x12) - 0.5) * 2.0;    // 1 at a star tip, 0 halfway to the next tip
 	float r_max = mix(star_r_in, star_r_out, wave);
-	ALBEDO = color;
 	if (r <= r_max) {
-		ALBEDO = sigil_color;
+		ALBEDO = sigil_color * detail;
 	}
+
+	float e = 0.05;
+	float hx = fbm(wp + vec2(e, 0.0)) - fbm(wp - vec2(e, 0.0));
+	float hz = fbm(wp + vec2(0.0, e)) - fbm(wp - vec2(0.0, e));
+	vec3 base_world = v_modelview_t * NORMAL;
+	vec3 n_world = base_world + vec3(-hx * 1.1, 0.0, -hz * 1.1);
+	NORMAL = normalize(v_modelview * normalize(n_world));
+
+	ROUGHNESS = clamp(0.92 - 0.50 * n, 0.42, 0.95);
+	SPECULAR = clamp(0.30 + 0.45 * n, 0.15, 0.75);
 }
 "
 
@@ -285,10 +510,10 @@ static func _face_y(s: Surf, y: float, x0: float, x1: float, z0: float, z1: floa
 	# uv.y = 1: away from the trim band (top shaders ignore uv entirely).
 	var uv := Vector2(0.0, 1.0)
 	if up:
-		s.quad([Vector3(x0, y, z0), Vector3(x0, y, z1), Vector3(x1, y, z1), Vector3(x1, y, z0)],
+		s.quad([Vector3(x0, y, z0), Vector3(x1, y, z0), Vector3(x1, y, z1), Vector3(x0, y, z1)],
 			[uv, uv, uv, uv], Vector3(0, 1, 0))
 	else:
-		s.quad([Vector3(x0, y, z0), Vector3(x1, y, z0), Vector3(x1, y, z1), Vector3(x0, y, z1)],
+		s.quad([Vector3(x0, y, z0), Vector3(x0, y, z1), Vector3(x1, y, z1), Vector3(x1, y, z0)],
 			[uv, uv, uv, uv], Vector3(0, -1, 0))
 
 
@@ -418,8 +643,10 @@ static func _wedge(s_top: Surf, s_side: Surf, x: int, z: int, y: int, d: int, co
 	var zero := Vector2.ZERO
 
 
-	# sloped top; normal opposes the rise direction
-	s_top.quad([_wpt(fx, fz, ax, az, lx, lz, 0.0, 0.0, ry), _wpt(fx, fz, ax, az, lx, lz, 0.0, 1.0, ry), _wpt(fx, fz, ax, az, lx, lz, 1.0, 1.0, rh), _wpt(fx, fz, ax, az, lx, lz, 1.0, 0.0, rh)],
+	# sloped top; normal opposes the rise direction. Winding: low edge first, then the high
+	# edge in the same lateral order - the reverse of that order is back-facing from above
+	# (the same defect _face_y had, which culled every tile top).
+	s_top.quad([_wpt(fx, fz, ax, az, lx, lz, 0.0, 0.0, ry), _wpt(fx, fz, ax, az, lx, lz, 1.0, 0.0, rh), _wpt(fx, fz, ax, az, lx, lz, 1.0, 1.0, rh), _wpt(fx, fz, ax, az, lx, lz, 0.0, 1.0, ry)],
 		[zero, zero, zero, zero], Vector3(-0.5 * ax, 1.0, -0.5 * az).normalized())
 
 	# high edge face (top edge = rh): covered by a tile at y+1 exactly
