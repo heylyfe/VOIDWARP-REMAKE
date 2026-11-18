@@ -112,7 +112,8 @@ const BANDS := [
 
 ## Aggregate one sweep's per-run dicts into the report rows. Pure - the test asserts on it.
 static func summarize(results: Array) -> Dictionary:
-	var out := {"runs": results.size(), "reached": {}, "stuck": 0, "class_counts": {}}
+	var out := {"runs": results.size(), "reached": {}, "stuck": 0, "forced_gate": 0,
+			"class_counts": {}}
 	for lv in [6, 12, 18]:
 		(out["reached"] as Dictionary)[lv] = 0
 	for r in results:
@@ -122,6 +123,9 @@ static func summarize(results: Array) -> Dictionary:
 				(out["reached"] as Dictionary)[lv] = int((out["reached"] as Dictionary)[lv]) + 1
 		if str(rd.get("outcome", "")) == "stuck":
 			out["stuck"] = int(out["stuck"]) + 1
+		# A12: a run that crossed at least one lobby on a forced-open gate
+		if not (rd.get("forced_gate", []) as Array).is_empty():
+			out["forced_gate"] = int(out["forced_gate"]) + 1
 		var cls := str(rd.get("class", "?"))
 		(out["class_counts"] as Dictionary)[cls] = int((out["class_counts"] as Dictionary).get(cls, 0)) + 1
 	return out
@@ -140,6 +144,9 @@ static func format_report(agg: Dictionary) -> String:
 		lines.append("level %d: %5.1f%% (%d/%d)  band %s  %s" % [
 				lv, pct, hit, runs, str(band[3]), "PASS" if ok else "FAIL"])
 	lines.append("bot runs completed: %d (outcome death/timeout/stuck are normal results, not errors)" % runs)
+	# A12: runs that entered a level through a lobby whose gate never opened (the sim
+	# would have held the player there); their reach counts are not ordinary levels
+	lines.append("forced open-gate runs: %d" % int(agg.get("forced_gate", 0)))
 	return "\n".join(lines)
 
 
@@ -179,7 +186,8 @@ static func run_probe(runs: int, seed_base: int, max_level: int = MAX_LEVEL_DEFA
 
 # ---------------------------------------------------------------- one run, one level --
 
-## One full probe run. Returns {"reached_6","reached_12","reached_18","outcome","entered","class"}
+## One full probe run. Returns {"reached_6","reached_12","reached_18","outcome","entered","class",
+## "forced_gate": [level_completed of every lobby the bot left with the gate still closed]}
 ## outcome: "dead" | "stuck" | "timeout" | "complete" | "cut".
 ##
 ## p_rec (optional, A4 replay proof; FIX-A4): when non-empty, the run is RECORDED or REPLAYED
@@ -205,8 +213,11 @@ static func play_run(api: RefCounted, seed: int, max_level: int, p_log = null,
 	# and T-060's own probe path) logs nothing and behaves identically.
 	if p_log != null:
 		p_log.lobby_entered(0)
+	# A12: lobbies left with the gate still closed (level_completed values)
+	var forced_gate: Array = []
 	# the pre-run lobby (level_completed 0; picks the class + the first enemy vote)
-	_resolve_lobby(api, ledger, 0, seed, p_log)
+	if not _resolve_lobby(api, ledger, 0, seed, p_log):
+		_note_forced_gate(forced_gate, seed, 0)
 	if p_log != null:
 		p_log.lobby_left()
 	var entered := 1
@@ -227,7 +238,8 @@ static func play_run(api: RefCounted, seed: int, max_level: int, p_log = null,
 			# the lobby AFTER completing `entered - 1` (votes/curses/purse carry over)
 			if p_log != null:
 				p_log.lobby_entered(entered - 1)
-			_resolve_lobby(api, ledger, entered - 1, seed, p_log)
+			if not _resolve_lobby(api, ledger, entered - 1, seed, p_log):
+				_note_forced_gate(forced_gate, seed, entered - 1)
 			if p_log != null:
 				p_log.lobby_left()
 			continue
@@ -246,16 +258,22 @@ static func play_run(api: RefCounted, seed: int, max_level: int, p_log = null,
 		"l1_tick": l1_tick,
 		"death_tick": death_tick, "death_killer": death_killer, "death_code": death_code,
 		"charges": int(ledger.get("charges", 2)),
+		"forced_gate": forced_gate,
 	}
 
 
 ## Resolve one intermission the bot way: every mandatory bay gets a seeded uniform random
 ## pick among its offer altars (CLASS/E/C), rerolling the E x2 bay between votes via the
 ## sim's own select path. U / REST bays are never touched (the bot buys nothing). A C bay
-## whose draw is empty can only be tithe-passed (DESIGN.md section 11) - paid when
-## affordable, otherwise the run stalls on the lobby and is reported as "stuck".
+## whose draw is empty can only be tithe-passed (DESIGN.md section 7) - paid when
+## affordable. When it is NOT affordable (or the 80-select cap runs out, or a select is
+## refused) the gate is still closed on return. The bot does NOT stall there and the run
+## is NOT reported "stuck": play_run goes on into the next level as if the gate had
+## opened. Returns gate_open() so the caller can label that level honestly - play_run
+## prints a "BOT LOBBY FORCED-GATE" line and records the level in the row's
+## "forced_gate" list, and summarize() counts such runs (A12).
 static func _resolve_lobby(api: RefCounted, ledger: Dictionary, level_completed: int,
-		seed: int, p_log = null) -> void:
+		seed: int, p_log = null) -> bool:
 	var lb = Intermission.create(api, level_completed, int(ledger["purse"]),
 			VoidRngScript.mix(seed, 5000 + level_completed),
 			ledger["votes"], ledger["curses"], ledger["stacks"],
@@ -314,6 +332,16 @@ static func _resolve_lobby(api: RefCounted, ledger: Dictionary, level_completed:
 	ledger["hunger"] = int(lb.hunger)
 	ledger["last_vote"] = str(lb.last_vote)
 	ledger["class"] = str(lb.class_chosen)
+	return bool(lb.gate_open())
+
+
+## A12: a lobby _resolve_lobby left with the gate still closed. The level after it is
+## NOT an ordinary level (the real sim would never let the player through), so it gets
+## its own log line and a row entry instead of passing silently.
+static func _note_forced_gate(forced: Array, seed: int, level_completed: int) -> void:
+	forced.append(level_completed)
+	print("BOT LOBBY FORCED-GATE seed=%d after_level=%d (the gate is still closed after the bot's lobby pass - e.g. an empty C draw with the tithe unaffordable; level %d is played on a forced-open gate, not an ordinary level)"
+			% [seed, level_completed, level_completed + 1])
 
 
 ## Carry the run's cross-level survival state onto a fresh controller. Void charges and
