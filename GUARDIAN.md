@@ -608,3 +608,22 @@ FINAL REQUIREMENT: be extremely thorough. Do not assume the repository is safe j
 - POSTRUN headlines: gate green (GATE OK 9 ran 0 skipped 235 s, TESTS 59/0, PARITY 56/56, SPRITES 515, FOGCHECK 550, 5000-seed harness 32 PASS 173 s). The build/voidwrap_run.exe on disk is STALE (14:48Z, 8 h older than APP-LOOP 2e80d27): it cannot finish a level; re-export needed (code can). Fresh 25-run telemetry: terrain still spends 91.3% of charges but enemies now do 84% of the killing (kiwi 40%, coil 28% of deaths). 24 PARKED rows (3 resolved, 21 open); 16 [POST-RUN] preflight items; backlog (T-090..T-096) NOT started because merging = commits, blocked by no-commits rule.
 - Night in numbers (guardian view): ~53 checks; interventions: orchestrator hang/resume x3 (22:31, 07:37 restart, 17:16-ish wake-ups), ~12 worker hangs interrupted, 4 queue clean-ups, 1 stale-alarm error of mine (RUNLOG newline) corrected. Owner-directed changes executed via the orchestrator: kiwi cat slowed (5.6 -> 3.0 u/s), 17 enemy images integrated (11 of 12 enemies real art, claude plushie still TBD), slow-kiwi, billboard fix, menu/loading wave, commits, GitHub push, username scrub (working tree only), security audit.
 - OPEN FOR THE OWNER: (a) A3 bot 82/100 vs 95 (criterion is the owner's call); (b) history rewrite + force-push to remove the old username from public history (owner decision; also quarantine the 92 local branches/440 checkpoint refs); (c) 17 copyrighted images are public; (d) re-export the exe, and do not distribute the old one (contains the owner's first name); (e) commit/push the post-run reports if wanted; (f) intermission lobby D-APP-LOOP-4 unimplemented; (g) claude plushie_00..02 still TBD; (h) CI/secret scanning and .gitignore rules for .env/keys/*.exe.
+
+## 2026-11-18 18:58Z check #54 (schedule RESTARTED by owner request until told to stop / nothing happening)
+- Re-armed once at 19:30Z. Between 07:15Z and 18:28Z the guardian was off; RUNLOG shows README, release tag v0.1.0-alpha.1 + exe re-export (07:29Z), HEAD d506c5d.
+- 466457f6 orchestrator: running (run 122), itemCount 7280, updatedAt 18:56Z, pending 0.
+- Workers (opencode inkling, all running, parent = orchestrator): TOUCHER 93 (18:58Z), COLLISION 82 (18:57Z), WORLD-VIEW 35 (18:54Z), TILES 54 (18:45Z), BOT 88 (18:40Z). Completed: ENEMY-SYNC, HERO. None over 25 min stale.
+- Faults: none. Actions: none. Expect 19:30Z: BOT/TILES itemCounts above 88/54, else interrupt + continue.
+
+## 2026-11-18 19:30Z check #55
+- Re-armed 20:00Z. Orchestrator 466457f6 running, itemCount 7296 (was 7280), updated 19:29Z, pending 0.
+- Workers running (inkling): TILES 223 (was 54), WORLD-VIEW 147 (was 35), BOT 136 (was 88), all updated 19:24-19:30Z. ENEMY-SYNC re-run by owner request (run 7, 183 items, completed 19:29Z; I imported assets into its worktree game/.godot, gitignored). COLLISION, TOUCHER, HERO completed.
+- RUNLOG.md last entry still the 07:29Z release (no new line since; workers are mid-task, merges not yet logged). Faults: none. Actions: none.
+- Expect 20:00Z: more merges logged, or RUNLOG still silent with workers moving = fine.
+
+## 2026-11-18 20:00Z check #56
+- Re-armed 20:30Z. Orchestrator 466457f6 running (run 124 = owner's merge/rebase notice), itemCount 7311 (was 7296), updated 19:58Z, pending 0.
+- Workers: TILES 337 (was 223, 20:00Z), BOT 146 (was 136, 19:57Z), COLLISION re-run 136 (19:56Z). Completed: WORLD-VIEW 148, ENEMY-SYNC 181, TOUCHER, HERO.
+- Repo: local main c2dea93 (= origin/main incl. PR #1/#2/#3 + d506c5d, merged by guardian at owner request, nothing pushed: guardian token has no write access). Friend's build.yml tracked. origin/main unchanged 31c9aa6+.
+- RUNLOG.md still ends 07:29Z (13 h without a line). Faults: none (workers and orchestrator moving). Actions: none.
+- Expect 20:30Z: RUNLOG lines for merges, orchestrator push of the 2 local commits. If RUNLOG still silent and local main unmoved, one nudge to orchestrator.
