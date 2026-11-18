@@ -183,6 +183,12 @@ var dead := false
 var dead_code := ""
 var dead_killer := ""
 
+# D-073 arrival push hook: the live enemy rows belong to the enemy runtime, so an owner
+# that has one sets this to its own push (origin Vector3 at the dais centre, radius in
+# world u); with no hook the controller falls back to the world's mirror arrays, which is
+# all a hand-made world dict in a test carries.
+var push_hook: Callable = Callable()
+
 
 func setup(kit_id: String, consts: Dictionary = {}) -> void:
 	kit = kit_id if KITS.has(kit_id) else "dasher"
@@ -602,7 +608,10 @@ func _tick_respawn(dt: float, w: Dictionary, ev: Array) -> void:
 
 # Safe tile (D-059): the tile still exists (and was not removed), is not glitched,
 # is outside every hazard footprint, and is at least safe_enemy_dist (6 u) from every
-# enemy body and projectile. Distances are 3D from the tile's top centre.
+# enemy body and projectile. Distances are 3D from the tile's top centre. NOTE: no
+# producer publishes into w["hazards"] today (enemy_runtime keeps its footprints on
+# `telegraphs`), so the footprint clause is a guard with no data yet - it is kept so a
+# future publisher cannot silently widen the promise.
 func valid_safe_tile(w: Dictionary, t: Dictionary) -> bool:
 	var tx: int = int(t["x"])
 	var tz: int = int(t["z"])
@@ -691,7 +700,8 @@ func _track_ring(dt: float, w: Dictionary, _ev: Array) -> void:
 # handles itself). Returns true when Last Light saved the player. Respawn
 # invulnerability and Last Light invulnerability suppress kills without spending it.
 # The save teleports to the beacon dais and pushes enemy bodies out to exactly 8 u
-# (D-073), mutating w["enemies"] in place.
+# (D-073): through push_hook (the runtime's live rows) when an owner set one, else by
+# mutating w["enemies"] in place.
 func try_kill(code: String, killer: String, w: Dictionary, ev: Array = []) -> bool:
 	if dead or respawn_t >= 0.0:
 		return false
@@ -714,7 +724,12 @@ func try_kill(code: String, killer: String, w: Dictionary, ev: Array = []) -> bo
 		invuln = float(C["last_light_invuln"])
 		cur_key = "%d,%d,%d" % [int(d[0]), int(d[1]), int(d[2])]
 		dwell = 0.0
-		push_enemy_bodies(w["enemies"], [x, y, z])
+		# D-073: a live runtime owns the enemy rows, so when its hook is set it performs
+		# the push; the mirror array below is only the fallback for a hand-made world.
+		if push_hook.is_valid():
+			push_hook.call(Vector3(x, y, z), 8.0)
+		else:
+			push_enemy_bodies(w["enemies"], [x, y, z])
 		ev.append({"e": "last_light_save", "code": code, "killer": killer,
 				"charges": charges})
 		return true
@@ -723,7 +738,9 @@ func try_kill(code: String, killer: String, w: Dictionary, ev: Array = []) -> bo
 
 
 # The arrival push (D-073): every enemy body within 8 u of the dais centre is pushed
-# radially out (XZ) to exactly 8 u; y untouched; no kill, no behavior change.
+# radially out (XZ) to exactly 8 u; y untouched; no kill, no behavior change. Fallback
+# path only: it walks the rows of the world dict, which with a live runtime are the
+# spawn-time mirrors, so an owner with one sets push_hook instead.
 static func push_enemy_bodies(enemies: Array, dais_center: Array) -> void:
 	var rad: float = 8.0
 	for e in enemies:

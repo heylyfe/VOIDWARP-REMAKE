@@ -27,7 +27,15 @@ const COPIES: Array = [
 	["res://tests/fixtures/dropin/biomes/test_biome.json", "res://content/biomes/test_biome.json"],
 	["res://tests/fixtures/dropin/enemies/test_dummy/enemy.json", "res://content/enemies/test_dummy/enemy.json"],
 ]
-const FIXTURE_IDS := ["test_curse", "test_upgrade", "test_biome", "test_dummy"]
+# fixture id -> the content api accessor that can see it. Every absence check must ask the
+# accessor for that fixture's own kind: a curse lookup for test_biome returns {} whatever the
+# biome's fate, so it asserts nothing either way.
+const FIXTURES: Array = [
+	["curse", "test_curse"],
+	["upgrade", "test_upgrade"],
+	["biome", "test_biome"],
+	["enemy", "test_dummy"],
+]
 
 
 func run() -> Array[String]:
@@ -37,8 +45,10 @@ func run() -> Array[String]:
 	var before: RefCounted = ContentApiScript.load()
 	if not _check(failures, before.call("is_ok"), "pre-copy boot failed: %s" % _joined(before.call("boot_errors"))):
 		return failures
-	for id in FIXTURE_IDS:
-		_check(failures, (before.call("curse", id) as Dictionary).is_empty(), "%s already exists before the drop-in" % id)
+	for fx in FIXTURES:
+		var kind := str(fx[0])
+		var id := str(fx[1])
+		_check(failures, (before.call(kind, id) as Dictionary).is_empty(), "%s:%s already exists before the drop-in" % [kind, id])
 
 	# 2. Drop the fixtures in. This (and only this) is what "a drop-in" means: files under
 	#    content/, nothing else.
@@ -104,8 +114,10 @@ func _refusals(failures: Array[String]) -> void:
 	_cleanup(failures)
 	var final_boot: RefCounted = ContentApiScript.load()
 	if _check(failures, final_boot.call("is_ok"), "boot failed after cleanup: %s" % _joined(final_boot.call("boot_errors"))):
-		for id in FIXTURE_IDS:
-			_check(failures, (final_boot.call("curse", id) as Dictionary).is_empty(), "%s still present after cleanup" % id)
+		for fx in FIXTURES:
+			var kind := str(fx[0])
+			var id := str(fx[1])
+			_check(failures, (final_boot.call(kind, id) as Dictionary).is_empty(), "%s:%s still present after cleanup" % [kind, id])
 
 
 func _cleanup(failures: Array[String]) -> void:

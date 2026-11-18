@@ -58,6 +58,7 @@ var _rng := RandomNumberGenerator.new()
 var _simulated_duration: float = -1.0
 var _real_progress: float = -1.0        # < 0 = no report from the loader yet
 var _finished_emitted: bool = false
+var _skip_creation_frame: bool = false  # drop the delta of the frame the screen entered the tree
 
 var _stage: Control
 var _bar: ProgressBar
@@ -246,11 +247,18 @@ func current_tip() -> Dictionary:
 func _ready() -> void:
 	if _tips.is_empty():
 		start(0)
+	# The app adds the screen mid-frame, so the _process call that arrives in this frame counts
+	# time that passed before the screen existed (a real first launch measured 4.859 s for a
+	# 5.0 s hold, AUDIT.md). Skip exactly that one call; from the next frame the screen self-drives.
+	_skip_creation_frame = true
 	_build_view()
 	_update_view()
 
 
 func _process(delta: float) -> void:
+	if _skip_creation_frame:
+		_skip_creation_frame = false
+		return
 	advance(delta)
 
 

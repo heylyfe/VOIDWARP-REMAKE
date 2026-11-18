@@ -130,5 +130,5 @@ func _real_level(failures: Array[String]) -> void:
 			return
 	if ds[0] != ds[1]:
 		failures.append("real level: two identical drives diverged (%s vs %s)" % [ds[0], ds[1]])
-	if (int(float(ds[0].get_slice(",", 3))) == 0 and float(ds[0].get_slice(",", 1)) <= -39.0 * 60.0):
+	if float(ds[0].get_slice(",", 1)) <= -39.0 * 60.0:
 		failures.append("real level: controller fell through the level (y %.2f)" % (float(ds[0].get_slice(",", 1)) / 60.0))

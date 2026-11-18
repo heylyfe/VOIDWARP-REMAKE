@@ -146,6 +146,7 @@ func run() -> Array[String]:
 	_telegraph_range_gate(f)
 	_telegraph_line_fixed(f)
 	_bark_timing_and_dash_distance(f)
+	_dash_mirror_settles(f)
 	_recover_then_flap(f)
 	_spawns_at_6_s_lane(f)
 	_jump_answer_window(f)
@@ -400,6 +401,44 @@ func _bark_timing_and_dash_distance(f: Array[String]) -> void:
 		f.append("dash: dash_done_u %.4f does not match the advance along the line %.4f"
 				% [float(row["dash_done_u"]), advanced])
 		return
+
+
+# PARKED row 27: the dash is the seal's instant reposition (20 u down the fixed line), so
+# the body mirror - the world["enemies"] entry no_enemy_body_within and the D-059 safe tile
+# read - must follow it at the settle. Driven through the behavior alone, no rt.step(): the
+# runtime's own per-tick refresh would otherwise hide a missing sync in this file.
+func _dash_mirror_settles(f: Array[String]) -> void:
+	var pair := _runtime(_level([]))
+	var rt = pair[0]
+	var ctl = pair[1]
+	ctl.x = 8.5
+	ctl.z = 0.5
+	var row := _spawn_seal(rt, Vector3(0.5, 0.0, 0.5))
+	var api = EnemyRuntime.Api.new()
+	api.rt = rt
+	api.row = row
+	var beh = row["behavior"]
+	var spawned_at := Vector3(float(row["x"]), float(row["y"]), float(row["z"]))
+	for i in range(140):
+		beh.tick(row, api, 1)
+		if str(row.get("phase", "")) == "recover":
+			break
+	if str(row.get("phase", "")) != "recover":
+		f.append("mirror: the dash never settled in 140 ticks")
+		return
+	var mirror: Dictionary = row.get("body_mirror", {})
+	if mirror.is_empty():
+		f.append("mirror: the row carries no body mirror (no world[enemies] entry)")
+		return
+	var at := Vector3(float(mirror["x"]), float(mirror["y"]), float(mirror["z"]))
+	var body := Vector3(float(row["x"]), float(row["y"]), float(row["z"]))
+	if at.distance_to(body) > 1e-9:
+		f.append("mirror: the body mirror sits at %s after the dash, the row is at %s"
+				% [str(at), str(body)])
+	# and it really moved: the dash carried the body 20 u off the spawn point
+	if at.distance_to(spawned_at) < 1.0:
+		f.append("mirror: the body mirror never left the spawn point %s (dash end %s)"
+				% [str(spawned_at), str(at)])
 
 
 # DESIGN.md section 5.9: after the dash the seal idles 0.75 s (45 ticks, +/-1), then flaps

@@ -54,8 +54,10 @@ var _rng: RefCounted = null
 var _gate_announced: bool = false  # EV_GATE_OPENED fired once per intermission
 
 
-## Builds one lobby. p_votes / p_curses / p_stacks carry the run's ledgers in
-## (they are updated in place; keep the same dictionaries across intermissions).
+## Builds one lobby. p_votes / p_curses / p_stacks carry the run's ledgers in and are
+## COPIED in, not aliased: read lb.votes / lb.curses_held / lb.upgrade_stacks back after
+## the visit and pass those dictionaries in next time - re-passing the ones the caller
+## kept would lose every vote, curse and purchase of the run.
 static func create(p_api: RefCounted, p_level_completed: int, p_purse: int, p_seed: int,
 		p_votes: Dictionary = {}, p_curses: Dictionary = {}, p_stacks: Dictionary = {},
 		p_class: String = "", p_tithes: int = 0, p_hunger: int = 0,
@@ -176,11 +178,14 @@ func _redraw_shop(p_bay: Dictionary, p_api: RefCounted, p_bump: bool = true) -> 
 
 ## The flat altar table the Select input indexes. Bay order, then each bay's offers in
 ## draw order, then its extra plinths ("tithe", "reroll"). Rebuilt from live state on
-## every call, so the view builds its prompts from the same table.
+## every call, so the view builds its prompts from the same table. A resolved bay
+## contributes nothing: its offers and plinths would only be refused.
 func altar_table() -> Array:
 	var out: Array = []
 	for bi in bays.size():
 		var bay: Dictionary = bays[bi]
+		if bool(bay.get("resolved", false)):
+			continue
 		var kind := str(bay["kind"])
 		for ai in (bay["altars"] as Array).size():
 			out.append({"bay_index": bi, "altar": ai, "kind": "offer", "bay": kind})
@@ -215,7 +220,9 @@ func step(p_inputs: Array) -> Array:
 ## spent plinth, a purse too small). Returns true when the state changed.
 func apply_select(p_player: int, p_index: int, p_events: Array) -> bool:
 	var table := altar_table()
-	if p_index < NO_SELECT or p_index >= table.size():
+	# An index outside the table is refused, NO_SELECT (-1, sim/input.gd's "no choice")
+	# included: never wrap it to the last altar.
+	if p_index < 0 or p_index >= table.size():
 		return false
 	var entry: Dictionary = table[p_index]
 	match str(entry["kind"]):
@@ -257,6 +264,7 @@ func _select_class(p_bay_index: int, p_altar: int, p_player: int, p_events: Arra
 	var altar: Dictionary = (bay["altars"] as Array)[p_altar]
 	class_chosen = str(altar["id"])
 	bay["resolved"] = true
+	_bump()
 	_emit(p_events, p_player, bay, "class", class_chosen, 0)
 	return true
 
@@ -279,6 +287,7 @@ func _select_enemy(p_bay_index: int, p_altar: int, p_player: int, p_events: Arra
 	bay["cast"] = int(bay["cast"]) + 1
 	if int(bay["cast"]) >= int(bay["count"]):
 		bay["resolved"] = true
+		_bump()      # no redraw on the resolving vote: bump it here
 	else:
 		_redraw_enemy(bay)   # an E x2 bay re-draws between votes (DESIGN.md section 6)
 	return true
@@ -295,6 +304,7 @@ func _select_curse(p_bay_index: int, p_altar: int, p_player: int, p_events: Arra
 	var bounty := int(altar.get("bounty", 0))
 	purse += bounty
 	bay["resolved"] = true
+	_bump()
 	_emit(p_events, p_player, bay, "curse", cid, -bounty)
 	return true
 
@@ -309,12 +319,14 @@ func _select_tithe(p_bay_index: int, p_player: int, p_events: Array) -> bool:
 	purse -= cost
 	tithes += 1
 	bay["resolved"] = true
+	_bump()
 	_emit(p_events, p_player, bay, "tithe", "tithe", cost)
 	return true
 
 
 func _select_reroll(p_bay_index: int, p_player: int, p_events: Array) -> bool:
 	var bay: Dictionary = bays[p_bay_index]
+	var spent := 0      # the C reroll is free (DESIGN.md section 7), U / REST are paid
 	match str(bay["kind"]):
 		"C":
 			# One REROLL of the whole bay per C intermission, free (DESIGN.md section 7).
@@ -326,12 +338,13 @@ func _select_reroll(p_bay_index: int, p_player: int, p_events: Array) -> bool:
 			var cost := OffersScript.reroll_cost(int(bay.get("rerolls_used", 0)), content)
 			if purse < cost:
 				return false
+			spent = cost
 			purse -= cost
 			bay["rerolls_used"] = int(bay.get("rerolls_used", 0)) + 1
 			_redraw_shop(bay, content)
 		_:
 			return false
-	_emit(p_events, p_player, bay, "reroll", "reroll", 0)
+	_emit(p_events, p_player, bay, "reroll", "reroll", spent)
 	return true
 
 

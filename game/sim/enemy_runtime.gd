@@ -375,7 +375,6 @@ var controllers: Array = []         # one T-012 controller per player, index = p
 var tick := 0                       # runtime tick (starts at 0 on level start, not the lv tick)
 var spawn_delay_ticks := SPAWN_DELAY_TICKS
 var events: Array = []              # the current step's events (controller.try_kill appends here)
-var rt_set: Dictionary = {}         # round-trip-reachable tile index -> true (built once at setup)
 
 # live enemy state:
 var planned: Array = []             # spawn queue from the votes: [{"id","name","behavior","cfg","copies"}]
@@ -400,10 +399,19 @@ func setup(p_level: Dictionary, p_world: Dictionary, p_controllers: Array,
 	level = p_level
 	world = p_world
 	controllers = p_controllers
+	# D-073: the arrival push must reach the LIVE rows, so a controller handed to this runtime
+	# gets this runtime's push. The property is probed, never assumed: a controller row without
+	# the hook keeps its own mirror-only fallback instead of raising here.
+	for c in controllers:
+		if c == null:
+			continue
+		for prop in c.get_property_list():
+			if str(prop.get("name", "")) == "push_hook":
+				c.set("push_hook", Callable(self, "push_bodies"))
+				break
 	seed_base = p_seed_base
 	spawn_delay_ticks = int(opts.get("spawn_delay_ticks", SPAWN_DELAY_TICKS))
 	overtime_period = float(opts.get("overtime_period", OVERTIME_PERIOD))
-	rt_set = round_trip_set(level)
 
 
 # ---- votes (DESIGN.md section 5 vote table; the per-id numbers live in enemy.json) ----------
@@ -462,6 +470,15 @@ func step(dt: float) -> Array:
 		e["anim_t"] = float(e["anim_t"]) + dt
 		var beh: RefCounted = e["behavior"]
 		beh.tick(e, api, dt_ticks)
+	# T-032 / SR-4 / D-059: the body mirror (world["enemies"]) is the live body list the
+	# arbiter's no_enemy_body_within, the controller's safe-tile check and the threat radar
+	# read, and a behavior moves the ROW only. Refreshing every row here - after every
+	# behavior ran, before any of those readers sees the world - is the one point that covers
+	# every mover (pursuit, teleport, push) without a sync call site per emitter. Cost: four
+	# dictionary writes per live row per tick (a full roster is a few dozen writes), no
+	# allocation, no row touched.
+	for body in enemies:
+		sync_body_mirror(body)
 	# projectiles, then body-contact kills (the KILL RULE: the framework checks contact).
 	_step_projectiles(dt)
 	_contact_kills()
@@ -680,12 +697,26 @@ static func _kind_name(kind: int) -> String:
 static func round_trip_set(lv: Dictionary) -> Dictionary:
 	if lv.is_empty():
 		return {}
+	# Short rows: a hand-built test level carries [x, z, y] tiles (no kind / piece) and
+	# [x, z, y, h] props. The generated level always has the full 5/6 fields, so the missing
+	# tail defaults to kind 0 flat rather than erroring on the index (this ran only on real
+	# levels before setup() hoisted the call, PARKED.md row 28).
 	var w := VoidGenScript.World.new()
 	for t in lv.get("tiles", []):
-		w.tiles.append([int(t[0]), int(t[1]), int(t[2]), int(t[3]), int(t[4])])
+		if t.size() < 3:
+			continue
+		w.tiles.append([int(t[0]), int(t[1]), int(t[2]),
+				int(t[3]) if t.size() > 3 else 0,
+				int(t[4]) if t.size() > 4 else 0])
 	for p in lv.get("props", []):
-		w.props.append([int(p[0]), int(p[1]), int(p[2]), int(p[3]), int(p[4]), int(p[5])])
+		if p.size() < 4:
+			continue
+		w.props.append([int(p[0]), int(p[1]), int(p[2]), int(p[3]),
+				int(p[4]) if p.size() > 4 else 0,
+				int(p[5]) if p.size() > 5 else 0])
 	for p in lv.get("pads", []):
+		if p.size() < 6:
+			continue
 		w.pads.append([int(p[0]), int(p[1]), int(p[2]), int(p[3]), int(p[4]), int(p[5])])
 	var col: Dictionary = {}
 	for i in range(w.tiles.size()):
@@ -787,10 +818,10 @@ func _player_index(p) -> int:
 	return -1
 
 
-## T-032: keep this row's mirror entry (world["enemies"]) in sync after an instant
-## reposition. The mirror is otherwise written once at spawn; movers update the row
-## only, so anything that TELEPORTS must call this or the safe-tile / dais-push
-## distance checks (which read the mirror) see the stale point.
+## T-032: keep this row's mirror entry (world["enemies"]) in sync with the live row. step()
+## re-syncs every row once per tick already, so this is the same-tick call for a caller whose
+## reposition must be visible to the mirror's readers BEFORE the next step, and the helper
+## push_bodies() uses on the rows it moves.
 func sync_body_mirror(row: Dictionary) -> void:
 	var m: Variant = row.get("body_mirror", null)
 	if not (m is Dictionary):
@@ -799,6 +830,28 @@ func sync_body_mirror(row: Dictionary) -> void:
 	m["y"] = float(row["y"])
 	m["z"] = float(row["z"])
 	m["r"] = float(row["diameter_u"]) * 0.5
+
+
+## D-073: the arrival push, reaching the LIVE rows. Every body whose horizontal (XZ)
+## distance from `origin` is < radius moves radially out to exactly radius from it; y is
+## never touched (a push must not change a body's height or its y-banded footprint), and a
+## body sitting exactly on the origin has no bearing, so it goes to +x. Each pushed row's
+## mirror is re-synced inside this call, so the very next safe-tile read, arbiter evaluation
+## and radar tick see the pushed body, never the point it stood on.
+func push_bodies(origin: Vector3, radius: float) -> void:
+	for e in enemies:
+		var dx: float = float(e["x"]) - origin.x
+		var dz: float = float(e["z"]) - origin.z
+		var d: float = sqrt(dx * dx + dz * dz)
+		if d >= radius:
+			continue
+		if d < 1e-9:
+			e["x"] = origin.x + radius
+			e["z"] = origin.z
+		else:
+			e["x"] = origin.x + dx / d * radius
+			e["z"] = origin.z + dz / d * radius
+		sync_body_mirror(e)
 
 
 ## T-032: a non-killing eject (DESIGN.md 5.3, section 5.0 KILL RULE's third listed
