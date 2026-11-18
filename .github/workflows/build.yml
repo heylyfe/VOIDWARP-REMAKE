@@ -61,7 +61,7 @@ jobs:
             artifact: voidwrap-macos-universal
             out: build/voidwrap.zip
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The templates directory lives in the engine's per-user data folder, which
       # differs per OS. Resolve it once and hand the path to the cache step.
@@ -92,7 +92,7 @@ jobs:
           echo "tpl=$tpl" >> "$GITHUB_OUTPUT"
 
       - name: Cache engine and export templates
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ${{ steps.dirs.outputs.root }}
@@ -106,6 +106,7 @@ jobs:
           root='${{ steps.dirs.outputs.root }}'
           tpl='${{ steps.dirs.outputs.tpl }}'
           editor='${{ matrix.editor }}'
+          editor_zip='${{ matrix.editor_zip }}'
           # 4.7.2-stable on the release page, 4.7.2.stable as the templates folder
           ver="${GODOT_VERSION/-/.}"
 
@@ -208,7 +209,7 @@ jobs:
           fi
 
       - name: Upload
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.out }}
@@ -237,7 +238,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
