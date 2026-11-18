@@ -1,64 +1,141 @@
+![VOIDWRAP RUN](docs/hero.png)
+
 # VOIDWRAP RUN
 
-A collectathon roguelite platformer: endless seeded levels of checkered causeways over a foggy void.
-Collect every black gift to open the beacon — then leave safe, or linger for gold while the pressure
-rises. You carry two void charges: a fall spends one, the beacon gives one back, and the third fall is
-the end of the run. The world is serious. The enemies are not.
+**A collectathon roguelite platformer.** Endless seeded levels of checkered causeways strung over a
+foggy void. Collect every black gift to open the beacon, then leave safe — or linger for gold while
+the pressure rises. You carry two void charges: a fall spends one, the beacon gives one back, and the
+third fall is the end of the run.
+
+The world is serious. The enemies are not.
+
+> **Status: alpha — `v0.1.0-alpha.1`.** One level, playable end to end. Not yet a 30-level run.
+> See [What works today](#what-works-today) for the honest list.
 
 **VOIDWRAP RUN is a personal, non-commercial project — no money is involved, and it is not affiliated with, endorsed by, or connected to any person, brand, character, or IP referenced or depicted in the game.**
 
-ENEMIES.md DISCLAIMER (verbatim, required in README + about screen): this is a personal, non-commercial project with no money involved. It is not affiliated with, endorsed by, or connected to any person, brand, character, or IP referenced or depicted in the game.
+## Play it
+
+Download `voidwrap_run.exe` from the [latest release](https://github.com/heylyfe/VOIDWARP-REMAKE/releases/latest)
+and run it. Windows x86_64, single file, no installer and no runtime to install.
+
+| input | action |
+|---|---|
+| `WASD` | move |
+| `Space` | jump |
+| `Shift` | ability — dash, per class |
+| `F` | interact — gifts, mines, the beacon |
+| `Tab` | toggle HUD |
+| `Esc` | pause / back |
+
+Gamepad works too. The menu's **HOW TO PLAY** panel shows the live bindings, read from
+`game/data/bindings.json`.
+
+## What works today
+
+- **Menu** — PLAY / HOW TO PLAY / QUIT over a live 3D backdrop: the floating island, the open
+  beacon's light column, and the full enemy roster standing on it as real billboards.
+- **Loading screen** — 5.0 s on a first launch, 2.0 s on every restart, with a 2D gag scene and a
+  30-tip pool that never repeats the previous gag.
+- **Level 1** — generates from a seed, loads, plays, and completes. The beacon opens when every
+  black gift is collected; the exit is a real transition, not a stub.
+- **12 enemies**, each with its own telegraph, attack, and death. They are the joke; the void is not.
+- **Economy** — gifts, gold, void charges, tripmines, the beacon's charge refund.
+- **After a level** — the world tears down and the app returns to the menu.
+
+Known gaps, stated plainly:
+
+- **The bot completes level 1 in 82 of 100 seeds.** The acceptance bar is 95. The gap is bot
+  competence, not a crash — a human can finish the level.
+- **No 30-level run yet.** The intermission lobby exists as a scene but is not wired into the app
+  loop, so a completed level returns to the menu instead of advancing.
+- **Five parked HIGH bugs** are documented in [`PARKED.md`](PARKED.md) rows 25–29, each with the
+  test that hides it. They are real and unfixed: the Last Light body push is inert, half the ramp
+  orientations report the wrong surface height, four enemies teleport without syncing their body
+  mirror, two bot route regressions, and the shipped exe predates the app loop.
+
+## How a run works
+
+1. **Spawn** on a causeway over the void. Two void charges in hand.
+2. **Collect** every black gift on the level. The beacon stays shut until the last one.
+3. **Decide** — walk into the open beacon and bank the run, or stay out for gold while the enemies
+   get faster and the fog closes in.
+4. **Fall** and you spend a charge. Fall with none left and the run ends.
+
+Between levels the design calls for a lobby: class choice, enemy votes, curses, upgrades. That is
+built and tested as a simulation; it is not yet reachable from the app.
 
 ## Where things are
 
-| file | what |
+| path | what |
 |---|---|
-| `DECISIONS.md` | every significant decision with its why — read first |
-| `TERRAIN_SPEC.md` / `TERRAIN_REF.md` | the terrain generator spec and its working reference |
-| `DESIGN.md` | game design: loop, economy, enemies, curses, upgrades, lobby, architecture |
-| `FLEET_PACK.md` | instructions and tickets for the multi-agent build run |
-| `ENEMIES.md` | the fixed enemy roster and its hard rules (owner file) |
-| `terrain_ref/` | Python reference generator + validator (stdlib only) |
-| `game/` | the Godot 4.7.2 project |
-| `game/data/` | tunable data (offering schedule, …) |
-| `assets_src/enemies/` | drop the 17 enemy source images here, with the exact filenames from ENEMIES.md |
-| `research/` | Nullscape wiki facts, the v1 retrospective |
+| [`DESIGN.md`](DESIGN.md) | the game: loop, economy, enemies, curses, upgrades, lobby, architecture |
+| [`DECISIONS.md`](DECISIONS.md) | every significant decision with its why — read this first |
+| [`ENEMIES.md`](ENEMIES.md) | the fixed enemy roster and its hard rules |
+| [`TERRAIN_SPEC.md`](TERRAIN_SPEC.md) | the terrain generator spec; [`TERRAIN_REF.md`](TERRAIN_REF.md) is its reference |
+| [`PARKED.md`](PARKED.md) | known bugs, each with the test that hides it and why it parked |
+| [`AUDIT.md`](AUDIT.md) / [`TBD.md`](TBD.md) | the audit trail and the open questions |
+| [`FLEET_PACK.md`](FLEET_PACK.md) | the ticket pack the multi-agent build ran from |
+| [`terrain_ref/`](terrain_ref) | Python reference generator, validator and renderer (stdlib only) |
+| [`game/`](game) | the Godot 4.7.2 project |
+| [`game/app/`](game/app) | the app loop: menu → loading → world |
+| [`game/sim/`](game/sim) | the simulation core — deterministic, headless, testable |
+| [`game/content/enemies/`](game/content/enemies) | one folder per enemy: data, behaviour, sprites, sources |
+| [`game/data/`](game/data) | tunable data — offering schedule, tips, bindings |
+| [`assets_src/enemies/`](assets_src/enemies) | the 17 source images the sprites are derived from |
+| [`research/`](research) | design research, the v1 retrospective, the run reports |
 
-## Quick start
+## Development
+
+Engine: **Godot 4.7.2** (MIT), fetched into `tools/godot/` and never committed — see
+[`tools/godot/README.md`](tools/godot/README.md). Language: GDScript. Ships as a native Windows
+executable; no Electron, no browser wrapper.
 
 ```powershell
-# engine: see tools/godot/README.md (portable Godot 4.7.2, not committed)
-python terrain_ref\voidgen.py --seed 1 --level 1 --ascii      # look at a level
-python terrain_ref\gallery.py --check                          # 16 pinned levels
-python terrain_ref\validate.py --seeds 0:5000                  # all invariants, 5,000 seeds
+# look at a level without opening the engine
+python terrain_ref\voidgen.py --seed 1 --level 1 --ascii
 python terrain_ref\render.py --seed 7 --level 30 --out terrain_ref\out\l30.png
+
+# the generator's invariants
+python terrain_ref\gallery.py --check            # 16 pinned levels
+python terrain_ref\validate.py --seeds 0:5000    # every invariant, 5,000 seeds
 ```
 
-Engine: Godot 4.7.2 (MIT). Language: GDScript. Ships as a native Windows executable
-(standalone `.exe` export — no Electron, no browser wrapper).
-
-## Tests (headless, CLI-drivable)
+### Tests
 
 ```powershell
 $G = "tools\godot\godot.exe"
-# every discovered test (game/tests/test_*.gd; each exposes func run() -> Array[String]):
+
+# every discovered test (game/tests/test_*.gd; each exposes func run() -> Array[String])
 & $G --headless --path game --script res://tests/run_all.gd
-# terrain parity (GDScript vs Python goldens):
+
+# terrain parity: GDScript generator against the Python goldens
 & $G --headless --path game --script res://tests/test_terrain_parity.gd -- "$PWD\terrain_ref\gallery.json"
-# the merge gate (all checks except the 5,000-seed harness and the export):
+
+# the merge gate: every check except the 5,000-seed harness and the export
 powershell -File tools\gate.ps1
-# the full 5,000-seed generation harness:
+
+# the full 5,000-seed generation harness
 powershell -File tools\harness.ps1
 ```
 
-## Build
+The gate is the contract: 59 test files, terrain parity, sprite validation, fog readability across
+five biomes, and a zero-`SCRIPT ERROR` requirement. Nothing merges red.
+
+### Build
 
 ```powershell
 & $G --headless --path game --export-release "Windows Desktop" ..\build\voidwrap_run.exe
 ```
 
-(Export presets land with ticket T-056.)
+The preset lives in [`game/export_presets.cfg`](game/export_presets.cfg); the output lands in
+`build/`, which is gitignored.
 
 ## Credits
 
-- enemy images: see content/enemies/*/SOURCES.md
+- **Engine** — [Godot](https://godotengine.org) 4.7.2, MIT.
+- **Enemy source images** — third-party material, used without licence for a personal
+  non-commercial project. Per-enemy provenance is in `game/content/enemies/*/SOURCES.md`.
+- **Everything else** — generated for this project: terrain, meshes, audio cues, UI.
+
+this is a personal, non-commercial project with no money involved. It is not affiliated with, endorsed by, or connected to any person, brand, character, or IP referenced or depicted in the game.
