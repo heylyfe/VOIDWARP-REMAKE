@@ -213,7 +213,7 @@ if (Test-Input 'game\tests\run_all.gd') {
     $m = [regex]::Matches($t, 'TESTS (\d+) passed (\d+) failed')
     if ($m.Count -eq 0) { Stop-Gate $step 'did not print TESTS n passed m failed' }
     $last = $m[$m.Count - 1]
-    if ($last.Groups[2].Value -ne '0') { Stop-Gate $step $last.Value }
+    if ($last.Groups[2].Value -ne '0' -or $last.Groups[1].Value -eq '0') { Stop-Gate $step $last.Value }
     Pass-Step $step $last.Value
     $ranAll = $true
 } else {
