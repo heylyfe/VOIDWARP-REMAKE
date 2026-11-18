@@ -642,3 +642,10 @@ FINAL REQUIREMENT: be extremely thorough. Do not assume the repository is safe j
 - Repo: local main == origin/main 7e9f3f2 (0/0); 12 modified files in main checkout (integration pending the gate run).
 - RUNLOG.md still ends 07:29Z. Faults: none. Actions: none.
 - Expect 21:30Z: Opus branch merged, gate, RUNLOG lines, new commit/push. If orchestrator updatedAt older than 25 min with no new item, interrupt + R10.
+
+## 2026-11-18 21:30Z check #59
+- Re-armed 22:00Z. Orchestrator 466457f6 running (run 121 active), itemCount 7958 (was 7840), updatedAt 21:28Z, pending 0. Now running a full gate on two last additions (world.gd cleanse forwarding + dash-into-prop test in test_classes.gd); tests 65/0 so far; then commit + push.
+- Workers: all completed (BOT 179, COLLISION 189, ENEMY-SYNC 178, WORLD-VIEW 140, TILES 483, OPUS-1/2 done 20:58Z). No worker running.
+- Repo: local main == origin/main c54088b (0/0). RUNLOG alive again: 21:24Z release v0.1.0-alpha.3 (CI built 3 platform assets, run 44400461999), 21:25Z final pushed hash bd53963, 21:26Z alpha.2 still ships the invisible floor (owner call: gh release delete v0.1.0-alpha.2 + tag delete). Open honest items: bot 84/100 vs 95, no 30-level run (intermission lobby not wired).
+- Faults: none. Actions: none.
+- Expect 22:00Z: gate result, commit/push of the 2 files, then orchestrator idle. If nothing is happening at 22:00Z, stop the schedule (owner rule) and write the closing summary.

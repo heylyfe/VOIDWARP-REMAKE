@@ -158,6 +158,22 @@ func _test_prop_top(f: Array[String]) -> void:
 			Util.CollisionScript.SKIN, true)
 	if sup["tile"] == null or absf(float(sup["s"]) - 0.0) > 1e-6:
 		f.append("prop: support_at from the prop top returned %s, want the tile top 0.0" % str(sup["s"]))
+	# the owner's report: "I phased through a platform". A dash is the case the fall and the
+	# stand-on-top checks above do not cover - 6 u in 0.2 s of horizontal travel while airborne,
+	# straight at the box's side. The body must stop at the face, not end up inside it.
+	var d = Util.ControllerScript.new()
+	d.setup("dasher", Util.consts())
+	d.place(w)
+	d.x = 0.5
+	d.y = 1.0
+	d.z = 0.5
+	d.grounded = false
+	Util.run_ticks(d, w, 1, func(_c, _i): return Util.mk_in(1, 0, Util.ControllerScript.BTN_ABILITY, 1.0, 0.0))
+	Util.run_ticks(d, w, 14, func(_c, _i): return Util.mk_in(1, 0))
+	if d.x > 2.0 + 0.05:
+		f.append("prop: a dash into the wall face ended at x=%.4f, want <= 2.0 (phased through)" % d.x)
+	if d.y < 0.0 or d.y > 2.0 + 0.05:
+		f.append("prop: a dash into the wall face ended at y=%.4f, want inside 0.0..2.0" % d.y)
 
 
 func _flat(n: int) -> Dictionary:

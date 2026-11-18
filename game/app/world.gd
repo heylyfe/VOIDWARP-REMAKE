@@ -330,6 +330,10 @@ func step(dt: float) -> void:
 		_economy.tick_gold(dt)
 	for e in rt.step(dt):
 		ev.append(e)
+		# the cleanse wave is a view event, not an economy one: the decal layer plays the
+		# 18-tick outward ring from the tile the player cleaned
+		if toucher_floor != null and str(e.get("e", "")) == "glitched_cleanse":
+			toucher_floor.on_cleanse(e)
 	_economy_pass(ev)
 	if rig != null:
 		rig.update_rig(Vector3(float(ctl.x), float(ctl.y), float(ctl.z)), dt)
