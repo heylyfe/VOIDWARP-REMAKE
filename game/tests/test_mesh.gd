@@ -176,13 +176,15 @@ func _winding() -> Array[String]:
 		for mat in TOP_MATS:
 			if not meshes.has(mat):
 				continue
-			failures.append_array(_check_normals(meshes[mat], mat, seed, level, 1, 0.9))
+			failures.append_array(_check_normals(meshes[mat], mat, seed, level, 1, 0.85))
 		if meshes.has("slab_side"):
 			failures.append_array(_check_normals(meshes["slab_side"], "slab_side", seed, level, 0, 0.1))
 	return failures
 
 
-# axis 1: outward normal .y must be >= limit (a top face, seen from above). axis 0: outward
+# axis 1: outward normal .y must be >= limit (a top face, seen from above). A ramp top is
+# sloped 1 HU per 1 u, so its normal.y is 1/sqrt(1.25) = 0.8944 - the limit is 0.85, not 0.9,
+# or every ramp would read as back-facing. axis 0: outward
 # normal .y must be <= limit (a side or underside face - never a face you could see from above
 # through the floor). Reports the first offending triangle per material.
 func _check_normals(m: ArrayMesh, mat: String, seed: int, level: int, axis: int, limit: float) -> Array[String]:
