@@ -51,3 +51,9 @@ secrets/
 *.so
 *.dylib
 *.pdb
+
+# Third-party character images supplied for the enemy art pass. Kept locally as the source of
+# game/tools/art/*.gd (the derived sprites under game/content are what the game ships); they are not
+# ours to redistribute, so they are not tracked. assets_src/enemies/README.md stays.
+assets_src/enemies/*
+!assets_src/enemies/README.md
