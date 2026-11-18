@@ -131,8 +131,29 @@ five biomes, and a zero-`SCRIPT ERROR` requirement. Nothing merges red.
 & $G --headless --path game --export-release "Windows Desktop" ..\build\voidwrap_run.exe
 ```
 
-The preset lives in [`game/export_presets.cfg`](game/export_presets.cfg); the output lands in
-`build/`, which is gitignored.
+The presets live in [`game/export_presets.cfg`](game/export_presets.cfg) — `Windows Desktop`, `Linux`
+and `macOS` — and the output lands in `build/`, which is gitignored. `Linux` and `macOS` need the
+4.7.2 export templates installed for your engine; the Windows one already ships them.
+
+Exporting by hand needs the templates for the target platform in the engine's templates folder. CI
+does not: [`.github/workflows/build.yml`](.github/workflows/build.yml) fetches the engine and its
+templates for the pinned version on each runner, refuses to build if the binary does not report
+`4.7.2.stable.official.ed1daf0bf`, and uploads a build per platform on every push, pull request and
+tag. Tag builds are also attached to the GitHub release.
+
+| Target | Artifact | Notes |
+| --- | --- | --- |
+| Linux x86_64 | `voidwrap.x86_64` | single binary, pck embedded |
+| Windows x86_64 | `voidwrap.exe` | single binary, pck embedded |
+| macOS universal | `voidwrap.zip` | `VOIDWRAP RUN.app`, x86_64 + arm64, **unsigned** |
+
+The macOS build is unsigned and not notarized, so Gatekeeper blocks it on a fresh machine until the
+user clears it (`System Settings > Privacy & Security > Open Anyway`). Signing needs an Apple
+Developer identity, which the project does not have.
+
+macOS builds only work because [`game/project.godot`](game/project.godot) imports the ETC2/ASTC
+texture variants: Godot refuses an arm64 export without them. The desktop presets do not pack those
+variants, so their builds are unchanged by it.
 
 ## Credits
 
