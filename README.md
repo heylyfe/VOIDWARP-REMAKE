@@ -143,9 +143,9 @@ tag. Tag builds are also attached to the GitHub release.
 
 | Target | Artifact | Notes |
 | --- | --- | --- |
-| Linux x86_64 | `voidwrap.x86_64` | single binary, pck embedded |
-| Windows x86_64 | `voidwrap.exe` | single binary, pck embedded |
-| macOS universal | `voidwrap.zip` | `VOIDWRAP RUN.app`, x86_64 + arm64, **unsigned**, cross-built on Linux |
+| Linux x86_64 | `voidwrap_run.x86_64` | single binary, pck embedded |
+| Windows x86_64 | `voidwrap_run.exe` | single binary, pck embedded |
+| macOS universal | `voidwrap_run.zip` | `VOIDWRAP RUN.app`, x86_64 + arm64, **unsigned**, cross-built on Linux |
 
 The macOS build is unsigned and not notarized, so Gatekeeper blocks it on a fresh machine until the
 user clears it (`System Settings > Privacy & Security > Open Anyway`). Signing needs an Apple
