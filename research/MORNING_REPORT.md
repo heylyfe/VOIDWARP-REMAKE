@@ -204,3 +204,42 @@ either moving the criterion or lying about it.
 The two things I would do first tomorrow: build the intermission lobby so a run can go past level 1,
 and give the gate a criterion that actually launches the app, because for weeks it was green on a build
 whose exe could not complete a level.
+
+---
+
+## Addendum — the ten-second playtest, and alpha.3
+
+The owner played alpha.1 for ten seconds and filed six complaints. All six were real. The
+load-bearing one was not a missing texture: `view/level_mesher.gd` `_face_y()` had its two winding
+branches swapped, so every tile **top** was back-facing from above and got culled. The player was
+looking at the slab **underside** — dark, flat, untextured by design. That is why the floor looked
+like it had no texture, and why the gifts on it were invisible. The ramp wedge tops had the same
+defect in their own quad order.
+
+The second was `view/billboard.gd` reading only the legacy `animations[]` list while the sim drives
+the newer `anim.states` names: 9 of 12 enemies had states with no matching art and froze on their
+last frame. The toucher's body was never broken — the black-and-magenta checker the owner saw is
+`floor_00..04.png`, the glitched-floor decal derived from their own `glitchedground.jpeg`.
+
+Also fixed: the flat hub shader, the first-person camera (now third person with a player figure and
+a follow camera), and the README hero, which showed the ADDRESS ME explosion instead of the enemy.
+
+Two Opus 5.5 workers took the hard simulation items. Both found that most of their brief was already
+closed by PR #1 and added the missing **tests** instead of re-fixing working code: a four-kind ramp
+surface pin, a live-row Last Light assertion, a C-bay distinctness pin, and forced-open-gate
+labelling in the bot probe.
+
+**Final state.** Gate green on the merged tree: `GATE OK (9 ran, 0 skipped, 249 s)`,
+`TESTS 65 passed 0 failed`, `PARITY 56/56`, `FOGCHECK OK (550 checks over 5 biomes)`, zero
+`SCRIPT ERROR`. Pushed to `origin main` as a plain fast-forward — no force, no history rewrite, no
+worktree branches, no checkpoint refs.
+
+`v0.1.0-alpha.2` already existed as a release, built by CI from the tree *before* these fixes, so it
+ships the invisible floor. Moving a published tag is a force-push and needs the owner's explicit
+approval, so **alpha.3** was cut from the fixed tree instead and alpha.2 was left where it is:
+https://github.com/heylyfe/VOIDWARP-REMAKE/releases/tag/v0.1.0-alpha.3 — Windows, Linux and macOS
+assets, built by CI on the tag.
+
+Still true, and still the two things worth doing next: the bot completes level 1 in 84 of 100 seeds
+against a bar of 95, and there is no 30-level run because the intermission lobby is not wired into
+the app loop.
