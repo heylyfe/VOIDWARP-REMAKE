@@ -5,10 +5,14 @@ extends RefCounted
 # nuke by teleporting to the beacon dais with the charges held and 2.0 s
 # invulnerability; never triggers at 0 charges; never triggers on a void fall; the
 # arrival pushes enemy bodies within 8 u out to exactly 8 u (through the controller's
-# push_hook: the dais centre as the origin and exactly 8 u as the radius).
+# push_hook: the dais centre as the origin and exactly 8 u as the radius). With a REAL
+# EnemyRuntime behind the controller, the save moves the LIVE enemy rows (the rows the view
+# draws and contact kills read), their mirrors follow, and the next runtime step keeps them
+# there (the per-tick row -> mirror sync must not undo the push).
 # HUD icon: lit while armed, dim at 0 charges, grey once spent.
 
 const Util := preload("res://tests/sim_testutil.gd")
+const EnemyRuntime := preload("res://sim/enemy_runtime.gd")
 
 
 func run() -> Array[String]:
@@ -19,6 +23,7 @@ func run() -> Array[String]:
 	_test_void_fall_never_triggers(f)
 	_test_second_hit_after_spent(f)
 	_test_hud_and_push(f)
+	_test_push_moves_live_rows(f)
 	return f
 
 
@@ -201,6 +206,81 @@ func _test_hud_and_push(f: Array[String]) -> void:
 		f.append("lastlight: a body beyond 8 u was moved")
 	if near1["y"] != 0.0:
 		f.append("lastlight: the push changed a body's height")
+
+
+# D-073 end to end: a real runtime, the shipped controller, a real save. The live rows in
+# rt.enemies are what billboards and contact kills read, so they are what must move.
+func _test_push_moves_live_rows(f: Array[String]) -> void:
+	var tiles: Array = []
+	var lv_tiles: Array = []
+	for x in range(-16, 17):
+		for z in range(-4, 5):
+			tiles.append([x, z, 0])
+			lv_tiles.append([x, z, 0, 0, 0])
+	var w := Util.world_from_tiles(tiles)
+	w["dais"] = [0, 0, 0]
+	var lv := {"beacon": [0, 0, 0], "spawns": [[0, 0, 0]], "anchors": [], "tiles": lv_tiles,
+			"props": [], "pads": []}
+	var ctl = Util.ControllerScript.new()
+	ctl.setup("dasher", Util.consts())
+	ctl.place(w)
+	ctl.charges = 1
+	var rt = EnemyRuntime.new()
+	rt.setup(lv, w, [ctl], 4242)
+	var cfg := {"world_height": 1.0, "frame_w": 256, "frame_h": 256,
+			"body_rect": [0, 0, 256, 256], "contact_kill": false, "cycle_ticks": 0}
+	# dais centre (0.5, 0.0, 0.5); A 3 u along +x, B 2*sqrt(2) u on the (-x, +z) diagonal,
+	# C 12 u out (beyond the 8 u ring, must not move)
+	var a: Dictionary = rt.spawn_at("near_a", "near_a", EnemyRuntime.FixtureBehavior.new(), cfg,
+			Vector3(3.5, 0.0, 0.5))
+	var b: Dictionary = rt.spawn_at("near_b", "near_b", EnemyRuntime.FixtureBehavior.new(), cfg,
+			Vector3(-1.5, 0.25, 2.5))
+	var c: Dictionary = rt.spawn_at("far_c", "far_c", EnemyRuntime.FixtureBehavior.new(), cfg,
+			Vector3(12.5, 0.0, 0.5))
+	var ev: Array = []
+	if not ctl.try_kill("D-NUKE", "nuke", w, ev):
+		f.append("lastlight live: the kill was not saved at 1 charge")
+		return
+	var k: float = 8.0 / sqrt(2.0)
+	var want := [[a, 8.5, 0.0, 0.5], [b, 0.5 - k, 0.25, 0.5 + k], [c, 12.5, 0.0, 0.5]]
+	_expect_live(f, rt, want, "after the save")
+	# one runtime step: the per-tick row -> mirror sync runs; the push must survive it
+	rt.step(1.0 / 60.0)
+	_expect_live(f, rt, want, "one runtime step after the save")
+
+
+# Each [row, x, y, z]: the row must be the same object rt.enemies holds (live, not a copy),
+# sit at (x, y, z), and its body mirror (world["enemies"]) must read the same position.
+func _expect_live(f: Array[String], rt, want: Array, when: String) -> void:
+	for wv in want:
+		var row: Dictionary = wv[0]
+		var id := str(row.get("id", "?"))
+		var live := false
+		for e in rt.enemies:
+			if is_same(e, row):
+				live = true
+		if not live:
+			f.append("lastlight live (%s): row %s is not in rt.enemies" % [when, id])
+		var x: float = wv[1]
+		var y: float = wv[2]
+		var z: float = wv[3]
+		if absf(float(row["x"]) - x) > 1e-9 or absf(float(row["y"]) - y) > 1e-9 				or absf(float(row["z"]) - z) > 1e-9:
+			f.append("lastlight live (%s): row %s at (%.6f, %.6f, %.6f), want (%.6f, %.6f, %.6f)" % [
+					when, id, float(row["x"]), float(row["y"]), float(row["z"]), x, y, z])
+		var m: Variant = row.get("body_mirror", null)
+		if not (m is Dictionary):
+			f.append("lastlight live (%s): row %s carries no body mirror" % [when, id])
+			continue
+		var md: Dictionary = m
+		if absf(float(md["x"]) - x) > 1e-9 or absf(float(md["z"]) - z) > 1e-9:
+			f.append("lastlight live (%s): row %s mirror at (%.6f, %.6f), want (%.6f, %.6f)" % [
+					when, id, float(md["x"]), float(md["z"]), x, z])
+		var in_world := false
+		for wm in rt.world.get("enemies", []):
+			if is_same(wm, md):
+				in_world = true
+		if not in_world:
+			f.append("lastlight live (%s): row %s mirror is not in world[\"enemies\"]" % [when, id])
 
 
 # ---- small event helpers ------------------------------------------------------------

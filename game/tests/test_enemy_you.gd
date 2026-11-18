@@ -28,6 +28,7 @@ func run() -> Array[String]:
 	_trigger_distance(f)
 	_rumble_release_and_recover_timing(f)
 	_ring_expansion_and_cap(f)
+	_ring_expires_and_never_accumulates(f)
 	_ring_vertical_windows(f)
 	_ring_kills_and_death_code(f)
 	_cooldown_blocks_retrigger(f)
@@ -266,6 +267,64 @@ func _ring_expansion_and_cap(f: Array[String]) -> void:
 			saw_cap = true
 	if not saw_cap:
 		f.append("ring: never reached the 14 u cap")
+
+
+# A ring lives exactly through the tick it reaches 14 u (its last kill check, marked done)
+# and is gone from row["rings"] on the next tick, so the view - which draws the newest
+# ring with no `done` check of its own - never holds a spent 14 u band through the 4.0 s
+# recover. Across several release cycles row["rings"] never holds more than the one live
+# ring (the list does not grow for the level). The player is kept unkillable so the
+# behavior keeps re-triggering.
+func _ring_expires_and_never_accumulates(f: Array[String]) -> void:
+	var spawned := _spawn(Vector3(5.0, 0.0, 0.5), "YOU?!", 0.0)
+	var rt = spawned[0]
+	var row = spawned[1]
+	var ctl = spawned[2]
+	ctl.invuln = 1.0e9
+	if _release_ring_now(spawned) < 0:
+		f.append("ring expiry: never released")
+		return
+	var capped: Variant = null
+	for i in range(200):
+		rt.step(DT)
+		var rings: Array = row["rings"]
+		if rings.size() == 1 and float(rings[0]["r"]) >= YouEnemy.RING_MAX:
+			capped = rings[0]
+			break
+	if capped == null:
+		f.append("ring expiry: the ring never reached the 14 u cap")
+		return
+	if not bool((capped as Dictionary).get("done", false)):
+		f.append("ring expiry: the ring at 14 u is not marked done on its cap tick")
+	rt.step(DT)
+	if not (row["rings"] as Array).is_empty():
+		f.append("ring expiry: %d ring(s) still on the row one tick after the cap, want 0"
+				% (row["rings"] as Array).size())
+	if str(row["anim_state"]) != "recover":
+		f.append("ring expiry: state %s one tick after the cap, want recover (the window the stale band would show in)"
+				% str(row["anim_state"]))
+	var v = YouViewScript.new()
+	v.setup("res://content/enemies/you/sprites.json", "res://content/enemies/you")
+	v.sync(row, DT)
+	if v.band != null and v.band.visible:
+		f.append("ring expiry: the view still draws the band (scale %.2f) after the ring expired"
+				% float(v.band.scale.x))
+	v.free()
+	# three more full cycles (cooldown 240 + rumble 90 + travel ~94 ticks each)
+	var seq0 := int(row["ring_seq"])
+	var most := 0
+	for i in range(3 * 450):
+		rt.step(DT)
+		most = maxi(most, (row["rings"] as Array).size())
+		for ring in row["rings"]:
+			if bool(ring.get("done", false)) and float(ring["r"]) < YouEnemy.RING_MAX:
+				f.append("ring expiry: a done ring below the cap (r %.3f)" % float(ring["r"]))
+				return
+	if int(row["ring_seq"]) - seq0 < 2:
+		f.append("ring expiry: only %d further release(s) in %d ticks, want >= 2"
+				% [int(row["ring_seq"]) - seq0, 3 * 450])
+	if most > 1:
+		f.append("ring expiry: row[\"rings\"] held %d rings at once, want <= 1 (it must not grow)" % most)
 
 
 # ---- vertical escape windows (jump / above / below) ---------------------------

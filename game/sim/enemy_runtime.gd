@@ -382,7 +382,10 @@ var enemies: Array = []             # rows (see _spawn_one)
 var projectiles: Array = []         # live projectile rows
 var telegraphs: Array = []          # {"kind","shape","ticks","total","source"}
 var votes: Dictionary = {}          # content id -> vote count (insertion order = vote order)
-var spawn_deferred := false         # true when the spawn tick passed but no legal tile existed yet
+# D-056 step (c)'s round-trip set, a pure function of `level` (read-only after setup), built on
+# the first spawn pick and reused for every later pick and deferred retry of the same level.
+var _rts_cache: Variant = null
+var _rts_cache_level: Variant = null
 var overtime_tier := 0
 var overtime_running := false
 var overtime_t := 0.0
@@ -522,13 +525,11 @@ func _spawn_planned() -> void:
 			# re-read the live copies each round: copy 1 must clear copy 0 (and so on)
 			var exclude: Array = _copy_positions(id)
 			var spot: Variant = pick_spawn_tile(level, kind, _player_pos(0), exclude,
-					COPY_SEP if copies > 1 else 0.0)
+					COPY_SEP if copies > 1 else 0.0, _round_trip_cached())
 			if spot == null:
-				spawn_deferred = true
 				plan_row["spawned_copies"] = k
 				planned.append(plan_row)   # the entry's remaining copies retry next tick
 				break
-			spawn_deferred = false
 			_spawn_one(plan_row, spot, k, copies)
 			k += 1
 
@@ -595,12 +596,14 @@ func _spawn_one(plan_row: Dictionary, spot: Dictionary, copy_index: int, copies:
 ## exclude: positions (Vector3) already used by this enemy's copies (SR-3), min_sep apart.
 ## Returns {"x","y","z","kind","anchor_index" | "tile_index"} or null when nothing qualifies
 ## (the caller retries next tick - D-T027-4).
+## rts: round_trip_set(lv) when the caller already holds it (the runtime caches it per level);
+## null builds it here, on demand, only if step (c) is reached.
 static func pick_spawn_tile(lv: Dictionary, preferred_kind: String, player_pos: Vector3,
-		exclude: Array = [], min_sep: float = 0.0) -> Variant:
+		exclude: Array = [], min_sep: float = 0.0, rts: Variant = null) -> Variant:
 	var anchors: Array = lv.get("anchors", [])
 	if preferred_kind == "none":
 		# DESIGN.md section 5: `none` skips (a) and (b) - straight to (c).
-		return _pick_round_trip(lv, player_pos, exclude, min_sep)
+		return _pick_round_trip(lv, player_pos, exclude, min_sep, rts)
 	# candidates at steps (a)/(b): anchors of the kind, >= 25 u from the player, >= min_sep
 	# from excluded positions; farthest from the player first, then the lowest anchor index.
 	if preferred_kind != "" and KIND_IDS.has(preferred_kind):
@@ -613,12 +616,12 @@ static func pick_spawn_tile(lv: Dictionary, preferred_kind: String, player_pos: 
 	# step (c): any round-trip tile >= 25 u from the spawn point and >= 25 u from the player;
 	# the within-60 u preference is dropped here (D-056). Farthest from the player first, then
 	# the lowest tile index in the level's tile order.
-	return _pick_round_trip(lv, player_pos, exclude, min_sep)
+	return _pick_round_trip(lv, player_pos, exclude, min_sep, rts)
 
 
 static func _pick_round_trip(lv: Dictionary, player_pos: Vector3,
-		exclude: Array, min_sep: float) -> Variant:
-	var rts := round_trip_set(lv)
+		exclude: Array, min_sep: float, rts_in: Variant = null) -> Variant:
+	var rts: Dictionary = rts_in if rts_in is Dictionary else round_trip_set(lv)
 	var tiles: Array = lv.get("tiles", [])
 	var spawn_pt: Array = lv["spawns"][0] if not lv.get("spawns", []).is_empty() else [0, 0, 1]
 	var sx: float = float(spawn_pt[0]) + 0.5
@@ -651,6 +654,15 @@ static func _pick_round_trip(lv: Dictionary, player_pos: Vector3,
 			best = {"x": wx, "y": wy, "z": wz, "kind": "round_trip", "tile_index": int(idx)}
 			best_d = d
 	return best
+
+
+## round_trip_set(level), built once per level dict (identity) and reused across every spawn
+## pick and deferred retry; the set reads only the level dict, never the live world.
+func _round_trip_cached() -> Dictionary:
+	if _rts_cache == null or not is_same(_rts_cache_level, level):
+		_rts_cache = round_trip_set(level)
+		_rts_cache_level = level
+	return _rts_cache
 
 
 static func _pick_anchor(anchors: Array, kind: int, player_pos: Vector3, exclude: Array,
@@ -1025,8 +1037,9 @@ func _update_near() -> void:
 
 
 ## True when the death code's killer was within ON_SCREEN_R of any player's centre in
-## the last 120 ticks. The code -> id resolution reads the live plan rows' cfg
-## (death_code) - never a literal id here. "D-VOID" has no body: false by construction.
+## the last 120 ticks. The code -> id resolution reads the live enemy rows' cfg
+## (death_code) - never a literal id here (the plan queue is drained at spawn, so it
+## cannot resolve a spawned killer). "D-VOID" has no body: false by construction.
 func _killer_on_screen(code: String) -> bool:
 	if code == "" or code == "D-VOID":
 		return false
@@ -1037,11 +1050,12 @@ func _killer_on_screen(code: String) -> bool:
 		var seen: Dictionary = near_seen[i]
 		if int(seen.get(code, -999999)) >= window:
 			return true
-		# the code's content id via the plan's cfg (the contact path stores the code
-		# there; the kill-idiom constants in content reach the same key)
-		for p in planned:
-			var cfg: Dictionary = (p["cfg"] as Dictionary)
-			if str(cfg.get("death_code", "")) == code and int(seen.get(str(p["id"]), -999999)) >= window:
+		# the code's content id via a live row's cfg (the contact path stores the code
+		# there; the kill-idiom constants in content reach the same key). This is the path a
+		# telegraph-only sighting takes: _update_near keys a live telegraph by its source id.
+		for e in enemies:
+			var cfg: Dictionary = (e["cfg"] as Dictionary)
+			if str(cfg.get("death_code", "")) == code and int(seen.get(str(e["id"]), -999999)) >= window:
 				return true
 	return false
 
