@@ -1,5 +1,19 @@
 # MORNING REPORT — the overnight fleet run
 
+> **Final check (post-run):** three read-only reviewers swept the simulation core, the app/view layer
+> and the tracked tree for security and privacy. The gate is green (`GATE OK`, `TESTS 59 passed
+> 0 failed`, no `SCRIPT ERROR`). Three small safe fixes landed — `.gitignore` now covers `.env`, keys,
+> certificates and `*.exe`; the exact CPU/GPU/Parsec hardware fingerprint is scrubbed from every tracked
+> file; and a real C-bay bug that could offer the same Mild curse twice is fixed. Five findings are
+> parked with reasons (rows 25–29), including two HIGH ones that need a re-baseline rather than an
+> end-of-run patch. One reported finding was a false positive and is recorded as such.
+
+> **Post-run verification pass:** a second, independent pass re-ran the gate, re-asserted five random
+> tickets, pulled the telemetry and audited every parked row. Read it at
+> [research/MORNING_REPORT_POSTRUN.md](MORNING_REPORT_POSTRUN.md). It found nine paperwork and tooling
+> drifts (none of them a broken build) — the most important being that the exe on disk predates
+> APP-LOOP, so the built binary still cannot finish a level even though the source can.
+
 Written at the end of the run. Every number below comes from a command run in this session; where
 something could not be measured, it says so instead of guessing.
 

@@ -395,7 +395,13 @@ static func draw_curse_bay(p_api: RefCounted, p_level: int, p_votes: Dictionary,
 	else:
 		# at least one Mild (canon); the rest fill from what remains, seeded.
 		chosen = _draw_up_to(mild, 1, p_rng)
-		var fill := _draw_up_to(mild + rest, 3 - chosen.size(), p_rng)
+		# The fill pool must not contain what was already drawn, or the same Mild curse can
+		# appear twice in one C bay (two altars offering the identical curse).
+		var fill_pool: Array = []
+		for cid in mild + rest:
+			if not chosen.has(cid):
+				fill_pool.append(cid)
+		var fill := _draw_up_to(fill_pool, 3 - chosen.size(), p_rng)
 		chosen += fill
 	chosen.sort()
 	var altars: Array = []

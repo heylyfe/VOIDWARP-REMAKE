@@ -27,3 +27,27 @@ game/shots/*.import
 
 # gate and run logs: local evidence, never committed
 *.log
+
+# Secrets and credentials: never commit these, ever. Nothing tracked matches these rules today
+# (verified with git ls-files); they exist so a future .env or key cannot be swept in by git add -A.
+.env
+.env.*
+*.env
+*.key
+*.pem
+*.p12
+*.pfx
+*.keystore
+*.jks
+id_rsa*
+id_ed25519*
+credentials*.json
+secrets/
+
+# Compiled binaries. The export lives in build/ (already ignored above); a stray one anywhere else
+# is not wanted either. Nothing tracked matches these rules today.
+*.exe
+*.dll
+*.so
+*.dylib
+*.pdb

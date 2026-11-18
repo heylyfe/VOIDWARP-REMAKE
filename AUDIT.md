@@ -5,7 +5,7 @@ Branch: `t3/9a991a4d`. Commit audited: **`64e3332`** ("Merge KIWI-SLOW: kiwi cat
 (owner ruling FINAL)") — the tip of `main` when this run started.
 First audit: commit `8fb49d3`, merged as `b0c6b3d`, verdict 12 PASS / 3 PARTIAL / 1 FAIL. This file
 replaces it. Where a verdict changed, the old verdict is kept visible ("was X, now Y, because …").
-Date of run: 2026-11-17. Machine: AMD Ryzen 5 9600X 6-Core, AMD Radeon RX 9060 XT, Windows 11, Godot 4.7.2-stable.
+Date of run: 2026-11-17. Machine: a 6-core AMD CPU, a discrete AMD GPU, Windows 11, Godot 4.7.2-stable.
 
 **This file is the only tracked file the audit wrote.** No code, test, content, document, threshold or
 data file was edited. Every number below comes from a command run in this session; the logs are in
@@ -102,7 +102,7 @@ behaviour exists and is tested, but the criterion's stated number, scope or proo
 ### A1 — native export, starts to the menu — **PASS** (unchanged; two stated limitations)
 
 - Export: `[ DONE ] savepack`, exit **0**; `build/voidwrap_run.exe`, **117,997,952 bytes**, a native Godot
-  export (stdout: `Godot Engine v4.7.2.stable.official.ed1daf0bf`, `D3D12 12_0 - Forward+ - Using Device #0: AMD - AMD Radeon RX 9060 XT`, or the Vulkan 1.4.359 line on the default driver). No browser or Electron wrapper.
+  export (stdout: `Godot Engine v4.7.2.stable.official.ed1daf0bf`, `D3D12 12_0 - Forward+ - Using Device #0: AMD - a discrete AMD GPU`, or the Vulkan 1.4.359 line on the default driver). No browser or Electron wrapper.
 - Smoke: `--quit-after 600` → exit **0**, 6.13 s; `--quit-after 20000` → exit **0**, alive at 10 s, 23.48 s.
 - Menu: visually confirmed on D3D12 (§1.1). `game/project.godot:7` `run/main_scene="res://app/app.tscn"`;
   `app/app.gd` starts in `MENU`.
@@ -285,7 +285,7 @@ PASS generate_mesh_l30 0.162 s <= 1.5 s (voidgen + level_mesher, seed 7)
 - `godot --path game --rendering-driver d3d12 --script res://tools/perf_probe.gd` (a real window), exit **0**, 0 error lines:
 
 ```
-D3D12 12_0 - Forward+ - Using Device #0: AMD - AMD Radeon RX 9060 XT
+D3D12 12_0 - Forward+ - Using Device #0: AMD - a discrete AMD GPU
 PASS p99_frame_time 1.11 ms <= 16.6 ms (windowed 1080p, v-sync off; n=600)
 PASS mean_sim_tick 0.751 ms <= 2.0 ms (ctl+enemy runtime step; 22 enemy rows)
 T-061 RESULT: OK

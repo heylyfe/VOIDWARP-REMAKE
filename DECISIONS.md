@@ -4589,8 +4589,7 @@ test_spawn_rule.gd _deferral_keeps_the_plan):
 ### D-T061-7 - The reference machine's display adapter is a virtual one - frame rows, read with care (T-061)
 
 The windowed run DOES execute the pinned scene (real Forward+ Vulkan window, 1920x1080,
-v-sync off, level meshes + Camera3D + 22 billboards): GPU line "AMD Radeon RX 9060
-XT (vendor AMD)". BUT the session's desktop runs on a "Parsec Virtual Display Adapter",
+v-sync off, level meshes + Camera3D + 22 billboards): GPU line "a discrete AMD GPU (vendor AMD)". BUT the session's desktop runs on a "a virtual display adapter",
 and every frame logs "Couldn't get Vulkan surface capabilities (VkResult error -13)" -
 the swapchain cannot surface. The windowed p99 frame row therefore still does not include
 a real presented swapchain; it is (sim + camera + billboard + engine overhead) with a
@@ -6135,7 +6134,7 @@ in AUDIT.md section 11 changes accordingly. Neither FLEET_PACK.md nor DESIGN.md 
   D-T061-1..7. The scene exposed and fixed two sim/enemy_runtime.gd spawn-plan defects
   (dropped tail + duplicated copies + SR-3 scope, D-T061-6, regression in
   test_spawn_rule.gd) and view/billboard.gd's world_height-null crash (T-016 schema's
-  documented no-body row). CAVEAT (D-T061-7): this box renders through a Parsec virtual
+  documented no-body row). CAVEAT (D-T061-7): this box renders through a a virtual
   display (VkResult -13 every frame) - the frame rows are CPU-side costs; mean_sim_tick
   is the solid number. Response: tickets/T-061.response.md. TESTS 47 passed 0 failed.
 - 2026-11-17 GLM (T-051): scripted curses, GENERAL family (the 11 `script: true` /
