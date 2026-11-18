@@ -30,9 +30,15 @@ var _gold: Array = []     # slot id -> Node3D
 
 
 ## Builds one node per real gift slot. level: the Level dict; gifts_state: the
-## sim's gift state (sim/gifts.gd create()).
+## sim's gift state (sim/gifts.gd create()). Re-entrant: a second setup() (a
+## second level on the same node) drops the previous level's nodes first,
+## exactly as view/tripmine_view.gd setup() does.
 func setup(level: Dictionary, gifts_state: RefCounted) -> void:
 	_gifts = gifts_state
+	for child in get_children():
+		child.free()
+	_black = []
+	_gold = []
 	var n: int = _gifts.slots.size()
 	_black.resize(n)
 	_gold.resize(n)

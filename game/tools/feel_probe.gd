@@ -114,7 +114,8 @@ func _loading_run(first_launch: bool, load_s: float) -> float:
 
 func _gate_to_level_row(full_s: float) -> void:
 	# lobby gate -> next level controllable = the no-loading-screen build pipeline itself.
-	_row(full_s <= 2.0, "gate_to_level", "%.3f s" % full_s,
+	# A negative number is _time_pipeline's failed-pipeline sentinel: a failed build is never a PASS.
+	_row(full_s >= 0.0 and full_s <= 2.0, "gate_to_level", "%.3f s" % full_s,
 			"<= 2.0 s (gen+world+mesh+sim state, level %d)" % LEVEL)
 
 
@@ -182,7 +183,8 @@ func _void_fall_row() -> void:
 
 func _generate_mesh_row(gen_mesh_s: float) -> void:
 	# median-of-5, computed in _time_pipeline; re-asserted here as its own row.
-	_row(gen_mesh_s <= 1.5, "generate_mesh_l30", "%.3f s" % gen_mesh_s,
+	# A negative number is _time_pipeline's failed-pipeline sentinel: a failed build is never a PASS.
+	_row(gen_mesh_s >= 0.0 and gen_mesh_s <= 1.5, "generate_mesh_l30", "%.3f s" % gen_mesh_s,
 			"<= 1.5 s (voidgen + level_mesher, seed %d)" % SEED)
 
 
@@ -200,12 +202,15 @@ func _time_pipeline() -> Dictionary:
 		var t0 := Time.get_ticks_usec()
 		var L: Dictionary = VoidGenScript.generate(SEED, LEVEL, 1, 0)
 		var t1 := Time.get_ticks_usec()
+		# The empty-level check comes before L's keys are read: {} must reach the sentinel too.
+		if L.is_empty():
+			return {"gen": -1.0, "mesh": -1.0, "full": -1.0}
 		var w := CollisionScript.make_world(L["tiles"], L["props"], L["pads"])
 		var m: Dictionary = MesherScript.build(L)
 		var t2 := Time.get_ticks_usec()
 		var st = LevelStateScript.build(L, LEVEL, 1, SEED)
 		var t3 := Time.get_ticks_usec()
-		if L.is_empty() or m.get("meshes", {}).is_empty() or st == null:
+		if m.get("meshes", {}).is_empty() or st == null:
 			return {"gen": -1.0, "mesh": -1.0, "full": -1.0}
 		gens.append(float(t1 - t0) / 1.0e6)
 		meshs.append(float(t2 - t1) / 1.0e6)

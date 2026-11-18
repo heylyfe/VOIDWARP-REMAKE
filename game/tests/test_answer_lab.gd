@@ -51,15 +51,35 @@ func _trial_arms(f: Array[String]) -> void:
 	# 1: the answer arm arms on the coil pair (its trigger row is deterministic:
 	# the ring telegraph appears the tick the arc starts).
 	var coil := Labs.trial(_pair("coil"), 1001, true)
-	if not bool(coil.get("armed", true)):
+	if not coil.has("armed"):
+		f.append("answer lab: the coil trial returned no armed flag")
+	elif not bool(coil["armed"]):
 		f.append("answer lab: the coil trial's answer never armed")
 	# 2: the no-input arm never arms a trigger (nothing listens)
 	var nop := Labs.trial(_pair("coil"), 1001, false)
-	if bool(nop.get("armed", true)):
+	if not nop.has("armed"):
+		f.append("answer lab: the no-input trial returned no armed flag")
+	elif bool(nop["armed"]):
 		f.append("answer lab: the no-input arm reports a trigger arming")
-	# 3: both arms ran the same trial length (the survival flag exists at all)
-	if bool(coil.get("survived", true)) == bool(nop.get("survived", true)):
-		pass  # equal outcomes are legal; the check is that BOTH returned a shape
+	# 3: both arms returned the trial's diagnosis, and it agrees with itself (equal
+	# outcomes are legal; a missing or contradictory one is not)
+	var arms: Array = [[coil, "answer"], [nop, "no-input"]]
+	for arm in arms:
+		var d: Dictionary = arm[0]
+		var err := _diagnosis_error(str(arm[1]), d)
+		if err != "":
+			f.append(err)
+
+
+## A trial's diagnosis: survived and death_t must both be there and agree - Labs._trial
+## returns death_t = -1 only for a surviving run, a death tick otherwise. "" when they do.
+func _diagnosis_error(label: String, d: Dictionary) -> String:
+	if not d.has("survived") or not d.has("death_t"):
+		return "answer lab: the %s arm returned no diagnosis (%s)" % [label, str(d.keys())]
+	if bool(d["survived"]) != (int(d["death_t"]) < 0):
+		return "answer lab: the %s arm's diagnosis disagrees (survived %s, death_t %d)" % [
+			label, str(d["survived"]), int(d["death_t"])]
+	return ""
 
 
 func _bounds_rule(f: Array[String]) -> void:

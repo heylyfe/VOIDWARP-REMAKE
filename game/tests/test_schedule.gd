@@ -70,8 +70,6 @@ func run() -> Array[String]:
 	_repeat_block(f, api)
 	_walk(f, api)
 	_data_edit_changes_the_lobby(f, api)
-	if not f.is_empty():
-		_restore("")
 	return f
 
 
@@ -220,6 +218,10 @@ func _data_edit_changes_the_lobby(f: Array[String], api: RefCounted) -> void:
 		_restore(original)
 		return
 	var api2 := ContentApiScript.load()
+	# The file is dirty only across the write and this one reload: restore it here, before
+	# any assertion can fail, and let every check below read api2 (the parsed copy). GDScript
+	# has no finally, so a no-op guard around a later restore would promise nothing.
+	_restore(original)
 	var changed: Array = Intermission.bays_for_level(api2, 3)
 	var single: Array = Intermission.bays_for_level(api, 3)   # the OLD api is untouched
 	if single.size() != 1 or int(single[0].get("count", 1)) != 1:
@@ -234,8 +236,10 @@ func _data_edit_changes_the_lobby(f: Array[String], api: RefCounted) -> void:
 			e_found += 1
 			if int(bay.get("count", 1)) != 2:
 				f.append("data-edit: lobby E bay count %d, want 2" % int(bay.get("count", 1)))
-			if not lb.gate_open():
-				pass
+			# 2 votes are owed and none are cast yet: the gate must still be shut, or the
+			# vote-count block below (which only runs while it is shut) proves nothing.
+			if lb.gate_open():
+				f.append("data-edit: the gate is open before any vote is cast")
 	if e_found != 1:
 		f.append("data-edit: lobby has %d E bays after the edit" % e_found)
 	# two votes must be cast before the gate opens
@@ -252,7 +256,6 @@ func _data_edit_changes_the_lobby(f: Array[String], api: RefCounted) -> void:
 		for bay in lb.bays:
 			if str(bay["kind"]) == "E" and int(bay.get("cast", 0)) != 2:
 				f.append("data-edit: cast %d votes, want 2" % int(bay.get("cast", 0)))
-	_restore(original)
 	var api3 := ContentApiScript.load()
 	if _brief(Intermission.bays_for_level(api3, 3)) != _brief(Intermission.bays_for_level(api, 3)):
 		f.append("data-edit: the restored file does not match the original lobby")

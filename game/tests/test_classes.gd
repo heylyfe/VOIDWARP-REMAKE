@@ -16,6 +16,8 @@ func run() -> Array[String]:
 	_test_friction(f)
 	_test_pads(f)
 	_test_ramps(f)
+	_test_ramp_kinds(f)
+	_test_prop_top(f)
 	_test_constants(f)
 	return f
 
@@ -65,6 +67,97 @@ func _test_ramps(f: Array[String]) -> void:
 		if not ctl.grounded or absf(ctl.y - want_y) > 0.02:
 			f.append("ramp: walking dir=%d from x=%.1f ended at y=%.4f grounded=%s, want %.1f" % [
 				dir, start, ctl.y, str(ctl.grounded), want_y])
+
+
+# Kinds 3 and 4 ascend toward -x and -z (TERRAIN_SPEC section 4): flat at y+1 HU on the high
+# (-x / -z) side, flat at y HU on the low side, and the mesher draws that wedge, so collision
+# must slope the same way. A body's footprint fits inside the ramp cell whole from local 0.4
+# to 0.6, and a -x / -z ramp is lower at 0.6 than at 0.4.
+func _test_ramp_kinds(f: Array[String]) -> void:
+	for d in range(2, 4):
+		var on_x: bool = d % 2 == 0
+		var tiles: Array = []
+		if on_x:
+			for cx in range(-8, 0):
+				tiles.append([cx, 0, 1, 0, 0])
+			tiles.append([0, 0, 0, 1 + d, 0])
+			for cx in range(1, 9):
+				tiles.append([cx, 0, 0, 0, 0])
+		else:
+			for cz in range(-8, 0):
+				tiles.append([0, cz, 1, 0, 0])
+			tiles.append([0, 0, 0, 1 + d, 0])
+			for cz in range(1, 9):
+				tiles.append([0, cz, 0, 0, 0])
+		var w := Util.CollisionScript.make_world(tiles, [], [])
+		for probe in [[0.4, 0.5], [0.6, 0.4]]:
+			var at: float = probe[0]
+			var want: float = probe[1]
+			var px: float = at if on_x else 0.5
+			var pz: float = 0.5 if on_x else at
+			var s: float = Util.CollisionScript.support_at(w, px, pz, 5.0, 0.5)
+			if absf(s - want) > 1e-6:
+				var axis: String = "x" if on_x else "z"
+				f.append("ramp kind %d: surface %.4f at local %.1f, want %.1f (ascends toward -%s)" % [
+					1 + d, s, at, want, axis])
+		# the strip still walks: off the high side down 0.5 u, and back up again
+		for specs in [[1, -3.5, 0.5, 0.0], [-1, 3.5, 0.0, 0.5]]:
+			var ctl = Util.ControllerScript.new()
+			ctl.setup("dasher", Util.consts())
+			ctl.place(w)
+			if on_x:
+				ctl.x = float(specs[1])
+				ctl.z = 0.5
+			else:
+				ctl.x = 0.5
+				ctl.z = float(specs[1])
+			ctl.y = float(specs[2])
+			var mx: int = int(specs[0]) if on_x else 0
+			var mz: int = 0 if on_x else int(specs[0])
+			Util.run_ticks(ctl, w, 60, func(_c, _i): return Util.mk_in(mx, mz))
+			if not ctl.grounded or absf(ctl.y - float(specs[3])) > 0.02:
+				f.append("ramp kind %d: walking from %.1f ended at y=%.4f grounded=%s, want %.1f" % [
+					1 + d, float(specs[1]), ctl.y, str(ctl.grounded), float(specs[3])])
+
+
+# A prop is a horizontal blocker with no walkable top in the tile sense, but a body that
+# comes down on a prop cell lands on the prop, not inside its box (and then keeps standing
+# there). support_at itself stays tile-only, so the safe-tile ring keeps its tile identity.
+func _test_prop_top(f: Array[String]) -> void:
+	var tiles: Array = []
+	for cx in range(-2, 6):
+		tiles.append([cx, 0, 0, 0, 0])
+	var props: Array = [[2, 0, 0, 4, 1, 0]]   # wall on cell (2, 0): solid 0.0 .. 2.0 u
+	var w := Util.CollisionScript.make_world(tiles, props, [])
+	var ctl = Util.ControllerScript.new()
+	ctl.setup("dasher", Util.consts())
+	ctl.place(w)
+	ctl.x = 2.5
+	ctl.y = 5.0
+	ctl.z = 0.5
+	ctl.grounded = false
+	var guard := 0
+	while not ctl.grounded and guard < 120:
+		Util.run_ticks(ctl, w, 1, func(_c, _i): return Util.mk_in(0, 0))
+		guard += 1
+	if not ctl.grounded or absf(ctl.y - 2.0) > 0.02:
+		f.append("prop: a fall onto the wall ended at y=%.4f grounded=%s, want its top 2.0" % [
+			ctl.y, str(ctl.grounded)])
+	Util.run_ticks(ctl, w, 10, func(_c, _i): return Util.mk_in(0, 0))
+	if not ctl.grounded or absf(ctl.y - 2.0) > 0.02:
+		f.append("prop: standing on the wall top slid to y=%.4f grounded=%s, want 2.0" % [
+			ctl.y, str(ctl.grounded)])
+	# the box still blocks horizontally at tile level (the top is not a way through)
+	ctl.x = 1.5
+	ctl.y = 0.0
+	Util.run_ticks(ctl, w, 20, func(_c, _i): return Util.mk_in(1, 0))
+	if ctl.x > 1.65:
+		f.append("prop: walking into the wall from tile level reached x=%.4f" % ctl.x)
+	# support_at reports the tile under the prop from the prop top, as before
+	var sup: Variant = Util.CollisionScript.support_at(w, 2.5, 0.5, 2.0,
+			Util.CollisionScript.SKIN, true)
+	if sup["tile"] == null or absf(float(sup["s"]) - 0.0) > 1e-6:
+		f.append("prop: support_at from the prop top returned %s, want the tile top 0.0" % str(sup["s"]))
 
 
 func _flat(n: int) -> Dictionary:

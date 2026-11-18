@@ -45,6 +45,7 @@ func run() -> Array[String]:
 	_kill_ring_boundary(f)
 	_contact_kill_before_cue(f)
 	_ring_ages_out_at_landing(f)
+	_landing_mirror(f)
 	_copy_stagger(f)
 	_idle_s_is_data(f)
 	_view_vfx(f)
@@ -311,6 +312,38 @@ func _ring_ages_out_at_landing(f: Array[String]) -> void:
 		f.append("coil: coil_ring telegraph ticks %d mid-flight, want > 0" % during_flight)
 	if at_landing != 0:
 		f.append("coil: coil_ring telegraph ticks %d at the landing, want 0 (caller-aged, D-T072-4)" % at_landing)
+
+
+# PARKED row 27: the landing is coil's instant reposition (the whole flight chord at once),
+# so the body mirror - the world["enemies"] row no_enemy_body_within and the D-059 safe tile
+# read - must follow it. Driven through the behavior alone, no rt.step(): the runtime's own
+# per-tick refresh would otherwise hide a missing sync in this file.
+func _landing_mirror(f: Array[String]) -> void:
+	var w := _arena()
+	var ctl = _spent_ctl(w, f)
+	var rt = EnemyRuntime.new()
+	rt.setup({}, w, [ctl], 1234)
+	var row: Dictionary = _spawn(rt, ctl, Vector3(3.5, 0.0, 0.5))
+	var api = EnemyRuntime.Api.new()
+	api.rt = rt
+	api.row = row
+	var beh = row["behavior"]
+	for i in range(LAND_TICK + RECOVER_T + 2):
+		beh.tick(row, api, 1)
+	if absf(float(row["x"]) - 0.5) > 1e-9 or absf(float(row["z"]) - 0.5) > 1e-9:
+		f.append("mirror: coil sits at (%s, %s), want the landed zone (0.5, 0.5)"
+				% [str(row["x"]), str(row["z"])])
+		return
+	var mirror: Dictionary = row.get("body_mirror", {})
+	if mirror.is_empty():
+		f.append("mirror: the row carries no body mirror (no world[enemies] entry)")
+		return
+	if absf(float(mirror["x"]) - float(row["x"])) > 1e-9 \
+			or absf(float(mirror["y"]) - float(row["y"])) > 1e-9 \
+			or absf(float(mirror["z"]) - float(row["z"])) > 1e-9:
+		f.append("mirror: the body mirror (%s, %s, %s) still sits at the spawn point, the row landed at (%s, %s, %s)"
+				% [str(mirror["x"]), str(mirror["y"]), str(mirror["z"]),
+					str(row["x"]), str(row["y"]), str(row["z"])])
 
 
 # SR-3: copy k of n staggers its first cue; never a mid-cue spawn.

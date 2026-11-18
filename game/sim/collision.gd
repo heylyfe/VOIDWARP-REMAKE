@@ -11,7 +11,8 @@ extends RefCounted
 #   prop  [x, z, y, h, kind, piece]  solid box from y*0.5 to (y+h)*0.5 u on one cell.
 #   pad   [x, z, y, tx, tz, ty]    launch pad; landing on its tile throws the player onto
 #                                  tile (tx, tz, ty) (ballistic; see controller).
-# A tile under a prop is not walkable (the prop box blocks it).
+# A tile under a prop is not walkable (the prop box blocks it); a body that comes down on
+# the prop lands on the prop's own top, not inside the box (move_body).
 #
 # Body: axis-aligned box, half-width hw (0.4), height h (1.8), feet at y. Resolution order
 # per move: X, then Z, then Y; auto step-up 0.5 u (1 HU) on horizontal blocks.
@@ -135,9 +136,39 @@ static func _ramp_top_over(t: Dictionary, cx: int, cz: int, px: float, pz: float
 		var b: float = clamp(pz + 0.4 - float(cz), 0.0, 1.0)
 		lo = a
 		hi = b
+	# d >= 2 ascends toward -x / -z (TERRAIN_SPEC section 4), so the surface falls along
+	# +x / +z and the top of the footprint is its low end.
+	if d >= 2:
+		return (float(t["y"]) + 1.0 - lo) * 0.5
 	var e_lo: float = (float(t["y"]) + lo) * 0.5
 	var e_hi: float = (float(t["y"]) + hi) * 0.5
 	return e_hi if e_hi > e_lo else e_lo
+
+
+# Highest prop top over the cells the AABB footprint covers, among tops no higher than
+# feet + limit; -INF when none. A prop is a horizontal blocker whose top nothing stands on,
+# so move_body takes it as a landing candidate itself (a body that comes down on a prop cell
+# would otherwise land inside the solid box); support_at stays tile-only so the safe-tile
+# ring keeps its tile identity.
+static func _prop_top_over(w: Dictionary, px: float, pz: float, feet: float,
+		limit: float) -> float:
+	var best: float = -INF
+	var hw: float = 0.4
+	var x0 := int(floor(px - hw + SKIN))
+	var x1 := int(floor(px + hw - SKIN))
+	var z0 := int(floor(pz - hw + SKIN))
+	var z1 := int(floor(pz + hw - SKIN))
+	var cx := x0
+	while cx <= x1:
+		var cz := z0
+		while cz <= z1:
+			for p in w["prop_cols"].get("%d,%d" % [cx, cz], []):
+				var top: float = tile_top(p["y"] + p["h"])
+				if top <= feet + limit + SKIN and top > best:
+					best = top
+			cz += 1
+		cx += 1
+	return best
 
 
 # Solid boxes in one cell column: tile slabs [top-1, top] (ramps: low-edge lip
@@ -272,19 +303,22 @@ static func move_body(w: Dictionary, x: float, y: float, z: float,
 			hit_ceiling = true
 	elif dy < 0.0:
 		# falling: land on the highest surface in the swept band [ny, y + step_up]
-		var s: float = support_at(w, x, z, y, step_up)
+		var s: float = maxf(float(support_at(w, x, z, y, step_up)),
+				_prop_top_over(w, x, z, y, step_up))
 		if s != -INF and s >= ny - SKIN:
 			ny = s
 			grounded = true
 	elif was_grounded:
 		# dy == 0 and was standing: snap onto whatever surface is within a step
 		var s3: Dictionary = support_at(w, x, z, y, step_up, true)
-		if s3["s"] != -INF and s3["s"] >= ny - SKIN:
-			ny = s3["s"]
+		var s3s: float = maxf(float(s3["s"]), _prop_top_over(w, x, z, y, step_up))
+		if s3s != -INF and s3s >= ny - SKIN:
+			ny = s3s
 			grounded = true
 	# standing re-check after y settles (stays grounded across dy == 0 ticks)
 	if not grounded and dy <= 0.0:
-		var s2: float = support_at(w, x, z, ny, SKIN)
+		var s2: float = maxf(float(support_at(w, x, z, ny, SKIN)),
+				_prop_top_over(w, x, z, ny, SKIN))
 		if s2 != -INF and s2 >= ny - SKIN:
 			ny = s2
 			grounded = true

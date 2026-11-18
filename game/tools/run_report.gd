@@ -478,9 +478,9 @@ static func render(agg: Dictionary, p_sev: Dictionary = {}) -> String:
 				% [_row_label(i), int(b7["mines_pass"]), int(b7["mines_contact"]), ev7, kd, _per100(kd, ev7)])
 		L.append("  %-9s chain <  x%.2f: events %4d, deaths %3d, deaths per 100 (pass+contact) %5.1f | at-or-above: events %4d, deaths %3d, %5.1f"
 				% [_row_label(i), CHAIN_SPLIT, int(b7["m_low_events"]), int(b7["m_low_deaths"]),
-				_per100(int(b7["m_low_deaths"]), int(b7["m_low_events"]) + int(b7["m_low_deaths"])),
+				_per100(int(b7["m_low_deaths"]), int(b7["m_low_events"])),
 				int(b7["m_high_events"]), int(b7["m_high_deaths"]),
-				_per100(int(b7["m_high_deaths"]), int(b7["m_high_events"]) + int(b7["m_high_deaths"]))])
+				_per100(int(b7["m_high_deaths"]), int(b7["m_high_events"]))])
 	L.append("  not measurable from the current records: walkway width 1 / 2 / platform (no slot width")
 	L.append("  in the records - level_start would need the mine slots' widths)")
 	# 8. content health (risk 10)

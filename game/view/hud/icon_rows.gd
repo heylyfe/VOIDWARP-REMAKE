@@ -75,6 +75,7 @@ func upgrade_count() -> int:
 
 func _rebuild(row: HBoxContainer, items: Array) -> void:
 	for c in row.get_children():
+		row.remove_child(c)   # queue_free alone leaves the old cell drawn this frame
 		c.queue_free()
 	for item in items:
 		var id := str(item.get("id", ""))
