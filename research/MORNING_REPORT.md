@@ -7,6 +7,12 @@
 > file; and a real C-bay bug that could offer the same Mild curse twice is fixed. Five findings are
 > parked with reasons (rows 25–29), including two HIGH ones that need a re-baseline rather than an
 > end-of-run patch. One reported finding was a false positive and is recorded as such.
+>
+> **The reviewer's verdict on the simulation core was "not sound", and that is the honest reading.** The
+> gate is green because nothing tests these paths: D-073's Last Light body push is inert (the test pins
+> the mirror, not the promise), and half the ramp orientations report the wrong surface height (the test
+> covers only kind 1). Both are parked with the fix and the re-validation each needs. The app layer, by
+> contrast, came back sound — the completion path is correctly wired and pinned.
 
 > **Post-run verification pass:** a second, independent pass re-ran the gate, re-asserted five random
 > tickets, pulled the telemetry and audited every parked row. Read it at
