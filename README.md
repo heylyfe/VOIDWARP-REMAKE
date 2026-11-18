@@ -62,9 +62,12 @@ Gamepad works too. The menu's **HOW TO PLAY** panel shows the live bindings, rea
 
 Known gaps, stated plainly:
 
-- **The bot completes level 1 in 84 of 100 seeds** (seed base 60717, the pinned 4.7.2 engine;
-  86 of 100 on the same sweep before this patch set, median 38.8 s against the 120 s criterion).
-  The acceptance bar is 95. The gap is bot competence, not a crash — a human can finish the level.
+- **The bot completes level 1 in 84 of 100 seeds** (seed base 60717, the pinned 4.7.2 engine,
+  re-measured on this tree in five 20-seed chunks: 16 + 16 + 18 + 16 + 18; median sim time 36.6–41.3 s
+  against the 120 s criterion). The acceptance bar is 95. The gap is bot competence, not a crash — a
+  human can finish the level. The probe crashes with a Godot `Unreferenced static string` error at
+  around 30 runs in one process, which is why it is measured in chunks; seeds are independent, so
+  the splice loses nothing.
 - **No 30-level run yet.** The intermission lobby exists as a scene but is not wired into the app
   loop, so a completed level returns to the menu instead of advancing.
 - **Three of the five parked HIGH bugs are closed** ([`PARKED.md`](PARKED.md) rows 25–28): the

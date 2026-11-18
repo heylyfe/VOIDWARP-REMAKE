@@ -6614,3 +6614,29 @@ WHY: honest coverage of the loop at a cost the gate can afford; the bot owns end
   The toucher's glitched floor is now a separate world-origin node (`view/toucher_view.gd`,
   floor-only mode) because the sim's glitched entries carry absolute tile coordinates while the
   body node moves. `app/world.gd` no longer overrides the dais with the beacon.
+- 2026-11-18 A3 RE-MEASURED on the alpha.3 tree, and the A12 approach settled. Two late worker
+  reports disagreed with what shipped, so both were checked rather than filed.
+  (1) A3 IS STILL 84/100. The BOT worker measured 79/100 and reported it as a regression from its
+      own arc-scan change. That number is on seed base 0; the README's 84 is on seed base 60717, so
+      the two are not comparable and neither is wrong. Re-measured on the current tree, seed base
+      60717, five 20-seed chunks: 16 + 16 + 18 + 16 + 18 = 84/100, median sim time 36.6-41.3 s
+      against the 120 s criterion. The README number stands and now says how it was measured.
+      The ramp fix does move bot paths (the COLLISION worker measured a kiwi-cat death shifting
+      from tick 1874 to 3318), but it does not move the completion rate on this seed base.
+  (2) THE BOT PROBE CRASHES AT ~30 RUNS IN ONE PROCESS. `bot_run.gd` dies with a Godot engine
+      error, `BUG: Unreferenced static string to 0: Variant` at core/string/string_name.cpp:118,
+      after printing only the BOT RUN banner. 5 runs and 20 runs complete normally; 30 does not.
+      The BOT worker confirmed the pristine tree fails identically, so it is not caused by any of
+      this session's changes. It is why the 100-seed sweep is measured in chunks - seeds are
+      independent, so the splice is sound. NOT FIXED: it is an engine-internal error, not a
+      GDScript one, and chasing it is a separate ticket. Recorded here so the next person does not
+      re-derive it.
+  (3) A12 TOOK THE RELABEL, NOT THE STUCK OUTCOME. Two workers implemented A12 differently. The BOT
+      worker made `_resolve_lobby` return bool and ended the run as `outcome = "stuck"` when the
+      gate never opened, arguing that forcing the gate open measures a game that cannot exist. The
+      merged version (OPUS-2) keeps the run going and records a `forced_gate` list per run plus a
+      `forced open-gate runs: N` line in the report, so the mislabel is fixed without changing what
+      the bot does. The relabel is the smaller change and it does not move the A3 number; the BOT
+      worker's own measurement put its version at -3 completions. If the owner wants the stricter
+      semantics, the BOT worker's branch is `t3/bot-run-row-28-fixes` and its reasoning is sound -
+      it is a design call, not a bug.
