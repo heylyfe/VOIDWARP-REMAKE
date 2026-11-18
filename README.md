@@ -104,7 +104,7 @@ built and tested as a simulation; it is not yet reachable from the app.
 | [`game/sim/`](game/sim) | the simulation core — deterministic, headless, testable |
 | [`game/content/enemies/`](game/content/enemies) | one folder per enemy: data, behaviour, sprites, sources |
 | [`game/data/`](game/data) | tunable data — offering schedule, tips, bindings |
-| [`assets_src/enemies/`](assets_src/enemies) | the 17 source images the sprites are derived from |
+| `assets_src/enemies/` | the 17 source images the sprites are derived from. Not tracked — they are third-party material, not ours to redistribute, so they stay on the author's disk as the input of `game/tools/art/*.gd`. The derived sprites under `game/content` are what ships |
 | [`research/`](research) | design research, the v1 retrospective, the run reports |
 
 ## Development

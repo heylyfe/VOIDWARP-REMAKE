@@ -649,3 +649,9 @@ FINAL REQUIREMENT: be extremely thorough. Do not assume the repository is safe j
 - Repo: local main == origin/main c54088b (0/0). RUNLOG alive again: 21:24Z release v0.1.0-alpha.3 (CI built 3 platform assets, run 44400461999), 21:25Z final pushed hash bd53963, 21:26Z alpha.2 still ships the invisible floor (owner call: gh release delete v0.1.0-alpha.2 + tag delete). Open honest items: bot 84/100 vs 95, no 30-level run (intermission lobby not wired).
 - Faults: none. Actions: none.
 - Expect 22:00Z: gate result, commit/push of the 2 files, then orchestrator idle. If nothing is happening at 22:00Z, stop the schedule (owner rule) and write the closing summary.
+
+## 2026-11-18 22:00Z check #60
+- Re-armed 22:30Z. Orchestrator 466457f6 running (run 127), itemCount 7988 (was 7958), updatedAt 22:00Z, pending 0. No worker thread running (all completed).
+- Repo: local main == origin/main 896664d (0/0), clean tree apart from this file. Since 21:30Z: owner-requested actions done by guardian: backup C:\Users\Nathan\Documents\REMAKE VWR\BACKUP-2026-11-18 (mirror 629 refs, release assets, assets_src, out); releases alpha.1+alpha.2 deleted with tags (alpha.3 only); 17 third-party images untracked (96728a6, plain push, local copies kept, gitignored). Orchestrator commit 896664d: A3 re-measured 84/100.
+- Faults: none. Actions: none this check.
+- Expect 22:30Z: orchestrator idle, nothing running -> stop schedule per owner rule ("until nothing is happening") and write closing summary.
