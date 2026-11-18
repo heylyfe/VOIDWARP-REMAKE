@@ -1067,6 +1067,30 @@ file this small is user data from ONE older build at most; blocking a run over `
 strictly worse than clamping. `app/settings.gd` takes a path parameter so tests write to their
 own file and never clobber the player's real `user://settings.json`.
 
+### D-T082-4 [CONTESTABLE] — Camera lock: the character and the camera are locked to each other, and neither turns (owner request).
+The owner asked for "a camera lock for the character, you cant turn". Two readings were live, and
+the choice was made on measurement, not taste. **Shipped: the character does not turn.** The player
+figure is locked to the camera's forward (`app/world.gd` `_player_pass()` sets
+`_player_yaw = deg_to_rad(rig.yaw_deg)`), so it always faces away from the viewer and strafes
+instead of rotating to face its velocity — the pre-lock behaviour turned the figure to face
+movement while the camera stayed put, which is the visible defect behind the complaint. The camera
+does not turn either: no `InputEventMouseMotion` handler exists anywhere in `app/`, so there is no
+path from the mouse to the rig yaw (`apply_mouse()` is a static only the tests call). Movement
+stays camera-relative because `input_capture.capture()` rotates the stick by that same yaw, so
+"forward" still means away from the camera.
+**The rejected reading, and why.** The other reading — the camera trails behind the character's
+facing — was implemented first and measured. It is unstable by construction: input is rotated by
+the rig yaw, the character faces its velocity, and the camera chases that facing, closing the loop
+yaw → input → velocity → facing → yaw. Holding a lateral direction therefore circles the character
+at **~350 °/s** (696° of yaw swept in 2 s, measured with the real rig and the real capture), and
+the camera never catches up — it ends up nearly side-on (worst behind-dot −0.097). That is a
+spinning top, not a camera lock, so it was reverted rather than shipped with a smoothing constant
+tuned to hide it. If the owner meant that reading, the fix is not a bigger time constant: it needs
+the input frame decoupled from the live camera yaw, which is a control-scheme change, not a camera
+one. Pinned by `tests/test_app_views.gd` leg C (the figure does not turn for four velocity
+directions; the rig yaw does not move while stepping) and `tests/test_input.gd`
+`_test_no_manual_camera_turn` (no mouse-motion handler in `app/`).
+
 ---
 
 ## C. Process

@@ -36,6 +36,7 @@ func run() -> Array[String]:
 	failures.append_array(_test_diagonal_clamp_and_neutral())
 	failures.append_array(_test_gamepad())
 	failures.append_array(_test_camera_statics())
+	failures.append_array(_test_no_manual_camera_turn())
 	failures.append_array(_test_settings())
 	failures.append_array(_test_replay_with_random_camera())
 	return failures
@@ -299,6 +300,52 @@ func _test_camera_statics() -> Array[String]:
 	if not (cp as Vector3).is_equal_approx(Vector3(3.0, 4.5, 2.0)):
 		failures.append("camera_position at yaw 0 pitch 0 expected (3, 4.5, 2), got %s" % str(cp))
 	return failures
+
+
+# --- 5b. no manual camera turn (D-T082-4) --------------------------------------------------
+
+## The camera lock's guarantee is a negative one: nothing in app/ can rotate the rig. The rig
+## yaw is written only by world.gd's build() (to 0) and read by input_capture.capture() to
+## rotate the stick, so the player has no path to it. apply_mouse() is a static the tests
+## exercise, nothing more - there is no mouse-motion handler to call it.
+func _test_no_manual_camera_turn() -> Array[String]:
+	var failures: Array[String] = []
+	# "You can't turn": no mouse-motion handler exists anywhere in app/, so the player has no
+	# path to the camera yaw. apply_mouse() is a static the tests exercise, nothing more.
+	var app_files := _app_gd_files()
+	if app_files.size() < 5:
+		failures.append("app/ scan found only %d .gd files - the no-turn check did not run"
+				% app_files.size())
+	for name in app_files:
+		var f := FileAccess.open("res://app/" + name, FileAccess.READ)
+		if f == null:
+			failures.append("could not read res://app/%s for the no-turn check" % name)
+			continue
+		var text := f.get_as_text()
+		f.close()
+		# Comments are not handlers: the rig's own header names the class it says is absent.
+		for line in text.split("\n"):
+			var code := (line as String).strip_edges()
+			if code.begins_with("#"):
+				continue
+			if code.contains("InputEventMouseMotion"):
+				failures.append("app/%s gained a mouse-motion handler (the camera must not turn)"
+						% name)
+				break
+	return failures
+
+
+## Every .gd file name under res://app/. The no-turn guarantee is a property of the source
+## (there is no input path to the camera yaw), so it is checked by reading the source.
+func _app_gd_files() -> Array[String]:
+	var names: Array[String] = []
+	var dir := DirAccess.open("res://app")
+	if dir == null:
+		return names
+	for name in dir.get_files():
+		if name.ends_with(".gd"):
+			names.append(name)
+	return names
 
 
 func _test_gamepad() -> Array[String]:

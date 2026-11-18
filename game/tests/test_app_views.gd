@@ -33,6 +33,7 @@ func run() -> Array[String]:
 	var f: Array[String] = []
 	_leg_a(f)
 	_leg_b(f)
+	_leg_c(f)
 	return f
 
 
@@ -191,6 +192,42 @@ func _leg_b(f: Array[String]) -> void:
 	for c in tv.get_children():
 		if (c as Node3D).position.is_equal_approx(point0) and (c as Node3D).visible:
 			f.append("leg B: the consumed mine at slot %d still shows" % slot0)
+	_drop(world)
+
+
+## Camera lock (D-T082-4, owner request "add a camera lock for the character, you cant turn"):
+## the character does not turn and the camera does not turn. The figure is locked to the
+## camera's forward, so it strafes instead of rotating to face its velocity - the pre-lock
+## behaviour turned the figure to face movement while the camera stayed put.
+func _leg_c(f: Array[String]) -> void:
+	var world = WorldScript.new()
+	if not world.build(SEED_A, LEVEL_A):
+		f.append("leg C: world failed to build level %d seed %d" % [LEVEL_A, SEED_A])
+		world.free()
+		return
+	if world.player_model == null or world.rig == null:
+		f.append("leg C: build() added no player figure or camera rig")
+		_drop(world)
+		return
+	# At spawn the figure faces the camera's forward (the camera sits behind it).
+	if absf(float(world.player_model.rotation.y) - deg_to_rad(float(world.rig.yaw_deg))) > 1e-6:
+		f.append("leg C: the figure does not face the camera's forward at spawn")
+	# Drive the controller in several directions and re-run the figure pass: the character must
+	# NOT turn to face its velocity.
+	for v in [Vector2(6.0, 0.0), Vector2(0.0, -6.0), Vector2(-4.0, 4.0), Vector2(0.0, 6.0)]:
+		world.ctl.vx = (v as Vector2).x
+		world.ctl.vz = (v as Vector2).y
+		world._player_pass()
+		if absf(float(world.player_model.rotation.y)) > 1e-6:
+			f.append("leg C: the character turned to face velocity %s (yaw %.4f)"
+					% [str(v), float(world.player_model.rotation.y)])
+	# Stepping the world must not rotate the rig either.
+	var yaw0 := float(world.rig.yaw_deg)
+	for i in 30:
+		world.step(DT)
+	if absf(float(world.rig.yaw_deg) - yaw0) > 1e-9:
+		f.append("leg C: the camera yaw moved %.6f while stepping"
+				% (float(world.rig.yaw_deg) - yaw0))
 	_drop(world)
 
 

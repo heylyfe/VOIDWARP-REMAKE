@@ -108,7 +108,7 @@ var toucher_floor: Node3D = null   # the glitched-floor decals (floor-only mode)
 var boards: Array = []          # EnemyRuntime enemies index -> billboard node (or null)
 var lstate: RefCounted = null   # the sim LevelState (gifts / mines / beacon); bot_run.gd's lv
 var player_model: Node3D = null # the T-015 player figure, feet on the controller's position
-var _player_yaw := 0.0          # last facing yaw; kept while standing still
+var _player_yaw := 0.0          # facing yaw, locked to the camera's forward (D-T082-4)
 var _player_light: OmniLight3D = null   # palette.json player_fill_light, rides the figure
 
 var _economy: RefCounted = null   # the gold-phase economy (purse / chain); no upgrade stats yet
@@ -594,17 +594,25 @@ func _capture_input():
 			"aim_x": aim_x, "aim_z": aim_z}
 
 
-## The player figure pass: stand at the controller's feet, yawed to the horizontal
-## velocity (the last yaw is kept while standing still). The figure's forward is Godot's
-## -Z, the glTF Y-up conversion of the Blender +Y visor side.
+## The player figure pass: stand at the controller's feet, facing the camera's forward. The
+## figure's forward is Godot's -Z, the glTF Y-up conversion of the Blender +Y visor side.
+##
+## CAMERA LOCK (owner request, D-T082-4): the character does NOT turn. It is locked to the
+## camera's forward, so it always faces away from the viewer and strafes instead of rotating
+## to face its velocity. The camera does not turn either - no InputEventMouseMotion handler
+## exists anywhere in app/, so there is no path from the mouse to the rig yaw. Character and
+## camera are locked to each other, which is what the request asks for.
+##
+## Why the camera does not instead trail the character's facing: input_capture.capture()
+## rotates the stick by the rig yaw, so a camera that chases the facing closes a feedback
+## loop (yaw -> input -> velocity -> facing -> yaw). Measured on this rig, holding a lateral
+## direction circles the character at ~350 deg/s and the camera never catches up (it ends up
+## side-on). Locking both is the stable reading of the request.
 func _player_pass() -> void:
 	if player_model == null:
 		return
 	player_model.position = Vector3(float(ctl.x), float(ctl.y), float(ctl.z))
-	var hx := float(ctl.vx)
-	var hz := float(ctl.vz)
-	if hx * hx + hz * hz > 0.01:
-		_player_yaw = atan2(-hx, -hz)
+	_player_yaw = deg_to_rad(float(rig.yaw_deg)) if rig != null else 0.0
 	player_model.rotation.y = _player_yaw
 
 
