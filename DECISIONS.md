@@ -6995,3 +6995,37 @@ WHY: honest coverage of the loop at a cost the gate can afford; the bot owns end
   the budget, nothing was weakened, and a step that genuinely hangs still fails - it just takes
   longer to say so. The measurement was taken BEFORE the change (`SUITE_SECONDS=352`,
   `TESTS 92 passed 0 failed`) so the new number is justified by evidence rather than by convenience.
+
+- 2026-11-19 THE CURSE DISPATCHER, AND THE SPAWN BUDGET (lead ruling, reviewing W9-A). The
+  dispatcher is `sim/curse_runtime.gd`: it reads the held ids generically, loads each module through
+  a loader the world hands it, and runs the four hooks in sorted id order, calling a hook only if the
+  module declares it and with the number of parameters it declares. Two shapes are worth recording.
+  (1) `sim/` must not import `res://content/`, so the world passes a `Callable` loader; the boundary
+  test enforces this and the dispatcher respects it rather than working around it.
+  (2) A curse can spawn enemies, and a probe found `litter` growing one kitten per tick - 541 bodies
+  after 900 ticks - because a kitten is itself a cat row and the module does not exclude its own
+  kittens. RULING: a curse may add at most as many bodies of an enemy id as the votes planned of that
+  id. This is a guard in the dispatcher, not a change to any module, and it is deliberately not
+  data-driven yet: the alternative was editing a module that is correct in isolation. The cost is
+  recorded honestly - a rearguard-spawned cat gets no kitten when litter's budget is already spent.
+  If a later wave wants per-curse spawn caps, that belongs in the curse JSON, not in this guard.
+
+- 2026-11-19 ONE STACK CONTRACT FOR EVERY SCRIPT CURSE (lead ruling, from `test_curse_content.gd`).
+  The dispatcher asks a module whether it is held. Two of the 34 modules could not answer: `crumbling`
+  is hooks-only and never declared `held_stacks`, and `dull_gifts` spells it `stacks`. Both now answer
+  `held_stacks`, `dull_gifts` by delegating to its own spelling. RULING: every script curse answers
+  `held_stacks(state)`, so the dispatcher never special-cases a module shape. A module that cannot say
+  whether it is held is a module the dispatcher has to guess about, and guessing is how the 35 inert
+  curses happened in the first place.
+  The same test found `zoomies` declaring `"script": true` with no module. It is retired from the offer
+  pool and its JSON already carries `"retired": true`, so the pairing check exempts a curse the content
+  itself marks retired - and nothing else. The exemption is keyed on the content's own flag rather than
+  a list in the test, so a future retired curse needs no test edit and a future live orphan still fails.
+
+- 2026-11-19 THE OVERTIME TIER IS PUSHED UPWARD ONLY (lead fix, from W9-A's report). `curfew` raises
+  the economy's `overtime_tier`, but the enemy runtime keeps its own tier and that is the one that
+  drives enemy speed and cooldowns - so the curse's +2 tiers reached the purse and not the enemies.
+  `world.gd` now pushes the difference across after the curse tick, and only when positive: the
+  runtime's own clock raises its tier independently, so a lower economy tier must never pull it back.
+  Recorded because the shape generalises - any curse that writes an economy field the runtime mirrors
+  needs the same one-way reconciliation, and a two-way sync would silently slow enemies down.
