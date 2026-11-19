@@ -1068,6 +1068,14 @@ strictly worse than clamping. `app/settings.gd` takes a path parameter so tests 
 own file and never clobber the player's real `user://settings.json`.
 
 ### D-T082-4 [CONTESTABLE] — Camera lock: the character and the camera are locked to each other, and neither turns (owner request).
+> **SUPERSEDED IN PART, 2026-11-19 (J5).** The mouse half of this decision no longer holds. The owner
+> later asked for mouse-look, so `app/world.gd` now has a Ctrl-toggled mouse-capture state machine and
+> `camera_rig.apply_mouse()` is driven by real `InputEventMouseMotion` while captured. The sentence
+> below that says "no `InputEventMouseMotion` handler exists anywhere in `app/`, so there is no path
+> from the mouse to the rig yaw" is now FALSE and is kept only as the record of what was decided then.
+> What still holds: the character is locked to the camera's forward and strafes rather than turning to
+> face its velocity, and movement stays pre-rotated by yaw (DESIGN.md 13 rule 2), so a key sequence at
+> a given yaw is still deterministic. See the 2026-11-19 wave entry, item (4), and `out/decisions/J5.md`.
 The owner asked for "a camera lock for the character, you cant turn". Two readings were live, and
 the choice was made on measurement, not taste. **Shipped: the character does not turn.** The player
 figure is locked to the camera's forward (`app/world.gd` `_player_pass()` sets
@@ -6664,3 +6672,288 @@ WHY: honest coverage of the loop at a cost the gate can afford; the bot owns end
       worker's own measurement put its version at -3 completions. If the owner wants the stricter
       semantics, the BOT worker's branch is `t3/bot-run-row-28-fixes` and its reasoning is sound -
       it is a design call, not a bug.
+- 2026-11-19 WAVE: terrain width, gold gift, HUD icon, player body + mouse-look, kiwi cat, the lobby,
+  the model-material defect class, and the COLOR_0 colour-space bug behind it.
+  Fourteen jobs, one tree, suite green at `TESTS 71 passed 0 failed`. Nothing committed. Per-job
+  detail is in `out/decisions/J1.md` .. `J14.md`; this is the summary and the spec/metric changes.
+  (1) TERRAIN - GEN_VERSION 3 -> 4. Every walkable piece is now EXACTLY 3 tiles wide, including the
+      narrowest path, and every gift sits on a centre lane (exactly one walkable tile each side).
+      This OVERRIDES TERRAIN_SPEC 1A rule 2 and the H17 width cap: the owner ruled that a 1-wide
+      path is not acceptable, so the width-1 logic and `w1_pct` are gone rather than tuned. H17 is
+      now "every row exactly 3"; H24 (nothing narrower than 3) and H25 (gift on a centre lane) are
+      new; the chokepoint metric no longer filters on w <= 2; the oracle selftest is 18/18 (was 15).
+      Sockets are centred and never on a corner; platforms widened to 3; turn and T-junction sockets
+      added. `terrain_ref/` and `game/terrain/voidgen.gd` changed in lockstep, so the Python oracle
+      and the GDScript port still describe the same generator: PARITY 56/56, GALLERY 16/16,
+      validate.py --seeds 0:5000 -> 34 PASS 0 FAIL.
+      METRIC: level-1 variety is 200/200 unique layouts (tile set + gift slots) over 200 seeds, 192
+      unique recipes - the 50-layout floor is met without widening arm count. Generation time rose:
+      Python mean 55 -> 122 ms (limit 250), GDScript mean 142 -> 343 ms per level (limit 2000).
+      METRIC: bot level-1 completion 88/100 -> 98/100, both levels 60/100 -> 89/100, seed base
+      60717..60797 in 20-seed chunks. NOT all J1: the kiwi cat change (5) was in the tree for every
+      "after" chunk and absent from the clean-HEAD "before" chunk, and kiwi deaths fell 22 -> 5.
+      A clean A/B would need the after-chunks re-run on a HEAD export with only J1's files laid over.
+      CONFIRMED by the lead on the merged tree, all six jobs in, seed base 60717..60797, five 20-seed
+      chunks: 19 + 20 + 20 + 20 + 19 = 98/100 level-1 completions, median sim time 34.6 / 39.7 /
+      37.4 / 34.9 / 36.9 s against the 120 s criterion, 9 deaths total (D-KIWI 5, D-COIL 2, D-VOID 2)
+      of which only 2 fell on level 1. The "before" 88/100 is the same seed base on the pre-wave tree.
+      SEED: `DEFAULT_SEED` is gone. A new run draws a fresh u32; `start_run(seed)` still pins that
+      exact level (the bot and future multiplayer depend on it); every run prints `app: run seed=N
+      level=1` so a good level can be replayed. Supersedes D-APPFLOW-1.
+      NOTE: pads 4+ cells deep each way have no centre lane, so their gifts move to nearby walkways.
+      Gift counts are unchanged; dead-end pads are just less rich.
+      ECONOMY SIDE EFFECT, needs an owner ruling: MINES PER LEVEL ROSE 10-17%. The per-slot chance
+      and the 20% cap are unchanged - what changed is eligibility. A gift on the centre lane of a
+      3-wide path always has a way around it, so nearly every slot is now mine-eligible, where
+      before 6-14% of slots were not. At levels 26-30 that is 12.53 -> 14.68 mines per level
+      (8.46% -> 9.92% of slots), and real gifts fall by the same count. This moves the per-level
+      economy without anyone touching an economy number, which is exactly the kind of drift that
+      should be ruled on rather than absorbed.
+  (2) GOLD GIFT WAS WHITE - two stacked defects, both measured. The glb carries NO material by
+      design (`export_materials="NONE"`; the palette lives in vertex colours), and `gifts_view.gd`
+      only ever assigned the additive `material_overlay`, never a base material - so the gold body
+      rendered Godot's default white and the vertex colours were never seen. White + additive gold
+      x2.0 = (3.0, 2.35, 0.72) clipped = pure white. Even with a correct base, an x2.0 additive pass
+      on a full-colour body clips every channel. The overlay design only works for near-black
+      bodies, which is why it suited the black gift.
+      FIX: the gold gift renders its vertex colours unshaded as its base surface. Measured screen
+      251,205,57 against the spec 255,200,61. The overlay is untouched for the black gift and the
+      menu showcase. TERRAIN_SPEC 12.2's "emission x2.0" cannot be applied literally in this renderer
+      (no glow/bloom in the world environment, so no HDR headroom); the gift reads as a bright
+      emissive gold instead. GOLD_FACTOR stays 2.0 for the menu only.
+      CORRECTED BY (11) - the diagnosis above was half wrong. J3 also added an albedo tint
+      Color(1.0, 0.91, 0.46) to "pre-cancel the tonemap lift" and blamed a FILMIC tonemap. There is
+      no tonemap set anywhere in the project. The real cause of every "washed" model was COLOR_0
+      being written as sRGB bytes into a LINEAR slot; J14 fixed the colour space and removed the
+      tint, which would now double-apply. The missing-base-material half of the diagnosis was
+      correct and stands.
+      CLOSED by J8 (guardian ruling: fix it). The BLACK gift had the same missing-base-material
+      defect and rendered a pale near-white box; it now renders its vertex colours unshaded as its
+      base surface, the same pattern as gold. Measured body (96,146,148) -> (37,42,49), rim
+      (255,255,255) -> (182,251,246). The gold gift is pixel-identical across the change (md5
+      6ee96ff58728da7ecd982e5fb623a5f9). `menu_stage.gd`'s showcase now renders both gifts through
+      the body path, so it shows a real gold gift and a real black gift instead of two white ones.
+      NOTE the deviation: J8 did NOT keep the additive rim pass on the black gift, because that pass
+      was what lifted the body to a slate box - measured, every variant of it added a flat
+      ~(+45,+46,+54) to every mesh pixel regardless of albedo, fog or specular. The rim is kept as a
+      bright cyan ribbon read straight from the vertex colours (#7CFFF4, measured (182,251,246)), so
+      the black gift is MORE distinct from gold than before, not less. RIM_FACTOR 1.5 and GOLD_FACTOR
+      2.0 stay recorded as the spec's values; neither is applied as an additive pass in this
+      renderer. If the literal x1.5 pass is ever wanted back, the cost is a slate body.
+      CLOSED by J10, same class: the TRIPMINE (`view/tripmine_view.gd`) had the identical
+      missing-base-material + additive-only defect and rendered a washed box. It now renders its
+      vertex colours unshaded, with the rim carried by a new 12-bar #7CFFF4 frame; the additive pass
+      is gone for the same measured reason as the black gift. `menu_stage.gd`'s mine got the same
+      pass. Measured body frame (62,72,82) -> (36,41,47) and panel (85,174,178) -> (53,112,114).
+  (3) HUD - `game/assets/icons/gold_balance.png`, 128 px, transparent: gold gift, black ink outline,
+      halftone shading, magenta glow rim, generated by a PIL script outside `game/`. `purse_chain.gd`
+      puts it in a TextureRect left of the number; the text is unchanged. Legible at 28 px.
+  (4) PLAYER BODY AND MOUSE-LOOK - the placeholder is replaced by a part-set glb: an empty root with
+      SIX separate limb meshes (Torso, Head, ArmL/R, LegL/R), 1.80 u tall, built through the same
+      `t015_common.py` pipeline and palette roles as every other model. One object per limb is why
+      the animation needs no skeleton: idle / run / jump / fall are procedural limb rotations driven
+      only by the sim body state (grounded, horizontal speed, vertical velocity), in view code only,
+      nothing fed back into `sim/`. Ctrl toggles mouse capture: captured, mouse motion turns yaw and
+      pitch through `camera_rig.apply_mouse` at the settings sensitivity; released, the cursor is
+      visible and the camera does not turn. Starts captured, releases on pause, menu and death.
+      Movement stays pre-rotated by yaw (DESIGN.md 13 rule 2), so a key sequence at a given yaw stays
+      deterministic. SUPERSEDES the mouse half of D-T082-4 - the owner asked for mouse-look, so the
+      "camera cannot turn" guarantee is gone by request, not by drift.
+  (5) KIWI CAT - BASE_SPEED 3.0 -> 1.5 u/s in `enemy.gd` and `enemy.json` (a test asserts they
+      agree), PURSUIT_CEILING 0.40 -> 0.20 so it never exceeds 1.8 u/s after multipliers, and
+      BURST_CEILING 0.20 with the behaviour cancelling any active burst every tick, so nothing makes
+      it dash or lunge. Contact kill, the 3 s meow within 14 u and the hit size are unchanged. The
+      walk bob is halved to match. The Litter kitten went 2.4 -> 1.2 u/s (0.15 ceiling) to keep the
+      kitten-below-cat invariant. DESIGN.md SR-5, 5.1, 7.1 and `tips.json` updated; ENEMIES.md was
+      not touched. `check_enemy_data.gd` -> T-073 RESULT: OK (12/12).
+      The two stale curse JSONs were then brought in line rather than left lying: `litter.json` now
+      says "60% size, 1.2 u/s" with counter_play "ceiling is 0.15 (1.35 u/s, SR-5)", and
+      `litter.gd`'s verbatim rule-sentence quote was re-synced character-for-character (the
+      module-contract test pins it). `zoomies.json` now states the truth - "Zoomies is inert for the
+      kiwi cat - it ignores the burst and does not speed up" - with `modifiers: []`; its id,
+      severity, min_level, requires_enemy, max_stacks and hooks are unchanged and no new mechanic was
+      invented.
+      RETIRED by J9 (guardian ruling: do not delete it, do not invent a new mechanic, stop selling
+      it). `zoomies.json` gains `"retired": true` and keeps every other field, so the file stays on
+      disk, stays schema-valid, and stays readable by `curse_bounty` and the module-contract test -
+      only the OFFER paths stop naming it. `eligible_curses()` in `core/content_api.gd` skips any
+      curse whose `retired` flag is true, before the min_level and requires_enemy gates; the filter
+      is general and names no content id, so any curse can be retired this way. `curse.schema.json`
+      needed `"retired": {"type": "boolean"}` added, because it sets `additionalProperties: false`
+      and would otherwise refuse the boot; that stays in force and no other key is admitted.
+      Why not `min_level: 9999`: it would lie about the data, claiming the curse is merely gated
+      rather than withdrawn. Why not delete: the owner ruled against it, the id stays valid for old
+      run ledgers that list it in `curses_held`, and re-enabling is one edit.
+      MEASURED: eligible curses at level 3 with 1 kiwi_cat vote (the only condition under which it
+      was ever offered) 12 -> 11 ids, zoomies absent; level 10 and 26 with 1 or 4 kiwi_cat votes
+      24 -> 23, zoomies absent; the unvoted pools are byte-identical before and after.
+      The stale `t3/scripted-curses-groups-4-6` branch still quotes the OLD "+60% for 3 s" sentence.
+      Guardian ruling: IGNORE it, never merge it. Do not try to make it pass.
+  (6) THE LOBBY EXISTS AND THE BEACON ENTERS IT - supersedes D-APP-LOOP-4. `_on_level_completed`
+      reads the level and the carried ledger BEFORE the teardown, tears the world down with
+      `teardown()` + `queue_free()` (D-APPFLOW-7: `level_completed` is emitted from inside
+      `world.step()`), and enters a real `STATE_LOBBY` stepped on the same fixed 60 Hz accumulator.
+      ESC still returns to MENU, death still goes to RUN_OVER. `world.build(seed, level, ledger)`
+      takes the run's carried state; a non-empty ledger with `votes` IS the run's truth and the
+      lobby replay is only the fallback, because replaying would overwrite the player's votes with
+      the bot's. The lobby's draw stream is `mix(seed, 5000 + level_completed)`, the same constant
+      the replay uses, so the hall the player walks into is the hall the replay would have resolved.
+      `sim/intermission.gd` and `sim/offers.gd` needed NO change - `altar_table`, `step`,
+      `apply_select`, `gate_open` and the stamp were already there. The view produces SIM INPUTS
+      (votes are inputs, DESIGN.md 13 rule 2) and never writes lobby state. The F binding already
+      existed in `data/bindings.json` and `input_capture.gd`; no duplicate was added.
+      Two real defects found and fixed on the way: the altar wrapper carried the row kind where the
+      exhibit and the description panel switch on the BAY kind, so every exhibit and panel rendered
+      TBD; and `refresh()` freed altars out from under the 0.6 s sink animation, three freed-instance
+      errors per pick. The hall's third-person boom is now clamped inside the 28 x 20 x 8 box - the
+      unclamped 7 u boom rendered the back of the south wall, a black arrival frame.
+      OPEN: the economy is still rebuilt per level, so upgrade-stat modifiers are not applied yet.
+  (7) TEST FIX, not a generator fix: `test_mesh.gd` banned spike centres anywhere in the hub's
+      19 x 19 XZ bbox at any height. TERRAIN_SPEC 12.4 says only "Under the HUB: nothing", and the
+      mesher spikes only role-1/2 pieces, so the hub never gets one. The test added a rule the spec
+      never stated and fired on seed 7 level 30 where the spike belongs to a dead-end disc 14 u
+      BELOW the hub. GEN_VERSION 3 also put a platform centre in that bbox in 205/600 levels, so the
+      pinned seeds were clean by luck. The test now matches the spec. No threshold was moved to fit
+      data and no pinned seed was changed.
+  (8) TWO FINDINGS FROM J1 THAT NEED A RULING, neither a regression from this wave.
+      (a) SPIKES HANGING ON THE HUB, in about 4% of levels: 34/600 at GEN_VERSION 3 and 23/600 at
+          GEN_VERSION 4. Almost all come from platforms 6-11 u above the hub in the bbox corners.
+          The corrected `test_mesh.gd` now fails a spike only when its centre is inside the hub bbox
+          AND its vertical span comes within 12 HU of the hub slab (12 HU is the section 4 distance
+          at which two pieces read as one), and a new unit check proves the assertion still fires: a
+          platform at hub level or 11 HU away is caught; 12 HU away, the seed 7 disc 14 u below, and
+          anything outside the bbox pass. `_spike_columns`, the pinned seeds and
+          `view/level_mesher.gd` are untouched. Fixing the remaining 4% needs a generator or mesher
+          rule, which is a design call, not a test fix.
+      (b) The mines-per-level rise in (1) above.
+      Also: `AUDIT.md` was NOT rewritten. It is a dated record of what was measured on commit
+      64e3332, so overwriting its numbers would misreport that run. It now carries a dated
+      "superseded by GEN_VERSION 4" banner with the expected lines, and every stale figure is marked
+      "(GEN_VERSION 3)". `TERRAIN_REF.md` and `FLEET_PACK.md` do carry the current numbers (18/18,
+      34 PASS), and `TERRAIN_SPEC.md` section 11's reasons for gallery pins #1 and #2 were corrected
+      because both had stopped being true.
+  (9) GUARDIAN RULINGS, 2026-11-19 (the owner delegated best-for-the-game calls to the guardian).
+      Recorded so the next reader knows these were decided, not overlooked.
+      (a) BLACK GIFT: FIX IT - done, see (2). The TRIPMINE has the same defect and is still open.
+      (b) ZOOMIES: retire from the offer pool, do not delete, do not invent a mechanic - done, see (5).
+      (c) CAMERA LOCK REVERSAL (J5): ACCEPTED. It was the owner's Ctrl mouse-look request, so the
+          supersession of D-T082-4's mouse half stands. The character still does not turn.
+      (d) GENERATION SPEED (Python 55 -> 122 ms, GDScript 142 -> 343 ms per level): ACCEPTED, inside
+          the 250 / 2000 ms limits. The 3-wide rule costs real time and that is the accepted price.
+      (e) MINES PER LEVEL +10-17%: ACCEPTED AS IS. It follows from wider platforms (a centre-lane
+          gift always has a way around it, so nearly every slot is mine-eligible) and the bot still
+          completes 98/100. DO NOT retune mine counts. This is a KNOWN DIFFICULTY CHANGE: levels
+          26-30 now average 14.68 mines instead of 12.53, and real gifts fall by the same count.
+      (f) HUB-HANGING SPIKES (~4% of levels): PARKED. Do not change the mesher or any pinned seed.
+          PARKED.md row 30 carries the measurements and the fix idea (extend the mesher's role filter
+          from "the hub piece" to "anything that reads as part of the hub", target 0/600 without
+          moving a pinned seed).
+      (g) THE A/B CAVEAT (88 -> 98 is partly the kiwi cat change): no extra run needed. The caveat
+          stays in (1) as written.
+      (h) The stale `t3/scripted-curses-groups-4-6` branch: IGNORE, never merge.
+      One process note for the record, CORRECTED: J9's entry says the `curse.schema.json` edit was
+      "approved by the lead mid-run". The lead did not personally approve it - but J9 did ask, and the
+      question was auto-answered "Allow the schema edit (Recommended)" by the delegate harness's
+      auto-approve mode, so the agent's account is fair. An earlier draft of this entry called the
+      approval fictional; that was wrong and is corrected here. The edit is necessary (the schema sets
+      `additionalProperties: false` and would refuse the boot on the new key) and minimal, so it is
+      accepted. The lesson is about the harness, not the worker: under auto-approve, a worker can
+      obtain a real approval that the lead never sees, so a brief that says "stop and ask" does not
+      actually stop anything. Anything genuinely needing the lead's judgement must be named in the
+      brief as forbidden, not left to a question.
+      Also fixed by the lead during review, not by a worker: `test_vfx.gd`'s mine-rim comparison had
+      been retargeted to `GiftsViewScript.emission_material(RIM_FACTOR)` - the same factory the mine
+      itself calls, so the five per-parameter asserts had become a function compared against itself
+      and could no longer catch a change to it. They now assert the rim spec's literals (UNSHADED,
+      ALPHA, ADD, vertex colours on, albedo (1.5, 1.5, 1.5), shadows off), which is stronger than the
+      original. No assertion was dropped and no threshold moved.
+  (10) THE MODEL-MATERIAL DEFECT CLASS - five instances, all fixed, plus a guard so a sixth cannot
+      land silently. THE ROOT CAUSE, verified by reading the glb JSON chunks directly: every model
+      under `game/assets/models/` is exported with NO materials (`t015_common.py` uses
+      `export_materials="NONE"`) and carries its palette in vertex colours (`COLOR_0`). All 11 models
+      declare `materials=0` and every primitive carries COLOR_0. So any view that does not assign a
+      BASE material with `vertex_color_use_as_albedo` renders Godot's default WHITE and the authored
+      palette is never seen. An additive `material_overlay` on top of that white is what produced the
+      "washed box" look. This shipped FIVE times before anyone noticed, because a fill light or an
+      emissive rim made each object visible enough to look deliberate.
+      (a) GOLD GIFT - J3, see (2). (b) BLACK GIFT - J8, see (2).
+      (c) TRIPMINE - J10. Body now renders its vertex colours unshaded (#050608 frame, #0A2E30
+          panels). The additive x1.5 rim pass was REMOVED, not kept: isolation measurement (overlay
+          re-added on the fixed base, same camera) lifted the frame by +34/+37/+42 and the panels by
+          +46/+87/+89 - the J8 flat-lift class, albedo-invariant - so the near-black body could never
+          read its palette. The rim is now view geometry: twelve thin unshaded opaque #7CFFF4 edge
+          bars, lit-independent and fog-affected like the black gift's ribbon. Measured body
+          (62,72,82) -> (36,41,47), panels (85,174,178) -> (53,112,114), rim (2,20,22) fog ->
+          (118,243,232). RIM_FACTOR 1.5 stays the spec's recorded value, not an applied pass.
+          The menu's mine showcase was fixed the same way and its unused `_overlay` helper removed.
+      (d) PLAYER FIGURE - J11. The most visible object in the game was rendering default white; the
+          fill light made it visible, which is exactly why nobody caught that it was white rather
+          than palette-coloured. Now unshaded vertex colours in BOTH `app/world.gd` and
+          `view/lobby/lobby_player.gd` (two identical local copies, both pinned). Measured
+          figure-region mean (167.9,238.2,231.9) -> (77.4,146.5,148.0), and the after-image dominant
+          colours now match the palette roles (prop_block #12474A -> (72,138,141) measured vs
+          (75,144,147) predicted; slab_trim #1C6A70 -> (89,169,170); prop_crate -> (86,154,148)).
+          Zero palette-class pixels before the fix. The four poses still differ only inside the
+          figure's silhouette column, so the J5 animation evidence holds.
+      (e) BEACON, CLOSED STATE - J13. `beacon_view.gd` promised "dull beacon_closed #3A4A55" in its
+          header but only ever wired DIM_COLOR to the 8 ring segments; the body got
+          `material_override = null` and rendered default white. The glb's COLOR_0 was read and IS
+          #3A4A55 (0.2274, 0.2902, 0.3333 over all 144 vertices), so the vertex-colour route was
+          correct and no explicit override was needed. The OPEN state (emissive #E8FFFF x4.0) is
+          untouched and now pinned by asserts.
+          KNOWN DEVIATION, flagged not hidden: the closed body measured (125.2,140.2,149.3)
+          against the spec #3A4A55 = (58,74,85). It was no longer white - the defect was fixed - but
+          it rendered roughly twice the spec value. J13 attributed that to "the same FILMIC tonemap
+          lift J3 compensated for"; there is no tonemap, and the real cause was the COLOR_0
+          colour-space bug. J14 fixed it: the closed body now measures (53,70,81) in app_00 and
+          (52,69,80) in app_02, which is #3A4A55 plus linear fog toward #021416 at that distance.
+          No albedo tint was needed and none was added.
+      (f) THE GUARD - J12, `game/tests/test_model_materials.gd`. Enumerates every `.glb` under
+          `res://assets/models/` at run time with DirAccess (nothing hardcoded, so a new model is
+          covered the moment it lands), parses each glb's JSON chunk, and requires COLOR_0 on every
+          primitive of a material-less model. It then scans every `.gd` under `view/` and `app/` that
+          mentions `res://assets/models/` and requires `vertex_color_use_as_albedo`, or an explicit
+          allow-list entry carrying a written reason. An allow-list entry that goes stale (file gone,
+          no longer loads a model, or now passes the normal rule) FAILS - so the list cannot silently
+          grow and an entry cannot outlive its reason. Proven by negative control: a throwaway view
+          loading a glb with no material produced `TESTS 70 passed 1 failed` naming the file; deleted,
+          back to green. Suite count 70 -> 71.
+          SCOPE LIMIT, stated plainly: the loader rule is FILE-scoped, not call-site-scoped. A
+          headless text scan cannot prove the exact `load()` site assigns the material, only that the
+          file builds a vertex-colour base somewhere. `menu_stage.gd` passes that way (its glb
+          instances get the pass through shared helpers). Call-site proof would need a per-model
+          allow-list or a naming convention; deliberately not added.
+          `respawn_view.gd` remains allow-listed and is CORRECT as written: it loads player_figure.glb
+          only to draw a CULL_FRONT white back-face shell for the invulnerability rim, never the body.
+      Every fix was proven by negative control (remove the base-material call, confirm the suite
+      fails, restore, confirm green). No test was weakened and no threshold moved.
+  (11) THE REAL ROOT CAUSE OF EVERY "WASHED" MODEL - J14, and it was a colour-space bug, not a
+      tonemap. glTF defines COLOR_0 as LINEAR. `assets_src/blender/t015_common.py` `hex_rgba()`
+      wrote `int(hex,16)/255.0` - sRGB bytes as floats - into a FLOAT_COLOR attribute, so Godot
+      treated palette bytes as linear and re-encoded linear->sRGB on the way out, lifting every
+      model. Predicted sRGB_encode(byte/255) matched all five probed models within ~5 (the deficit
+      is fog). There is NO tonemap set anywhere in the project; J3's "FILMIC lift" and J13's
+      "same FILMIC lift" were both wrong, and J3's gold albedo tint Color(1.0, 0.91, 0.46) was a
+      compensating hack for this bug.
+      FIX: `hex_rgba()` now applies the IEC 61966-2-1 sRGB->linear transfer function
+      (c <= 0.04045 ? c/12.92 : ((c+0.055)/1.055)^2.4) at the single choke point every model colour
+      passes through, so any future caller inherits the correct behaviour. All 11 models rebuilt
+      with Blender 5.3 (11/11 exit 0). J3's gold tint removed - it would double-apply now.
+      `game/data/palette.json` untouched; no palette hex changed.
+      VERIFIED: a round-trip audit parses each glb's COLOR_0 accessor, sRGB-encodes it and matches
+      against palette.json - every vertex of every model decodes to EXACTLY the palette hex its
+      script fed it, zero off-palette vertices. In-engine: beacon (53,70,81) vs #3A4A55 (58,74,85),
+      black gift body (0,1,1) vs #050608, black gift rim (122,252,241) vs #7CFFF4, prop_block
+      (12,68,70) vs #12474A, slab_trim (20,105,107) vs #1C6E70, prop_crate (20,86,78) vs #1A5A52 -
+      every delta is linear fog toward #021416 plus u16 quantization. Gold gift's stored COLOR_0
+      decodes to #FFC83D x120 exactly; it is not capturable in the black phase, so its render colour
+      rests on the data path plus the renderer path proven on the other ten models.
+      OPERATIONAL RULE, learned the hard way: after ANY .glb rebuild,
+      `godot --headless --import --path game` is MANDATORY before running the suite or taking
+      captures, or Godot silently uses the stale cached vertex colours. Skipping it cost one red run
+      (`TESTS 70 passed 1 failed`, beacon COLOR_0 0.2275); the import cured it and no threshold moved.
+      Two tests pinning raw COLOR_0 values were updated to the LINEAR values with assertion strength
+      unchanged (still every vertex within 0.01). No test weakened, nothing deleted.
+      APPEARANCE OF EVERY MODEL CHANGED - all darker and more saturated, matching the palette. That
+      is the fix, not a regression. If a model ever looks wrong again, suspect fog or a remaining
+      compensating hack, not the palette.
