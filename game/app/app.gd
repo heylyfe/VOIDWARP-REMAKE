@@ -28,10 +28,18 @@ extends Node
 #                       _process stops stepping the dead world, plays the HUD's 18-tick
 #                       death black-out (view/hud/screen_fx.gd), then shows
 #                       view/hud/run_over.gd with sim/death.gd's row on blackout_finished.
-#                       Retry (like ESC) tears the world down and returns to MENU; Play
-#                       starts the next run from there on a fresh seed (J1).
+#                       Retry tears the world down and starts a NEW RUN pinned to the same seed
+#                       (the same class falls out of the seeded level-1 replay), straight into
+#                       the loading screen and the level - never back to the menu. Play starts
+#                       the next run from there on a fresh seed (J1).
 #   quit_requested   -> get_tree().quit()
-#   ESC / the pause binding -> back to MENU from LOADING, WORLD or LOBBY (freed)
+#   ESC / the pause binding -> mid-run (WORLD / LOBBY) the pause overlay: the run freezes,
+#                       RESUME continues it, ABANDON ends it (the old ESC path: everything
+#                       freed, back to MENU). In LOADING / RUN_OVER ESC still returns to
+#                       MENU directly; in MENU it is a no-op.
+#   PLAY -> the class altar (gap 2, DESIGN.md section 4) shows over the loading screen:
+#                       the pick rebuilds the level with the chosen class and persists for
+#                       the session; SKIP / no pick keeps the seeded replay's pick.
 #
 # The run seed (J1, supersedes D-APPFLOW-1's fixed DEFAULT_SEED 1): start_run(seed)'s argument
 # when one was passed - that run reproduces exactly that level, since voidgen is a pure function
@@ -54,6 +62,17 @@ const WorldScript := preload("res://app/world.gd")
 const InputCaptureScript := preload("res://app/input_capture.gd")
 const RunOverScript := preload("res://view/hud/run_over.gd")
 const LobbySceneScript := preload("res://view/lobby/lobby_scene.gd")
+const RecordsScript := preload("res://core/records.gd")
+const RunLogScript := preload("res://app/run_log.gd")
+# Gap 1 + gap 2: the pause overlay (ESC mid-run freezes the run) and the class altar
+# (the player picks the kit before the run starts).
+const PauseOverlayScript := preload("res://app/pause_overlay.gd")
+const ClassAltarScript := preload("res://app/class_altar.gd")
+# The pre-run lobby's ledger hand-off: the app resolves lobby 0 with the PLAYER'S class
+# the same way world.gd replays it, and hands the result to world.build as the ledger.
+const ContentApiScript := preload("res://core/content_api.gd")
+const IntermissionScript := preload("res://sim/intermission.gd")
+const VoidRngScript := preload("res://terrain/void_rng.gd")
 
 const DT := 1.0 / 60.0   # fixed 60 Hz sim step (sim/ contract)
 const FIRST_LEVEL := 1
@@ -77,9 +96,27 @@ var _death_info: Dictionary = {}   # sim/death.gd's row for the screen (world.ru
 var _step_acc := 0.0
 var _first_launch := true   # the two-duration law: 5 s on the session's first launch, 2.0 s after
 var _pause_codes: Array[int] = []   # KEY_* codes bound to "pause" (data/bindings.json), else ESC
+var _records: RefCounted = null
+var records_path := ""            # tests point this at a scratch file (settings.gd's pattern)
+var _run_level_reached := FIRST_LEVEL
+var _run_purse := 0
+var _run_class := ""
+var _run_recorded := false        # one records/telemetry write per run
+# gap 1: the pause overlay's state. The sim never sees a pause - the app just stops
+# stepping the world / the hall while the overlay is open (the run's clock is the app's
+# own fixed-step accumulator, so not stepping IS frozen time for the run).
+var _paused := false
+var _pause_prev_locked := false   # the mouse capture to restore on Resume
+var _pause_overlay: Control = null
+# gap 2: the player's class pick. "" = no pick yet - the seeded pre-run replay decides
+# (the old behaviour). A pick persists across runs of the session until changed.
+var _chosen_class := ""
+var _class_altar: Control = null
 
 
 func _ready() -> void:
+	_records = RecordsScript.new()
+	_records.load_from(records_path)
 	_pause_codes = _load_pause_codes()
 	_show_menu()
 
@@ -89,6 +126,11 @@ func _process(delta: float) -> void:
 	# app must NOT also call advance(): doing both accrues elapsed at 2x and the hold elapses
 	# in half the wall time (D-APPFLOW-2, PARKED.md #20). The screen emits loading_finished
 	# from inside its own advance(); _on_loading_finished frees it and moves us to WORLD.
+	# gap 1: while the pause overlay is open the run is frozen - no world tick, no lobby
+	# tick, and the accumulator is dropped so the resume never replays lost time.
+	if _paused:
+		_step_acc = 0.0
+		return
 	if _state == STATE_WORLD and _world != null:
 		# Fixed 60 Hz sim accumulator (the sim's contract), decoupled from the render rate:
 		# at 120+ Hz the world must not run 2x fast. Spiral-of-death clamp: 5 ticks/frame.
@@ -167,6 +209,7 @@ func _show_menu() -> void:
 
 func _on_play_requested() -> void:
 	_begin_run()
+	_open_class_altar()
 
 
 ## Hide the menu, show the loading screen, build the world THIS frame, report real progress.
@@ -179,6 +222,16 @@ func _begin_run() -> void:
 	if not _pinned:
 		_seed = fresh_seed()
 	_pinned = false
+	_run_level_reached = FIRST_LEVEL
+	_run_purse = 0
+	_run_class = ""
+	_run_recorded = false
+	# gap 2: with a class picked, the run is born from the pre-run lobby resolved with
+	# THAT class as a carried ledger - world.build then skips its own replay and uses it
+	# (the same hand-off the Antechamber exit does). No pick: the old seeded replay.
+	var ledger := {}
+	if _chosen_class != "":
+		ledger = _resolve_pre_run(_chosen_class)
 	_loading = LoadingScreenScript.new()
 	# start() BEFORE add_child: add_child runs _ready, whose bootstrap start(0) would take a gag
 	# pick and overwrite the static _last_gag_id, so every restart would replay the same gag
@@ -189,7 +242,7 @@ func _begin_run() -> void:
 	_loading.loading_finished.connect(_on_loading_finished)
 	_state = STATE_LOADING
 	# Build the world in the same frame the loading screen appears (the ticket's contract).
-	if not _build_world(FIRST_LEVEL, {}):
+	if not _build_world(FIRST_LEVEL, ledger):
 		_loading.free()
 		_loading = null
 		_show_menu()
@@ -201,17 +254,31 @@ func _begin_run() -> void:
 ## builds it. Returns false (and leaves _world null) on a generator/content failure.
 ## The seed print lives here, so every level of a run announces itself the same way.
 func _build_world(p_level: int, p_ledger: Dictionary) -> bool:
-	print("app: run seed=%d level=%d" % [_seed, p_level])
-	_world = WorldScript.new()
-	_world.level_completed.connect(_on_level_completed)
-	_world.run_over.connect(_on_run_over)
-	_death_info = {}
-	if not _world.build(_seed, p_level, p_ledger):
-		push_warning("app: world.build(%d, %d) failed; back to menu" % [_seed, p_level])
-		_world.free()
-		_world = null
+	var built := _build_world_node(p_level, p_ledger)
+	_world = built
+	if _world == null:
 		return false
+	# The class the run was born with: the carried pick, else the level-1 replay's own
+	# CLASS-bay pick (world._resolve_run). The run telemetry (run_started) reads it.
+	_run_class = str(_world.run_ledger().get("class", _run_class))
 	return true
+
+
+## Creates, wires and builds one world node - the call for the run's levels and for the
+## class altar's rebuild alike. Returns the node, or null on a generator/content failure
+## (nothing is assigned; the caller keeps whatever world it had).
+func _build_world_node(p_level: int, p_ledger: Dictionary) -> Node:
+	print("app: run seed=%d level=%d" % [_seed, p_level])
+	_run_level_reached = maxi(_run_level_reached, p_level)
+	var fresh := WorldScript.new()
+	fresh.level_completed.connect(_on_level_completed)
+	fresh.run_over.connect(_on_run_over)
+	_death_info = {}
+	if not fresh.build(_seed, p_level, p_ledger):
+		push_warning("app: world.build(%d, %d) failed; back to menu" % [_seed, p_level])
+		fresh.free()
+		return null
+	return fresh
 
 
 func _on_loading_finished() -> void:
@@ -221,12 +288,18 @@ func _on_loading_finished() -> void:
 		# call stack. queue_free deletes at idle time, after advance() returns.
 		_loading.queue_free()
 		_loading = null
+	# gap 2: the run is live - the pick window is over. The class itself (_chosen_class)
+	# persists: the next PLAY carries it from the first build, no re-pick needed.
+	if _class_altar != null:
+		_class_altar.queue_free()
+		_class_altar = null
 	if _world != null:
 		add_child(_world)
 	_state = STATE_WORLD
 
 
 func _on_quit_requested() -> void:
+	_end_run()   # quitting mid-run ends it; a worse or partial run never lowers the records
 	get_tree().quit()
 
 
@@ -241,6 +314,9 @@ func _on_level_completed() -> void:
 		return
 	var completed: int = int(_world.level_number())
 	var ledger: Dictionary = _world.run_ledger()
+	_run_level_reached = maxi(_run_level_reached, completed)
+	_run_purse = int(ledger.get("purse", _run_purse))
+	_run_class = str(ledger.get("class", _run_class))
 	_world.teardown()
 	_world.queue_free()
 	_world = null
@@ -273,6 +349,8 @@ func _on_lobby_exited(p_ledger: Dictionary) -> void:
 	if _lobby == null:
 		return
 	var next_level: int = int(_lobby.next_level())
+	_run_purse = int(p_ledger.get("purse", _run_purse))
+	_run_class = str(p_ledger.get("class", _run_class))
 	_lobby.queue_free()
 	_lobby = null
 	_step_acc = 0.0
@@ -293,6 +371,11 @@ func _on_run_over(info: Dictionary) -> void:
 	if _world == null or _state != STATE_WORLD:
 		return
 	_death_info = info
+	_run_level_reached = maxi(_run_level_reached, int(_world.level_number()))
+	var ledger: Dictionary = _world.run_ledger()
+	_run_purse = int(ledger.get("purse", _run_purse))
+	_run_class = str(ledger.get("class", _run_class))
+	_end_run()   # DESIGN.md section 9 + T-080: death ends the run, so record + log it here
 	_state = STATE_RUN_OVER
 	var hud = _world.hud
 	if hud == null:
@@ -318,26 +401,160 @@ func _show_run_over() -> void:
 	_run_over.show_run_over(_death_info)
 
 
-## Retry a new run: the same teardown as ESC, then the menu - Play starts the next run on
-## the same seed (there is no intermission lobby yet). The screen is queue_free'd, not
-## freed: retried is emitted from inside its own Button.
+## Retry: restart the run with the same seed and the same class, straight into the level.
+## The pinned seed reproduces level 1 exactly - the level-1 class is the seeded lobby-0
+## replay's pick (world._resolve_run), a pure function of the seed, so the new run's class
+## is the class the dead run was born with. The dead run's own teardown is the same one ESC
+## does, but instead of showing the menu, the menu-hidden pin path (start_run, in MENU) runs
+## the normal LOADING -> WORLD transition. The screen is queue_free'd, not freed: retried is
+## emitted from inside its own Button.
 func _on_retry_requested() -> void:
-	_return_to_menu()
+	var retry_seed := _seed
+	if _run_over != null:
+		_run_over.queue_free()
+		_run_over = null
+	_death_info = {}
+	if _world != null:
+		_world.teardown()
+		_world.free()
+		_world = null
+	if _lobby != null:
+		_lobby.teardown()
+		_lobby.free()
+		_lobby = null
+	if _loading != null:
+		_loading.free()
+		_loading = null
+	_step_acc = 0.0
+	# Land in MENU state (the menu stays hidden) so start_run takes the run path.
+	_state = STATE_MENU
+	if _menu == null:
+		_show_menu()
+	start_run(retry_seed)
 
 
-# ---- pause (ESC / the pause binding) -----------------------------------------------------------
+# ---- bests + run telemetry (DESIGN.md section 9 / T-080) ----------------------------------
+
+## The locally recorded bests (DESIGN.md section 9), for the menu / run-over screens to
+## display. One-line wiring for the lead (view files are not app-layer):
+##   menu / run_over:  label.text = "Best level %d - best purse %d" % [app.best_level(), app.best_purse()]
+func best_level() -> int:
+	return _records.get_best_level() if _records != null else 0
+
+
+func best_purse() -> int:
+	return _records.get_best_purse() if _records != null else 0
+
+
+## A run has ended (death, ESC back to menu, quit mid-run): ratchet the local records
+## (DESIGN.md section 9 - only ever up) and write the run telemetry log (T-080). Guarded so
+## death followed by ESC or retry does not write the file twice. The app has no per-tick
+## event channel (world only signals level_completed / run_over), so the closed record set
+## lands as run_start + run_end; feeding feed_tick needs a world-side event signal.
+func _end_run() -> void:
+	if _run_recorded:
+		return
+	if _state == STATE_MENU:
+		return
+	_run_recorded = true
+	if _records == null:
+		_records = RecordsScript.new()
+		_records.load_from(records_path)
+	_records.record_run(_run_level_reached, _run_purse)
+	var log := RunLogScript.new()
+	log.run_started(_seed, _run_class)
+	log.run_finished(_run_level_reached, _run_purse)
+	log.close()
+
+
+# ---- pause (ESC / the pause binding) and the class altar -----------------------------------
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		var key := event as InputEventKey
 		if _pause_codes.has(int(key.keycode)):
-			_return_to_menu()
+			_pause_pressed()
 
 
-## ESC / the pause binding: free the world (and any loading screen or lobby), show the menu.
+## The pause binding, per state (gap 1): mid-run it opens the pause overlay - the run
+## freezes - and open, it resumes. Anywhere else it keeps the old path (a run has not
+## started in LOADING to freeze, and the run-over screen already ended the run), so ESC
+## in LOADING / RUN_OVER still returns to the menu and ESC in MENU stays a no-op.
+func _pause_pressed() -> void:
+	if _pause_overlay != null and _pause_overlay.is_open():
+		_resume_run()
+	elif _state == STATE_WORLD or _state == STATE_LOBBY:
+		_open_pause()
+	else:
+		_return_to_menu()
+
+
+## Freeze the run and show the overlay. The capture state is remembered and restored on
+## Resume (the world / the lobby hold their own _mouse_locked; read and written from the
+## app the same way the death path in world.gd writes it - the sim is never involved).
+func _open_pause() -> void:
+	if _paused:
+		return
+	_paused = true
+	_step_acc = 0.0
+	var frozen = _world if _state == STATE_WORLD else _lobby
+	_pause_prev_locked = frozen != null and bool(frozen._mouse_locked)
+	if frozen != null:
+		frozen._mouse_locked = false
+	if _pause_overlay == null:
+		_pause_overlay = PauseOverlayScript.new()
+		_pause_overlay.resumed.connect(_resume_run)
+		_pause_overlay.abandon_requested.connect(_return_to_menu)
+		add_child(_pause_overlay)
+	_pause_overlay.open(_pause_snapshot())
+	if frozen != null:
+		frozen.apply_mouse_mode()
+
+
+## Resume: whatever the run was doing when it froze, it does again. The overlay closes,
+## the frozen state keeps stepping from the tick it stopped on.
+func _resume_run() -> void:
+	if not _paused:
+		return
+	_paused = false
+	if _pause_overlay != null:
+		_pause_overlay.close()
+	var frozen = _world if _state == STATE_WORLD else _lobby
+	if frozen != null:
+		frozen._mouse_locked = _pause_prev_locked
+		frozen.apply_mouse_mode()
+
+
+## The overlay's frozen-state line: the level the player is on and the whole-gold purse
+## (the same number the HUD shows, via the world's economy; the lobby holds none yet).
+func _pause_snapshot() -> String:
+	var level := 0
+	if _state == STATE_WORLD and _world != null:
+		level = int(_world.level_number())
+	elif _state == STATE_LOBBY and _lobby != null:
+		level = int(_lobby.level_completed) + 1
+	var line := "LEVEL %d" % maxi(level, 1)
+	if _state == STATE_WORLD and _world != null and _world._economy != null:
+		line = "%s - PURSE %d g" % [line, int(_world._economy.purse_gold())]
+	return line
+
+
+## ESC / the pause binding outside a live run: free the world (and any loading screen or
+## lobby), show the menu - the Abandon path and the old ESC behaviour in one.
 func _return_to_menu() -> void:
 	if _state == STATE_MENU:
 		return
+	# A pause is impossible once the run is gone (nothing left to freeze); an open overlay
+	# or altar follows the run out. queue_free: Abandon is emitted from the overlay's own
+	# Button, and loading_finished from the loading screen's advance().
+	_paused = false
+	if _pause_overlay != null:
+		_pause_overlay.queue_free()
+		_pause_overlay = null
+	if _class_altar != null:
+		_class_altar.queue_free()
+		_class_altar = null
+	_end_run()   # ESC abandons the run in progress; the records only ratchet up
 	# queue_free: retried is emitted from inside the run-over screen's own Button.
 	if _run_over != null:
 		_run_over.queue_free()
@@ -372,3 +589,111 @@ func _load_pause_codes() -> Array[int]:
 		if not out.is_empty():
 			return out
 	return codes
+
+# ---- the class altar (gap 2, DESIGN.md section 4) -------------------------------------------
+
+## The altar shows over the loading screen, before the run starts. A pick rebuilds the
+## not-yet-in-tree world with the chosen class; outliving the loading clock (or SKIP)
+## leaves the seeded replay's pick, exactly the pre-altar behaviour. start_run() never
+## shows the altar: a pinned seed must reproduce the run it pins (the bot, Retry), and
+## Retry reruns the dead run's own class (the pick persists in _chosen_class).
+func _open_class_altar() -> void:
+	if _state != STATE_LOADING:
+		return
+	if _class_altar != null:
+		_class_altar.queue_free()
+		_class_altar = null
+	_class_altar = ClassAltarScript.new()
+	_class_altar.class_chosen.connect(_on_class_chosen)
+	add_child(_class_altar)   # after the loading screen: the altar draws on top
+	_class_altar.open(_chosen_class)
+
+
+## One pick at the altar: remember it for every later run of the session, and in LOADING
+## rebuild the level-1 world around the screen with the chosen class. The world is not in
+## the tree until loading_finished, so the swap happens in one frame, invisible; on a
+## build failure the run keeps the world it was born with (a warning, never a crash).
+func _on_class_chosen(class_id: String) -> void:
+	_chosen_class = str(class_id)
+	if _state != STATE_LOADING or _world == null:
+		return
+	var ledger := _resolve_pre_run(_chosen_class)
+	var fresh := _build_world_node(FIRST_LEVEL, ledger)
+	if fresh == null:
+		return
+	_world.teardown()
+	_world.free()
+	_world = fresh
+	_run_class = str(_world.run_ledger().get("class", _run_class))
+
+
+## The pre-run lobby (level_completed 0) resolved with the PLAYER'S class: the CLASS bay's
+## pick is the altar the player chose; the starter E bay is resolved by the bot's own
+## uniform pick over the run's pick stream (world.gd _resolve_run's exact idiom and
+## seeding). Returns the carried ledger world.build() takes - it has "votes", so world
+## skips its own replay and uses exactly this state - or {} when the content api is down
+## or the class id is not on the table (the run then falls back to world's own replay).
+func _resolve_pre_run(class_id: String) -> Dictionary:
+	var api := ContentApiScript.load()
+	if api == null or not api.is_ok():
+		push_warning("app: no content api - the seeded replay picks the class")
+		return {}
+	var lb: RefCounted = IntermissionScript.create(api, 0, 0,
+			VoidRngScript.mix(_seed, 5000), {}, {}, {}, class_id, 0, 0, "")
+	var rng: RefCounted = VoidRngScript.new(VoidRngScript.mix(
+			VoidRngScript.mix(_seed, 0xB07), 1))
+	for _i in range(80):
+		if bool(lb.gate_open()):
+			break
+		var table: Array = lb.altar_table()
+		var class_pick := -1
+		var picks: Array[int] = []
+		var tithe_picks: Array[int] = []
+		for i in table.size():
+			var entry: Dictionary = table[i]
+			var bay: Dictionary = lb.bays[int(entry["bay_index"])]
+			var kind := str(entry["kind"])
+			var bay_kind := str(entry["bay"])
+			if bay_kind == "CLASS":
+				# the CLASS bay never resolves as a bay while class_chosen rides the state
+				# (intermission.gd's gate_open); the pick IS the player's class
+				if str(lb.class_chosen) == "" and _altar_id_matches(bay,
+						int(entry["altar"]), class_id):
+					class_pick = i
+			elif bool(bay.get("resolved", false)):
+				continue
+			elif kind == "offer" and (bay_kind == "E" or bay_kind == "C"):
+				picks.append(i)
+			elif kind == "tithe" and bay_kind == "C":
+				tithe_picks.append(i)
+		var ev: Array = []
+		if class_pick >= 0:
+			lb.apply_select(0, class_pick, ev)
+		elif not picks.is_empty():
+			lb.apply_select(0, picks[rng.urange(picks.size())], ev)
+		elif not tithe_picks.is_empty():
+			if not bool(lb.apply_select(0, tithe_picks[0], ev)):
+				break
+		else:
+			break
+	if not bool(lb.gate_open()):
+		push_warning("app: the pre-run lobby did not resolve for class '%s'" % class_id)
+		return {}
+	return {
+		"class": class_id,
+		"votes": (lb.votes as Dictionary).duplicate(),
+		"curses": (lb.curses_held as Dictionary).duplicate(),
+		"stacks": (lb.upgrade_stacks as Dictionary).duplicate(),
+		"purse": int(lb.purse),
+		"tithes": int(lb.tithes),
+		"hunger": int(lb.hunger),
+		"last_vote": str(lb.last_vote),
+	}
+
+
+## True when p_bay's altar p_altar is the class altar for class_id.
+static func _altar_id_matches(p_bay: Dictionary, p_altar: int, class_id: String) -> bool:
+	var altars: Array = p_bay.get("altars", [])
+	if p_altar < 0 or p_altar >= altars.size():
+		return false
+	return str((altars[p_altar] as Dictionary).get("id", "")) == class_id

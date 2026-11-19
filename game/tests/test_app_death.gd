@@ -20,7 +20,8 @@ extends RefCounted
 #   leg C (the shipped app, seed 1 level 1): the same death drives app.gd out of WORLD into
 #   RUN_OVER (its _process stops stepping the dead world), the HUD's 18-tick death
 #   black-out runs, and the run-over screen opens on blackout_finished with the dead run's
-#   row; Retry returns to MENU with the world released.
+#   row; Retry tears the dead run down and restarts the SAME seed straight into
+#   LOADING -> WORLD, with the menu never shown (gap 22).
 #
 # The test fails if step() stops detecting a dead controller, if the signal re-fires, if a
 # dead world keeps ticking, or if the app freezes with the run-over screen unreachable.
@@ -179,6 +180,9 @@ func _screen_leg(f: Array[String], world) -> void:
 ## Leg C: the shipped app's own wiring, MENU -> LOADING -> WORLD -> RUN_OVER -> MENU.
 func _leg_c_app(f: Array[String]) -> void:
 	var app = AppScript.new()
+	# I4: a test must never ratchet the player's real user://records.json. Point the store at a
+	# scratch file before _ready loads it.
+	app.records_path = "user://test_app_death_scratch.json"
 	# J1: Play draws a fresh seed per run; pin seed 1 (this leg's documented input) so the suite
 	# is deterministic. Before _ready there is no menu, so start_run only stores the seed and the
 	# run below still goes through the real play_requested path.
@@ -238,16 +242,21 @@ func _leg_c_app(f: Array[String]) -> void:
 		if int(app._run_over.purse_centi) != purse_at_death:
 			f.append("leg C: the screen's purse is %d, want the dead run's %d"
 					% [int(app._run_over.purse_centi), purse_at_death])
-		# retry: the world is released and the menu is back
+		# retry: the dead run is torn down and the SAME seed starts again, straight into
+		# LOADING -> WORLD. The menu is never shown - gap 22: Retry must retry, not bounce
+		# the player back to the title screen and make them press PLAY again.
 		app._run_over.retried.emit()
-		if app.state() != "MENU":
-			f.append("leg C: retry left the app in %s, want MENU" % app.state())
-		if app._world != null:
-			f.append("leg C: retry did not release the world")
+		if app.state() != "LOADING" and app.state() != "WORLD":
+			f.append("leg C: retry left the app in %s, want LOADING or WORLD" % app.state())
+		if is_instance_valid(world):
+			f.append("leg C: retry did not release the dead world")
 		if app._run_over != null:
 			f.append("leg C: retry did not release the run-over screen")
-		if app._menu == null or not app._menu.visible:
-			f.append("leg C: the menu is not back after retry")
+		if app._menu != null and app._menu.visible:
+			f.append("leg C: retry showed the menu; it must go straight back into the run")
+		if app.run_seed() != SEED_A:
+			f.append("leg C: retry used seed %d, want the same seed %d"
+					% [app.run_seed(), SEED_A])
 	app.free()
 
 

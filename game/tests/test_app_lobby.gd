@@ -46,6 +46,9 @@ func run() -> Array[String]:
 
 func _leg_flow(f: Array[String]) -> void:
 	var app = AppScript.new()
+	# I4: a test must never ratchet the player's real user://records.json. Point the store at a
+	# scratch file before _ready loads it.
+	app.records_path = "user://test_app_lobby_scratch.json"
 	app.start_run(SEED)
 	app._ready()
 	app._on_play_requested()
