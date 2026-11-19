@@ -91,7 +91,8 @@ func build(p_seed: int, p_completed: int, p_ledger: Dictionary = {}) -> bool:
 			VoidRngScript.mix(seed_value, LOBBY_SEED_OFFSET + level_completed),
 			_ledger.get("votes", {}), _ledger.get("curses", {}), _ledger.get("stacks", {}),
 			str(_ledger.get("class", "")), int(_ledger.get("tithes", 0)),
-			int(_ledger.get("hunger", 0)), str(_ledger.get("last_vote", "")))
+			int(_ledger.get("hunger", 0)), str(_ledger.get("last_vote", "")),
+			_run_stats())
 	# The hall carries the CURRENT biome's palette and fog (DESIGN.md section 11): the
 	# biome the player just walked out of, which is the level just completed.
 	var biome := FogEnvScript.biome_id_for_level(maxi(level_completed, 1))
@@ -104,6 +105,9 @@ func build(p_seed: int, p_completed: int, p_ledger: Dictionary = {}) -> bool:
 	player = LobbyPlayerScript.new()
 	add_child(player)
 	player.build(AntechamberScript.SPAWN)
+	# Lights Out reaches the hall too: the world-computed stats drive both fill lights.
+	hall.apply_stats(_run_stats())
+	player.apply_stats(_run_stats())
 	var sett := SettingsScript.new()
 	sett.load_from()
 	_mouse_sens = sett.mouse_sensitivity
@@ -113,6 +117,14 @@ func build(p_seed: int, p_completed: int, p_ledger: Dictionary = {}) -> bool:
 	Input.mouse_mode = CameraRigScript.mouse_mode_for(true)
 	_refresh_gate()
 	return true
+
+
+## The run's always-on stats as world.run_ledger() computed them (shop_price_mul prices the
+## shop, fill_light_range the hall's fill lights). {} when the ledger carries none (a fresh
+## run's lobby, or a caller that predates the key): every consumer then keeps its canon base.
+func _run_stats() -> Dictionary:
+	var st: Variant = _ledger.get("stats", {})
+	return (st as Dictionary).duplicate() if st is Dictionary else {}
 
 
 ## The app path: capture the real device state, then one tick. The app calls this from its
@@ -280,6 +292,13 @@ func _mouse_lock_pass(p_flags: int) -> void:
 			_mouse_locked, toggled and not _prev_mouse_toggle, paused and not _prev_app_pause)
 	_prev_mouse_toggle = toggled
 	_prev_app_pause = paused
+	Input.mouse_mode = CameraRigScript.mouse_mode_for(_mouse_locked)
+
+
+## Apply the current lock state to the engine. The pause overlay releases and restores the
+## mouse by setting _mouse_locked and calling this, the same contract world.gd offers - the
+## lobby is the other state the overlay can freeze, so it must answer the same call.
+func apply_mouse_mode() -> void:
 	Input.mouse_mode = CameraRigScript.mouse_mode_for(_mouse_locked)
 
 

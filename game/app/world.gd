@@ -64,6 +64,7 @@ const MesherScript := preload("res://view/level_mesher.gd")
 const ControllerScript := preload("res://sim/controller.gd")
 const CameraRigScript := preload("res://app/camera_rig.gd")
 const EnemyRuntimeScript := preload("res://sim/enemy_runtime.gd")
+const StatsScript := preload("res://core/stats.gd")
 const BillboardScript := preload("res://view/billboard.gd")
 const FogEnvScript := preload("res://view/fog_env.gd")
 const HudScript := preload("res://view/hud/hud.gd")
@@ -156,6 +157,12 @@ var _mouse_sens := CameraRigScript.MOUSE_SENS_DEFAULT  # settings.mouse_sensitiv
 const LIMB_NAMES := ["Torso", "Head", "ArmL", "ArmR", "LegL", "LegR"]
 const POSE_KEYS := ["torso", "head", "arm_l", "arm_r", "leg_l", "leg_r"]  # same order
 const ANIM_BLEND_TIME := 0.08    # s, pose blend constant (1 - e^(-dt/tau) toward target)
+## Field Dressing (DESIGN.md section 8, D-086): the controller's free-fall budget. There is no
+## hook dispatcher, so the app grants the budget itself at level start (controller
+## apply_field_dressing). No content id is named here (test_boundaries.gd): the upgrade is
+## found by its data signature - on_void_fall as its ONLY hook, no stat modifiers, and no
+## content module of its own (a hook with a module is that module's job, not this grant).
+const FREE_FALL_HOOK := "on_void_fall"
 const ANIM_PHASE_IDLE := 1.6     # rad/s idle sway rate
 const ANIM_PHASE_RUN := 10.5     # rad/s full-speed gait rate (per stride radian pair)
 var _limbs: Array = []           # LIMB_NAMES order -> limb nodes of player_model (or null)
@@ -266,6 +273,9 @@ func build(seed_value: int, level: int, p_ledger: Dictionary = {}) -> bool:
 	_stats_gold = ContentApiScript.apply_modifiers(base, mods,
 			{"phase": "gold_phase", "class": kit})
 	ctl.apply_stats(_stats_black)
+	# Field Dressing's per-level budget: once per level per owned stack (the shop lives in
+	# the lobby, so level start is the only grant point - no mid-level purchase exists).
+	ctl.apply_field_dressing(_free_fall_stacks(plan))
 
 	# The gold-phase economy: the gold phase's own stats (gold_value / chain_window /
 	# chain_cap / overtime_period / stipend_flat), tuned by data/economy.json through the
@@ -431,6 +441,11 @@ func build(seed_value: int, level: int, p_ledger: Dictionary = {}) -> bool:
 	respawn_view = RespawnViewScript.new()
 	add_child(respawn_view)
 
+	# Every other stat consumer (mines / gifts / enemy runtime / fog / fill light) takes the
+	# same always-on dict the controller just did; _apply_phase_stats re-feeds them on both
+	# gold-phase edges.
+	_feed_run_stats(_stats_black)
+
 	_level_number = level
 	return true
 
@@ -439,8 +454,9 @@ func build(seed_value: int, level: int, p_ledger: Dictionary = {}) -> bool:
 ## directly. The sim half mirrors tools/bot_run.gd's per-tick order exactly:
 ##   controller -> player-row sync -> lv.tick++ -> gifts -> mines -> beacon ->
 ##   (beacon open: rt.on_beacon_open + the gold phase) -> enemy runtime.
-## Mines carry defuse stacks [0] (the app has no Defuse Kit ledger yet, exactly the bot's
-## hardcoded stack); the last-light/respawn path rides ctl.step itself. The completion
+## Mines carry defuse stacks [0], but _feed_run_stats has applied the run's defuse_chance, which
+## overrides the stacks argument (sim/mines.gd apply_stats); the last-light/respawn path
+## rides ctl.step itself. The completion
 ## signal fires at the end of the tick that entered the beacon; the death signal fires at
 ## the end of the tick the player died on, and every later call is a no-op.
 func step(dt: float) -> void:
@@ -545,7 +561,50 @@ func _apply_phase_stats() -> void:
 	if ctl == null:
 		return
 	var gold := _economy != null and bool(_economy.gold_phase)
-	ctl.apply_stats(_stats_gold if gold else _stats_black)
+	var stats: Dictionary = _stats_gold if gold else _stats_black
+	ctl.apply_stats(stats)
+	_feed_run_stats(stats)
+
+
+## The owned stacks of every upgrade carrying the free-fall signature (FREE_FALL_HOOK).
+func _free_fall_stacks(plan: Dictionary) -> int:
+	var total := 0
+	var stacks: Dictionary = plan.get("stacks", {})
+	for id in stacks.keys():
+		var u: Dictionary = _api.upgrade(str(id))
+		var hooks: Array = u.get("hooks", [])
+		if hooks.size() != 1 or str(hooks[0]) != FREE_FALL_HOOK:
+			continue
+		if not (u.get("modifiers", []) as Array).is_empty():
+			continue
+		if ResourceLoader.exists("res://content/upgrades/%s.gd" % str(id)):
+			continue
+		total += maxi(0, int(stacks[id]))
+	return total
+
+
+## The non-controller stat consumers, fed the same dict ctl.apply_stats takes:
+##   lstate.mines  defuse_chance   (Defuse Kit; switches MinesScript.tick off its stacks arg)
+##   lstate.gifts  pickup_radius   (Long Reach)
+##   rt            enemy_speed_mul / telegraph_mul (Rush Hour, Early Warning / Hasty)
+##   fog           fog_density     (Thick Fog; applied as the delta over the biome's base)
+##   fill light    fill_light_range (Lights Out; op=set, so the stat IS the range - only a
+##                 value off the canon base overrides the palette's own range)
+## Consumer logic lives in each consumer; this is the call site only.
+func _feed_run_stats(stats: Dictionary) -> void:
+	if lstate != null:
+		if lstate.mines != null:
+			lstate.mines.apply_stats(stats)
+		if lstate.gifts != null:
+			lstate.gifts.apply_stats(stats)
+	if rt != null:
+		rt.apply_stats(stats)
+	if fog != null:
+		fog.apply_stats(stats)
+	if _player_light != null and stats.has("fill_light_range"):
+		var r := float(stats["fill_light_range"])
+		if not is_equal_approx(r, float(StatsScript.DEFAULTS.get("fill_light_range", r))):
+			_player_light.omni_range = maxf(0.0, r)
 
 
 ## Every modifier the run owns: each held curse's and each owned upgrade's modifiers,
@@ -717,6 +776,10 @@ func run_ledger() -> Dictionary:
 	var out := _ledger.duplicate(true)
 	if _economy != null:
 		out["purse"] = int(_economy.purse_gold())
+	# The run's always-on stats, so the lobby prices its shop (shop_price_mul) and lights
+	# its hall (fill_light_range) from the world-computed dict. _resolve_run ignores the key
+	# on the way back in: the next build recomputes the stats from curses + stacks.
+	out["stats"] = _stats_black.duplicate()
 	return out
 
 
@@ -1097,6 +1160,10 @@ func _fx_events(ev: Array) -> void:
 				# the eject's blur is the ejected player's own (player index 0 is this client)
 				if screen_blur != null and int(e.get("player", 0)) == 0:
 					screen_blur.trigger(int(e.get("ticks", ScreenBlurScript.TOTAL_TICKS_DEFAULT)))
+			"void_fall":
+				# Field Dressing's free fall: the HUD's pip flash (no charge was spent)
+				if bool(e.get("free", false)) and hud != null and hud.void_pips != null:
+					hud.void_pips.pip_free_fall()
 			"respawn":
 				if respawn_view != null and ctl != null:
 					respawn_view.on_respawn(lstate.tick if lstate != null else 0,
