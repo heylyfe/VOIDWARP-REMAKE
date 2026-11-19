@@ -46,10 +46,55 @@ static func file_name_for(cue: String) -> String:
 	return str(CUES.get(cue, ""))
 
 
+# ---- the held curses gate the consumer through -------------------------------
+
+# The contract modules the cues are gated by. `unannounced` owns the rule
+# sentence "no trumpet - only the sprite and the rumble" (content/curses/
+# unannounced.gd); this view asks IT which cues are allowed and never restates
+# the rule here. As curses are given consumers, they join this list.
+const CURSE_SCRIPTS := [
+	preload("res://content/curses/unannounced.gd"),
+]
+
+
+## The cues the SHIPPED game may play on this run: every cue in cue_names()
+## that each held curse's own module still allows. `state` is the run's carried
+## curse state ({"curses_held": {curse_id: stacks}}); an empty dict is a
+## curse-free run and keeps every cue.
+static func allowed_cues(state: Dictionary) -> Array:
+	var out: Array = []
+	for cue in cue_names():
+		var ok := true
+		for curse in CURSE_SCRIPTS:
+			if not curse.cue_allowed(state, str(cue)):
+				ok = false
+				break
+		if ok:
+			out.append(str(cue))
+	return out
+
+
+## May this cue play on this run? Asks each curse module (same state contract
+## as allowed_cues); with no curses held, any cue in CUES is allowed.
+static func cue_allowed(state: Dictionary, cue: String) -> bool:
+	if not CUES.has(cue):
+		return false
+	for curse in CURSE_SCRIPTS:
+		if not curse.cue_allowed(state, cue):
+			return false
+	return true
+
+
 ## Plays the cue on `host` (a Node in the tree - the view passes itself). Returns
 ## the created player (already playing), or null when the host is unusable
-## (e.g. a headless test with no tree). Never crashes.
-static func play_cue(host: Object, cue: String) -> AudioStreamPlayer:
+## (e.g. a headless test with no tree). Never crashes. An empty `state` (the
+## view's default) is a curse-free run: every cue in cue_names() plays.
+## `state` is the run's carried curse state ({"curses_held": {curse_id: stacks}});
+## the played set comes from allowed_cues(), which asks the curse module - the
+## consumer never re-states a curse's rule here.
+static func play_cue(host: Object, cue: String, state: Dictionary = {}) -> AudioStreamPlayer:
+	if not cue_allowed(state, cue):
+		return null
 	if not CUES.has(cue):
 		push_warning("address_me_audio: unknown cue '%s'" % cue)
 		return null
