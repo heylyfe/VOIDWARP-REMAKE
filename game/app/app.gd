@@ -102,6 +102,7 @@ var _run_level_reached := FIRST_LEVEL
 var _run_purse := 0
 var _run_class := ""
 var _run_recorded := false        # one records/telemetry write per run
+var _ever_entered_world := false  # the run reached WORLD or LOBBY at least once
 # gap 1: the pause overlay's state. The sim never sees a pause - the app just stops
 # stepping the world / the hall while the overlay is open (the run's clock is the app's
 # own fixed-step accumulator, so not stepping IS frozen time for the run).
@@ -203,6 +204,11 @@ func _show_menu() -> void:
 		_menu.quit_requested.connect(_on_quit_requested)
 	else:
 		_menu.show()
+	# The menu reads the same records file the app writes (tests point records_path at a
+	# scratch file), and a REUSED menu re-reads it: a run that just ended may have ratcheted
+	# the bests, and the bests line must not show launch-time values for the session.
+	_menu.records_path = records_path
+	_menu.refresh_records()
 	_state = STATE_MENU
 	_step_acc = 0.0
 
@@ -226,6 +232,7 @@ func _begin_run() -> void:
 	_run_purse = 0
 	_run_class = ""
 	_run_recorded = false
+	_ever_entered_world = false
 	# gap 2: with a class picked, the run is born from the pre-run lobby resolved with
 	# THAT class as a carried ledger - world.build then skips its own replay and uses it
 	# (the same hand-off the Antechamber exit does). No pick: the old seeded replay.
@@ -295,6 +302,7 @@ func _on_loading_finished() -> void:
 		_class_altar = null
 	if _world != null:
 		add_child(_world)
+	_ever_entered_world = true   # the run is live: a later _end_run() records it
 	_state = STATE_WORLD
 
 
@@ -336,6 +344,7 @@ func _enter_lobby(p_completed: int, p_ledger: Dictionary) -> void:
 		_lobby = null
 		_show_menu()
 		return
+	_ever_entered_world = true   # the run walked into the lobby: a later _end_run() records it
 	_state = STATE_LOBBY
 	_step_acc = 0.0
 	print("app: lobby level_completed=%d purse=%d" % [p_completed, int(p_ledger.get("purse", 0))])
@@ -455,6 +464,12 @@ func _end_run() -> void:
 	if _run_recorded:
 		return
 	if _state == STATE_MENU:
+		return
+	if not _ever_entered_world and _state != STATE_WORLD and _state != STATE_LOBBY \
+			and _state != STATE_RUN_OVER:
+		# ESC during LOADING (or a quit before the run went live): no level was ever
+		# played, so there is nothing to ratchet and no run to log. An explicitly
+		# WORLD/LOBBY/RUN_OVER state is a live run even if the flag was never set.
 		return
 	_run_recorded = true
 	if _records == null:

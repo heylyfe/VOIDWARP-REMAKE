@@ -33,7 +33,7 @@ extends RefCounted
 #
 # Pure: no nodes, no audio. log is the proof surface (headless tests read it).
 
-const ENEMY_ROOT := "res://content/enemies"
+static var ENEMY_ROOT := "res://content/enemies"   # static var so tests can point it at a scratch root
 const PRE_HIT_GAIN := 0.5      # "a quieter pre-hit": half amplitude (-6 dB)
 const LOG_MAX := 256
 const APPEAR_STATE := "spawn"
@@ -78,6 +78,8 @@ func load_table() -> void:
 		var names: Array = (timing as Dictionary).keys()
 		names.sort()
 		for cue in names:
+			if not (timing[cue] is Dictionary):
+				continue   # one corrupt row must not abort the scan for every cue after it
 			var row: Dictionary = timing[cue]
 			var occ: Variant = row.get("occurrence", null)
 			var entry := {"cue": str(cue), "enemy": enemy,

@@ -30,6 +30,7 @@ func run() -> Array[String]:
 	_leg_pause(f)
 	_leg_class(f)
 	_leg_persist(f)
+	_leg_lobby_pause(f)
 	return f
 
 
@@ -272,3 +273,65 @@ func _leg_persist(f: Array[String]) -> void:
 		f.append("skip: a pinned start_run showed the class altar")
 	app2._return_to_menu()
 	app2.free()
+
+
+# ---- leg D: the pause works in the lobby too ----------------------------------------------
+#
+# The overlay freezes whichever state is running, and it releases and restores the mouse by
+# calling apply_mouse_mode() on that frozen state. world.gd answers that call; the lobby is
+# the OTHER state the overlay can freeze, so it must answer it too. Without the method the
+# pause raises a script error in the Antechamber and the mouse stays captured behind the
+# RESUME / ABANDON buttons, which makes ABANDON unreachable by click.
+
+func _leg_lobby_pause(f: Array[String]) -> void:
+	var app = _boot(f, "user://test_app_pause_lobby_scratch.json")
+	_drive_to_world(f, app)
+	if app.state() != "WORLD":
+		app.free()
+		return
+	var world = app._world
+	# Walk the level to its beacon, the same way test_app_lobby.gd does.
+	var g = world.lstate.gifts
+	for i in g.slots.size():
+		if not g.is_real(i):
+			continue
+		var pos: Vector3 = g.slot_pos(i)
+		world.ctl.x = pos.x
+		world.ctl.y = pos.y - 1.0
+		world.ctl.z = pos.z
+		world.ctl.vy = 0.0
+		world.step(DT)
+	var bp: Array = world.lv["beacon"]
+	world.ctl.x = float(int(bp[0])) + 0.5
+	world.ctl.y = float(int(bp[2])) * 0.5
+	world.ctl.z = float(int(bp[1])) + 0.5
+	world.ctl.vy = 0.0
+	world.step(DT)
+	if app.state() != "LOBBY":
+		f.append("lobby pause: the app is in %s after the beacon, want LOBBY" % app.state())
+		app.free()
+		return
+	var lobby = app._lobby
+	if lobby == null:
+		f.append("lobby pause: no lobby to pause")
+		app.free()
+		return
+	if not lobby.has_method("apply_mouse_mode"):
+		f.append("lobby pause: the lobby has no apply_mouse_mode() - the overlay's release "
+				+ "call raises and the mouse stays captured behind the buttons")
+		app.free()
+		return
+	var locked_before := bool(lobby._mouse_locked)
+	_esc(app)
+	if app._pause_overlay == null or not app._pause_overlay.is_open():
+		f.append("lobby pause: ESC in the lobby did not open the pause overlay")
+	if not app._paused:
+		f.append("lobby pause: the app is not frozen with the overlay open")
+	if bool(lobby._mouse_locked):
+		f.append("lobby pause: the lobby mouse stayed captured behind the overlay")
+	_esc(app)
+	if app._paused:
+		f.append("lobby pause: resume did not unfreeze the app")
+	if bool(lobby._mouse_locked) != locked_before:
+		f.append("lobby pause: resume did not restore the lobby's capture state")
+	app.free()

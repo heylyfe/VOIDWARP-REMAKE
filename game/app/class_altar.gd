@@ -21,7 +21,7 @@ extends Control
 #   func skip()                 - emits skipped
 #   static func blurb(class_id, p_classes) -> String   - the one-line kit text
 
-const PlayerDataPath := "res://data/player.json"
+static var PlayerDataPath := "res://data/player.json"   # static var so tests can point it at a scratch file
 
 const C_VOID := Color(0.0078, 0.0118, 0.0588)        # #02030F the void backdrop (menu.gd)
 const C_WHITE := Color(0.910, 1.0, 1.0)              # #E8FFFF beacon_open
@@ -41,7 +41,11 @@ func _init() -> void:
 	name = "ClassAltar"
 	var doc: Variant = JSON.parse_string(FileAccess.get_file_as_string(PlayerDataPath))
 	if doc is Dictionary:
-		_classes = (doc as Dictionary).get("classes", {})
+		var raw: Variant = (doc as Dictionary).get("classes", {})
+		if raw is Dictionary:
+			_classes = raw
+		# else the table is corrupt: an empty altar (title + SKIP) is built below, never
+		# an empty full-rect stop that swallows the mouse with nothing visible
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	visible = false
