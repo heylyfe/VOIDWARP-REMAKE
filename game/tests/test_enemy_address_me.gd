@@ -27,6 +27,11 @@ const OffersScript := preload("res://sim/offers.gd")
 
 const DT := 1.0 / 60.0
 
+# Body circle radius for containment proofs: collision.gd models the player
+# body as an axis-aligned box of half-width hw = 0.4 (height 1.8); the
+# horizontal body circle takes that half-width as its radius.
+const BODY_R := 0.4
+
 
 func run() -> Array[String]:
 	var f: Array[String] = []
@@ -144,6 +149,17 @@ func _enter_countdown(rt, row) -> int:
 	return _wait_for_state(rt, row, "telegraph", 60)
 
 
+# True iff the body circle (centre (px, pz), radius body_r) lies wholly inside
+# a circle footprint shape: dist(centre, shape centre) + body_r <= shape r.
+# The arbiter's point_in_shape only proves the FEET point is inside, which lets
+# the body straddle the footprint edge - this is the containment it cannot see.
+func _body_circle_inside(shape: Dictionary, px: float, pz: float, body_r: float) -> bool:
+	var dx := px - float(shape.get("cx", px))
+	var dz := pz - float(shape.get("cz", pz))
+	var d := sqrt(dx * dx + dz * dz)
+	return d + body_r <= float(shape.get("r", 0.0)) + 1e-9
+
+
 # ---- the data sheet (enemy.json) ---------------------------------------------
 
 func _data_sheet(f: Array[String]) -> void:
@@ -186,11 +202,18 @@ func _data_sheet(f: Array[String]) -> void:
 
 # ---- the four appear_requires, one case each where it must NOT appear ----------
 
-func _gate_blocked(f: Array[String], label: String, setup: Callable) -> void:
+# contain_shape: when non-empty, additionally prove the player's body CIRCLE
+# (centre + BODY_R) lies wholly inside the footprint, not merely that the feet
+# point matches some coordinate - the gate's own shape test is a point test.
+func _gate_blocked(f: Array[String], label: String, setup: Callable, contain_shape: Dictionary = {}) -> void:
 	var spawned := _spawn()
 	var rt = spawned[0]
 	var row = spawned[1]
 	setup.call(spawned)
+	if not contain_shape.is_empty():
+		var bctl = spawned[2]
+		if not _body_circle_inside(contain_shape, float(bctl.x), float(bctl.z), BODY_R):
+			f.append("gate %s: the player's body circle (centre (%.3f, %.3f), r %.2f) is not inside the footprint (%s)" % [label, float(bctl.x), float(bctl.z), BODY_R, str(contain_shape)])
 	var appeared := false
 	for i in range(700):
 		rt.step(DT)
@@ -217,11 +240,16 @@ func _appearance_gate(f: Array[String]) -> void:
 		spawned[0].spawn_at("tbd", "TBD", EnemyRuntime.FixtureBehavior.new(), blocker_cfg,
 				Vector3(4.5, 0.0, 0.5)))
 
-	# (b) a live telegraph footprint covers the player
+	# (b) a live telegraph footprint covers the player (outlives the 700-tick window:
+	# footprints expire when their telegraph ends - SR-4 liveness, not ticks>0 alone).
+	# Containment is proven geometrically: the player's body circle (centre +
+	# BODY_R) must lie wholly inside the footprint circle, not merely the feet
+	# point (the arbiter's shape test is a point test).
+	var b_shape := {"shape": "circle", "cx": 0.5, "cz": 0.5, "r": 2.0}
 	_gate_blocked(f, "no_targeted_telegraph", func(spawned: Array):
-		spawned[0].telegraphs.append({"kind": "test_patch", "source": "gin", "ticks": 300,
-				"total": 300, "tick": 0,
-				"shape": {"shape": "circle", "cx": 0.5, "cz": 0.5, "r": 2.0}}))
+		spawned[0].telegraphs.append({"kind": "test_patch", "source": "gin", "ticks": 10000,
+				"total": 10000, "tick": 0,
+				"shape": b_shape}), b_shape)
 
 	# (c) the player is airborne
 	_gate_blocked(f, "player_grounded", func(spawned: Array):

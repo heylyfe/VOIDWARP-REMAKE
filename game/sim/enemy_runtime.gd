@@ -86,6 +86,11 @@ class Api:
 	func nearest_player(pos: Vector3) -> Dictionary:
 		return rt.nearest_player(pos)
 
+	# Every player within `r` u of `pos` (sphere, inclusive), same entry shape as
+	# nearest_player - the enumeration a blast needs (PARKED.md row 7).
+	func players_in_radius(pos: Vector3, r: float) -> Array:
+		return rt.players_in_radius(pos, r)
+
 	# True when the straight segment a->b clears every tile slab and prop box (tile/prop ray).
 	func los(a: Vector3, b: Vector3) -> bool:
 		return rt.los(a, b)
@@ -173,8 +178,8 @@ class Api:
 
 	# T-071: the curse speed multiplier (rate curses and repeatable +5% hunger-style
 	# stacks), kept by the engine layer in rt.curse_speed_mul from the stats system's
-	# enemy_speed_mul. Overtime is separate (speed_mul); FloatBody multiplies BOTH before
-	# the SR-5 clamp.
+	# enemy_speed_mul (or fed to it by apply_stats). Overtime is separate (speed_mul);
+	# FloatBody multiplies BOTH before the SR-5 clamp.
 	func curse_speed_mul() -> float:
 		return rt.curse_speed_mul
 
@@ -391,8 +396,11 @@ var overtime_running := false
 var overtime_t := 0.0
 var overtime_period := OVERTIME_PERIOD
 var curse_speed_mul := 1.0         # curse + repeatable-stack speed multiplier, kept here by
-                                   # the engine layer from core stats; FloatBody multiplies
-                                   # it with overtime BEFORE the SR-5 clamp
+                                   # the engine layer from core stats (or fed by apply_stats);
+                                   # FloatBody multiplies it with overtime BEFORE the SR-5 clamp
+var telegraph_mul := 1.0           # telegraph duration multiplier (stats telegraph_mul:
+                                   # the warning upgrade x1.15/stack, its curse x0.85/stack);
+                                   # apply_stats feeds it; telegraph() scales ticks by it
 var seed_base := 0                  # the run's enemy_ai stream state at setup (D-T010-3)
 
 
@@ -415,6 +423,23 @@ func setup(p_level: Dictionary, p_world: Dictionary, p_controllers: Array,
 	seed_base = p_seed_base
 	spawn_delay_ticks = int(opts.get("spawn_delay_ticks", SPAWN_DELAY_TICKS))
 	overtime_period = float(opts.get("overtime_period", OVERTIME_PERIOD))
+
+
+## Feed the run's stats dict (the same dict the controller consumes via its own
+## apply_stats; core/stats.gd semantics). This runtime owns TWO of the closed-list
+## stats:
+##   - enemy_speed_mul -> curse_speed_mul (Rush Hour x1.08/stack). This REPLACES
+##     the dict-owned value wholesale: the dict is the full truth once applied, so a
+##     caller that also wants repeatable non-stat speed stacks (hunger) folds them
+##     into enemy_speed_mul itself before calling, or sets curse_speed_mul after.
+##   - telegraph_mul -> telegraph_mul (Early Warning x1.15/stack, Hasty x0.85/stack):
+##     telegraph() scales every announcement's ticks (and total) by it.
+## A dict without a key (or no stats at all) leaves the canon 1.0 base. Values are
+## clamped at 0: a non-positive multiplier reads as "no speed" / "no telegraph",
+## never as a negative duration or a negative speed.
+func apply_stats(p_stats: Dictionary) -> void:
+	curse_speed_mul = maxf(0.0, float(p_stats.get("enemy_speed_mul", 1.0)))
+	telegraph_mul = maxf(0.0, float(p_stats.get("telegraph_mul", 1.0)))
 
 
 # ---- votes (DESIGN.md section 5 vote table; the per-id numbers live in enemy.json) ----------
@@ -909,6 +934,32 @@ func cleanse_glitched_within(source_row: Dictionary, pos: Vector3, r: float) -> 
 	return dead.size()
 
 
+## The telegraph footprints whose telegraph is still live, by the same clock the
+## view uses to stop drawing one: the dict stamps its start tick and its total at
+## fire time (never mutated), and the footprint lives while the runtime tick is
+## inside [tick, tick + max(total, 1)). Entries without a stamped tick keep the
+## caller-aged contract (live while ticks > 0; the arbiter still reads that).
+## Footprints expire when their telegraph ends so one early telegraph cannot
+## veto the scheduling gate for the rest of the run.
+func _live_telegraphs() -> Array:
+	var out: Array = []
+	for t in telegraphs:
+		if not t.has("tick"):
+			out.append(t)
+			continue
+		if tick < int(t["tick"]) or tick >= int(t["tick"]) + maxi(int(t.get("total", t.get("ticks", 1))), 1):
+			continue
+		out.append(t)
+	return out
+
+
+## Public alias for the app layer: the telegraph rows whose lifetime has NOT ended. The app
+## publishes these as respawn hazards (world.gd step -> w["hazards"]), so a void-fall cannot
+## put the player back down inside a live ring. Same filter the arbiter gate uses.
+func live_telegraphs() -> Array:
+	return _live_telegraphs()
+
+
 # T-072: this row's declarative scheduling gate - its cfg `arbiter` block (plain DATA:
 # appear_requires + yields_to) evaluated against the live sim state, {"may_appear",
 # "deferred"}. The player is the row's target (player 0 - the nearest player, D-T072-5);
@@ -923,8 +974,10 @@ func arbiter_evaluate(cfg: Dictionary, player_index: int = 0, pending: Array = [
 	# `pending` is the caller's own countdown ids (Api.arbiter_gate forwards them here);
 	# evaluate() folds them into busy_sources() itself, so they are passed through, not
 	# pre-computed. Passing a pre-computed busy list here double-counted the telegraphs.
+	# Footprints expire when their telegraph ends (_live_telegraphs): an early telegraph
+	# near the player must not block the gate for the rest of the run.
 	var gate: Dictionary = cfg.get("arbiter", {})
-	return ArbiterScript.evaluate(gate, target, world, telegraphs, pending)
+	return ArbiterScript.evaluate(gate, target, world, _live_telegraphs(), pending)
 
 
 # ---- body contact (the KILL RULE: every body contact kills) ---------------------------------
@@ -1020,11 +1073,9 @@ func _update_near() -> void:
 					seen[dc] = tick
 		# a LIVE telegraph's footprint is on screen by the view's own language (the
 		# client draws exactly these) - the no-body killers' evidence (the ring,
-		# the patch, the rumble cues). Rows in rt.telegraphs never expire (the
-		# glitch-floor test's finding), so liveness is filtered by start tick + duration.
-		for t in telegraphs:
-			if tick < int(t["tick"]) or tick >= int(t["tick"]) + maxi(int(t["total"]), 1):
-				continue
+		# the patch, the rumble cues). Rows in rt.telegraphs never leave the list,
+		# so liveness is filtered by start tick + duration (_live_telegraphs).
+		for t in _live_telegraphs():
 			var sh: Dictionary = t["shape"]
 			var tx: float = float(sh.get("cx", -1e9))
 			var tz: float = float(sh.get("cz", -1e9))
@@ -1146,8 +1197,11 @@ func _point_solid(px: float, py: float, pz: float) -> bool:
 # ---- telegraphs (api.telegraph; the view renders them, hazards land with the strike) --------
 
 func telegraph(source_row: Dictionary, kind: String, shape: Dictionary, ticks: int) -> void:
-	var t := {"kind": str(kind), "shape": shape, "ticks": maxi(int(ticks), 0),
-			"total": maxi(int(ticks), 0), "source": source_row.get("id", ""), "tick": tick}
+	# the stats telegraph_mul scales every announcement (the warning upgrade / its curse);
+	# rounded to whole ticks, never negative
+	var scaled: int = maxi(int(round(float(maxi(int(ticks), 0)) * telegraph_mul)), 0)
+	var t := {"kind": str(kind), "shape": shape, "ticks": scaled,
+			"total": scaled, "source": source_row.get("id", ""), "tick": tick}
 	telegraphs.append(t)
 	events.append({"e": "telegraph", "kind": t["kind"], "shape": shape, "ticks": t["ticks"],
 			"source": t["source"], "tick": tick})
@@ -1192,6 +1246,31 @@ func nearest_player(pos: Vector3) -> Dictionary:
 					"vx": float(ctl.vx), "vy": float(ctl.vy), "vz": float(ctl.vz)}
 			best_d = d
 	return best
+
+
+## Every player within `r` u of `pos` (sphere, inclusive), entry shape identical to
+## nearest_player's - the per-player enumeration a blast needs (PARKED.md row 7):
+## nearest_player can only name ONE victim; a sphere kill must reach EVERY player
+## inside it. Deterministic order (controller index ascending).
+func players_in_radius(pos: Vector3, r: float) -> Array:
+	var out: Array = []
+	if r < 0.0:
+		return out
+	var r2 := r * r
+	for i in range(controllers.size()):
+		var ctl = controllers[i]
+		if ctl == null:
+			continue
+		var dx := float(ctl.x) - pos.x
+		var dy := float(ctl.y) - pos.y
+		var dz := float(ctl.z) - pos.z
+		var d2 := dx * dx + dy * dy + dz * dz
+		if d2 > r2:
+			continue
+		out.append({"index": i, "dist": sqrt(d2),
+				"x": float(ctl.x), "y": float(ctl.y), "z": float(ctl.z),
+				"vx": float(ctl.vx), "vy": float(ctl.vy), "vz": float(ctl.vz)})
+	return out
 
 
 func anchors(kind: String) -> Array:
