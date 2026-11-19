@@ -26,6 +26,8 @@ extends Node3D
 
 const ContentApiScript := preload("res://core/content_api.gd")
 const IntermissionScript := preload("res://sim/intermission.gd")
+const UpgradeRuntimeScript := preload("res://sim/upgrade_runtime.gd")
+const WorldScript := preload("res://app/world.gd")
 const InputScript := preload("res://sim/input.gd")
 const AntechamberScript := preload("res://view/lobby/antechamber.gd")
 const LobbyPlayerScript := preload("res://view/lobby/lobby_player.gd")
@@ -92,7 +94,13 @@ func build(p_seed: int, p_completed: int, p_ledger: Dictionary = {}) -> bool:
 			_ledger.get("votes", {}), _ledger.get("curses", {}), _ledger.get("stacks", {}),
 			str(_ledger.get("class", "")), int(_ledger.get("tithes", 0)),
 			int(_ledger.get("hunger", 0)), str(_ledger.get("last_vote", "")),
-			_run_stats())
+			_run_stats(),
+			WorldScript.max_stacks_bonus_for(_ledger.get("stacks", {}) as Dictionary,
+					str(_ledger.get("class", ""))))
+	# The bounty an altar shows is the bounty paid on pick: the owned bounty-granting
+	# upgrades get first draw on every unresolved curse bay. Called again after every
+	# Select in tick() - a reroll redraws a bay with fresh altars.
+	_draw_curse_bays()
 	# The hall carries the CURRENT biome's palette and fog (DESIGN.md section 11): the
 	# biome the player just walked out of, which is the level just completed.
 	var biome := FogEnvScript.biome_id_for_level(maxi(level_completed, 1))
@@ -121,6 +129,17 @@ func build(p_seed: int, p_completed: int, p_ledger: Dictionary = {}) -> bool:
 	Input.mouse_mode = CameraRigScript.mouse_mode_for(true)
 	_refresh_gate()
 	return true
+
+
+## On-curse-draw pass over the bays as they stand: fresh after create() and after every
+## Select (a reroll redraws a bay). stacks are the lobby's live upgrade ledger; the
+## loader is the world's shared static one (world.gd's upgrade_module), so this never
+## names a module of its own. Returns the number of hook calls made.
+func _draw_curse_bays() -> int:
+	if lobby == null:
+		return 0
+	return UpgradeRuntimeScript.curse_draw(lobby.bays, lobby.upgrade_stacks,
+			Callable(WorldScript, "upgrade_module"), level_completed)
 
 
 ## The run's always-on stats as world.run_ledger() computed them (shop_price_mul prices the
@@ -160,6 +179,9 @@ func tick(p_dt: float, p_move_x: int, p_move_z: int, p_interact: bool) -> Dictio
 	if sel != IntermissionScript.NO_SELECT:
 		# votes ARE inputs (DESIGN.md section 13 rule 2): the pick rides a PlayerInput.
 		lobby.step([InputScript.new(0, 0, 0, sel)])
+		# on_curse_draw again: the Select above may be a reroll, which redraws a bay
+		# with fresh altars that no pass has seen yet. Idempotent per bay.
+		_draw_curse_bays()
 		out["select"] = sel
 	_refresh_gate()
 	out["gate_open"] = gate_open

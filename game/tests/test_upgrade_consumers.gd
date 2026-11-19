@@ -15,6 +15,12 @@ extends RefCounted
 # cannot tell owned from not-owned is a failure here, not an inert note - the
 # module-without-a-caller defect this wave exists to close.
 #
+# Update (W16-A): the reported world.gd lines below landed (the gift yield, the
+# final band, the straggler band, the air-jump stacks, the two class grants, the
+# max-stacks bonus and the fallback replay's bonus aggregator). The spring_heels
+# leg no longer replays its line (the grants accumulate); the other legs' replay
+# lines are assignment-idempotent and kept as documentation of the contract.
+#
 # Reported world.gd lines (one per upgrade, for the lead - see W13-B report):
 #   brace            ctl.apply_push_dampening(<brace stacks>)          (at build)
 #   featherfall      ctl.apply_fall_cap(<featherfall stacks>)         (at build)
@@ -465,10 +471,8 @@ func _leg_spring_heels(f: Array[String]) -> void:
 		_drop(athl)
 		_drop(base)
 		return
-	# The reported world line, run on each built world (one purchase per stack):
-	owned.ctl.apply_double_jump_stacks(1)
-	two.ctl.apply_double_jump_stacks(2)
-	athl.ctl.apply_double_jump_stacks(1)
+	# The world.gd wiring grants the stacks at build (one application per stack; they
+	# ACCUMULATE), so no reported replay line is run here (it would double-grant).
 	_check(f, int(base.ctl.air_jumps_max) == 0,
 		"spring_heels: the un-owned body holds %d air jumps, want 0" % int(base.ctl.air_jumps_max))
 	_check(f, int(owned.ctl.air_jumps_max) == 1,

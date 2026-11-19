@@ -667,7 +667,8 @@ func _resolve_pre_run(class_id: String) -> Dictionary:
 		push_warning("app: no content api - the seeded replay picks the class")
 		return {}
 	var lb: RefCounted = IntermissionScript.create(api, 0, 0,
-			VoidRngScript.mix(_seed, 5000), {}, {}, {}, class_id, 0, 0, "")
+			VoidRngScript.mix(_seed, 5000), {}, {}, {}, class_id, 0, 0, "", {},
+			WorldScript.max_stacks_bonus_for({}, class_id))
 	var rng: RefCounted = VoidRngScript.new(VoidRngScript.mix(
 			VoidRngScript.mix(_seed, 0xB07), 1))
 	for _i in range(80):

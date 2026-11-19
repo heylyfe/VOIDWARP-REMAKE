@@ -47,6 +47,7 @@ func run() -> Array[String]:
 	_leg_threat_radar(f)
 	_leg_beacon_compass(f)
 	_leg_footprint_map(f)
+	_leg_negative_control(f)
 	return f
 
 
@@ -321,4 +322,45 @@ func _leg_footprint_map(f: Array[String]) -> void:
 	if dots != want:
 		f.append("footprint-map: %d revealed dots drawn, the sim query returns %d rows for the same position"
 				% [dots, want])
+	_drop(world)
+
+# ---- leg 7: the negative control --------------------------------------------------
+# The header of this file, the README and RUNLOG all claimed this test "drives its own
+# negative control, which reports 6 failures". It did not - there was no switch and no
+# control run, so the claim was false and a reader would have concluded the radar feed was
+# mutation-proven when it was not. This leg makes the claim true.
+#
+# world.radar_feed gates both feeds (_radar_entries and _footprint_feed). The leg proves the
+# feed is load-bearing: with it on, a run owning the mine radar and the footprint map gets
+# chevrons and a visible map; with it off, the same run gets neither. Every positive leg
+# above asserts the "on" half, so turning the switch off is exactly what would make them
+# fail - which is what a control has to demonstrate.
+func _leg_negative_control(f: Array[String]) -> void:
+	var world = _build(f, "negative-control", {"radar_mines": 1, "cartographer": 1},
+			SEED, MINE_LEVEL)
+	if world == null:
+		return
+	_ensure_mine_reach(world)
+	_size_radar(world)
+	world.step(DT)
+	var on_items: int = (world.hud.radar_arrows._items as Array).size()
+	var on_map: bool = bool(world.hud.cartographer_map.visible)
+	if on_items <= 0:
+		f.append("negative-control: no chevron with the feed ON, so the control proves nothing")
+	if not on_map:
+		f.append("negative-control: the map is hidden with the feed ON, so the control proves nothing")
+	# the control: the same world, the same tick, the feed switched off
+	world.radar_feed = false
+	world.step(DT)
+	var off_items: int = (world.hud.radar_arrows._items as Array).size()
+	var off_map: bool = bool(world.hud.cartographer_map.visible)
+	if off_items != 0:
+		f.append("negative-control: %d chevrons survive with the feed OFF (want 0)" % off_items)
+	if off_map:
+		f.append("negative-control: the map is still visible with the feed OFF")
+	# and back on again, so the switch is not a one-way latch
+	world.radar_feed = true
+	world.step(DT)
+	if (world.hud.radar_arrows._items as Array).size() <= 0:
+		f.append("negative-control: the feed does not come back when switched ON again")
 	_drop(world)

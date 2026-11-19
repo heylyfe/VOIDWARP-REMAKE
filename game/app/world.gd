@@ -91,6 +91,7 @@ const LevelStateScript := preload("res://sim/level_state.gd")
 const GiftsScript := preload("res://sim/gifts.gd")
 const MinesScript := preload("res://sim/mines.gd")
 const EconomyScript := preload("res://sim/economy.gd")
+const InputScript := preload("res://sim/input.gd")
 const DeathScript := preload("res://sim/death.gd")
 # The enemy presentation layer (the VFX wiring wave): every view below existed and was
 # tested in isolation, but nothing fed it, so attacks arrived with no ring, no line, no
@@ -162,6 +163,11 @@ var enemy_views: Array = []
 # Off = every row falls back to the generic billboard (the wiring test's negative
 # control). Not reset by teardown(): it is a setting, not per-level state.
 var bespoke_enemy_views := true
+# M1: the HUD feed switch. true (the default) feeds the radar and the footprint map
+# exactly as shipped; false empties both feeds, so the radar wiring test can run its
+# negative control through this one field instead of asserting nothing. Owned by the
+# feed-off path only; the sim's own memory is untouched either way.
+var radar_feed := true
 var lstate: RefCounted = null   # the sim LevelState (gifts / mines / beacon); bot_run.gd's lv
 var player_model: Node3D = null # the T-015 player figure, feet on the controller's position
 var _player_yaw := 0.0          # facing yaw, follows the camera's forward while captured
@@ -347,7 +353,14 @@ func build(seed_value: int, level: int, p_ledger: Dictionary = {}) -> bool:
 	ctl.coyote_add = float(knobs.get("coyote_add", 0.0))
 	ctl.cooldown_mul = float(knobs.get("cooldown_mul", 1.0))
 	ctl.feather_fall = bool(knobs.get("feather_fall", false))
-	ctl.glide_energy_bonus = float(knobs.get("glide_energy_bonus", 0.0))
+	var glide_bonus := float(knobs.get("glide_energy_bonus", 0.0))
+	ctl.glide_energy_bonus = glide_bonus
+	if glide_bonus > 0.0:
+		# The bonus is owned from the first frame of the level, not the first refill:
+		# the refill math only lands on the next _glide_max() call, so the live pool is
+		# raised here (minf() against base + bonus reproduces the refill math exactly).
+		ctl.glide_energy = minf(ctl.glide_energy + glide_bonus,
+				float(ctl.C.get("glide_energy", 3.0)) + glide_bonus)
 
 	# The gold-phase economy: the gold phase's own stats (gold_value / chain_window /
 	# chain_cap / overtime_period / stipend_flat), tuned by data/economy.json through the
@@ -355,6 +368,11 @@ func build(seed_value: int, level: int, p_ledger: Dictionary = {}) -> bool:
 	_economy = EconomyScript.create(_stats_gold, _api)
 	# The purse the run carries in from the last lobby (whole gold -> centi).
 	_economy.purse_centi = int(plan.get("purse", 0)) * EconomyScript.CENTI
+	# The stack consumers the modules cannot self-apply (the economy and gifts and the
+	# controller expose no ledger of their own). The world names no upgrade id: each
+	# consumer is matched to the owned stacks by the registry row's signature
+	# (_signature_stacks, the same idiom the free-fall budget uses).
+	_apply_stack_consumers(plan)
 
 	rt = EnemyRuntimeScript.new()
 	rt.setup(lv, w, [ctl], seed_value, {})
@@ -587,6 +605,7 @@ func step(dt: float) -> void:
 			_curses.void_fall(int(lstate.tick), ev, e)
 	# The LevelState's player row mirrors the controller (gifts/mines read lv.players).
 	var p0: Dictionary = lstate.players[0]
+	var prev_buttons := int(p0.get("prev_buttons", 0))
 	p0["x"] = ctl.x
 	p0["y"] = ctl.y
 	p0["z"] = ctl.z
@@ -595,6 +614,26 @@ func step(dt: float) -> void:
 	p0["vz"] = ctl.vz
 	p0["grounded"] = ctl.grounded
 	p0["prev_buttons"] = int(a_in.get("buttons", 0))
+	# The scripted-upgrade pass (footprint memory and the beacon channel). Runs in the
+	# same slot sim.gd gives it - after the movement step, before the gifts read the
+	# row - and unlike the sim path it must write a channel teleport back into the
+	# controller, because the controller owns the position out here.
+	if lstate.upgrades != null:
+		var inp: RefCounted = InputScript.new(int(a_in.get("move_x", 0)),
+				int(a_in.get("move_z", 0)), int(a_in.get("buttons", 0)))
+		lstate.upgrades.step_player(lstate, 0, inp, prev_buttons, ev)
+		for e in ev:
+			if str(e.get("e", "")) == "beacon_teleport" and int(e.get("player", -1)) == 0:
+				ctl.x = float(p0["x"])
+				ctl.y = float(p0["y"])
+				ctl.z = float(p0["z"])
+				ctl.vx = 0.0
+				ctl.vy = 0.0
+				ctl.vz = 0.0
+				ctl.grounded = true
+				ctl.cur_key = "" # re-tracked on the next grounded tick
+				ctl.sync_body()
+				break
 	lstate.tick += 1
 	GiftsScript.tick(lstate, 0, ev)
 	var minev: Array = []
@@ -686,7 +725,7 @@ func _economy_pass(ev: Array) -> void:
 		var kind := str(e.get("e", e.get("type", "")))
 		if kind == "gift_collected":
 			if str(e.get("phase", "")) == "gold":
-				_economy.collect_gold_gift()
+				_economy.collect_gold_gift(_final_band_now())
 		elif kind == "chain_reset":
 			if bool(e.get("saved", false)):
 				continue   # an upgrade hook spent its chain save on this break
@@ -764,6 +803,90 @@ func _free_fall_stacks(plan: Dictionary) -> int:
 			continue
 		total += maxi(0, int(stacks[id]))
 	return total
+
+
+## The stack consumers the app owes a call: the registry-row signature decides which
+## owned stacks belong to which consumer (the world never names an upgrade id - the
+## boundary scan forbids it here). Hooks must match exactly, modifiers must be empty,
+## class_boost must be empty unless p_boost says otherwise ("*" = any), class_only must
+## equal p_class_only ("" = empty), and a module file must exist iff p_module. A row
+## that stopped matching would silently keep its consumer dark, so the wiring test
+## covers every one of these through world.build()/world.step().
+func _signature_stacks(plan: Dictionary, p_hooks: Array, p_boost: String,
+		p_class_only: String, p_module: bool) -> int:
+	var total := 0
+	var stacks: Dictionary = plan.get("stacks", {})
+	var want: Array = p_hooks.duplicate()
+	want.sort()
+	for id in stacks.keys():
+		var n := maxi(0, int(stacks[id]))
+		if n <= 0:
+			continue
+		var u: Dictionary = _api.upgrade(str(id))
+		if u.is_empty():
+			continue
+		var hooks: Array = (u.get("hooks", []) as Array).duplicate()
+		hooks.sort()
+		if hooks != want:
+			continue
+		if not (u.get("modifiers", []) as Array).is_empty():
+			continue
+		var boost: Array = u.get("class_boost", [])
+		if p_boost == "":
+			if not boost.is_empty():
+				continue
+		elif p_boost != "*":
+			if not boost.has(p_boost):
+				continue
+		var only: Variant = u.get("class_only")
+		if str(only if only != null else "") != p_class_only:
+			continue
+		var has_module := ResourceLoader.exists("res://content/upgrades/%s.gd" % str(id))
+		if has_module != p_module:
+			continue
+		total += n
+	return total
+
+
+## The build-time call sites for the stack consumers (see _signature_stacks). Every
+## branch is unconditional on ownership - a run that owns nothing pays nothing and
+## every consumer sees its canon default.
+func _apply_stack_consumers(plan: Dictionary) -> void:
+	if lstate != null and lstate.gifts != null:
+		lstate.gifts.apply_straggler_band(_signature_stacks(plan, [], "", "", false))
+	if ctl != null:
+		ctl.apply_double_jump_stacks(_signature_stacks(plan, [], "athletic", "", false))
+		if _signature_stacks(plan, [], "*", "dasher", true) > 0:
+			ctl.apply_twin_dash()
+		if _signature_stacks(plan, [], "*", "glider", true) > 0:
+			ctl.apply_updraft()
+	if _economy != null:
+		_economy.apply_gift_yield(_signature_stacks(plan, ["on_gift_collected"], "", "", false))
+
+
+## True when the gold gift about to be collected sits inside the final band: every
+## stacked module declaring the band predicate is asked (the content layer owns the
+## numbers; no id is named here). False with no such module owned or an empty band.
+func _final_band_now() -> bool:
+	if _economy == null:
+		return false
+	var total := 0
+	if lstate != null and lstate.gifts != null:
+		total = int(lstate.gifts.total_real)
+	var collected := int(_economy.gold_gifts_collected)
+	var stacks: Dictionary = _ledger.get("stacks", {})
+	for id in stacks.keys():
+		if int(stacks[id]) <= 0:
+			continue
+		var path := "res://content/upgrades/%s.gd" % str(id)
+		if not ResourceLoader.exists(path):
+			continue
+		var mod: Script = load(path)
+		if mod == null or not mod.has_method("is_final_band"):
+			continue
+		if bool(mod.call("is_final_band", collected, total)):
+			return true
+	return false
 
 
 ## The non-controller stat consumers, fed the same dict ctl.apply_stats takes:
@@ -914,6 +1037,28 @@ static func upgrade_module(id: String) -> Variant:
 	if not ResourceLoader.exists(path):
 		return null
 	return load(path)
+
+
+## The shop's max-stacks bonus, aggregated from the owned modules at call time: every
+## stacked module declaring the bonus predicate contributes its dict (the pairing lives
+## in content; this file names no upgrade id). Static so the lobby and the pre-run
+## resolve can aggregate the same way this file's replay does.
+static func max_stacks_bonus_for(stacks: Dictionary, p_class: String) -> Dictionary:
+	var out := {}
+	for id in stacks.keys():
+		if int(stacks[id]) <= 0:
+			continue
+		var path := "res://content/upgrades/%s.gd" % str(id)
+		if not ResourceLoader.exists(path):
+			continue
+		var mod: Script = load(path)
+		if mod == null or not mod.has_method("max_bonus"):
+			continue
+		var d = mod.call("max_bonus", p_class, stacks)
+		if d is Dictionary:
+			for k in d:
+				out[str(k)] = int(out.get(k, 0)) + int(d[k])
+	return out
 
 
 func _upgrade_module(id: String) -> Variant:
@@ -1089,7 +1234,8 @@ func _resolve_run(seed_value: int, level: int, p_ledger: Dictionary = {}) -> Dic
 	for completed in range(0, level):
 		var lb: RefCounted = IntermissionScript.create(_api, completed, purse,
 				VoidRngScript.mix(seed_value, 5000 + completed), votes, curses, stacks,
-				class_chosen, tithes, hunger, last_vote)
+				class_chosen, tithes, hunger, last_vote, {},
+				max_stacks_bonus_for(stacks, class_chosen))
 		var rng: RefCounted = VoidRngScript.new(VoidRngScript.mix(
 				VoidRngScript.mix(seed_value, 0xB07), completed + 1))
 		for _i in range(80):
@@ -1698,6 +1844,8 @@ func _gift_radar_range_for(stacks: Dictionary) -> float:
 ## radar role is owned (the map is not built, nothing is drawn, nothing is paid).
 func _radar_entries() -> Array:
 	var out: Array = []
+	if not radar_feed:
+		return out
 	if lstate == null or ctl == null:
 		return out
 	var upg = lstate.upgrades
@@ -1733,6 +1881,8 @@ static func _radar_row(dx: float, dz: float) -> Dictionary:
 ## biome's resolved palette, cached here once per level (the map itself draws plain
 ## Colors and loads no content).
 func _footprint_feed() -> Dictionary:
+	if not radar_feed:
+		return {}
 	if lstate == null or ctl == null:
 		return {}
 	var upg = lstate.upgrades
