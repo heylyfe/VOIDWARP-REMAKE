@@ -7286,3 +7286,47 @@ find; all five are written down so the next cycle starts from a list rather than
 **Consequence.** The README's known gaps and this section must agree, and they do. The next cycle's
 first three items are the 30-level proof done one level at a time, the spawn spread, and the
 per-upgrade run-speed contribution that closes D-C2-5.
+
+## D-C2-9: the channel button is not "input", so it does not cancel the channel
+
+**Ruling.** `pocket_beacon`'s 180-tick channel cancels on any button OTHER than INTERACT,
+on any move axis, or on leaving the ground. A held INTERACT no longer cancels it.
+
+**Why.** The rule sentence says "any input cancels", and that was written before anyone
+noticed the channel button is itself an input. INTERACT is a held bit - `input_capture`
+sets it from `Input.is_key_pressed`, not from an edge - so the press edge started the
+channel on tick N and the same key, still down, killed it on tick N+1. Only a one-tick tap
+could ever fill it, which no human can do, so the 1200 g upgrade was inert in practice even
+after its call site landed. The module's own test never caught it because it drove the sim
+with tick-perfect inputs: press INTERACT, then 180 ticks of `InputScript.neutral()`. That is
+a bot's input, not a player's.
+
+**Consequence.** The fix is in `sim/upgrades.gd`, not a mask in `app/world.gd`. Masking
+INTERACT in the app would have made the app lie to the sim and left the sim path broken.
+Two proofs carry it, both with negative controls: a sim leg that holds INTERACT for all 180
+ticks, and a world leg that drives `world.step()` through a `ScriptedWorld extends
+WorldScript` overriding `_capture_input()` and asserts the controller lands on the dais.
+Reverting the fix fails both - the sim leg at tick 1, the world leg with the body still at
+its spawn. This is the third instance in this cycle of one pattern: a test that proves the
+sim and not the game. The world leg is the answer to it.
+
+## D-C2-10: a save that is absent is recovered from .old or .tmp, not reset to defaults
+
+**Ruling.** `settings.load_from` and `records.load_from` fall back to `path + ".old"`, then
+`path + ".tmp"`, through the same validated parse, when the destination is missing or
+unparseable.
+
+**Why.** `_rename_over` moves the destination to `.old` before renaming the `.tmp` over it,
+so the destination is absent inside that two-rename window. A crash there, or a failed
+rename followed by a failed restore, left the good bytes in `.old` while the loader read
+only the destination - so the player's settings and bests silently reset to defaults, and
+the next save overwrote the recoverable copy. The window is two renames wide, which is why
+this is LOW rather than HIGH, but the failure is silent and permanent when it happens.
+
+**Consequence.** The doc comment now says "recoverable" instead of the stronger "never
+absent" it used to promise. `test_atomic_saves.gd` seeds a good file, moves it aside to
+simulate the crash, and asserts recovery for both stores; the no-files case is the control,
+so a loader that always returned a stale value would fail. Removing the fallback produces 3
+failures; keeping it produces 0. `f.flush()` is still not an fsync, so a power cut can still
+leave a zero-byte file - `load_from` parses that to null and falls back safely, which is the
+behaviour this ruling makes explicit.
