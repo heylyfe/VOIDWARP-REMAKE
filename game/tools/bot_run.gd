@@ -100,6 +100,18 @@ const FOOT_INFLATE := 0.45        # body radius applied to telegraph footprints
 const MAX_LEVEL_DEFAULT := 18
 const RUNS_DEFAULT := 200
 const BUTTON_JUMP := 1
+## The player's real body height (sim/enemy_runtime.gd body_contact: py1 = ctl.y + 1.8).
+## The avoid layer and the hurdle use it as their vertical band (was 1.5 u: bodies whose
+## feet sat 1.5-1.8 u above the player's feet were lethal but invisible to the bot).
+const BODY_H := 1.8
+## Tripmine model (sim/mines.gd: height-blind 0.9 u trigger cylinder on the slot tile).
+## The steering guard keeps the centre >= MINE_SAFE u from a live mine (just under the
+## 1.0 u of an orthogonally adjacent tile centre, so a 1-wide bypass stays walkable);
+## a jump arc may not pass within MINE_ARC_SAFE u of one at ANY height.
+const MINE_SAFE := 0.97
+const MINE_ARC_SAFE := 0.95
+const MINE_COL_COST := 100000   # route cost of a tile in a live mine's column (lethal ground)
+const MINE_NEAR_COST := 8       # the 8 neighbour columns: a diagonal cut passes 0.71 u away
 
 ## FROZEN bands (DESIGN.md section 9) - never changed, never weakened. Level -> [lo, hi, label]
 const BANDS := [
@@ -607,6 +619,19 @@ static func _play_level(api: RefCounted, ledger: Dictionary, seed: int, level: i
 						var lst: Array = w2.col.get(Vector2i(ddx, ddz), [])
 						for ti in lst:
 							menace[ti] = 30
+			# tripmines are lethal ground: every tile in a live mine's column (the
+			# trigger is height-blind) is all but closed to the router, and the 8
+			# neighbour columns cost a little so the route prefers the wide bypass
+			var mpts: Array = _live_mines(lv)
+			mem["mines"] = mpts
+			for mp in mpts:
+				var mcx := int(floor((mp as Vector2).x))
+				var mcz := int(floor((mp as Vector2).y))
+				for ddx2 in range(mcx - 1, mcx + 2):
+					for ddz2 in range(mcz - 1, mcz + 2):
+						var mc: int = MINE_COL_COST if (ddx2 == mcx and ddz2 == mcz) else MINE_NEAR_COST
+						for ti2 in w2.col.get(Vector2i(ddx2, ddz2), []):
+							menace[ti2] = int(menace.get(ti2, 0)) + mc
 			mem["menace"] = menace
 			a_in = _bot_input(mem, lv, rt, ctl, w, w2, gtiles, adj, L)
 			if bool(p_rec.get("record", false)):
@@ -617,11 +642,13 @@ static func _play_level(api: RefCounted, ledger: Dictionary, seed: int, level: i
 		if bool(ctl.grounded):
 			mem["ground_tile"] = _tile_under(w, ctl)
 		# the bot's own enemy-velocity estimate (rows carry no velocity field):
-		# last tick's position delta per enemy id, read by the avoid/hurdle layer
+		# last tick's position delta per enemy INSTANCE (_ekey; keying by content id let
+		# two copies of one enemy write each other's previous position), read by the
+		# avoid/hurdle layer
 		var eprev: Dictionary = mem.get("eprev", {})
 		var evel: Dictionary = {}
 		for e2 in rt.enemies:
-			var eid := str(e2.get("id", ""))
+			var eid := _ekey(e2)
 			var p2: Variant = eprev.get(eid, null)
 			if p2 != null and p2 is Dictionary:
 				evel[eid] = Vector2((float(e2["x"]) - float((p2 as Dictionary)["x"])) * 60.0,
@@ -873,8 +900,137 @@ static func _escape_vector(shape: Dictionary, px: float, pz: float) -> Vector2:
 ## A contact-kill body's estimated velocity from the bot's own last-tick tracking
 ## (mem["e_vel"], filled in _play_level); Vector2.ZERO when unknown.
 static func _e_vel(mem: Dictionary, e: Dictionary) -> Vector2:
-	var v: Variant = (mem.get("e_vel", {}) as Dictionary).get(str(e.get("id", "")), Vector2.ZERO)
+	var v: Variant = (mem.get("e_vel", {}) as Dictionary).get(_ekey(e), Vector2.ZERO)
 	return v if v is Vector2 else Vector2.ZERO
+
+
+## A stable per-instance key for one enemy row. Every spawned row carries its own rng
+## object (enemy_runtime._spawn_one), whose instance id is unique for the row's life;
+## the fallback (content id + copy index + spawn tick) is unique per spawned copy too.
+static func _ekey(e: Dictionary) -> String:
+	var r: Variant = e.get("rng", null)
+	if r is Object:
+		return "i%d" % (r as Object).get_instance_id()
+	return "%s#%d#%d" % [str(e.get("id", "")), int(e.get("copy_index", 0)), int(e.get("spawn_tick", 0))]
+
+
+## Live (unconsumed) tripmine centres as XZ points, read straight from the level's
+## mine state (sim/mines.gd point(); the trigger only uses x/z).
+static func _live_mines(lv) -> Array:
+	var out: Array = []
+	var mines = lv.mines
+	if mines == null:
+		return out
+	for slot_id in mines.ids:
+		if mines.is_consumed(int(slot_id)):
+			continue
+		var p: Vector3 = mines.point(int(slot_id))
+		out.append(Vector2(p.x, p.z))
+	return out
+
+
+## True when the straight run from the feet toward `dir` keeps the centre clear of
+## every live mine over the next ~1.2 u: each sample must stay >= MINE_SAFE from a
+## mine, or (when the feet are already closer than that) must not get any closer.
+static func _mine_clear(px: float, pz: float, dir: Vector2, mines: Array) -> bool:
+	for m in mines:
+		var mp: Vector2 = m
+		var cur := Vector2(px, pz).distance_to(mp)
+		if cur > 3.0:
+			continue
+		var need := minf(MINE_SAFE, cur - 1e-3)
+		for d in [0.3, 0.6, 0.9, 1.2]:
+			var q := Vector2(px + dir.x * d, pz + dir.y * d)
+			if q.distance_to(mp) < need:
+				return false
+	return true
+
+
+## The mine guard: the final move, bent away from live mines. The commanded heading is
+## kept when its next ~1.2 u stays clear; otherwise it is rotated in 15-degree steps
+## (nearest first, both ways) to the closest clear heading that keeps ground support
+## (when grounded); no clear heading -> stand still. A tripmine always kills (DESIGN.md
+## 3.3), so standing beats any other risk the bot knows about.
+static func _mine_guard(w, ctl, move: Vector2, mines: Array) -> Vector2:
+	if move == Vector2.ZERO or mines.is_empty():
+		return move
+	var px := float(ctl.x)
+	var pz := float(ctl.z)
+	var mag := move.length()
+	var n := move / mag
+	if _mine_clear(px, pz, n, mines):
+		return move
+	var grounded := bool(ctl.grounded)
+	for k in range(1, 12):
+		var ang := float(k) * PI / 12.0
+		for s in [1.0, -1.0]:
+			var d2 := n.rotated(ang * s)
+			if not _mine_clear(px, pz, d2, mines):
+				continue
+			if grounded and not _step_safe(w, ctl, d2):
+				continue
+			return d2 * mag
+	return Vector2.ZERO
+
+
+## YOU?!'s shockwave rings (row["rings"], released when the telegraphed rumble ENDS and
+## never telegraphed themselves - they outlive the telegraph by up to 94 ticks). The
+## hit rule mirrors the behavior's own check: feet inside (ring_y - RING_BELOW,
+## ring_y + RING_HEIGHT) and within RING_RADIAL_WINDOW of the expanding edge.
+## Returns {"threat": bool, "jump": bool, "tall": bool, "out": Vector2}: threat = a ring reaches the
+## feet within the next second; jump = press now so the feet clear the band's top while
+## it passes (the counter-play, "jump as the ring reaches you"); out = the radial escape
+## for a ring too tall to jump.
+static func _ring_threat(rt, ctl) -> Dictionary:
+	var res := {"threat": false, "jump": false, "tall": false, "out": Vector2.ZERO}
+	var best_t := INF
+	var px := float(ctl.x)
+	var pz := float(ctl.z)
+	var feet := float(ctl.y)
+	var win: float = E_YOU.RING_RADIAL_WINDOW
+	var spd: float = E_YOU.RING_SPEED
+	var g := 32.0
+	var vj := 12.0
+	for e in rt.enemies:
+		var rings: Variant = e.get("rings", null)
+		if not (rings is Array):
+			continue
+		for ring in rings:
+			var rd: Dictionary = ring
+			if bool(rd.get("done", false)):
+				continue
+			var ry := float(rd["y"])
+			if feet <= ry - E_YOU.RING_BELOW - 0.2 or feet >= ry + E_YOU.RING_HEIGHT + 0.2:
+				continue
+			var dx := px - float(rd["x"])
+			var dz := pz - float(rd["z"])
+			var dist := sqrt(dx * dx + dz * dz)
+			var r := float(rd["r"])
+			if dist < r - win or dist - win > E_YOU.RING_MAX:
+				continue   # already passed, or beyond the ring's last radius
+			var radial := Vector2(dx, dz) / dist if dist > 1e-4 else Vector2(1.0, 0.0)
+			var v_in := -(float(ctl.vx) * radial.x + float(ctl.vz) * radial.y)
+			var closing := maxf(spd + v_in, 1.0)
+			var t_a := maxf(dist - (r + win), 0.0) / closing
+			if t_a > 1.0 or t_a >= best_t:
+				continue
+			best_t = t_a
+			res["threat"] = true
+			res["out"] = radial
+			# rise needed for the feet to clear the band's top while it passes
+			var h := ry + E_YOU.RING_HEIGHT + 0.05 - feet
+			var disc := vj * vj - 4.0 * (g * 0.5) * h
+			res["jump"] = false
+			res["tall"] = disc < 0.0
+			if disc < 0.0:
+				continue   # too tall to jump: the caller runs outward instead
+			var sq := sqrt(disc)
+			var t1 := maxf((vj - sq) / g, 0.0)
+			var t2 := (vj + sq) / g
+			var t_pass := 2.0 * win / spd
+			if t_a <= t1 + 0.03 and t_a + t_pass <= t2:
+				res["jump"] = true
+	return res
 
 
 ## The dodge input for this tick, or null when no telegraph demands one.
@@ -965,8 +1121,8 @@ static func _safe_dir(w, ctl, ideal_v: Variant) -> Vector2:
 
 ## Contact-kill enemy avoidance (D-FIX-A3-2): the router is terrain-only, so the bot
 ## happily walks straight into a following kiwi cat (4 of 10 probe deaths after the
-## edge-discipline fix). Within AVOID_DIST of a contact-kill body (and within 1.5 u of
-## its own height) the bot steers around it instead of through it: pure flee when it
+## edge-discipline fix). Within AVOID_DIST of a contact-kill body (and within the
+## player's BODY_H = 1.8 u of its own height) the bot steers around it instead of through it: pure flee when it
 ## is close, away-plus-goal-bias otherwise (the cat is slower; a circle takes the gift).
 static func _avoid_vector(rt, ctl, w, move: Vector2) -> Variant:
 	var mx := float(ctl.x)
@@ -979,7 +1135,7 @@ static func _avoid_vector(rt, ctl, w, move: Vector2) -> Variant:
 		var d2 := dx * dx + dz * dz
 		if d2 > AVOID_DIST * AVOID_DIST or d2 < 1e-8:
 			continue
-		if absf(float(e.get("y", 0.0)) - float(ctl.y)) > 1.5:
+		if absf(float(e.get("y", 0.0)) - float(ctl.y)) > BODY_H:
 			continue
 		var away := Vector2(dx, dz) / sqrt(d2)
 		if d2 < 1.7 * 1.7:
@@ -1062,7 +1218,7 @@ static func _solve_vmax(t: float, D: float, vz: float) -> float:
 ## from the CURRENT state and find an arc that lands on a tile. Returns {"v": speed,
 ## "hold": ticks to hold JUMP} - or {} when no candidate arc lands on a tile. Deterministic.
 ## The bot jumps exactly when this finds an arc - i.e., exactly when a jump would work.
-static func _jump_arc(ctl, w, wp_x: float, wp_z: float, rt) -> Dictionary:
+static func _jump_arc(ctl, w, wp_x: float, wp_z: float, rt, mines: Array = []) -> Dictionary:
 	var x0 := float(ctl.x)
 	var y0 := float(ctl.y)
 	var z0 := float(ctl.z)
@@ -1108,6 +1264,16 @@ static func _jump_arc(ctl, w, wp_x: float, wp_z: float, rt) -> Dictionary:
 				y = r["y"]
 				z = r["z"]
 				grounded = bool(r["grounded"])
+				# mine-aware arcs: the tripmine trigger is height-blind (sim/mines.gd),
+				# so an arc whose centre passes within MINE_ARC_SAFE u of a live mine at
+				# ANY height detonates it - refuse this candidate (the scan goes on)
+				var over_mine := false
+				for m in mines:
+					if Vector2(float(x), float(z)).distance_to(m) < MINE_ARC_SAFE:
+						over_mine = true
+						break
+				if over_mine:
+					break
 				# enemy-aware arcs: an arc that flies through a contact-kill body's
 				# closing path is refused. The chaser heads for the JUMPER, so lead it
 				# along its line to the landing point at its own base_speed. A refused
@@ -1166,11 +1332,11 @@ static func _tile_under_sim(w, p: Dictionary) -> int:
 ## controller's own physics and finds an arc that lands on a tile; the bot jumps only
 ## when one exists. `vz` is the player's speed toward the target at this moment.
 static func _jump_plan(ct: Array, _wt: Array, wp_pos: Vector2, dir: Vector2,
-		dy_hu: int, vz: float, ctl, w, rt) -> Dictionary:
+		dy_hu: int, vz: float, ctl, w, rt, mines: Array = []) -> Dictionary:
 	var exit := _cell_exit(ct, dir)
 	var D := exit.distance_to(wp_pos)
 	var rise := float(dy_hu) * 0.5
-	var arc := _jump_arc(ctl, w, wp_pos.x, wp_pos.y, rt)
+	var arc := _jump_arc(ctl, w, wp_pos.x, wp_pos.y, rt, mines)
 	if arc.is_empty():
 		# no arc lands on a tile from this position/orientation: refuse the edge (the
 		# caller bans it and re-routes - "walk off and pray" is what produced the
@@ -1427,7 +1593,8 @@ static func _routing(mem: Dictionary, lv, ctl, rt, w, w2, gtiles: Array, adj: Ar
 		# controller's own jump physics validate an arc from THIS state that lands on
 		# a tile. No validated arc -> the edge is banned and the route re-plans; the
 		# bot never steps off a takeoff tile on faith.
-		var plan: Dictionary = _jump_plan(ct, wt, wp_pos, dir, dy, 0.0, ctl, w, rt)
+		var plan: Dictionary = _jump_plan(ct, wt, wp_pos, dir, dy, 0.0, ctl, w, rt,
+					mem.get("mines", []))
 		if plan.is_empty() or float(plan["mag"]) <= 0.0 or int(plan["hold"]) <= 0:
 			var ek := "%d>%d" % [cur, wp]
 			if not bool((mem["banned"] as Dictionary).get(ek, false)) and cur != wp:
@@ -1478,6 +1645,8 @@ static func _bot_input(mem: Dictionary, lv, rt, ctl, w, w2, gtiles: Array, adj: 
 	var tick: int = lv.tick
 	mem["tick"] = tick
 	var dodge = _dodge_vector(mem, rt, ctl, tick, w)
+	# YOU?!'s ring outlives its telegraph: modelled separately (_ring_threat)
+	var ring: Dictionary = _ring_threat(rt, ctl)
 	var move := Vector2.ZERO
 	var buttons := 0
 	if dodge != null:
@@ -1489,9 +1658,20 @@ static func _bot_input(mem: Dictionary, lv, rt, ctl, w, w2, gtiles: Array, adj: 
 		var r: Dictionary = _routing(mem, lv, ctl, rt, w, w2, gtiles, adj, L)
 		move = r["move"]
 		buttons = int(r["buttons"])
+		if bool(ring["threat"]):
+			# a ring is on its way: stop walking into it (the routing goal is usually
+			# back toward its centre) and wait for the jump; a ring too tall to jump
+			# is outrun radially instead
+			move = Vector2.ZERO
+			if bool(ring["tall"]):
+				move = _safe_dir(w, ctl, ring["out"])
 		var avoid = _avoid_vector(rt, ctl, w, move)
 		if avoid != null:
 			move = avoid
+	# the ring counter-play: jump as the band reaches the feet (held to the apex)
+	if bool(ring["jump"]) and bool(ctl.grounded) and (buttons & BUTTON_JUMP) == 0 			and int(mem["jump_hold"]) == 0:
+		buttons |= BUTTON_JUMP
+		mem["jump_hold"] = HURDLE_HOLD - 1
 	# Hurdle (D-FIX-A3-2): a CLOSING contact-kill body within HURDLE_DIST - hop IN
 	# PLACE (vertical separation, zero ledge risk); a body moving away needs nothing.
 	if TRACE and lv.tick % 15 == 0:
@@ -1512,7 +1692,7 @@ static func _bot_input(mem: Dictionary, lv, rt, ctl, w, w2, gtiles: Array, adj: 
 			var d2h := dxh * dxh + dzh * dzh
 			if d2h >= HURDLE_DIST * HURDLE_DIST:
 				continue
-			if absf(float(e.get("y", 0.0)) - float(ctl.y)) > 1.5:
+			if absf(float(e.get("y", 0.0)) - float(ctl.y)) > BODY_H:
 				continue
 			var evh := _e_vel(mem, e)
 			var closing := (evh.x * dxh + evh.y * dzh) / sqrt(maxf(d2h, 1e-8)) > 0.5
@@ -1531,6 +1711,9 @@ static func _bot_input(mem: Dictionary, lv, rt, ctl, w, w2, gtiles: Array, adj: 
 				if move != Vector2.ZERO and not _dir_has_support(w, ctl, move.normalized()):
 					move = Vector2.ZERO   # forward line runs off a ledge: hop in place
 				break
+	# tripmines are lethal ground: the final heading never runs the centre into a
+	# live mine's trigger cylinder, whichever layer chose it
+	move = _mine_guard(w, ctl, move, mem.get("mines", []))
 	return {
 		"move_x": clampi(int(round(move.x * 127.0)), -127, 127),
 		"move_z": clampi(int(round(move.y * 127.0)), -127, 127),

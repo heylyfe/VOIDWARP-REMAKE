@@ -514,6 +514,10 @@ func step(dt: float) -> Array:
 	# enrichment; both AFTER the kills, additive, no behavior change.
 	_update_near()
 	_annotate_deaths()
+	# retire telegraph rows whose window ended beyond the retention horizon;
+	# after every reader of the list has run for this tick
+	if tick % TELEGRAPH_PRUNE_INTERVAL == 0:
+		_prune_telegraphs()
 	tick += 1
 	return events
 
@@ -934,13 +938,43 @@ func cleanse_glitched_within(source_row: Dictionary, pos: Vector3, r: float) -> 
 	return dead.size()
 
 
+## rt.telegraphs pruning: entries whose live window (start tick + max(total, 1))
+## ended TELEGRAPH_RETENTION_TICKS ago are dropped by step() every
+## TELEGRAPH_PRUNE_INTERVAL ticks. Liveness never depended on list position -
+## it comes from the stamped start tick + total - so no live footprint ever
+## leaves the list early, and no expired one is read as live either way. The
+## retention keeps the snapshot reads of the raw list (callers that iterate
+## rt.telegraphs to re-read rows announced earlier in a long run) valid for
+## 1200 ticks past expiry, far beyond any read horizon in the tree, while the
+## list stays bounded at the telegraph rate x (window + retention) instead of
+## growing without bound over a long run. Entries without a start-tick stamp
+## are caller-aged (there is no clock to retire them by) and are never pruned.
+const TELEGRAPH_RETENTION_TICKS := 1200
+const TELEGRAPH_PRUNE_INTERVAL := 60
+
+## Drops entries whose live window ended TELEGRAPH_RETENTION_TICKS ago.
+## Preserves order; never removes anything mid-tick (step() calls it
+## after every reader of the list has finished for the tick).
+func _prune_telegraphs() -> void:
+	var keep: Array = []
+	for t in telegraphs:
+		if t.has("tick"):
+			var end_tick := int(t["tick"]) + maxi(int(t.get("total", t.get("ticks", 1))), 1)
+			if tick >= end_tick + TELEGRAPH_RETENTION_TICKS:
+				continue
+		keep.append(t)
+	telegraphs = keep
+
+
 ## The telegraph footprints whose telegraph is still live, by the same clock the
 ## view uses to stop drawing one: the dict stamps its start tick and its total at
 ## fire time (never mutated), and the footprint lives while the runtime tick is
 ## inside [tick, tick + max(total, 1)). Entries without a stamped tick keep the
 ## caller-aged contract (live while ticks > 0; the arbiter still reads that).
 ## Footprints expire when their telegraph ends so one early telegraph cannot
-## veto the scheduling gate for the rest of the run.
+## veto the scheduling gate for the rest of the run. The scan walks the same
+## bounded list step() prunes (TELEGRAPH_RETENTION_TICKS past expiry), never
+## the whole history of a long run.
 func _live_telegraphs() -> Array:
 	var out: Array = []
 	for t in telegraphs:
@@ -1073,8 +1107,9 @@ func _update_near() -> void:
 					seen[dc] = tick
 		# a LIVE telegraph's footprint is on screen by the view's own language (the
 		# client draws exactly these) - the no-body killers' evidence (the ring,
-		# the patch, the rumble cues). Rows in rt.telegraphs never leave the list,
-		# so liveness is filtered by start tick + duration (_live_telegraphs).
+		# the patch, the rumble cues). Rows in rt.telegraphs are pruned
+		# TELEGRAPH_RETENTION_TICKS past their window (step), so liveness is
+		# filtered by start tick + duration (_live_telegraphs).
 		for t in _live_telegraphs():
 			var sh: Dictionary = t["shape"]
 			var tx: float = float(sh.get("cx", -1e9))
