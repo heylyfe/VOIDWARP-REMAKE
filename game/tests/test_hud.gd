@@ -221,6 +221,15 @@ func _test_element_set(f: Array[String]) -> void:
 	purse.sync(200, 1.0)
 	if purse.purse_text() != "2.00  1.00x":
 		f.append("purse chain format at open: '%s', want '2.00  1.00x'" % purse.purse_text())
+	var purse_icon := false
+	var stack: Array = purse.get_children()
+	while not stack.is_empty():
+		var c = stack.pop_back()
+		if c is TextureRect and c.texture != null:
+			purse_icon = true
+		stack.append_array(c.get_children())
+	if not purse_icon:
+		f.append("purse chain shows no gold balance icon (a TextureRect with a texture) left of the purse text")
 	purse.free()
 	var ab = AbilityCooldownScript.new()
 	ab.sync("dasher", 1.5, 3.0)

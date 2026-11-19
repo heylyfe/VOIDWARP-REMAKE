@@ -11,10 +11,14 @@ extends Control
 const EDGE := 24.0
 const WIDTH := 260.0
 const HEIGHT := 36.0
+const ICON_SIZE := 28.0
+const ICON_GAP := 6.0
+const GOLD_BALANCE_ICON := preload("res://assets/icons/gold_balance.png")
 
 var _purse_centi := 0
 var _chain := 1.0
 var _label: Label
+var _icon: TextureRect
 
 
 func _init() -> void:
@@ -28,15 +32,30 @@ func _init() -> void:
 	offset_top = EDGE
 	offset_bottom = EDGE + HEIGHT
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# icon glued to the left of the number: an end-aligned row that sizes to its
+	# content, so the gap never opens up as the purse value's width changes
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_END
+	row.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	row.add_theme_constant_override("separation", int(ICON_GAP))
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(row)
+	_icon = TextureRect.new()
+	_icon.texture = GOLD_BALANCE_ICON
+	_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_icon.custom_minimum_size = Vector2(ICON_SIZE, ICON_SIZE)
+	_icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(_icon)
 	_label = Label.new()
 	_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_label.add_theme_font_size_override("font_size", 22)
 	_label.add_theme_color_override("font_color", Color(1.0, 0.956, 0.8, 1.0))
 	_label.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.9))
 	_label.add_theme_constant_override("outline_size", 4)
-	add_child(_label)
+	row.add_child(_label)
 	_refresh()
 
 
