@@ -285,8 +285,16 @@ jobs:
           set -euo pipefail
           tag="$GITHUB_REF_NAME"
           repo="$GITHUB_REPOSITORY"
+          # A semver pre-release tag carries a hyphen suffix (v0.1.4-alpha.3). Every release
+          # this project cuts is one, and `gh release create` defaults to a full release, so
+          # without this the flag was wrong on four consecutive tags and had to be fixed by
+          # hand each time.
+          pre_flag=""
+          case "$tag" in
+            *-*) pre_flag="--prerelease" ;;
+          esac
           if ! gh -R "$repo" release view "$tag" >/dev/null 2>&1; then
-            gh -R "$repo" release create "$tag" --title "$tag" \
+            gh -R "$repo" release create "$tag" --title "$tag" $pre_flag \
               --notes "Built from $GITHUB_SHA by the Build workflow."
           fi
           gh -R "$repo" release upload "$tag" dist/* --clobber
