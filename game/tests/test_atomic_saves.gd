@@ -1,8 +1,21 @@
 extends RefCounted
 #
-# test_atomic_saves.gd (review cycle 2, BUG-4 / BUG-5): the three stores that persist to
-# disk write atomically (sibling .tmp + rename over the destination), and level_clear never
-# logs a negative duration.
+# test_atomic_saves.gd (review cycle 2, BUG-4 / BUG-5): the disk stores split into two
+# deliberately different write shapes, and level_clear never logs a negative duration.
+#   - settings and records rewrite a whole JSON file in place, so a partial write really is
+#     corruption there: they publish atomically (sibling .tmp, fully written and closed,
+#     renamed over the destination). The destination is never left absent - the rename
+#     moves the destination aside to .old first and restores it if the rename fails;
+#   - the run log is append-only and is read WHILE it is being written (a report or a test
+#     mid-run reads the records so far), so it writes its records directly to the destination
+#     and does NOT publish atomically: a .tmp publish would hide the destination until close
+#     and break that promise (DECISIONS.md D-C2-3). The price is a tolerated truncated tail:
+#     a crash mid-run may leave the last line incomplete, and the loader tolerates that by
+#     skipping an unparseable final line - it never republishes through a .tmp;
+#   - the two shapes exist side by side on purpose: settings/records need the destination to
+#     always hold one complete document, the run log needs the destination to always show
+#     whatever records exist so far, even if imperfect.
+# The legs:
 #   - each store saves a value; the destination parses and holds it; no .tmp is left behind;
 #   - overwriting a pre-existing good file still yields a parseable file with the new data
 #     (rename-over-existing is the case that broke on Windows);
@@ -10,15 +23,20 @@ extends RefCounted
 #     FileAccess.open fails) returns false and leaves the OLD file fully intact;
 #   - a crashed mid-write end state (a truncated .tmp left next to the destination) does
 #     not corrupt the destination: the loader still reads the OLD good file;
-#   - a mid-run telemetry log that is never closed (a crash before RunLog.close) leaves
-#     the destination holding the OLD bytes, with the half-written data in the .tmp only;
+#   - a mid-run reader of the run log sees the records so far, and no .tmp is left behind;
+#   - a forced rename failure leaves the destination holding its OLD bytes: this process holds
+#     the .tmp source open, which makes rename fail on demand, and the store's fallback moves
+#     the destination aside to .old first and restores it (see _rename_over_fallback);
 #   - level_complete without a preceding beacon_open logs black_ticks/gold_ticks == -1
 #     (the explicit sentinel, never an arithmetic accident) and a well-defined total_ticks.
 #
 # Honest limit: this cannot kill the process mid-store_string, so a true mid-write crash is
 # simulated by its observable end states (truncated .tmp + intact destination, and the
-# unclosed RunLog case) rather than faked. Scratch files live under user:// and are
-# removed at the end; the player's real user:// files are never touched.
+# unclosed RunLog case) rather than faked. The rename failure is not simulated either: it is
+# forced for real, because this process holds the .tmp source open so the engine's rename
+# fails on demand; a real antivirus lock is not emulatable here, so what is proven is the
+# observable class - the destination is protected while the rename fails. Scratch files live
+# under user:// and are removed at the end; the player's real user:// files are never touched.
 
 const SettingsScript := preload("res://app/settings.gd")
 const RecordsScript := preload("res://core/records.gd")
@@ -27,6 +45,8 @@ const LogScript := preload("res://app/run_log.gd")
 const SETTINGS_SCRATCH := "user://test_atomic_settings.json"
 const RECORDS_SCRATCH := "user://test_atomic_records.json"
 const RUNS_DIR := "user://test_atomic_runs"
+const RENAME_DEST := "user://test_atomic_rename_dest.json"
+const RENAME_TMP := "user://test_atomic_rename_tmp.json"
 const RUN_SEED := 0xA70A1C5
 
 
@@ -36,6 +56,7 @@ func run() -> Array[String]:
 	_settings(failures)
 	_records(failures)
 	_run_log(failures)
+	_rename_over_fallback(failures)
 	_level_clear_sentinel(failures)
 	_rm_scratch()
 	return failures
@@ -137,6 +158,55 @@ func _records(failures: Array[String]) -> void:
 		failures.append("records: loader did not read the OLD file next to a truncated .tmp")
 	_rm(RECORDS_SCRATCH + ".tmp")
 	_rm(RECORDS_SCRATCH)
+
+
+# ---- forced rename failure: the destination is never absent -------------------------------
+
+func _rename_over_fallback(failures: Array[String]) -> void:
+	for entry in [[SettingsScript, "settings"], [RecordsScript, "records"]]:
+		var label: String = entry[1]
+		_rm(RENAME_DEST)
+		_rm(RENAME_TMP)
+		_rm(RENAME_DEST + ".old")
+		var f := FileAccess.open(RENAME_DEST, FileAccess.WRITE)
+		f.store_string("GOOD")
+		f.close()
+		var t := FileAccess.open(RENAME_TMP, FileAccess.WRITE)
+		t.store_string("NEW")
+		t.close()
+		# Force the rename to fail on demand: this process holds the .tmp source open. On
+		# this platform that failure also removes the destination as a side effect of the
+		# attempt, which is exactly the class the .old side-move exists to survive.
+		var hold := FileAccess.open(RENAME_TMP, FileAccess.READ)
+		var ok: bool = entry[0]._rename_over(RENAME_TMP, RENAME_DEST)
+		hold = null
+		if ok:
+			failures.append("%s: rename fallback unexpectedly succeeded with the source held open" % label)
+		if not FileAccess.file_exists(RENAME_DEST):
+			failures.append("%s: destination ABSENT after a failed rename" % label)
+		elif FileAccess.get_file_as_string(RENAME_DEST) != "GOOD":
+			failures.append("%s: destination does not hold the OLD bytes after a failed rename" % label)
+		if not FileAccess.file_exists(RENAME_TMP):
+			failures.append("%s: .tmp gone after a failed rename (nothing left recoverable)" % label)
+		if FileAccess.file_exists(RENAME_DEST + ".old"):
+			failures.append("%s: .old not restored to the destination after a failed rename" % label)
+		# success path: the pre-existing destination is replaced and .old is cleaned up
+		_rm(RENAME_TMP)
+		var t2 := FileAccess.open(RENAME_TMP, FileAccess.WRITE)
+		t2.store_string("NEWER")
+		t2.close()
+		ok = entry[0]._rename_over(RENAME_TMP, RENAME_DEST)
+		if not ok:
+			failures.append("%s: rename over a pre-existing destination failed" % label)
+		if FileAccess.get_file_as_string(RENAME_DEST) != "NEWER":
+			failures.append("%s: destination does not hold the NEW bytes after a successful rename" % label)
+		if FileAccess.file_exists(RENAME_DEST + ".old"):
+			failures.append("%s: .old left behind after a successful rename" % label)
+		if FileAccess.file_exists(RENAME_TMP):
+			failures.append("%s: .tmp left behind after a successful rename" % label)
+		_rm(RENAME_DEST)
+		_rm(RENAME_TMP)
+		_rm(RENAME_DEST + ".old")
 
 
 # ---- run log ----------------------------------------------------------------------------
@@ -274,6 +344,9 @@ func _rm_scratch() -> void:
 	_rm(SETTINGS_SCRATCH + ".tmp")
 	_rm(RECORDS_SCRATCH)
 	_rm(RECORDS_SCRATCH + ".tmp")
+	_rm(RENAME_DEST)
+	_rm(RENAME_DEST + ".old")
+	_rm(RENAME_TMP)
 	for seed in [RUN_SEED, RUN_SEED + 1, RUN_SEED + 2]:
 		_rm(_run_path(seed))
 		_rm(_run_path(seed) + ".tmp")

@@ -5,14 +5,25 @@ extends RefCounted
 # with an un-owned twin as the negative control (the twin is the SAME build minus the
 # stacks; the file asserts the canon base on it, never the owned side alone).
 #
+# DISCOVERY SNAPSHOT - NOT MAINTAINED. This file records what was inert at the moment it was
+# written (the W12 audit, before the W13 wiring and the knob block landed). Its INERT list is
+# a historical snapshot, not a current truth: this cycle has wired several upgrades whose legs
+# still print INERT FINDING here (brace, featherfall, ledge_grace, quick_recovery,
+# cartographer, the radar upgrades, pocket_beacon and others), because the legs measure the
+# shape that was inert when written. Do not read the INERT list as current status, and do not
+# "fix" the legs to chase the wiring - the authoritative proofs of what applies today are
+# tests/test_upgrade_hooks.gd and tests/test_upgrade_consumers.gd. The control-side assertions
+# (canon base on the un-owned twin) are real checks and stay live; the INERT lines are printed
+# as "INERT FINDING (snapshot, may be stale)" so nobody reads them as a current report.
+#
 # Method per id: build the owned world (1 stack; 2 where max_stacks allows) and the twin,
 # step both through world.step(), measure the upgrade's OWN observable effect in each.
 # The upgrade json/gd was read first; nothing here guesses.
 #
 # Outcome policy, stated up front: an upgrade that produces NO observable difference between
 # owned and not-owned in the shipped path (world.build()/world.step(), or the lobby flow the
-# world feeds) is reported as an INERT FINDING (printed, counted, listed in the report table)
-# instead of getting a test that passes on nothing. The legs allowed to assert a difference
+# world feeds) is reported as an INERT FINDING (snapshot, may be stale) - printed, counted,
+# listed in the report table - instead of getting a test that passes on nothing. The legs allowed to assert a difference
 # are the ones whose wiring exists and runs today:
 #   bargain             shop_price_mul reaches the lobby prices via world.run_ledger()
 #   subspacial_barrier  barrier_shields reaches the live controller at build
@@ -81,7 +92,7 @@ func run() -> Array[String]:
 	_leg_twin_dash(f)
 	_leg_updraft(f)
 	_inert.sort()
-	print("INERT FINDINGS (%d): %s" % [_inert.size(), ",".join(_inert)])
+	print("INERT FINDINGS (snapshot, may be stale) (%d): %s" % [_inert.size(), ",".join(_inert)])
 	return f
 
 
@@ -115,7 +126,7 @@ func _check(f: Array[String], ok: bool, msg: String) -> bool:
 
 func _note_inert(id: String, detail: String) -> void:
 	_inert.append(id)
-	print("INERT FINDING %s: %s" % [id, detail])
+	print("INERT FINDING (snapshot, may be stale) %s: %s" % [id, detail])
 
 
 ## The ledger the build carried must round-trip through the live run: the stacks dict is

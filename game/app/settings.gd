@@ -83,21 +83,30 @@ func save_to(path: String = DEFAULT_PATH) -> bool:
 	return _rename_over(tmp, path)
 
 
-## Renames a finished .tmp file over the destination. rename_absolute replaces an existing
-## destination; if it ever fails, the old destination is removed first and the rename
-## retried - only after the .tmp write has fully closed, so a crash between the two leaves
-## the old file intact or the .tmp file recoverable. On final failure the .tmp is left in
-## place (recoverable) and false is returned.
+## Renames a finished .tmp file over the destination. The destination is renamed to
+## destination + ".old" FIRST, then the .tmp is renamed over the destination, then the
+## ".old" file is removed on success or moved back on failure - so the destination is
+## never left absent. This matters when the rename fails for any reason (a locked file,
+## a virus scanner holding the handle): on this platform the engine's rename has been
+## observed to delete the destination before the move fails, and a remove-then-retry
+## fallback would then leave no destination at all. Only after the .tmp write has fully
+## closed, so a crash between the two leaves the old file intact or the .tmp file
+## recoverable. On final failure the .tmp is left in place (recoverable), false is
+## returned, and the destination holds its previous bytes again.
 static func _rename_over(tmp_path: String, dest_path: String) -> bool:
+	if not FileAccess.file_exists(dest_path):
+		return DirAccess.rename_absolute(tmp_path, dest_path) == OK
+	var old_path := dest_path + ".old"
+	if FileAccess.file_exists(old_path) and DirAccess.remove_absolute(old_path) != OK:
+		return false
+	if DirAccess.rename_absolute(dest_path, old_path) != OK:
+		return false
 	var err := DirAccess.rename_absolute(tmp_path, dest_path)
 	if err == OK:
+		DirAccess.remove_absolute(old_path)
 		return true
-	if FileAccess.file_exists(dest_path):
-		var rm := DirAccess.remove_absolute(dest_path)
-		if rm != OK:
-			return false
-		err = DirAccess.rename_absolute(tmp_path, dest_path)
-	return err == OK
+	DirAccess.rename_absolute(old_path, dest_path)
+	return false
 
 
 # ---- application: each field to its actual consumer ----------------------------------------------
