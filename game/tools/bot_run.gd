@@ -723,6 +723,12 @@ static func _play_level(api: RefCounted, ledger: Dictionary, seed: int, level: i
 			var ek := str(e.get("e", ""))
 			if ek == "gift_collected" or ek == "respawn" or ek == "last_light_save":
 				mem["repath"] = true
+			if ek == "push":
+				# an enemy overwrote the player's velocity: whatever arc was committed
+				# no longer exists - the air layer steers to the nearest footing, and no
+				# new jump is validated from a state the next push will overwrite again
+				mem["flight"] = {}
+				mem["pushed_at"] = int(lv.tick)
 			if ek == "void_fall":
 				# a charge just bought a respawn: make the burned fall unrepeatable
 				# (D-FIX-A3-1) - ban the edge the bot was following when it fell
@@ -1154,6 +1160,76 @@ static func _avoid_vector(rt, ctl, w, move: Vector2) -> Variant:
 	return null
 
 
+## Real footing at (x, z) for feet at `feet`: a tile top in the point's own column no
+## higher than a step up and no lower than SAFE_DROP below. _tile_under alone answers
+## "is there ANY tile below", and a floor 20 u down read as ground: the avoid / dodge
+## escapes happily ran off ledges over it (void-fall forensics, seed 60735).
+const SAFE_DROP := 1.05   # 2 HU: the deepest drop the controller lands as a step
+
+static func _ground_near(w, x: float, feet: float, z: float) -> bool:
+	var cx := int(floor(x))
+	var cz := int(floor(z))
+	for t in w["cols"].get("%d,%d" % [cx, cz], []):
+		var ty := int(t["y"])
+		if w["removed"].has(CollisionScript.tile_key(cx, cz, ty)):
+			continue
+		var top: float = CollisionScript.tile_top(ty) if int(t["kind"]) == 0 \
+				else CollisionScript._ramp_top_over(t, cx, cz, x, z)
+		if top <= feet + 0.55 and top >= feet - SAFE_DROP:
+			return true
+	return false
+
+
+const LAND_CLEAR := 1.25   # a landing column centre this close to an enemy body is skipped
+
+## True when `c` lies within `r` u of any point in `pts` (Vector2 list). Pure.
+static func _near_any(c: Vector2, pts: Array, r: float) -> bool:
+	for p in pts:
+		if c.distance_to(p) < r:
+			return true
+	return false
+
+
+## XZ of every enemy body in play (the air layer never picks a landing column under
+## one: a contact-kill body kills on touch, a non-killing ejector relaunches the bot
+## from the same column for ever - seed 60717's 600-tick bounce).
+static func _enemy_points(rt) -> Array:
+	var out: Array = []
+	for e in rt.enemies:
+		out.append(Vector2(float(e["x"]), float(e["z"])))
+	return out
+
+
+## Centre of the nearest column within `r` u whose top lies below the feet (a body in the
+## air can still come down on it), skipping columns within LAND_CLEAR of a point in
+## `avoid`; Vector2(INF, INF) when there is none. Ties break on the higher top (less
+## fall), then scan order. Pure.
+static func _nearest_landing(w, x: float, feet: float, z: float, r: float,
+		avoid: Array = []) -> Vector2:
+	var best := Vector2(INF, INF)
+	var best_d := INF
+	var best_top := -INF
+	var here := Vector2(x, z)
+	for cx in range(int(floor(x - r)), int(floor(x + r)) + 1):
+		for cz in range(int(floor(z - r)), int(floor(z + r)) + 1):
+			var c := Vector2(float(cx) + 0.5, float(cz) + 0.5)
+			var d := here.distance_to(c)
+			if d > r or d > best_d + 1e-6 or _near_any(c, avoid, LAND_CLEAR):
+				continue
+			for t in w["cols"].get("%d,%d" % [cx, cz], []):
+				var ty := int(t["y"])
+				if w["removed"].has(CollisionScript.tile_key(cx, cz, ty)):
+					continue
+				var top: float = CollisionScript.tile_top(ty)
+				if top > feet + 0.3:
+					continue
+				if d < best_d - 1e-6 or top > best_top:
+					best_d = d
+					best_top = top
+					best = c
+	return best
+
+
 ## True when walking from the feet toward `dir` keeps ground support over the next
 ## ~0.9 u (a same-level straight walk may only be commanded onto ground that exists).
 static func _step_safe(w, ctl, dir: Vector2) -> bool:
@@ -1161,7 +1237,7 @@ static func _step_safe(w, ctl, dir: Vector2) -> bool:
 	var py := float(ctl.y)
 	var pz := float(ctl.z)
 	for d in [0.45, 0.9]:
-		if _tile_under(w, {"x": px + dir.x * d, "y": py, "z": pz + dir.y * d}) < 0:
+		if not _ground_near(w, px + dir.x * d, py, pz + dir.y * d):
 			return false
 	return true
 
@@ -1173,7 +1249,7 @@ static func _dir_has_support(w, ctl, dir: Vector2) -> bool:
 	var py := float(ctl.y)
 	var pz := float(ctl.z)
 	for d in [0.4, 0.8, 1.3, 1.9]:
-		if _tile_under(w, {"x": px + dir.x * d, "y": py, "z": pz + dir.y * d}) < 0:
+		if not _ground_near(w, px + dir.x * d, py, pz + dir.y * d):
 			return false
 	return true
 
@@ -1213,10 +1289,32 @@ static func _solve_vmax(t: float, D: float, vz: float) -> float:
 			hi = mid
 	return (lo + hi) * 0.5
 
-## Forward-simulate the controller's jump physics (vy = 12 on jump, gravity 32 on the way
-## down, vy *= 0.5 on release after k ticks, accel 90 u/s^2 toward the target velocity)
-## from the CURRENT state and find an arc that lands on a tile. Returns {"v": speed,
-## "hold": ticks to hold JUMP} - or {} when no candidate arc lands on a tile. Deterministic.
+## The in-flight steering the bot actually flies (and _jump_arc simulates): the
+## controller ignores stick magnitude (target speed is always run_speed or 0), so speed
+## control is bang-bang - push toward the target column while the stopping distance at
+## the current closing speed is short of it, release (brake) once it is not.
+## Returns a unit direction or ZERO. Pure.
+static func _air_steer(px: float, pz: float, vx: float, vz: float, tx: float, tz: float,
+		accel: float) -> Vector2:
+	var d := Vector2(tx - px, tz - pz)
+	var dist := d.length()
+	if dist < 0.08:
+		return Vector2.ZERO
+	var n := d / dist
+	var v_along := vx * n.x + vz * n.y
+	if v_along > 0.0 and v_along * v_along / (2.0 * maxf(accel, 1e-3)) >= dist - 0.05:
+		return Vector2.ZERO
+	return n
+
+
+## Forward-simulate the controller's own air tick from the CURRENT state for a jump
+## pressed now (vy = jump_velocity, jump held `k + 1` ticks so the cut lands at the
+## start of tick k + 1 before gravity, exactly as controller.gd orders it), with the
+## horizontal input the bot will really send: neutral for `delay` ticks (a vertical
+## first jump onto a high ledge), then _air_steer toward the waypoint centre. Real
+## run speed / accel / friction / gravity come from the controller; a wall zeroes the
+## blocked axis and a ceiling zeroes a rising vy, like controller.gd. Accepts only an
+## arc that lands ON the waypoint. Returns {"hold", "delay"} or {}. Deterministic.
 ## The bot jumps exactly when this finds an arc - i.e., exactly when a jump would work.
 static func _jump_arc(ctl, w, wp_x: float, wp_z: float, rt, mines: Array = []) -> Dictionary:
 	var x0 := float(ctl.x)
@@ -1224,42 +1322,55 @@ static func _jump_arc(ctl, w, wp_x: float, wp_z: float, rt, mines: Array = []) -
 	var z0 := float(ctl.z)
 	var vx0 := float(ctl.vx)
 	var vz0 := float(ctl.vz)
-	var dx := wp_x - x0
-	var dz := wp_z - z0
-	var dl := sqrt(dx * dx + dz * dz)
-	if dl < 1e-6:
+	if Vector2(wp_x - x0, wp_z - z0).length() < 1e-6:
 		return {}
-	var dir_x := dx / dl
-	var dir_z := dz / dl
+	var C: Dictionary = ctl.C
+	var spd: float = float(ctl.run_speed(w))
+	var acc: float = float(C["accel"]) * float(ctl.friction_mult(w))
+	var g := float(C["gravity"])
+	var jv := float(C["jump_velocity"])
+	var cut := float(C["jump_cut"])
+	var tf := float(C["terminal_fall"])
+	var bh := float(C["height"])
+	var su := float(C["step_up"])
 	var ct_takeoff := _tile_under(w, {"x": x0, "y": y0, "z": z0})
-	var v_opts := [9.0, 7.5, 6.0, 4.0, 2.0]
 	var k_opts := [0, 2, 4, 8, 14, 22, 30]
-	for k in k_opts:
-		for v_max in v_opts:
+	if str(ctl.kit) == "glider":
+		# a JUMP still held once vy < 0 engages the glide (not modelled): never hold past the apex
+		k_opts = [0, 2, 4, 8, 14, 21]
+	for delay in [0, 8, 16]:
+		for k in k_opts:
 			var x := x0
 			var y := y0
 			var z := z0
 			var vx := vx0
 			var vz := vz0
-			var vy := 12.0
+			var vy := jv
 			var grounded := false
 			for tick in range(240):
-				vy -= 32.0 * DT
-				if tick == k and vy > 0.0:
-					vy *= 0.5
-				# accel toward v_max * dir (friction 1.0)
-				var tvx: float = dir_x * v_max
-				var tvz: float = dir_z * v_max
-				var ddx: float = tvx - vx
-				var ddz: float = tvz - vz
+				if tick == k + 1 and vy > 0.0:
+					vy *= cut
+				var mv := Vector2.ZERO
+				if tick >= delay:
+					mv = _air_steer(x, z, vx, vz, wp_x, wp_z, acc)
+				var ddx: float = mv.x * spd - vx
+				var ddz: float = mv.y * spd - vz
 				var dlen := sqrt(ddx * ddx + ddz * ddz)
 				if dlen > 1e-9:
-					var want := 1.5
-					var s := 1.0 if want >= dlen else want / dlen
+					var s := minf(acc * DT, dlen) / dlen
 					vx += ddx * s
 					vz += ddz * s
+				vy -= g * DT
+				if vy < -tf:
+					vy = -tf
 				var r = CollisionScript.move_body(w, x, y, z, vx * DT, vy * DT, vz * DT,
-						1.8, 0.5, grounded)
+						bh, su, grounded)
+				if absf(float(r["x"]) - x - vx * DT) > 1e-6:
+					vx = 0.0
+				if absf(float(r["z"]) - z - vz * DT) > 1e-6:
+					vz = 0.0
+				if bool(r["hit_ceiling"]) and vy > 0.0:
+					vy = 0.0
 				x = r["x"]
 				y = r["y"]
 				z = r["z"]
@@ -1278,7 +1389,7 @@ static func _jump_arc(ctl, w, wp_x: float, wp_z: float, rt, mines: Array = []) -
 				# closing path is refused. The chaser heads for the JUMPER, so lead it
 				# along its line to the landing point at its own base_speed. A refused
 				# arc refuses THIS candidate only: the scan goes on to the next
-				# (k, v_max) pair (an empty return here abandoned all 35 candidates on
+				# (delay, k) pair (an empty return here abandoned all 35 candidates on
 				# the first clip, so one body in flight read as "no arc lands on a
 				# tile", which banned a good edge for 300 ticks - PARKED.md row 28).
 				if not grounded and rt != null:
@@ -1312,12 +1423,10 @@ static func _jump_arc(ctl, w, wp_x: float, wp_z: float, rt, mines: Array = []) -
 						# looks valid, misses the far tile, D-VOID)
 						var lxz := Vector2(wp_x, wp_z).distance_to(Vector2(float(x), float(z)))
 						if lxz <= 1.15:
-							return {"v": v_max, "hold": k + 1}
+							return {"hold": k + 1, "delay": delay}
 					break
 				if y < -40.0:
 					break
-			# no arc from this candidate set was found at this position
-			pass
 	return {}
 
 
@@ -1342,9 +1451,9 @@ static func _jump_plan(ct: Array, _wt: Array, wp_pos: Vector2, dir: Vector2,
 		# caller bans it and re-routes - "walk off and pray" is what produced the
 		# D-VOID epidemic; FIX-A3)
 		return {}
-	# the arc the sim validated may use a LOW approach speed (e.g. a gentle hop over a
-	# 1-cell wall): the bot must keep THAT speed, not launch at 9 u/s past the tile
-	return {"mag": maxf(float(arc["v"]) / 9.0, 0.25), "hold": int(arc["hold"])}
+	# the stick magnitude is ignored by the controller (target speed is run_speed or 0),
+	# so "mag" stays 1.0; the flight itself is flown by _air_steer after `delay` ticks
+	return {"mag": 1.0, "hold": int(arc["hold"]), "delay": int(arc.get("delay", 0))}
 
 
 ## The point where a ray from the tile's centre toward `dir` exits the cell boundary.
@@ -1524,6 +1633,46 @@ static func _routing(mem: Dictionary, lv, ctl, rt, w, w2, gtiles: Array, adj: Ar
 		mem["jump_hold"] = int(mem["jump_hold"]) - 1
 	var path: Array = mem["path"]
 	var pi := int(mem["path_i"])
+	# COMMITTED FLIGHT (void-fall fix): once a validated jump leaves the ground the bot
+	# flies the arc _jump_arc simulated - neutral for `delay` ticks, then _air_steer to
+	# the landing column - until it lands. The old follower re-validated the edge every
+	# airborne tick as if a fresh jump started mid-air, banned it when that "failed" and
+	# commanded ZERO, which braked the bot out of the arc into the void.
+	var acc_air: float = float(ctl.C["accel"]) * float(ctl.friction_mult(w))
+	var flight: Dictionary = mem.get("flight", {})
+	if bool(ctl.grounded):
+		if not flight.is_empty():
+			mem["flight"] = {}
+	elif not flight.is_empty():
+		var mvf := Vector2.ZERO
+		if int(mem.get("tick", 0)) - int(flight["t0"]) >= int(flight["delay"]):
+			mvf = _air_steer(float(ctl.x), float(ctl.z), float(ctl.vx), float(ctl.vz),
+					float(flight["x"]), float(flight["z"]), acc_air)
+		return {"move": mvf, "buttons": buttons}
+	elif float(ctl.coyote) <= 0.0:
+		# airborne with no committed jump (stepped off, a hurdle hop, knocked): steer
+		# the landing onto the next waypoint when it is as near as any footing below,
+		# else onto the nearest column with ground under the feet - never hold a
+		# heading that runs on over the void
+		var px_a := float(ctl.x)
+		var pz_a := float(ctl.z)
+		var feet_a := float(ctl.y)
+		var eps_a: Array = _enemy_points(rt)
+		var tgt: Vector2 = _nearest_landing(w, px_a, feet_a, pz_a, 3.0, eps_a)
+		var lpi := pi
+		while lpi < path.size() and int(path[lpi]) == cur:
+			lpi += 1
+		if lpi < path.size():
+			var lt: Array = tiles[int(path[lpi])]
+			var wpc := Vector2(float(lt[0]) + 0.5, float(lt[1]) + 0.5)
+			var here := Vector2(px_a, pz_a)
+			if float(lt[2]) * 0.5 <= feet_a + 0.3 and not _near_any(wpc, eps_a, LAND_CLEAR) \
+					and (tgt.x == INF \
+					or here.distance_to(wpc) <= here.distance_to(tgt) + 0.75):
+				tgt = wpc
+		if tgt.x != INF:
+			return {"move": _air_steer(px_a, pz_a, float(ctl.vx), float(ctl.vz),
+					tgt.x, tgt.y, acc_air), "buttons": buttons}
 	if path.is_empty() or pi >= path.size():
 		# no waypoints left: walk straight onto the goal point (its XZ must be reached;
 		# the gift's hover height is out of reach and stopping under it in 3D stops the bot
@@ -1595,6 +1744,12 @@ static func _routing(mem: Dictionary, lv, ctl, rt, w, w2, gtiles: Array, adj: Ar
 		# bot never steps off a takeoff tile on faith.
 		var plan: Dictionary = _jump_plan(ct, wt, wp_pos, dir, dy, 0.0, ctl, w, rt,
 					mem.get("mines", []))
+		if plan.is_empty() and bool(ctl.grounded) \
+				and Vector2(float(ctl.x), float(ctl.z)).distance_to(_cell_exit(ct, dir)) > 0.55 \
+				and _step_safe(w, ctl, dir):
+			# no arc from back here, but the takeoff edge is still ahead on solid
+			# ground: close in on it first; the edge is only refused at the edge
+			return {"move": dir, "buttons": buttons}
 		if plan.is_empty() or float(plan["mag"]) <= 0.0 or int(plan["hold"]) <= 0:
 			var ek := "%d>%d" % [cur, wp]
 			if not bool((mem["banned"] as Dictionary).get(ek, false)) and cur != wp:
@@ -1619,14 +1774,30 @@ static func _routing(mem: Dictionary, lv, ctl, rt, w, w2, gtiles: Array, adj: Ar
 			print("PLAN t=%d pi=%d cur=%d wp=%d dy=%d D=%.2f at_exit=%s grounded=%s coyote=%.2f jump=%s" % [
 				mem.get("tick", -1), pi, cur, wp, dy, D, str(at_exit), str(ctl.grounded),
 				float(ctl.coyote), str(jump)])
-		if jump and int(mem["jump_hold"]) == 0:
+		if int(mem.get("tick", 0)) - int(mem.get("pushed_at", -100)) <= 1:
+			jump = false   # mid-shove: the arc the sim validated would not be the one flown
+		if jump and int(mem["jump_hold"]) == 0 and (int(ctl.prev_buttons) & BUTTON_JUMP) == 0:
 			mem["jump_hold"] = int(plan["hold"])
 			buttons |= BUTTON_JUMP
 			mem["jump_hold"] = int(mem["jump_hold"]) - 1
+			# commit the flight _jump_arc validated; this tick's input is its tick 0
+			mem["flight"] = {"x": wp_pos.x, "z": wp_pos.y, "delay": int(plan["delay"]),
+					"t0": int(mem.get("tick", 0))}
+			if int(plan["delay"]) > 0:
+				mag = 0.0
+			else:
+				var mv0 := _air_steer(float(ctl.x), float(ctl.z), float(ctl.vx), float(ctl.vz),
+						wp_pos.x, wp_pos.y, float(ctl.C["accel"]) * float(ctl.friction_mult(w)))
+				dir = mv0
+				mag = 1.0
 			if TRACE:
 				print("JUMP t=%d cur=(%d,%d,%d) wp=(%d,%d,%d) dy=%d D=%.2f mag=%.2f" % [
 					mem.get("tick", -1), int(ct[0]), int(ct[1]), int(ct[2]),
 					int(wt[0]), int(wt[1]), int(wt[2]), dy, D, mag])
+		elif bool(ctl.grounded) and not _step_safe(w, ctl, dir):
+			# validated but not jumping THIS tick (held button, mid-shove): never walk
+			# the takeoff edge off on foot - wait for the press
+			return {"move": Vector2.ZERO, "buttons": buttons}
 	return {"move": dir * mag, "buttons": buttons}
 
 
@@ -1649,6 +1820,23 @@ static func _bot_input(mem: Dictionary, lv, rt, ctl, w, w2, gtiles: Array, adj: 
 	var ring: Dictionary = _ring_threat(rt, ctl)
 	var move := Vector2.ZERO
 	var buttons := 0
+	# in the air the stick only steers the landing: a committed jump is flown to its
+	# validated landing, any other airborne moment (hurdle hop, step-off, knock) to the
+	# nearest footing - whatever else asks for the stick. Every arc was already refused
+	# if it crossed a mine or a closing body; a mid-air swerve off it, or an avoid /
+	# dodge heading held over a ledge, is how the bot met the void
+	var in_flight: bool = not bool(ctl.grounded) and (float(ctl.coyote) <= 0.0 \
+			or not (mem.get("flight", {}) as Dictionary).is_empty())
+	if in_flight:
+		var rf: Dictionary = _routing(mem, lv, ctl, rt, w, w2, gtiles, adj, L)
+		# the trigger is height-blind: an airborne heading still never crosses a mine
+		var mvA: Vector2 = _mine_guard(w, ctl, rf["move"], mem.get("mines", []))
+		return {
+			"move_x": clampi(int(round(mvA.x * 127.0)), -127, 127),
+			"move_z": clampi(int(round(mvA.y * 127.0)), -127, 127),
+			"buttons": int(rf["buttons"]),
+			"aim_x": 0.0, "aim_z": 1.0,
+		}
 	if dodge != null:
 		move = dodge
 		if int(mem["jump_hold"]) > 0:
