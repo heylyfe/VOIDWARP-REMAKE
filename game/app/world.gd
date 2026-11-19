@@ -324,6 +324,23 @@ func build(seed_value: int, level: int, p_ledger: Dictionary = {}) -> bool:
 	# Field Dressing's per-level budget: once per level per owned stack (the shop lives in
 	# the lobby, so level start is the only grant point - no mid-level purchase exists).
 	ctl.apply_field_dressing(_free_fall_stacks(plan))
+	# The stack knobs the controller exposes but cannot compute itself (it never reads a
+	# ledger). Every value is the upgrade's own declared effect, read from its content file:
+	#   brace          push and eject -30% per stack (max 3)
+	#   featherfall    hold-jump fall cap, or +1.5 s glide energy for the glider
+	#   ledge_grace    coyote time +0.08 s per stack (max 2)
+	#   quick_recovery class cooldown -20% per stack (max 2)
+	# A knob left at its default reproduces the canon body exactly, so an un-upgraded run is
+	# byte-identical to before this wiring.
+	var owned: Dictionary = plan.get("stacks", {})
+	ctl.push_mul = maxf(0.0, 1.0 - 0.3 * float(int(owned.get("brace", 0))))
+	ctl.coyote_add = 0.08 * float(int(owned.get("ledge_grace", 0)))
+	ctl.cooldown_mul = maxf(0.0, 1.0 - 0.2 * float(int(owned.get("quick_recovery", 0))))
+	if int(owned.get("featherfall", 0)) > 0:
+		if kit == "glider":
+			ctl.glide_energy_bonus = 1.5
+		else:
+			ctl.feather_fall = true
 
 	# The gold-phase economy: the gold phase's own stats (gold_value / chain_window /
 	# chain_cap / overtime_period / stipend_flat), tuned by data/economy.json through the
