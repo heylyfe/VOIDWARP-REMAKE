@@ -19,6 +19,13 @@ static func stacks(state: Dictionary) -> int:
 	return int(state.get("curses_held", {}).get(CURSE_ID, 0))
 
 
+## The uniform module contract's name for the same count (test_curse_content.gd
+## assertion 6): every script curse answers held_stacks, so the dispatcher can ask any
+## module whether it is held. `stacks` stays as this module's own spelling.
+static func held_stacks(state: Dictionary) -> int:
+	return stacks(state)
+
+
 ## True when the rim glow shows for this gift from this viewpoint. No stacks: the
 ## sim's own always-glow. One or more stacks: the glow is visible only within
 ## GLOW_RADIUS_U (20 u, D-T051-2).

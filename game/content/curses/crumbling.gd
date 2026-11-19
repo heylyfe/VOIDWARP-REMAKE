@@ -23,6 +23,14 @@ const FALL_DELAY_TICKS := 72     # 1.2 s after being stepped on (the rule senten
 const RETURN_DELAY_TICKS := 300  # 5.0 s after the fall (the rule sentence)
 
 
+## Stacks the run holds; >= 1 while the curse is picked (the sim's {curse_id: stacks}).
+## The uniform module contract (test_curse_content.gd assertion 6): every script curse
+## answers this, so the dispatcher can ask any module whether it is held without
+## special-casing the hooks-only shape this module has.
+static func held_stacks(state: Dictionary) -> int:
+	return int(state.get("curses_held", {}).get(CURSE_ID, 0))
+
+
 # ---- per-curse slot (the D-T051-1 shape: state["curse_st"][CURSE_ID]) ----------------
 # {"keys": {tile_key: row}} with a schedule row {"fall_tick": int, "return_tick": int,
 # "fell": bool, "returned": bool} in whole 60 Hz ticks. Tile keys are collision.gd's own
