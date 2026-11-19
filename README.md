@@ -18,14 +18,25 @@ The world is serious. The enemies are not.
 
 Waves 1–4 land together: the systems the earlier alphas built but never wired are wired now.
 
-- **Every upgrade applies, and 45 of the 46 curses do.** All 36 upgrades and all 46 curses were
-  inert — the shop took gold and changed nothing. `world.gd` now runs the modifier pass into the
-  black-phase and gold-phase stat blocks and swaps them on the phase edges, and the controller
-  consumes them. Field Dressing gives the free fall DESIGN section 8 promises, and the Last Light
-  8 u body push now moves the live enemy rows instead of a spawn-time copy. The wiring was
-  mutation-tested five ways; the follow-up found a real hole (stack repetition was unproven) and
-  closed it. The 46th curse, `zoomies`, is retired by design — the kiwi cat never dashes or lunges
-  (DESIGN section 5, decision J6, SR-5) — and `test_curse_retired.gd` proves it can never be
+- **Every upgrade now has a shipped call site, with one recorded exception.** All 36 upgrades and
+  all 46 curses were inert at the start of this work — the shop took gold and changed nothing.
+  `world.gd` runs the modifier pass into the black-phase and gold-phase stat blocks and swaps them
+  on the phase edges, and the controller consumes them. Field Dressing gives the free fall DESIGN
+  section 8 promises, and the Last Light 8 u body push moves the live enemy rows instead of a
+  spawn-time copy. The wiring was mutation-tested five ways; the follow-up found a real hole (stack
+  repetition was unproven) and closed it.
+  A final fresh-eyes review of this cycle's diff found the same defect still true for nine more:
+  every sim-side consumer existed and was tested, and the call site in the shipped path did not,
+  so the tests proved the sim and not the game. `pocket_beacon` — the most expensive upgrade in the
+  game at 1200 g — could never teleport, because its channel was only ever advanced by the bot
+  engine. `bounty_hunter`'s +50% bounty was never shown or paid, because the real Antechamber never
+  ran the draw pass. Both are wired now, along with `more`, `last_call`, `straggler_scope`,
+  `spring_heels`, `twin_dash`, `updraft` and `marathon`. The one exception is `quick_recovery`'s
+  Athletic branch: the Athletic has no class cooldown, so the rule sentence gives it +5% run speed
+  instead, and the controller exposes no per-upgrade run-speed knob to add to. That purchase does
+  nothing for that one class, and it is recorded in the module and in DECISIONS D-C2-5 rather than
+  papered over. The 46th curse, `zoomies`, is retired by design — the kiwi cat never dashes or
+  lunges (DESIGN section 5, decision J6, SR-5) — and `test_curse_retired.gd` proves it can never be
   offered or dispatched, so it cannot cost a player a curse slot.
 - **The curses are dispatched now.** 11 curses are pure stat modifiers and always applied through
   the modifier pass. The other 35 declare a script, and each had a module with its own unit test
@@ -196,7 +207,16 @@ Known gaps, stated plainly:
   tears the world down and opens the Antechamber (`view/lobby/lobby_scene.gd`), and the next
   level is built from the lobby's ledger (class, votes, curses, purchases) when the player walks
   into the Descent Gate. What is still missing is a shipped, full-length run — one level at a
-  time is what exists today.
+  time is what exists today. Two attempts to prove it at depth both failed, and the second one is
+  worth recording because it says where the difficulty is: the app cannot be driven headless at
+  all (it reads devices only through the `Input` singleton, which delivers no key state without a
+  window), so a proof has to drive the level loop directly. The first attempt wrote a 531-line
+  driver that crashes the engine — exit 127, no error output, before its first print — and it
+  crashes at two levels as well as ten, so it is structural rather than a scale problem. What is
+  known: the seam is sound (`class BotWorld extends WorldScript` overriding `_capture_input()`,
+  the same stub `test_determinism.gd` uses), a world builds and steps headless, and the lobby
+  builds and ticks headless. The crash is in the driver's own loop. The next attempt should get
+  one level green and report before trying ten.
 - **PARKED.md rows 25, 26, 27 and 28 are closed.** Row 25 (the Last Light body push now reaches
   the live enemy rows), row 26 (ramp kinds 3 and 4 report the slope the mesh draws, with
   `test_classes.gd` covering all four kinds), row 27 (every enemy body mirror is refreshed each
