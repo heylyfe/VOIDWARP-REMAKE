@@ -106,6 +106,16 @@ const RespawnViewScript := preload("res://view/respawn_view.gd")
 # on_tick / on_beacon_open / on_void_fall) and its build-time queries run through it. The
 # declarative "modifiers" half of a curse still goes through _run_modifiers below.
 const CurseRuntimeScript := preload("res://sim/curse_runtime.gd")
+# The upgrade hook dispatcher (W13-A): every owned SCRIPT upgrade's module hooks
+# (on_gift_collected / on_beacon_enter / on_void_fall / on_mine_defused /
+# on_barrier_absorbed) run through it, event-driven, before the economy pass; its
+# on_curse_draw entry runs over the lobby's curse bays. Before it existed four upgrades
+# declared hooks nothing called, and the shop took the gold for nothing.
+const UpgradeRuntimeScript := preload("res://sim/upgrade_runtime.gd")
+# The owned scripted upgrades' sim ROLES (D-T053-1): the one id -> role table. The world
+# built the LevelState without them, so lstate.upgrades stayed null and every role-gated
+# feature (the radars, the footprint map, the 90% quota, the beacon channel) was dead.
+const UpgradeRolesScript := preload("res://content/upgrades/t053_roles.gd")
 # The bespoke per-enemy views (W11-A): nine view files existed, complete and tested, and
 # nothing instantiated them, so every enemy rendered as the generic billboard. The host
 # owns the per-view signatures (view/ may name content ids; this file may not) and is
@@ -172,9 +182,9 @@ var _mouse_sens := CameraRigScript.MOUSE_SENS_DEFAULT  # settings.mouse_sensitiv
 const LIMB_NAMES := ["Torso", "Head", "ArmL", "ArmR", "LegL", "LegR"]
 const POSE_KEYS := ["torso", "head", "arm_l", "arm_r", "leg_l", "leg_r"]  # same order
 const ANIM_BLEND_TIME := 0.08    # s, pose blend constant (1 - e^(-dt/tau) toward target)
-## Field Dressing (DESIGN.md section 8, D-086): the controller's free-fall budget. There is no
-## hook dispatcher, so the app grants the budget itself at level start (controller
-## apply_field_dressing). No content id is named here (test_boundaries.gd): the upgrade is
+## Field Dressing (DESIGN.md section 8, D-086): the controller's free-fall budget. It has no
+## module for the upgrade dispatcher to call, so the app grants the budget itself at level
+## start (controller apply_field_dressing). No content id is named here (test_boundaries.gd): the upgrade is
 ## found by its data signature - on_void_fall as its ONLY hook, no stat modifiers, and no
 ## content module of its own (a hook with a module is that module's job, not this grant).
 const FREE_FALL_HOOK := "on_void_fall"
@@ -204,6 +214,8 @@ var _bindings: Dictionary = {}
 var _api: RefCounted = null
 var _ledger: Dictionary = {}     # the run's carried state (class / votes / curses / purse)
 var _curses: RefCounted = null   # sim/curse_runtime.gd, built per level in build()
+var _upgrades: RefCounted = null # sim/upgrade_runtime.gd, built per level in build()
+var _boost_on := false           # an upgrade run-speed boost touched the controller last tick
 # The tile-schedule curses (W10-C): a held module that declares step_on(state, key) arms
 # a tile when the player's feet settle on it, and its on_tick returns tile_fell /
 # tile_returned events that this file applies to w["removed"]. No content id is named:
@@ -287,7 +299,10 @@ func build(seed_value: int, level: int, p_ledger: Dictionary = {}) -> bool:
 	w = CollisionScript.make_world(lv["tiles"], lv["props"], lv["pads"])
 	# The sim LevelState: one level's slice of the state tree (players + gifts + mines +
 	# beacon). Built from the same Level dict; the run seed feeds the Defuse Kit roll.
-	lstate = LevelStateScript.build(lv, level, 1, seed_value)
+	# The owned upgrades' sim roles ride in (D-T053-1): {} when none is owned, which keeps
+	# lstate.upgrades null exactly as before for an un-upgraded run.
+	lstate = LevelStateScript.build(lv, level, 1, seed_value,
+			UpgradeRolesScript.roles_for(plan.get("stacks", {}) as Dictionary))
 	var kit := str(plan.get("class", ""))
 	if kit == "":
 		kit = FALLBACK_CLASS   # D-APPFLOW-6
@@ -495,6 +510,14 @@ func build(seed_value: int, level: int, p_ledger: Dictionary = {}) -> bool:
 	# be reached - the same gap this wave exists to close.
 	lstate.mines.curses = _curses
 	_tile_step_setup()
+	# The upgrade hooks: the owned upgrades' modules, dispatched from this tick's event
+	# list in step() (see _upgrade_module for the loader; no upgrade id is named here).
+	_upgrades = UpgradeRuntimeScript.new()
+	_upgrades.setup(plan.get("stacks", {}) as Dictionary, Callable(self, "_upgrade_module"), {
+		"players": [ctl], "economy": _economy, "beacon": lstate.beacon,
+		"level": level, "tick": int(lstate.tick),
+	})
+	_boost_on = false
 	return true
 
 
@@ -519,6 +542,7 @@ func step(dt: float) -> void:
 	# Built from the live mine set plus the runtime's LIVE telegraph rows - the same one-tick
 	# staleness the w["enemies"] / w["projectiles"] mirrors already accept.
 	w["hazards"] = LevelStateScript.hazard_footprints(lstate.mines, rt.live_telegraphs())
+	_upgrade_speed_pass()
 	var ev: Array = ctl.step(dt, a_in, w)
 	# on_void_fall: one dispatch per void_fall event the controller reported this tick
 	# (free falls included - the fall happened; what it costs is the module's call).
@@ -583,6 +607,12 @@ func step(dt: float) -> void:
 			var tier_gap: int = int(_economy.overtime_tier) - int(rt.overtime_tier)
 			if tier_gap > 0:
 				rt.add_overtime_tier(tier_gap)
+	# The upgrade hooks, one pass over the whole tick's list (gift pickups, the beacon
+	# entry, void falls, the mine ladder's defuse / shield): BEFORE the economy pass, so
+	# interest a hook pays is on the purse the player carried in (the stipend is paid after)
+	# and a chain_reset a hook saves is skipped by the economy on this same tick.
+	if _upgrades != null:
+		_upgrades.dispatch_events(int(lstate.tick), ev)
 	_economy_pass(ev)
 	_fx_events(ev)
 	if rig != null:
@@ -626,6 +656,8 @@ func _economy_pass(ev: Array) -> void:
 			if str(e.get("phase", "")) == "gold":
 				_economy.collect_gold_gift()
 		elif kind == "chain_reset":
+			if bool(e.get("saved", false)):
+				continue   # an upgrade hook spent its chain save on this break
 			var why := str(e.get("why", ""))
 			if why == "defused_mine" or why == "shielded_mine":
 				why = "defused_or_shielded_tripmine"
@@ -644,6 +676,23 @@ func _apply_phase_stats() -> void:
 	var stats: Dictionary = _stats_gold if gold else _stats_black
 	ctl.apply_stats(stats)
 	_feed_run_stats(stats)
+
+
+## An upgrade hook's run-speed boost (a gift-pickup sprint): the controller's run_speed
+## multiplier becomes the phase stat x the boost for each controller step the boost covers,
+## and goes back to the phase stat on the first step after it ends. A run with no boost
+## running never has the multiplier touched here (it stays apply_stats' own value).
+func _upgrade_speed_pass() -> void:
+	if ctl == null or _upgrades == null:
+		return
+	var mul := float(_upgrades.speed_step())
+	var boosting := not is_equal_approx(mul, 1.0)
+	if not boosting and not _boost_on:
+		return
+	var gold := _economy != null and bool(_economy.gold_phase)
+	var stats: Dictionary = _stats_gold if gold else _stats_black
+	ctl.run_speed_mul = float(stats.get("run_speed", 1.0)) * mul
+	_boost_on = boosting
 
 
 ## The owned stacks of every upgrade carrying the free-fall signature (FREE_FALL_HOOK).
@@ -758,6 +807,10 @@ func teardown() -> void:
 	if _curses != null:
 		_curses.clear()   # drops the modules and their per-level curse_st scratch
 	_curses = null
+	if _upgrades != null:
+		_upgrades.clear()   # drops the modules, the per-level upgrade_st and any boost
+	_upgrades = null
+	_boost_on = false
 	_tile_step_mods = []
 	_tile_step_keys = {}
 	_tiles_dropped = {}
@@ -784,6 +837,20 @@ func _curse_module(id: String) -> Variant:
 	if not ResourceLoader.exists(path):
 		return null
 	return load(path)
+
+
+## The upgrade dispatcher's module loader: an upgrade's script module, or null for a
+## declarative upgrade (its modifiers already ran in _run_modifiers). Static so the lobby
+## (view/lobby/lobby_scene.gd) can hand the same loader to UpgradeRuntime.curse_draw().
+static func upgrade_module(id: String) -> Variant:
+	var path := "res://content/upgrades/%s.gd" % id
+	if not ResourceLoader.exists(path):
+		return null
+	return load(path)
+
+
+func _upgrade_module(id: String) -> Variant:
+	return upgrade_module(id)
 
 
 ## Tile-schedule curses (W10-C): find every held module declaring step_on, compute the
@@ -961,6 +1028,10 @@ func _resolve_run(seed_value: int, level: int, p_ledger: Dictionary = {}) -> Dic
 		for _i in range(80):
 			if bool(lb.gate_open()):
 				break
+			# on_curse_draw over the curse bays as drawn (or redrawn): idempotent per bay,
+			# so asking every pass is exact; with no hook module owned it is a no-op.
+			UpgradeRuntimeScript.curse_draw(lb.bays, lb.upgrade_stacks,
+					Callable(self, "_upgrade_module"), completed)
 			var table: Array = lb.altar_table()
 			var picks: Array[int] = []
 			var tithe_picks: Array[int] = []
