@@ -539,23 +539,23 @@ func _chain_unit_pass() -> Array[String]:
 	# a black gift keeps the chain at x1.00 (the gold phase begins at the beacon_opened)
 	lg.feed_tick([{"type": "gift_collected", "tick": 0, "player": 0, "slot": 0,
 			"phase": "black"}])
-	var gift0: Dictionary = JSON.parse_string(_last_line(lg))
+	var gift0: Dictionary = _last_json(lg)
 	lg.feed_tick([{"type": "beacon_opened", "tick": 0, "player": -1}])
 	lg.feed_tick([{"type": "gift_collected", "tick": 1, "player": 0, "slot": 1,
 			"phase": "gold"}])   # t=1: first gold -> recorded x1.00, chain -> x1.05
-	var g1: Dictionary = JSON.parse_string(_last_line(lg))
+	var g1: Dictionary = _last_json(lg)
 	lg.feed_tick([])   # t=2..102: 101 total ticks
 	for i in range(100):
 		lg.feed_tick([])
 	lg.feed_tick([{"type": "gift_collected", "tick": 102, "player": 0, "slot": 2,
 			"phase": "gold"}])  # t=102, 101 ticks since the last gold (<= 240): x1.05
-	var g2: Dictionary = JSON.parse_string(_last_line(lg))
+	var g2: Dictionary = _last_json(lg)
 	lg.feed_tick([])   # 400 empty ticks: far past the 240-tick window
 	for i in range(400):
 		lg.feed_tick([])
 	lg.feed_tick([{"type": "gift_collected", "tick": 345, "player": 0, "slot": 3,
 			"phase": "gold"}])  # past the window: reset to x1.00 before the value
-	var g3: Dictionary = JSON.parse_string(_last_line(lg))
+	var g3: Dictionary = _last_json(lg)
 	lg.run_finished(1, 0)
 	lg.close()
 	for pair in [[g1, 1.0], [g2, 1.05], [g3, 1.0]]:
@@ -581,6 +581,15 @@ func _last_line(lg) -> String:
 			last = line
 	f.close()
 	return last
+
+
+## The last record as a dict, or {} when the log is not readable yet.
+## JSON.parse_string("") returns null, and assigning that to a typed Dictionary is a script
+## error - which the gate treats as a failure even though the test's own asserts would have
+## reported the missing record properly. Returning {} lets the assert speak.
+func _last_json(lg) -> Dictionary:
+	var parsed = JSON.parse_string(_last_line(lg))
+	return parsed if parsed is Dictionary else {}
 
 
 # ---- part 3: the replay proof - identical hashes with the log on and off -------------------

@@ -60,16 +60,38 @@ func load_from(p_path: String = "") -> void:
 
 
 ## Writing to disk. Returns false on an unopenable file; otherwise true. Callers retry at
-## their leisure (a lost record is not worth an error screen).
+## their leisure (a lost record is not worth an error screen). The payload goes to a
+## sibling .tmp file first, which is renamed over the destination only after it is fully
+## written and closed, so a crash mid-write leaves the old file (or a recoverable .tmp)
+## instead of a truncated one.
 func save_to(p_path: String = "") -> bool:
 	if p_path != "":
 		path = p_path
-	var f := FileAccess.open(path, FileAccess.WRITE)
+	var tmp := path + ".tmp"
+	var f := FileAccess.open(tmp, FileAccess.WRITE)
 	if f == null:
 		return false
 	f.store_string(JSON.stringify(to_dict()))
 	f.flush()
-	return true
+	f.close()
+	return _rename_over(tmp, path)
+
+
+## Renames a finished .tmp file over the destination. rename_absolute replaces an existing
+## destination; if it ever fails, the old destination is removed first and the rename
+## retried - only after the .tmp write has fully closed, so a crash between the two leaves
+## the old file intact or the .tmp file recoverable. On final failure the .tmp is left in
+## place (recoverable) and false is returned.
+static func _rename_over(tmp_path: String, dest_path: String) -> bool:
+	var err := DirAccess.rename_absolute(tmp_path, dest_path)
+	if err == OK:
+		return true
+	if FileAccess.file_exists(dest_path):
+		var rm := DirAccess.remove_absolute(dest_path)
+		if rm != OK:
+			return false
+		err = DirAccess.rename_absolute(tmp_path, dest_path)
+	return err == OK
 
 
 ## Record a finished run: best_level and best_purse only ever ratchet UP - a worse run

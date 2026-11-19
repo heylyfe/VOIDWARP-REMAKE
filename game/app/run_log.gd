@@ -17,6 +17,12 @@ extends RefCounted
 #   {"t": int, "level": int, "phase": "black"|"gold"|"lobby", "type": String, "payload": {...}}
 # t is the run-wide accumulated tick (level ticks continue past each lobby; the lobby
 # consumes no sim ticks) - D-T080-3.
+# The run file is written directly, not published atomically, and deliberately so: it is
+# append-only and it is read WHILE it is being written (a report or a test mid-run reads the
+# records so far). A .tmp-then-rename publish would make the destination invisible until
+# close() and break that contract, and the failure it would guard against here is a
+# truncated tail, which the loader already tolerates. settings.gd and records.gd rewrite a
+# whole file in place, so those two do publish atomically.
 #
 # Closed type list (owner spec): run_start, level_start, gift, void_fall, charge_spent,
 # charge_restored, mine_pass, mine_contact, death, last_light, beacon_open, beacon_enter,
@@ -146,10 +152,19 @@ func run_finished(p_level_reached: int, purse: int) -> void:
 
 
 ## Flushes and closes the file. Records after close are dropped (open_ok stays as is).
+##
+## This log is the one store that does NOT publish atomically, and deliberately so. It is
+## append-only and it is read WHILE it is being written - a report or a test mid-run reads
+## the records so far (see _record's per-line flush). A .tmp-then-rename publish would make
+## the destination invisible until close, which breaks that contract; and the failure mode
+## atomicity would protect against here is not corruption but a truncated tail, which the
+## loader already tolerates. settings.gd and records.gd rewrite a whole file in place, so
+## they do publish atomically.
 func close() -> void:
-	if _fh != null:
-		_fh.flush()
-		_fh.close()
+	if _fh == null:
+		return
+	_fh.flush()
+	_fh.close()
 	_fh = null
 
 
@@ -186,9 +201,18 @@ func _feed_one(ev: Dictionary) -> void:
 		_record("charge_restored", {"before": before, "after": after})
 		return
 	if ty == "level_complete":
-		_record("level_clear", {"black_ticks": beacon_open_t - level_start_t,
-				"gold_ticks": total_t - beacon_open_t,
-				"total_ticks": total_t - level_start_t,
+		# -1 in black_ticks/gold_ticks is the explicit "no beacon_open seen this level"
+		# sentinel (a level_complete with no preceding beacon_open: a give-up path, a test
+		# harness, a malformed event stream). It is never an arithmetic result; total_ticks
+		# is always well-defined.
+		var black_ticks := -1
+		var gold_ticks := -1
+		if beacon_open_t >= 0:
+			black_ticks = maxi(0, beacon_open_t - level_start_t)
+			gold_ticks = maxi(0, total_t - beacon_open_t)
+		_record("level_clear", {"black_ticks": black_ticks,
+				"gold_ticks": gold_ticks,
+				"total_ticks": maxi(0, total_t - level_start_t),
 				"jumps": jump_count, "stepups": stepup_count})
 		return
 	# the mines ladder's typed events: the contact, then its outcome in the same tick's

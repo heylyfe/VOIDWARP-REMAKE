@@ -58,6 +58,10 @@ const IN_PLAY := {
 }
 
 const SCHEDULE_PATH := "res://data/offering_schedule.json"
+## The tracked schedule is backed up here before the data-edit block touches it, and the
+## restore copies it back from this backup rather than from memory - a crash between the
+## rewrite and the restore leaves this copy to recover from. Deleted on a clean finish.
+const BACKUP_PATH := "user://offering_schedule_test_backup.json"
 
 
 func run() -> Array[String]:
@@ -203,25 +207,35 @@ func _table_index(p_table: Array, p_entry: Dictionary, p_kind: String) -> int:
 
 ## THE done-when: one JSON entry changes the lobby with no code edit.
 ## Edits level 3's single vote into an E x2 (count 2), reloads, observes the change,
-## and restores the original bytes.
+## and restores the original bytes from the user:// backup.
 func _data_edit_changes_the_lobby(f: Array[String], api: RefCounted) -> void:
 	var original := FileAccess.get_file_as_string(SCHEDULE_PATH)
 	if original.strip_edges().is_empty():
 		f.append("data-edit: could not read %s" % SCHEDULE_PATH)
 		return
+	# Back the tracked file up under user:// BEFORE the rewrite, so a crash between the
+	# write and the restore leaves the only full copy of the original recoverable. If the
+	# backup cannot be written, the tracked file is left untouched.
+	var bak := FileAccess.open(BACKUP_PATH, FileAccess.WRITE)
+	if bak == null:
+		f.append("data-edit: could not back the schedule up under user://")
+		return
+	bak.store_string(original)
+	bak.close()
 	var doc: Dictionary = JSON.parse_string(original)
 	var lvl3: Array = doc["levels"]["3"]
 	lvl3[0]["count"] = 2
 	var ok := _write_json(doc)
 	if not ok:
 		f.append("data-edit: could not rewrite the schedule file")
-		_restore(original)
+		_restore_from_backup()
+		_rm_backup()
 		return
 	var api2 := ContentApiScript.load()
 	# The file is dirty only across the write and this one reload: restore it here, before
 	# any assertion can fail, and let every check below read api2 (the parsed copy). GDScript
 	# has no finally, so a no-op guard around a later restore would promise nothing.
-	_restore(original)
+	_restore_from_backup()
 	var changed: Array = Intermission.bays_for_level(api2, 3)
 	var single: Array = Intermission.bays_for_level(api, 3)   # the OLD api is untouched
 	if single.size() != 1 or int(single[0].get("count", 1)) != 1:
@@ -259,6 +273,7 @@ func _data_edit_changes_the_lobby(f: Array[String], api: RefCounted) -> void:
 	var api3 := ContentApiScript.load()
 	if _brief(Intermission.bays_for_level(api3, 3)) != _brief(Intermission.bays_for_level(api, 3)):
 		f.append("data-edit: the restored file does not match the original lobby")
+	_rm_backup()
 
 
 func _write_json(p_doc: Dictionary) -> bool:
@@ -270,13 +285,22 @@ func _write_json(p_doc: Dictionary) -> bool:
 	return true
 
 
-func _restore(p_original: String) -> void:
-	if p_original == "":
+## Copies the user:// backup back over the tracked file (the backup is the copy of record
+## for the restore, written before the rewrite above ran). If the backup cannot be read,
+## the tracked file is left alone and the backup is kept for manual recovery.
+func _restore_from_backup() -> void:
+	var bytes := FileAccess.get_file_as_string(BACKUP_PATH)
+	if bytes == "":
 		return
 	var fa := FileAccess.open(SCHEDULE_PATH, FileAccess.WRITE)
 	if fa != null:
-		fa.store_string(p_original)
+		fa.store_string(bytes)
 		fa.close()
+
+
+func _rm_backup() -> void:
+	if FileAccess.file_exists(BACKUP_PATH):
+		DirAccess.remove_absolute(BACKUP_PATH)
 
 
 ##_select_first_offers: selects the first unresolved offer of every bay in one tick.
