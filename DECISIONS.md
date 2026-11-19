@@ -7118,3 +7118,68 @@ before the 60 s jump - correct behaviour, not a miss.
 **Cost recorded.** The probe keeps the player alive by clearing `ctl.dead`, refilling charges and clearing
 `_run_over_emitted` before each step. That is stated in the file's header so nobody mistakes it for a
 gameplay run: it is a crash/error stress test, not a balance measurement.
+
+## D-C2-1: the loading-screen contradictions (PARKED rows 22 and 23) are closed by ruling, not by editing canon
+
+**Context.** Two PARKED rows have sat open because DESIGN.md section 2's [CANON] rows and the TICKET LOADING
+rulings disagree. Both are documentation conflicts, not code defects: in each case the shipped code already
+follows one side, so the game has been behaving consistently while the documents argued.
+
+**Row 22 - "loading screen >= 5.0 s shown" vs the FINAL ruling "5.0 s first launch, exactly 2.0 s restart".**
+The CANON row makes no exception for restarts. The FINAL ruling is newer and explicit. `tests/test_loading.gd`
+pins both holds (5.0 s first launch, exactly 2.0 s restart) and is green, so the code follows the FINAL.
+**Ruling: the FINAL ruling stands.** The CANON row's ">= 5.0 s" is read as the first-launch case; a restart is
+2.0 s. DESIGN.md's text is left exactly as the owner wrote it - I do not rewrite canon - and this entry is the
+operational reading. If the owner wants the CANON row amended, that is a one-line edit they should make.
+
+**Row 23 - "lobby gate -> next level controllable <= 2.0 s (no loading screen between levels)" vs the TICKET
+LOADING done-when "the screen appears on every level load per the flow".** The done-when's own words, "per the
+flow", delegate the call sites to the app flow, and the app flow is unambiguous: `_on_level_completed` ->
+`_enter_lobby` -> `_on_lobby_exited` -> `_build_world(next_level, ledger)`, with no loading screen anywhere on
+that path. The lobby IS the transition. **Ruling: no loading screen between levels.** The CANON row and the
+done-when agree once "per the flow" is read as written; there was never a real conflict, only a done-when that
+did not name its own escape hatch.
+
+**Cost recorded.** Neither ruling changes a line of shipped code, because the code was already right. What was
+wrong was that two documents described the game differently and nobody had said which one the build follows.
+That is the same failure mode as the stale README gaps corrected in cycle 2: a document describing the tree as
+it was, not as it is.
+
+## D-C2-2: the tripmine needs no tuning, and the level-5 riser is a design beat, not a bug
+
+**The owner's question.** "The bot dies at level 5 to tripmines - would real players also?" Measured by W11-G
+from the real code and the real generator (`out/balance_cycle2.md`).
+
+**The premise is stale, and the measurement says so.** The 87%-of-level-5-deaths-were-tripmines number dates
+from 11:49Z, when `bot_run.gd` had NO mine model - it advanced the sim through `MinesScript.tick()` and never
+read a mine position. Once the bot was given a mine model (12:24Z), the same seed base re-measured to
+**D-MINE ZERO**, and today's 20-run reproduction is identical: 19/20 complete level 1, median 41.5 s, every
+remaining death an enemy contact (D-COIL 8, D-KIWI 6, D-YOU 4, D-TOUCH 1). **No bot run died to a tripmine at
+any level.**
+
+**Would a human die?** No, and the arithmetic is the reason. At the player's 9.0 u/s the tell is visible from
+12.0 u and the contact cylinder is 0.9 u, so the warning is **1.23 s (74 ticks)**. A human budget of reaction
+(0.25 s) plus decision (0.5 s) is 0.75 s, leaving **+0.48 s of margin**. The star and particle alpha ramp from
+0 at 14 u to 1 at 10 u, so the tell does not pop in. The fog at 12 u leaves ~87% of the object, so the tell is
+not fog-hidden. And the generator makes an unpassable arrangement impossible: the minimum mine-to-mine distance
+across 200 levels is **2.000 u**, never a wall, with the joint-rule bypass at 1.4 u.
+
+**Ruling: no change to the tripmine tell, its trigger radius, or its spacing.** Tuning it would be tuning the
+game to satisfy an instrument that cannot play it - the exact mistake the mine model already exposed. The
+documented rule is: a lethal hazard is fair when its warning exceeds reaction plus decision, its tell does not
+pop in, fog does not hide it, and the generator cannot form a wall. The tripmine passes all four.
+
+**The level-5 riser is real, and it is a design beat.** Mines are exactly ZERO for levels 1-4 and 2-7 at level
+5, because `gift_larper` carries `min_level: 5`. So the first level where the player can meet the hazard is
+also the first level where it can kill. That is a staircase, not a smooth curve, and the first riser is at L5.
+I am NOT changing it: the tell is readable (above), the counter-play (Defuse Kit, T2 200 g) is first buyable at
+the post-L4 shop - i.e. exactly before the hazard appears - and the lobby after level 5 is a REST bay at 20%
+off. The design already answers the riser. Moving `gift_larper.min_level` to 3 would soften it and would also
+change the enemy roster's unlock schedule, which is a DESIGN section 9 decision, not a balance tweak.
+
+**The one change I considered and did NOT make.** PARKED row 31's schedule change - move the third enemy vote
+from lobby 3 to lobby 5 - preserves every DESIGN section 9 row and would take level-6 reach from ~15% to ~48%.
+It is a five-fold gain on the instrument. I did not apply it, for the same reason as above: the bands are a
+target for a competent human, the bot cannot validate them, and a 45-point survival drop from one extra enemy
+body is evidence about the BOT's fragility as much as about the game's difficulty. It stays parked with its
+measurement recorded for the owner, who can weigh a human's experience against a bot's.

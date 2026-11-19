@@ -24,7 +24,9 @@ Waves 1–4 land together: the systems the earlier alphas built but never wired 
   consumes them. Field Dressing gives the free fall DESIGN section 8 promises, and the Last Light
   8 u body push now moves the live enemy rows instead of a spawn-time copy. The wiring was
   mutation-tested five ways; the follow-up found a real hole (stack repetition was unproven) and
-  closed it.
+  closed it. The 46th curse, `zoomies`, is retired by design — the kiwi cat never dashes or lunges
+  (DESIGN section 5, decision J6, SR-5) — and `test_curse_retired.gd` proves it can never be
+  offered or dispatched, so it cannot cost a player a curse slot.
 - **The curses are dispatched now.** 11 curses are pure stat modifiers and always applied through
   the modifier pass. The other 35 declare a script, and each had a module with its own unit test
   while nothing in the shipped game called any of them — the run tracked `curses_held` and handed
@@ -178,24 +180,37 @@ Known gaps, stated plainly:
   recorded in `PARKED.md` row 31 and NOT applied, because tuning the game to satisfy an instrument
   that cannot play it is the mistake the mine model already exposed. The bands are a target for a
   competent human and this probe cannot validate them.
-- **Enemies still render as billboards, not bespoke per-enemy views.** The generic telegraph view
-  covers every enemy's tells, and the projectile view covers Isagi's balls, Claude's wind shots and
-  the nuke missile, so nothing is invisible. What is missing is the per-enemy character work — the
-  seal, the kiwi cat, the toucher's body and the rest still stand as billboards. Gin's five cues are
-  also not emitted by the sim, so only `crack_rumble` plays, as the mark telegraph's cue. Coil's
-  sprite effects and the screen effects (void flash, Last Light bloom) are not fed either. None of
-  these were in this alpha's scope; they are the next art and audio pass.
+- **Every enemy now has its own view, and the screen effects are fed.** This was the last
+  presentation gap and it closed in cycle 2. Nine per-enemy view files (2,219 lines) had existed
+  with nothing instantiating them, so every enemy rendered as a generic billboard; `view/enemies/
+  enemy_view_host.gd` now routes a live enemy row to its own view and feeds it spawn, telegraphs
+  and per-tick state, and coil got the one body it was missing (`view/coil_view.gd`). The three
+  screen effects that only tests ever called — the void-edge flash, the Last Light bloom and the
+  pip shatter — are wired to their real sim events. `test_app_enemy_views.gd` proves all nine
+  through `world.build()`/`world.step()` and drives its own negative control, which reports 40
+  failures across 10 legs. Gin's five cues were already emitted and proven by `test_audio_cues.gd`
+  (an earlier version of this list said they were not — that was stale). What remains is art
+  quality, not wiring: the views are procedural placeholders, not the bespoke sprite work the art
+  brief describes.
 - **No 30-level run yet.** The intermission lobby is wired into the app loop: a completed level
   tears the world down and opens the Antechamber (`view/lobby/lobby_scene.gd`), and the next
   level is built from the lobby's ledger (class, votes, curses, purchases) when the player walks
   into the Descent Gate. What is still missing is a shipped, full-length run — one level at a
   time is what exists today.
-- **PARKED.md rows 25, 26 and 27 are closed; row 28 is partly closed.** Row 25 (the Last Light
-  body push now reaches the live enemy rows), row 26 (ramp kinds 3 and 4 report the slope the
-  mesh draws, with `test_classes.gd` covering all four kinds) and row 27 (every enemy body mirror
-  is refreshed each step so the safe-tile and SR-4 checks stop reading spawn points) are closed.
-  Row 28's jump-arc scan, ban-lift re-routes and sideways regressions are partly closed; the dead
-  `spawn_deferred` field and the unproducible empty-C-bay stall outcome remain.
+- **PARKED.md rows 25, 26, 27 and 28 are closed.** Row 25 (the Last Light body push now reaches
+  the live enemy rows), row 26 (ramp kinds 3 and 4 report the slope the mesh draws, with
+  `test_classes.gd` covering all four kinds), row 27 (every enemy body mirror is refreshed each
+  step so the safe-tile and SR-4 checks stop reading spawn points) and row 28 (the dead `rt_set`,
+  the per-spawn `round_trip_set` rebuild, the dead `_killer_on_screen` branch and the write-only
+  `spawn_deferred` field — all removed in `b2c5fa9`). Row 28's unproducible empty-C-bay stall
+  outcome is a deliberate forced-gate behaviour in the bot, not a defect.
+- **The tripmine needs no tuning, and the numbers say so.** The tell is visible from 12.0 u, the
+  contact cylinder is 0.9 u and the player runs 9.0 u/s, so the warning is 1.23 s against a human
+  reaction-plus-decision budget of 0.75 s. The tell ramps in rather than popping, fog leaves 87% of
+  it at 12 u, and the minimum mine-to-mine distance across 200 levels is 2.000 u, so no wall can
+  form. The bot's mine deaths are ZERO. Mines are absent for levels 1–4 and appear at level 5
+  (`gift_larper` carries `min_level: 5`), which is a deliberate staircase: the counter-play (Defuse
+  Kit) is first buyable at the post-L4 shop, exactly before the hazard appears.
 - One exe-related row was closed by the v0.1.0-alpha.1 export.
 
 ## How a run works
