@@ -25,6 +25,7 @@ const DANGER_RED := Color(1.0, 0.1647, 0.1647)   # #FF2A2A
 const VOID_COLOR := Color(0.35, 0.2, 0.5, 1.0)   # void swatch (no documented hex - D-T025-1)
 const SPRITE := 256.0
 const RosterScript := preload("res://core/roster.gd")
+const RecordsScript := preload("res://core/records.gd")
 
 ## the D-VOID display name (the only killer no content owns).
 const VOID_DISPLAY := "The Void"
@@ -38,6 +39,11 @@ var killer_text := ""
 var level_reached := 0
 var purse_centi := 0
 var charges_held := 0
+## Tests point this at a scratch file (menu.gd's pattern); "" = the player's real
+## user://records.json. Read at show time - records are ratcheted before this
+## screen opens, so this run's numbers are already counted.
+var records_path := ""
+var _records: RefCounted = null
 
 var _sprite: TextureRect
 var _tbd_box: Label
@@ -47,6 +53,7 @@ var _code_label: Label
 var _level_label: Label
 var _purse_label: Label
 var _charges_label: Label
+var _bests_label: Label
 var _retry: Button
 
 
@@ -110,6 +117,14 @@ func _init() -> void:
 	_charges_label.add_theme_font_size_override("font_size", 16)
 	_charges_label.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 0.6))
 	col.add_child(_charges_label)
+	# the locally recorded bests (DESIGN.md section 9): one quiet line under the run
+	# numbers - same line the menu shows, read from the same records file
+	_bests_label = Label.new()
+	_bests_label.name = "Bests"
+	_bests_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_bests_label.add_theme_font_size_override("font_size", 15)
+	_bests_label.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 0.6))
+	col.add_child(_bests_label)
 	_retry = Button.new()
 	_retry.text = "Retry"
 	_retry.focus_mode = Control.FOCUS_ALL
@@ -187,6 +202,7 @@ func show_run_over(info: Dictionary) -> void:
 	_level_label.text = "LEVEL %d" % level_reached
 	_purse_label.text = "PURSE %d.%02d g" % [purse_centi / 100, purse_centi % 100]
 	_charges_label.text = "CHARGES HELD: %d" % charges_held
+	_refresh_bests()
 	if is_void_death(code):
 		_sprite.visible = false
 		_tbd_box.visible = false
@@ -214,6 +230,21 @@ func show_run_over(info: Dictionary) -> void:
 	visible = true
 	if is_inside_tree():
 		_retry.grab_focus()
+
+
+## Re-read the records file (records_path, or the default user://records.json) and
+## refresh the bests line. Called once per show; tests call it after pointing
+## records_path at a scratch file. A missing/corrupt file reads as 0/0
+## (records.gd's contract) - never an error here.
+func _refresh_bests() -> void:
+	_records = RecordsScript.new()
+	_records.load_from(records_path if records_path != "" else RecordsScript.DEFAULT_PATH)
+	if _bests_label != null:
+		_bests_label.text = "BEST LEVEL %d     BEST PURSE %d" % [_records.get_best_level(), _records.get_best_purse()]
+
+
+func bests_label() -> Label:
+	return _bests_label
 
 
 func hide_run_over() -> void:

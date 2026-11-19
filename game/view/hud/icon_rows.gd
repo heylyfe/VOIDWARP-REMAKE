@@ -9,6 +9,8 @@ extends Control
 # Tab (KEY_TAB, hud.gd routes it here) toggles both rows collapsed/expanded;
 # collapsed hides the rows, never the rest of the HUD. The rows carry no
 # tooltips - the shop and lobby own item text.
+# The rows are CENTRED in their ±400 px anchor box, so cells pack around the
+# middle and never walk into the roster (top-left) or the purse (top-right).
 
 const CELL := 40.0
 const GAP := 6.0
@@ -33,13 +35,18 @@ func _init() -> void:
 	offset_top = 8.0
 	offset_bottom = 8.0 + CELL * 2.0 + GAP
 	var col := VBoxContainer.new()
+	col.name = "Rows"
 	col.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	col.alignment = BoxContainer.ALIGNMENT_CENTER
 	add_child(col)
 	_curses_row = HBoxContainer.new()
+	_curses_row.name = "CursesRow"
+	_curses_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	_curses_row.add_theme_constant_override("separation", int(GAP))
 	col.add_child(_curses_row)
 	_upgrades_row = HBoxContainer.new()
+	_upgrades_row.name = "UpgradesRow"
+	_upgrades_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	_upgrades_row.add_theme_constant_override("separation", int(GAP))
 	col.add_child(_upgrades_row)
 

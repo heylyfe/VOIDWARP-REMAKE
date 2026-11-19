@@ -12,6 +12,8 @@ extends RefCounted
 #   gold value, chain window/step/cap, stipend          sim/economy.gd over data/economy.json
 #   overtime period and per-tier speed                  sim/enemy_runtime.gd constants
 #   controls                                            data/bindings.json via app/input_capture.gd
+#   mouse look                                          app/camera_rig.gd (apply_mouse); the Ctrl
+#                                                       lock key is input_capture.gd KEY_MOUSE_LOCK
 #
 # Where the docs and the code disagree, the code wins here and the disagreement is recorded
 # in DECISIONS.md D-MENU-7 (e.g. DESIGN.md section 3.1 lets Field Dressing make a fall free; no
@@ -53,6 +55,14 @@ static func keys_for(bindings: Dictionary, action: String) -> String:
 	for code in kb.get(action, []):
 		names.append(key_name(int(code)))
 	return " / ".join(names) if not names.is_empty() else "-"
+
+
+## "0", or "-" when an action has no gamepad binding (the pad button index, verbatim).
+static func joy_for(bindings: Dictionary, action: String) -> String:
+	var jb: Dictionary = bindings.get("joy_bindings", {})
+	if jb.has(action):
+		return str(int(jb[action]))
+	return "-"
 
 
 static func _num(v: float) -> String:
@@ -117,9 +127,14 @@ static func sections(bindings: Dictionary = {}) -> Array:
 		+ "Every %s s the player stays, enemies move %d%% faster (up to %d times). Leaving pays %d + %d x level g." % [_num(f["overtime_period"]), int(roundf(float(f["overtime_speed"]) * 100.0)), int(f["overtime_max"]), int(f["stipend_base"]), int(f["stipend_per_level"])])})
 	var mv := "%s %s %s %s" % [keys_for(bindings, "move_forward"), keys_for(bindings, "move_left"),
 			keys_for(bindings, "move_back"), keys_for(bindings, "move_right")]
+	var joy := "%s / %s / %s" % [joy_for(bindings, "jump"), joy_for(bindings, "ability"),
+			joy_for(bindings, "interact")]
+	var mouse_lock := key_name(InputCaptureScript.KEY_MOUSE_LOCK)
 	out.append({"title": "CONTROLS", "body": (
 		"[color=%s]%s[/color]  move    [color=%s]%s[/color]  jump (Glider: hold to glide)    [color=%s]%s[/color]  class ability\n" % [WHITE, mv, WHITE, keys_for(bindings, "jump"), WHITE, keys_for(bindings, "ability")]
-		+ "[color=%s]%s[/color]  interact    [color=%s]%s[/color]  HUD rows    [color=%s]%s[/color]  pause" % [WHITE, keys_for(bindings, "interact"), WHITE, keys_for(bindings, "hud_toggle"), WHITE, keys_for(bindings, "pause")])})
+		+ "[color=%s]%s[/color]  interact    [color=%s]%s[/color]  HUD rows    [color=%s]%s[/color]  pause\n" % [WHITE, keys_for(bindings, "interact"), WHITE, keys_for(bindings, "hud_toggle"), WHITE, keys_for(bindings, "pause")]
+		+ "[color=%s]%s[/color]  mouse look (lock / unlock)    [color=%s]left stick[/color]  move\n" % [WHITE, mouse_lock, WHITE]
+		+ "[color=%s]%s[/color]  jump / ability / interact (gamepad buttons)" % [WHITE, joy])})
 	return out
 
 
