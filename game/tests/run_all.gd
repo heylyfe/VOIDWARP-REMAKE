@@ -20,14 +20,23 @@ const TESTS_DIR := "res://tests"
 const EXCLUDED := ["test_terrain_parity.gd"]
 
 
-func _init() -> void:
+var _ran := false
+
+
+# The suite runs on the first frame, not in _init/_initialize: the root Window is not
+# inside the tree until then, and a test that hosts a real Node (an audio player, a view)
+# needs a live tree. _process returns true to quit.
+func _process(_delta: float) -> bool:
+	if _ran:
+		return true
+	_ran = true
 	var paths: Array[String] = []
 	var dir := DirAccess.open(TESTS_DIR)
 	if dir == null:
 		print("ERROR: cannot open %s (DirAccess error %d)" % [TESTS_DIR, DirAccess.get_open_error()])
 		print("TESTS 0 passed 1 failed")
 		quit(1)
-		return
+		return true
 	for f in dir.get_files():
 		if not f.begins_with("test_") or not f.ends_with(".gd"):
 			continue
@@ -49,6 +58,7 @@ func _init() -> void:
 				print("FAIL %s: %s" % [p.get_file(), msg])
 	print("TESTS %d passed %d failed" % [passed, failed])
 	quit(1 if failed > 0 else 0)
+	return true
 
 
 func _run_one(path: String) -> Array[String]:
