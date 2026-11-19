@@ -57,3 +57,8 @@ secrets/
 # ours to redistribute, so they are not tracked. assets_src/enemies/README.md stays.
 assets_src/enemies/*
 !assets_src/enemies/README.md
+
+# The guardian's own working log. It records absolute paths from the machine it runs on, so it is
+# kept locally and never published. It was tracked by mistake; untracked in cycle 2 after a
+# fresh-eyes review found a home-directory path in it.
+GUARDIAN.md
