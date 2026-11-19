@@ -59,6 +59,14 @@ var stipend_per_level := 2
 
 var gold_value_mul := 1.0
 var stipend_flat_gold := 0
+## Gift yield stack term: each owned stack pays +10% on a gold gift's payout.
+## Applied on top of the computed (already floored) payout, floored a second time
+## only while stacks are owned, so float 0.1 cannot clip an exact-integer gain
+## (floor(v x 1.4) reads 279.99... in binary). 0 = the canon base.
+var gift_yield_stacks := 0
+## Gold gifts paid out THIS level through collect_gold_gift (reset at beacon open).
+## The final-band caller reads it to place the last gifts of the level.
+var gold_gifts_collected := 0
 
 # --- live state ---------------------------------------------------------------------------
 
@@ -133,6 +141,7 @@ func begin_gold_phase() -> void:
 	overtime_clock = 0.0
 	overtime_tier = 0
 	chain_centi = CHAIN_START_CENTI
+	gold_gifts_collected = 0
 
 
 ## One fixed-dt tick of the gold phase. Returns the overtime tiers gained this tick.
@@ -155,20 +164,35 @@ func tick_gold(dt: float) -> int:
 	return gained
 
 
-## A gold gift is collected. Pays floor(base x gold_value x chain) centi-gold (doubled on
-## the final band while Last Call is held), then advances the chain by +0.05 capped at
-## the cap - or repairs a window the ticks missed before this pickup. Returns the gain.
+## Gift yield upgrade: p_stacks stacks add +10% each to a gold gift's payout.
+## The canon payout floor is computed exactly as before; the yield is layered
+## on top as floor(v x (10 + stacks) / 10) only while stacks are owned.
+func apply_gift_yield(p_stacks: int) -> void:
+	gift_yield_stacks = maxi(0, p_stacks)
+
+
+## A gold gift is collected. Pays floor(base x gold_value x chain) centi-gold
+## (x (10 + yield stacks) / 10 on top while any are owned, then doubled on the
+## final band when the caller passes final_band), then advances the chain by
+## +0.05 capped at the cap - or repairs a window the ticks missed before this
+## pickup. Returns the gain. The caller owns the final_band decision (which
+## gifts of the level count as final) - this file may not name content, so the
+## band lives with the caller.
 func collect_gold_gift(final_band: bool = false) -> int:
 	if not gold_phase:
 		return 0
 	if since_gold > window_s:
 		_reset(BREAK_MISSED_WINDOW)
-	var value := int(floor(float(base_gift_centi) * gold_value_mul * float(chain_centi) / float(CHAIN_START_CENTI)))
+	var value := int(floor(float(base_gift_centi) * gold_value_mul
+			* float(chain_centi) / float(CHAIN_START_CENTI)))
+	if gift_yield_stacks > 0:
+		value = int(floor(float(value) * float(10 + gift_yield_stacks) / 10.0))
 	if final_band:
 		value *= 2
 	purse_centi += value
 	chain_centi = mini(chain_centi + increment_centi, cap_centi)
 	since_gold = 0.0
+	gold_gifts_collected += 1
 	return value
 
 

@@ -34,6 +34,10 @@ const BODY_CENTER := 0.9
 ## remaining_real * STRAGGLER_DEN <= total_real, i.e. at most the last 20% of
 ## REAL gifts. Hazards are excluded by construction (only occ == 0 slots count).
 const STRAGGLER_DEN := 5
+## Whole-percent view of the same rule (20 = the canon 20%); the late-game residual
+## band upgrade raises it to 35. Integer math only: rem * 100 vs total * pct.
+const STRAGGLER_PCT_BASE := 100 / STRAGGLER_DEN
+const STRAGGLER_PCT_WIDE := 35
 
 const PHASE_BLACK := "black"
 const PHASE_GOLD := "gold"
@@ -55,6 +59,9 @@ var black_quota: int = -1
 ## Multiplier on the pickup radius, fed from the pickup_radius stat (core/stats.gd)
 ## by the content layer; 1.0 until the shop wiring (T-022) sets it.
 var pickup_mult: float = 1.0
+## Whole-percent band for the straggler beam (20 = canon). The late-game residual
+## band upgrade sets it to 35; anything else leaves the canon 20.
+var straggler_pct: int = STRAGGLER_PCT_BASE
 
 
 static func create(level: Dictionary) -> RefCounted:
@@ -147,13 +154,19 @@ func all_black_collected() -> bool:
 	return false
 
 
-## The straggler rule (DESIGN.md section 3.3): when at most 20% of the REAL
-## gifts of the current phase remain, those remainers light up; otherwise an
+## The straggler band: owned (stacks >= 1) widens the last-20% residual band to
+## 35%; released, the canon 20% returns. The comparison stays integer-only.
+func apply_straggler_band(p_stacks: int) -> void:
+	straggler_pct = STRAGGLER_PCT_WIDE if p_stacks >= 1 else STRAGGLER_PCT_BASE
+
+
+## The straggler rule (DESIGN.md section 3.3): when at most straggler_pct% of the
+## REAL gifts of the current phase remain, those remainers light up; otherwise an
 ## empty list. Never contains an occ == 1 slot.
 func straggler_ids() -> Array:
 	var out: Array = []
 	var rem := remaining()
-	if rem * STRAGGLER_DEN > total_real:
+	if rem * 100 > total_real * straggler_pct:
 		return out
 	for i in slots.size():
 		if is_real(i) and not collected(i):

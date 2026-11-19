@@ -828,10 +828,18 @@ func push(player, dir: Vector3, speed: float, src_row: Dictionary = {}) -> void:
 		d = Vector3(0.0, 0.0, 1.0)
 	else:
 		d = d.normalized()
+	# An owned push-damping upgrade reaches the applied velocity through the
+	# pushed controller's own push_mul property (probed, never assumed): a body
+	# without the property takes the full canon push.
+	var scale := 1.0
+	for prop in ctl.get_property_list():
+		if str(prop.get("name", "")) == "push_mul":
+			scale = maxf(0.0, float(ctl.get("push_mul")))
+			break
 	# a push is a non-killing effect: velocity only, no damage, no lock, no death
-	ctl.vx = d.x * speed
-	ctl.vy = d.y * speed
-	ctl.vz = d.z * speed
+	ctl.vx = d.x * speed * scale
+	ctl.vy = d.y * speed * scale
+	ctl.vz = d.z * speed * scale
 	if d.y > 0.0:
 		ctl.grounded = false
 	# T-080 telemetry event (the void_fall record's "pushed in the last 120 ticks / by

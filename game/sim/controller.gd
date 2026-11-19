@@ -165,6 +165,14 @@ var updraft_cd := 0.0
 var updraft_used := false
 var updraft_owned := false
 
+# Stack knobs fed by the world at build (nothing here reads a ledger; the caller
+# computes the stack counts). Every default reproduces the canon body exactly.
+var push_mul := 1.0            # scales external push velocity (damping stacks)
+var feather_fall := false      # hold-jump fall cap armed (avian upgrade, below)
+var glide_energy_bonus := 0.0  # added to the glide energy pool (glider branch)
+var coyote_add := 0.0          # added to coyote_time, seconds
+var cooldown_mul := 1.0        # multiplies class ability cooldowns (dash regen, the rise)
+
 # --- content stats (DESIGN.md section 12; core/content_api.gd apply_modifiers output) -----
 # The controller consumes seven of the closed stat list. base_stats() is the `base` argument
 # of apply_modifiers() and apply_stats() takes its output; every value below is the canon
@@ -243,7 +251,7 @@ func setup(kit_id: String, consts: Dictionary = {}) -> void:
 			C[k] = consts[k]
 	charges = int(C["void_charges"])
 	charge_cap = int(C["charge_cap"])
-	glide_energy = float(C["glide_energy"])
+	glide_energy = _glide_max()
 	respawn_delay_s = float(C["respawn_delay"])
 	respawn_invuln_s = float(C["respawn_invuln"])
 	barrier_shield_cap = 0
@@ -370,7 +378,7 @@ func step(dt: float, a_in: Dictionary, w: Dictionary) -> Array:
 	if jump_pressed:
 		buffer = float(C["jump_buffer"])
 	if grounded:
-		coyote = float(C["coyote_time"])
+		coyote = float(C["coyote_time"]) + coyote_add
 	elif coyote > 0.0:
 		coyote = coyote - dt
 	if buffer > 0.0:
@@ -411,11 +419,11 @@ func step(dt: float, a_in: Dictionary, w: Dictionary) -> Array:
 		dash_ticks = int(round(float(C["dash_time"]) * 60.0))
 		if dash_ready:
 			dash_ready = false
-			dash_cd = float(C["dash_regen"])
+			dash_cd = float(C["dash_regen"]) * cooldown_mul
 		else:
-			# Twin Dash's second stock (D-T053-5): its own 3 s regen begins here.
+			# Twin Dash's second stock (D-T053-5): its own regen begins here.
 			bonus_dashes -= 1
-			bonus_cd = float(C["dash_regen"])
+			bonus_cd = float(C["dash_regen"]) * cooldown_mul
 		ev.append({"e": "dash_start"})
 
 	# ---- jumps (ground, coyote, buffered on landing, air) ---------------------------
@@ -471,7 +479,7 @@ func step(dt: float, a_in: Dictionary, w: Dictionary) -> Array:
 		gliding = false
 		updraft_used = true
 		updraft_ready = false
-		updraft_cd = UPDRAFT_CD
+		updraft_cd = UPDRAFT_CD * cooldown_mul
 		ev.append({"e": "updraft_rise"})
 
 	# ---- horizontal acceleration (addendum R4) --------------------------------------
@@ -532,6 +540,9 @@ func step(dt: float, a_in: Dictionary, w: Dictionary) -> Array:
 	if not dashing_move:
 		vy -= float(C["gravity"]) * dt
 		var tf := float(C["terminal_fall"])
+		if feather_fall and (buttons & BTN_JUMP) != 0:
+			# fall-cap upgrade (hold jump): the armed cap wins over the data constant
+			tf = minf(tf, FALL_CAP_U)
 		if vy < -tf:
 			vy = -tf
 	if gliding and vy < -float(C["glide_fall_cap"]):
@@ -563,7 +574,7 @@ func step(dt: float, a_in: Dictionary, w: Dictionary) -> Array:
 		vy = 0.0
 	grounded = r["grounded"]
 	if grounded and not was_g:
-		glide_energy = float(C["glide_energy"])
+		glide_energy = _glide_max()
 		air_jumps = air_jumps_max
 		pad_flight = false
 		ev.append({"e": "land"})
@@ -689,7 +700,7 @@ func _tick_respawn(dt: float, w: Dictionary, ev: Array) -> void:
 	grounded = true
 	pad_flight = false
 	gliding = false
-	glide_energy = float(C["glide_energy"])
+	glide_energy = _glide_max()
 	air_jumps = air_jumps_max
 	invuln = respawn_invuln_s
 	cur_key = "%d,%d,%d" % [int(picked["x"]), int(picked["z"]), int(picked["y"])]
@@ -970,6 +981,55 @@ func apply_twin_dash() -> void:
 func apply_field_dressing(total_stacks: int) -> void:
 	field_dressing_stacks = maxi(int(total_stacks), 0)
 	field_dressing_uses = field_dressing_stacks
+
+
+# ---- upgrade stack knobs (fed by the world; the caller computes stack counts) ----------
+
+## Fall-speed upgrade: while the jump button is held, a falling body is capped at
+## 6.0 u/s; on a glider it grants +1.5 s of glide energy instead (no cap). One stack.
+const FALL_CAP_U := 6.0
+const GLIDE_ENERGY_BONUS := 1.5
+func apply_fall_cap(p_stacks: int) -> void:
+	var n := maxi(0, p_stacks)
+	if kit == "glider":
+		feather_fall = false
+		glide_energy_bonus = GLIDE_ENERGY_BONUS * float(n)
+		glide_energy = minf(glide_energy + glide_energy_bonus, _glide_max())
+	else:
+		feather_fall = n > 0
+		glide_energy_bonus = 0.0
+
+
+## Coyote upgrade: +0.08 s per stack on the coyote window.
+const COYOTE_ADD_S := 0.08
+func apply_coyote_bonus(p_stacks: int) -> void:
+	coyote_add = COYOTE_ADD_S * float(maxi(0, p_stacks))
+
+
+## Push damping upgrade: each stack multiplies external push velocity by 0.7,
+## compounding (x0.7 / x0.49 / x0.343). Applied at the push application site.
+const PUSH_MUL_PER_STACK := 0.7
+func apply_push_dampening(p_stacks: int) -> void:
+	push_mul = pow(PUSH_MUL_PER_STACK, float(maxi(0, p_stacks)))
+
+
+## Cooldown upgrade: each stack cuts class ability cooldowns by 20% (floored at 0).
+const COOLDOWN_CUT_PER_STACK := 0.2
+func apply_cooldown_reduction(p_stacks: int) -> void:
+	cooldown_mul = maxf(0.0, 1.0 - COOLDOWN_CUT_PER_STACK * float(maxi(0, p_stacks)))
+
+
+## Air-jump upgrade, one purchase per stack: +1 air jump each at 80% jump velocity.
+## The Athletic class multiplier (athletic_air_jump_mult) composes on top by the
+## existing air-jump math, so the Athletic boost needs no extra wiring here.
+const AIR_JUMP_CARD_HEIGHT := 0.8
+func apply_double_jump_stacks(p_stacks: int) -> void:
+	for _i in range(maxi(0, p_stacks)):
+		apply_double_jump(AIR_JUMP_CARD_HEIGHT)
+
+
+func _glide_max() -> float:
+	return float(C["glide_energy"]) + glide_energy_bonus
 
 
 # T-053 Updraft (D-T053-6): the 3 u rise is granted ready; once per glide.

@@ -57,6 +57,10 @@ var _gate_announced: bool = false  # EV_GATE_OPENED fired once per intermission
 # empty = 1.0 (no Bargain / Inflation wired in). Set at create time via p_stats
 # or late via set_stats(). Never a hardcoded number.
 var _stats: Dictionary = {}
+# Shop stack caps beyond the canon max_stacks, computed by the caller (never a
+# hardcoded id here: the app aggregates the content scripts and hands the
+# {upgrade id: extra stacks} dict in; empty = the canon caps).
+var _max_stacks_bonus: Dictionary = {}
 
 
 ## Builds one lobby. p_votes / p_curses / p_stacks carry the run's ledgers in and are
@@ -68,10 +72,14 @@ var _stats: Dictionary = {}
 ## it, so Bargain / Inflation tune the altar prices; an empty dict means 1.0.
 ## Callers that can pass it at create time should; late wiring goes through
 ## set_stats() (see below).
+## p_max_stacks_bonus carries {upgrade id: extra stacks} for this visit's shop draw
+## (the caller aggregates its content scripts; sim never sees which upgrades they
+## are). Empty = the canon caps.
 static func create(p_api: RefCounted, p_level_completed: int, p_purse: int, p_seed: int,
 		p_votes: Dictionary = {}, p_curses: Dictionary = {}, p_stacks: Dictionary = {},
 		p_class: String = "", p_tithes: int = 0, p_hunger: int = 0,
-		p_last_vote: String = "", p_stats: Dictionary = {}) -> RefCounted:
+		p_last_vote: String = "", p_stats: Dictionary = {},
+		p_max_stacks_bonus: Dictionary = {}) -> RefCounted:
 	var lb := new()
 	lb.content = p_api
 	lb.level_completed = p_level_completed
@@ -84,6 +92,7 @@ static func create(p_api: RefCounted, p_level_completed: int, p_purse: int, p_se
 	lb.hunger = p_hunger
 	lb.last_vote = p_last_vote
 	lb._stats = p_stats.duplicate()
+	lb._max_stacks_bonus = p_max_stacks_bonus.duplicate()
 	lb._rng = VoidRngScript.new(VoidRngScript.mix(p_seed, 0x10BE))
 	lb.rng_s = int(lb._rng.s)
 	lb._build_bays(p_api)
@@ -223,7 +232,7 @@ func _redraw_shop(p_bay: Dictionary, p_api: RefCounted, p_bump: bool = true) -> 
 	var discount_mul: float = (100.0 - float(int(p_bay.get("discount_pct", 0)))) / 100.0
 	var drawn: Dictionary = OffersScript.draw_shop(
 			p_api, level_completed, purse, upgrade_stacks, class_chosen, _rng, discount_mul,
-			_stats)
+			_stats, _max_stacks_bonus)
 	p_bay["altars"] = drawn["offers"]
 	if p_bump:
 		_bump()
