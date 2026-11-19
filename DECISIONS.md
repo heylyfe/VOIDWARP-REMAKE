@@ -7183,3 +7183,48 @@ It is a five-fold gain on the instrument. I did not apply it, for the same reaso
 target for a competent human, the bot cannot validate them, and a 45-point survival drop from one extra enemy
 body is evidence about the BOT's fragility as much as about the game's difficulty. It stays parked with its
 measurement recorded for the owner, who can weigh a human's experience against a bot's.
+
+## D-C2-3: the run log does not publish atomically, and that is the correct shape
+
+**Ruling.** `app/run_log.gd` writes its records directly to the destination file. It does not
+write a `.tmp` and rename on close. `app/settings.gd` and `core/records.gd` do.
+
+**Why.** The run log is append-only and it is read *while it is being written* - a report or a
+test mid-run reads the records so far. The file's own header promises this and `_record`'s
+per-line flush exists to serve it. A `.tmp`-then-rename publish makes the destination invisible
+until `close()`, which breaks that promise. The failure atomicity would guard against here is a
+truncated tail, and the loader already tolerates a truncated tail. Settings and records rewrite
+a whole file in place, where a partial write really is corruption, so those two publish
+atomically.
+
+**Consequence.** A crash mid-run can leave a run log whose last line is incomplete. That is
+accepted. A crash mid-save can no longer corrupt the player's settings or bests.
+
+## D-C2-4: an upgrade's numbers live in its own module, never in app/
+
+**Ruling.** When an upgrade's whole effect is a controller knob, the upgrade carries a module
+declaring `static knobs(stacks, kit) -> Dictionary`, and `app/world.gd` merges whatever the
+owned modules declare. `world.gd` names no upgrade id.
+
+**Why.** Two reasons that happen to agree. The boundary scan forbids a content id in `app/`, and
+naming four ids there was a real violation I introduced. And the number belongs next to the rule
+sentence that states it, which is the shape every other script upgrade already uses.
+
+**Consequence.** Adding a knob upgrade is now a content change, not an app change. A module that
+declares nothing contributes nothing, so an un-upgraded run reads every knob at its canon
+default and is byte-identical to before.
+
+## D-C2-5: the Athletic branch of quick_recovery stays inert, and is recorded rather than faked
+
+**Ruling.** `quick_recovery`'s rule sentence gives the Athletic +5% run speed instead of a
+cooldown cut. The module returns `{}` for the Athletic.
+
+**Why.** The Athletic has no class cooldown, so the cooldown knob is meaningless for it - but the
+controller exposes no separate run-speed knob for a single upgrade to add to; `run_speed_mul` is
+owned by the stat pipeline. Returning `{}` is the same live behaviour as before the module
+existed. Inventing a knob to make the sentence true would be a bigger change than the finding
+justifies, and doing it silently would be worse than recording it.
+
+**Consequence.** One class gets nothing from one upgrade. This is a known gap, stated in the
+module header, and it is the kind of thing that should be closed by a stat-pipeline change
+rather than a special case.
