@@ -35,6 +35,7 @@ extends Node3D
 const FogEnvScript := preload("res://view/fog_env.gd")
 const BillboardScript := preload("res://view/billboard.gd")
 const OffersSim := preload("res://sim/offers.gd")
+const NoRefundsScript := preload("res://content/curses/no_refunds.gd")
 
 # ---- DESIGN.md section 11 facts ----
 const HALL_X := 28.0
@@ -118,6 +119,19 @@ var _banners: Array = []             # [{bay_index, title, subtitle}] live banne
 var _flash_t: float = 0.0            # the pick flare's remaining time
 var _flash_bay: int = -1             # the bay the flare belongs to
 var _gate_label: Label3D = null      # the sealed-gate readout (unresolved bays)
+## Sealed Deals (T-051, view side): the run's curse ledger shape ({"curses_held":
+## {curse id: stacks}} - the ledger's "curses" dict is exactly the held shape). While
+## no_refunds is held the reroll plinths never draw; an unset state answers neutral,
+## the canon plinth.
+var _curses_state: Dictionary = {}
+
+
+## Feeds the run's curse state (view/lobby/lobby_scene.gd build()'s ledger). Rebuilds
+## the selectables on the spot so a mid-visit change is visible at once.
+func set_curses_state(p_state: Dictionary) -> void:
+	_curses_state = p_state
+	if lobby != null:
+		refresh(lobby)
 
 
 func _ready() -> void:
@@ -634,6 +648,12 @@ func _build_selectable(p_lobby: RefCounted, p_index: int, p_bay_index: int, p_al
 		_reroll_icon(anchor)
 	wrap["panel"] = _panel(wrap, altar_details(p_lobby, p_bay_index, p_altar, bay_kind),
 			root.position)
+	# Sealed Deals (T-051): while the run holds the curse the reroll plinth never
+	# draws (reroll_plinth_visible() false, held_stacks 0 = neutral true). The panel is
+	# root's child, so one visible flag covers the whole plinth. The wrapper STAYS in
+	# _altars: altar_table()'s indices must keep their Select addresses.
+	if kind == "reroll" and not NoRefundsScript.reroll_plinth_visible(_curses_state):
+		(wrap["root"] as Node3D).visible = false
 	return wrap
 
 

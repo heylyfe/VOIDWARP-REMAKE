@@ -12,6 +12,7 @@ extends Node3D
 # from the sim's slot_pos() - nothing is computed here.
 
 const GiftsScript := preload("res://sim/gifts.gd")
+const UnmarkedScript := preload("res://content/curses/unmarked.gd")
 
 const BEAM_COLOR := Color(0.486, 1.0, 0.957)  # #7CFFF4
 const BEAM_TOP := 40.0     # absolute Y the beam reaches
@@ -20,6 +21,19 @@ const BEAM_ALPHA := 0.5
 
 var _gifts: RefCounted = null
 var _beams := {}           # slot id -> MeshInstance3D
+## The curse dispatcher's shared state dict (sim/curse_runtime.gd state). Empty = no
+## curses: unmarked.straggler_ids() answers the sim's own list, byte for byte - the
+## un-cursed beam shows for free. Held Unmarked: NO straggler is ever reported
+## ("no straggler beam", the rule sentence) and this view draws nothing.
+var _curses_state: Dictionary = {}
+
+
+## Feeds the dispatcher's state (world.gd holds it as _curses.state). Re-syncs on the
+## spot: the next frame's presentation pass would call sync() anyway; doing it here
+## makes the view self-sufficient for a caller that syncs on change only.
+func set_curses_state(p_state: Dictionary) -> void:
+	_curses_state = p_state
+	sync()
 
 
 func setup(gifts_state: RefCounted) -> void:
@@ -33,7 +47,9 @@ func sync(gifts_state: RefCounted = null) -> void:
 		_gifts = gifts_state
 	if _gifts == null:
 		return
-	var ids: Array = _gifts.straggler_ids()
+	# the curse consult, not the sim's slot, is what the beam set follows (T-051):
+	# the module passes the sim's list through untouched when Unmarked is not held
+	var ids: Array = UnmarkedScript.straggler_ids(_curses_state, _gifts)
 	var wanted := {}
 	for id in ids:
 		wanted[id] = true

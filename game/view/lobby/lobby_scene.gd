@@ -108,6 +108,10 @@ func build(p_seed: int, p_completed: int, p_ledger: Dictionary = {}) -> bool:
 	# Lights Out reaches the hall too: the world-computed stats drive both fill lights.
 	hall.apply_stats(_run_stats())
 	player.apply_stats(_run_stats())
+	# Sealed Deals reaches the hall too (T-051): the run's carried curses ARE the held
+	# shape ({curse id: stacks} - sim/curse_runtime.gd's held_of), so the ledger's
+	# "curses" dict is the curse state the antechamber's reroll query reads.
+	hall.set_curses_state({"curses_held": _ledger.get("curses", {}) as Dictionary})
 	var sett := SettingsScript.new()
 	sett.load_from()
 	_mouse_sens = sett.mouse_sensitivity

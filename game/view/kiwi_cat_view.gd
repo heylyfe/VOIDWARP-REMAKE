@@ -16,6 +16,7 @@ extends Node3D
 # the effects themselves (fade, bob, pulse) are unchanged.
 
 const BillboardScript := preload("res://view/billboard.gd")
+const LitterScript := preload("res://content/curses/litter.gd")
 
 const TICKS_PER_SECOND := 60.0
 const TAU := 6.283185307179586
@@ -34,6 +35,20 @@ var _spawn_total := 30
 var _bob_t := 0.0               # seconds into the bob cycle
 var _meow_left := 0             # scale-pulse ticks remaining
 var _meow_total := 12
+
+## Litter (T-051, view side): the dispatcher's shared state dict
+## (sim/curse_runtime.gd state) and the cat's litter-trail tell - a faint ring at the
+## point the kitten trails at, litter.gd trail_point()'s own geometry (6 u behind the
+## cat on the cat->player line). litter's kitten_cfg() / trail_point() carry NO state
+## argument, so the held check lives here: an unset state (0 stacks) never draws the
+## trail, the canon view.
+var _curses_state: Dictionary = {}
+var _trail_marker: MeshInstance3D = null
+
+
+## Feeds the dispatcher's state (world.gd holds it as _curses.state).
+func set_curses_state(p_state: Dictionary) -> void:
+	_curses_state = p_state
 
 
 ## Parses sprites.json, builds the billboarded PNG sprite (body = world_height u tall,
@@ -116,4 +131,37 @@ func step(dt_ticks: int = 1) -> void:
 		_set_anim("idle_chase")
 	elif billboard.anim_name == "telegraph" and _meow_left == 0:
 		_set_anim("idle_chase")
+
+
+## The litter trail tell (T-051, view side). cat_row is the sim's live kiwi_cat row
+## ({"x","y","z","cfg", ...}), player the nearest player's POSITION row ({}, or a row
+## without x/z, reads as "no player" to trail_point()). While litter is held, a faint
+## ring marks the kitten's trail point - exactly litter.gd trail_point()'s geometry -
+## so the counter-play ("kite them into a line and cross") has something to read. The
+## marker sits RELATIVE to this view: the view is placed on its cat (world.gd's
+## _billboard_pass idiom), so the offset is trail_point - the cat's position.
+func update_trail(cat_row: Dictionary, player: Dictionary) -> void:
+	if int(_curses_state.get("curses_held", {}).get("litter", 0)) <= 0:
+		if _trail_marker != null:
+			_trail_marker.visible = false
+		return
+	if _trail_marker == null:
+		_trail_marker = MeshInstance3D.new()
+		var mesh := CylinderMesh.new()
+		mesh.height = 0.02
+		mesh.top_radius = 0.35
+		mesh.bottom_radius = 0.35
+		mesh.radial_segments = 12
+		mesh.rings = 1
+		_trail_marker.mesh = mesh
+		var m := StandardMaterial3D.new()
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		m.albedo_color = Color(0.72, 0.58, 0.36, 0.35)   # litter: dusty amber
+		_trail_marker.material_override = m
+		add_child(_trail_marker)
+	_trail_marker.visible = true
+	var p: Vector3 = LitterScript.trail_point(cat_row, player)
+	_trail_marker.position = p - Vector3(float(cat_row.get("x", 0.0)),
+			float(cat_row.get("y", 0.0)), float(cat_row.get("z", 0.0)))
 

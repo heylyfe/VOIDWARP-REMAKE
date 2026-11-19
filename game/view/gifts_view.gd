@@ -45,6 +45,7 @@ extends Node3D
 # phase and the collected bitsets, and a body never shows on an occ == 1 slot.
 
 const GiftsScript := preload("res://sim/gifts.gd")
+const DullGiftsScript := preload("res://content/curses/dull_gifts.gd")
 
 const BLACK_MODEL := "res://assets/models/black_gift.glb"
 const GOLD_MODEL := "res://assets/models/gold_gift.glb"
@@ -55,6 +56,11 @@ const TURN_PERIOD := 4.0
 const TAU_F := 6.283185307179586
 const DT := 1.0 / 60.0   # the fixed sim step; the internal clock advances this per sync()
 const RIM_FACTOR := 1.5   # black_gift_rim emission x 1.5 (TERRAIN_SPEC 12.2, D-T020-6). The black gift no longer applies it as an additive overlay (J8: measured to add a flat ~+45 to EVERY pixel, body included - the "near-black body" could never land near-black); kept as the spec's recorded value. The rim renders via the unshaded vertex-colour base pass (see _black_body_material).
+## Dull Gifts' glow-off base pass: one albedo multiply maps the rim ribbon's vertex
+## colour onto the body colour - #7CFFF4 (0.486, 1.0, 0.957) x this = #050608
+## (0.0196, 0.0235, 0.0314), so the ribbon stops reading while the body stays
+## near-black (measured body (38,42,49), J8 - the dull pass only darkens it).
+const DULL_ALBEDO := Color(0.0404, 0.0235, 0.0328)
 const GOLD_FACTOR := 2.0  # gold_gift emission x 2.0 (TERRAIN_SPEC 12.2); no longer used to render anything (the gold gift renders via _gold_body_material()); kept as the spec's value
 
 var _gifts: RefCounted = null
@@ -62,6 +68,17 @@ var _black: Array = []    # slot id -> Node3D (null on occ == 1 slots)
 var _gold: Array = []     # slot id -> Node3D
 var _turn_idx: Array = [] # slot id -> build order (phase offset source; -1 not built)
 var _time := 0.0          # sim seconds (caller-set via sync()/set_time(), else advanced per sync())
+
+## Dull Gifts (T-051, view side): the rim glow is a VIEW tell - visible only within
+## 20 u of the player (DESIGN.md section 3.2, D-075). The consumer calls
+## rim_glow_visible() per slot per sync(); the module answers neutral at 0 stacks,
+## so an unset state shows the canon always-glow. set_viewpoint() is the player's
+## FEET point (the module's own wording); without it the query reads the origin.
+var _curses_state: Dictionary = {}
+var _eye := Vector3.ZERO
+var _black_mat: Array = []     # slot id -> the slot's normal black base pass (glow on)
+var _black_glow: Array = []    # slot id -> the rim-glow state last applied to the slot
+var _dull_mat: StandardMaterial3D = null
 
 
 ## Builds one node per real gift slot. level: the Level dict; gifts_state: the
@@ -78,6 +95,11 @@ func setup(level: Dictionary, gifts_state: RefCounted) -> void:
 	var n: int = _gifts.slots.size()
 	_black.resize(n)
 	_gold.resize(n)
+	_black_mat = []
+	_black_glow = []
+	_black_mat.resize(n)
+	_black_glow.resize(n)
+	_black_glow.fill(true)
 	_turn_idx = []
 	_turn_idx.resize(n)
 	_turn_idx.fill(-1)
@@ -92,7 +114,9 @@ func setup(level: Dictionary, gifts_state: RefCounted) -> void:
 		var pos: Vector3 = _gifts.slot_pos(i)
 		var b: Node3D = black_ps.instantiate()
 		b.position = pos
-		_add_body(b, _black_body_material())
+		var bm: StandardMaterial3D = _black_body_material()
+		_add_body(b, bm)
+		_black_mat[i] = bm
 		add_child(b)
 		_black[i] = b
 		var g: Node3D = gold_ps.instantiate()
@@ -189,6 +213,37 @@ func set_time(t: float) -> void:
 	_time = t
 
 
+## The curse dispatcher's shared state dict (sim/curse_runtime.gd state) - the shape
+## world.gd's _curses carries. Applied on the slot's next sync() (world._view_pass
+## syncs every tick, so feeding the state and the viewpoint right before it is enough;
+## sync() owns the turn clock and advancing it here would jitter the spin).
+func set_curses_state(p_state: Dictionary) -> void:
+	_curses_state = p_state
+
+
+## The player's FEET point (dull_gifts.gd rim_glow_visible's own wording). Callers
+## without it leave the origin - the query then measures from (0, 0, 0).
+func set_viewpoint(p: Vector3) -> void:
+	_eye = p
+
+
+## Swaps one slot's black base pass: the normal vertex-colour pass (glow on), or the
+## dull one - the rim ribbon multiplied down onto the body colour (glow off). Same
+## walk _add_body() applies at build time.
+func _apply_rim(i: int, p_glow: bool) -> void:
+	if _black[i] == null:
+		return
+	var mat: StandardMaterial3D
+	if p_glow:
+		mat = _black_mat[i]
+	else:
+		if _dull_mat == null:
+			_dull_mat = _black_body_material()
+			_dull_mat.albedo_color = DULL_ALBEDO
+		mat = _dull_mat
+	_add_body(_black[i], mat)
+
+
 ## Syncs visibility from the sim's gift state (call every frame or on change).
 ## time_secs, when >= 0.0, sets the absolute sim clock for the turn; negative
 ## (the default) advances the internal fixed-step clock by one 1/60 s tick.
@@ -213,6 +268,18 @@ func sync(gifts_state: RefCounted = null, time_secs: float = -1.0) -> void:
 		if _black[i] != null:
 			_black[i].rotation.y = rot
 			_black[i].visible = shown and not gold
+			# Dull Gifts (T-051): the rim glow, a view tell, is visible only within 20 u
+			# of the player (DESIGN.md section 3.2, D-075). The module reads
+			# curses_held itself and answers neutral at 0 stacks - the un-cursed
+			# always-glow needs no branch here.
+			var gpos: Vector3 = _gifts.slot_pos(i)
+			var glow: bool = DullGiftsScript.rim_glow_visible(_curses_state,
+					_eye.x, _eye.y, _eye.z, gpos.x, gpos.y, gpos.z)
+			if i >= _black_glow.size() or _black_glow[i] != glow:
+				while _black_glow.size() <= i:
+					_black_glow.append(true)
+				_black_glow[i] = glow
+				_apply_rim(i, glow)
 		if _gold[i] != null:
 			_gold[i].rotation.y = rot
 			_gold[i].visible = shown and gold
