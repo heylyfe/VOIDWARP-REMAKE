@@ -19,6 +19,7 @@ extends RefCounted
 # the controller's own state (read by view/hud via the snapshot helpers).
 
 const CollisionScript := preload("res://sim/collision.gd")
+const DeathScript := preload("res://sim/death.gd")
 
 const BTN_JUMP := 1
 const BTN_ABILITY := 2
@@ -164,10 +165,40 @@ var updraft_cd := 0.0
 var updraft_used := false
 var updraft_owned := false
 
+# --- content stats (DESIGN.md section 12; core/content_api.gd apply_modifiers output) -----
+# The controller consumes seven of the closed stat list. base_stats() is the `base` argument
+# of apply_modifiers() and apply_stats() takes its output; every value below is the canon
+# base, so a controller that is never handed a stat dict behaves exactly as it did before.
+const GLITCH_SLOW_MUL := 0.8        # D-075: the glitched floor's -20% (an enemy effect)
+const VOID_FALL_CHARGE_COST := 1    # section 3.1: a void fall spends 1 charge
+var run_speed_mul := 1.0            # run_speed: multiplier on the class/base run speed
+var glitch_slow_mul := GLITCH_SLOW_MUL
+var respawn_delay_s := 0.8          # respawn_delay: the void-fall wait, seconds
+var respawn_invuln_s := 1.0         # respawn_invuln: post-respawn invulnerability, seconds
+var void_fall_charge_cost := VOID_FALL_CHARGE_COST
+# barrier_shields (Subspacial Barrier): a tripmine shield, granted per level and
+# restored on beacon entry. cap is the stat (shields per level), shields is what
+# is held right now; _barrier_grant_done makes the FIRST apply_stats call the
+# level-start grant, so a later re-application (the gold-phase edge) can never
+# refill a spent shield.
+var barrier_shield_cap := 0
+var barrier_shields := 0
+var _barrier_grant_done := false
+var _base_stats: Dictionary = {}
+
 # void charges (D-050): charges carry over between levels (D-063).
 var charges := 2
 var charge_cap := 2
 var last_light_spent := false
+
+# Field Dressing (DESIGN.md section 8, D-052, D-086's PARKED row): once per level per
+# stack, a void fall costs no charge. stacks is what the run owns; uses is the free-fall
+# budget left THIS level, granted by apply_field_dressing (which the content layer's
+# on_level_start / purchase path calls with the owned stack total) and spent by the
+# free-fall branch of _void_fall(). A fall the upgrade absorbs never touches `charges`
+# - including at 0 held charges, where the fall is free instead of lethal.
+var field_dressing_stacks := 0
+var field_dressing_uses := 0
 
 # safe-tile history ring (DESIGN section 3.1): entries {"x", "z", "y", "key"}.
 var ring: Array = []
@@ -188,6 +219,12 @@ var dead_killer := ""
 # world u); with no hook the controller falls back to the world's mirror arrays, which is
 # all a hand-made world dict in a test carries.
 var push_hook: Callable = Callable()
+# PARKED row 27 (the player's half): instant-position subscribers. The owner
+# (app/world.gd, the lobby) sets this to its collision body's re-sync; every
+# teleport path in this file calls sync_body() after moving the controller, so a
+# body held outside the sim never resolves the first tick after a teleport
+# against the old position. No hook set = a no-op (hand-made worlds, tests).
+var sync_body_hook: Callable = Callable()
 
 
 func setup(kit_id: String, consts: Dictionary = {}) -> void:
@@ -199,6 +236,19 @@ func setup(kit_id: String, consts: Dictionary = {}) -> void:
 	charges = int(C["void_charges"])
 	charge_cap = int(C["charge_cap"])
 	glide_energy = float(C["glide_energy"])
+	respawn_delay_s = float(C["respawn_delay"])
+	respawn_invuln_s = float(C["respawn_invuln"])
+	barrier_shield_cap = 0
+	barrier_shields = 0
+	_barrier_grant_done = false
+	_base_stats = {
+		"glitch_slow_mul": GLITCH_SLOW_MUL,
+		"respawn_delay": respawn_delay_s,
+		"respawn_invuln": respawn_invuln_s,
+		"run_speed": 1.0,
+		"void_charges_max": float(charge_cap),
+		"void_fall_charge_cost": float(VOID_FALL_CHARGE_COST),
+	}
 
 
 # Places the controller on the dais spawn tile of a world (feet on the tile top).
@@ -212,6 +262,7 @@ func place(w: Dictionary) -> void:
 	vz = 0.0
 	grounded = true
 	cur_key = "%d,%d,%d" % [d[0], d[1], d[2]]
+	sync_body()
 
 
 # True while class abilities are locked: an applied lock (D-070) or standing on
@@ -225,15 +276,16 @@ func ability_locked(w: Dictionary) -> bool:
 # Run speed for the current tick (addendum R4, D-075, D-070, D-T012-3): class mult and
 # upgrade pcts compose additively on base; under ability lock (or on glitched floor,
 # D-051) the class mult is off and purchased upgrades work at normal strength; the
-# glitched floor then applies its fixed x0.8 slow on top.
+# glitched floor then applies its own slow on top. The two content stats multiply the
+# result: run_speed (Yearn for Speed, Weighed Down) and glitch_slow_mul (Insulation).
 func run_speed(w: Dictionary) -> float:
 	var ath := kit == "athletic" and not ability_locked(w)
 	var glitched: bool = cur_key != "" and w["glitched"].has(cur_key)
 	var class_mult := float(C["athletic_run_mult"]) if ath else 1.0
 	var up: float = speed_base_add * (float(C["athletic_speed_upgrade_mult"]) if ath else 1.0)
 	if glitched:
-		return float(C["run_speed"]) * (1.0 + up) * 0.8
-	return float(C["run_speed"]) * (class_mult + up)
+		return float(C["run_speed"]) * (1.0 + up) * glitch_slow_mul * run_speed_mul
+	return float(C["run_speed"]) * (class_mult + up) * run_speed_mul
 
 
 func friction_mult(w: Dictionary) -> float:
@@ -248,6 +300,15 @@ func hud_last_light() -> String:
 	if last_light_spent:
 		return "grey"
 	return "lit" if charges >= 1 else "dim"
+
+
+# PARKED row 27 (the player's half): re-sync the owner's collision body after an
+# instant teleport. No-op when no sync_body_hook is set. Called by every teleport
+# path in this file, AFTER the position is written: place(), the void-fall
+# respawn landing, and the Last Light save.
+func sync_body() -> void:
+	if sync_body_hook.is_valid():
+		sync_body_hook.call()
 
 
 # One 60 Hz tick. Returns the events emitted by this tick.
@@ -555,10 +616,27 @@ func _try_launch_pad(w: Dictionary, ev: Array) -> void:
 # ---- void fall / respawn (D-050, D-053, D-043) --------------------------------------
 
 func _void_fall(w: Dictionary, ev: Array) -> void:
-	if charges >= 1:
+	if field_dressing_uses >= 1:
+		# Field Dressing (D-086): one free fall per stack per level. No charge is
+		# spent - `charges` and `charges_before` stay equal (the free-ness the charge
+		# log derives), the respawn itself runs exactly as a paid fall's would, and the
+		# `free` flag exposes the event the app layer forwards to void_pips.pip_free_fall().
+		field_dressing_uses -= 1
+		respawn_t = respawn_delay_s
+		vx = 0.0
+		vy = 0.0
+		vz = 0.0
+		gliding = false
+		dash_ticks = 0
+		ev.append({"e": "void_fall", "free": true, "charges": charges,
+				"charges_before": charges, "tile": cur_key,
+				"nearest_enemy_dist": _nearest_enemy_dist(w)})
+		ev.append({"e": "chain_reset", "why": "void_fall"})
+		return
+	if charges >= void_fall_charge_cost:
 		var before := charges
-		charges -= 1
-		respawn_t = float(C["respawn_delay"])
+		charges -= void_fall_charge_cost
+		respawn_t = respawn_delay_s
 		vx = 0.0
 		vy = 0.0
 		vz = 0.0
@@ -566,9 +644,10 @@ func _void_fall(w: Dictionary, ev: Array) -> void:
 		dash_ticks = 0
 		# T-080 telemetry payload: the tile the player last stood on, the nearest enemy
 		# body at the fall, and the before/after charge counts (the log's charge_spent
-		# record derives free from them; Field Dressing is not wired into this path yet).
-		ev.append({"e": "void_fall", "charges": charges, "charges_before": before,
-				"tile": cur_key, "nearest_enemy_dist": _nearest_enemy_dist(w)})
+		# record derives free = (charges_before == charges_after) from them).
+		ev.append({"e": "void_fall", "free": false, "charges": charges,
+				"charges_before": before, "tile": cur_key,
+				"nearest_enemy_dist": _nearest_enemy_dist(w)})
 		ev.append({"e": "chain_reset", "why": "void_fall"})
 	else:
 		var dd: Dictionary = _die("D-VOID", "void", ev)
@@ -600,9 +679,10 @@ func _tick_respawn(dt: float, w: Dictionary, ev: Array) -> void:
 	gliding = false
 	glide_energy = float(C["glide_energy"])
 	air_jumps = air_jumps_max
-	invuln = float(C["respawn_invuln"])
+	invuln = respawn_invuln_s
 	cur_key = "%d,%d,%d" % [int(picked["x"]), int(picked["z"]), int(picked["y"])]
 	dwell = 0.0
+	sync_body()
 	ev.append({"e": "respawn", "tile": cur_key, "charges": charges})
 
 
@@ -697,17 +777,29 @@ func _track_ring(dt: float, w: Dictionary, _ev: Array) -> void:
 # ---- kills, Last Light, beacon (D-050, D-053, D-057, D-063, D-073) ------------------
 
 # A killing blow lands (enemy, tripmine or bomb — never a void fall, which the step
-# handles itself). Returns true when Last Light saved the player. Respawn
-# invulnerability and Last Light invulnerability suppress kills without spending it.
-# The save teleports to the beacon dais and pushes enemy bodies out to exactly 8 u
-# (D-073): through push_hook (the runtime's live rows) when an owner set one, else by
-# mutating w["enemies"] in place.
+# handles itself). Returns true when a Subspacial Barrier shield absorbed the blow, or
+# when Last Light saved the player. Respawn invulnerability and Last Light
+# invulnerability suppress kills without spending anything. A held barrier shield
+# (barrier_shields > 0) absorbs exactly one TRIPMINE (code D-MINE, after the defuse
+# roll in sim/mines.gd) and is consumed; it never absorbs anything else - the missile
+# included [CANON]. The shield sits before Last Light in the ladder and does not
+# teleport. The save teleports to the beacon dais and pushes enemy bodies out to
+# exactly 8 u (D-073): through push_hook (the runtime's live rows) when an owner set
+# one, else by mutating w["enemies"] in place.
 func try_kill(code: String, killer: String, w: Dictionary, ev: Array = []) -> bool:
 	if dead or respawn_t >= 0.0:
 		return false
 	if invuln > 0.0:
 		ev.append({"e": "kill_suppressed", "code": code, "killer": killer})
 		return false
+	if code == DeathScript.MINE_CODE and barrier_shields > 0:
+		# Subspacial Barrier (D-051): one tripmine absorbed, the shield consumed. No
+		# teleport, no Last Light spend, no invulnerability granted - the hit lands and
+		# simply does nothing.
+		barrier_shields -= 1
+		ev.append({"e": "barrier_shield_absorbed", "code": code, "killer": killer,
+				"shields": barrier_shields})
+		return true
 	if not last_light_spent and charges >= 1:
 		last_light_spent = true
 		var d: Array = w["dais"]
@@ -724,6 +816,7 @@ func try_kill(code: String, killer: String, w: Dictionary, ev: Array = []) -> bo
 		invuln = float(C["last_light_invuln"])
 		cur_key = "%d,%d,%d" % [int(d[0]), int(d[1]), int(d[2])]
 		dwell = 0.0
+		sync_body()
 		# D-073: a live runtime owns the enemy rows, so when its hook is set it performs
 		# the push; the mirror array below is only the fallback for a hand-made world.
 		if push_hook.is_valid():
@@ -785,7 +878,11 @@ func _nearest_enemy_dist(w: Dictionary) -> float:
 
 # Beacon entry (DESIGN.md section 3.1): restores exactly 1 charge, capped. The caller
 # checks the beacon's OPEN state and the 1.5 u trigger radius; charges never reset here.
+# Also restores the Subspacial Barrier shield to the stat's per-level budget (the
+# upgrade's "1 shield per level, restored on beacon entry"), independently of the
+# charge cap.
 func beacon_enter(ev: Array = []) -> bool:
+	barrier_shields = barrier_shield_cap
 	if charges < charge_cap:
 		charges += 1
 		ev.append({"e": "beacon_enter", "charges": charges})
@@ -794,6 +891,37 @@ func beacon_enter(ev: Array = []) -> bool:
 
 
 # ---- upgrade plumbing (until the content layer's stat hooks exist, T-013) -----------
+
+# The controller's own base values for every stat it consumes: the `base` argument of
+# core/content_api.gd apply_modifiers(). A stat absent here has no consumer in this file
+# (pickup_radius, defuse_chance, enemy_speed_mul, telegraph_mul and the view stats
+# belong to gifts / mines / the enemy runtime / the view). barrier_shields is consumed
+# here (the Subspacial Barrier: tripmine absorption in try_kill + restore in
+# beacon_enter).
+func base_stats() -> Dictionary:
+	return _base_stats.duplicate()
+
+
+# Takes apply_modifiers()'s output and makes it live. Every key falls back to the canon
+# base, so a partial dict - or none at all - leaves the controller exactly as it was.
+# barrier_shields' canon base is 0 (core/stats.gd): a dict without it grants no shield.
+# The first call after setup() is the level-start grant; later calls (the gold-phase
+# edges) only clamp the held count down to the stat, never refill a spent shield.
+func apply_stats(p_stats: Dictionary) -> void:
+	run_speed_mul = float(p_stats.get("run_speed", 1.0))
+	glitch_slow_mul = float(p_stats.get("glitch_slow_mul", GLITCH_SLOW_MUL))
+	respawn_delay_s = float(p_stats.get("respawn_delay", float(C["respawn_delay"])))
+	respawn_invuln_s = float(p_stats.get("respawn_invuln", float(C["respawn_invuln"])))
+	void_fall_charge_cost = int(round(float(p_stats.get("void_fall_charge_cost",
+			float(VOID_FALL_CHARGE_COST)))))
+	set_charge_cap(int(round(float(p_stats.get("void_charges_max", float(charge_cap))))))
+	barrier_shield_cap = maxi(0, int(round(float(p_stats.get("barrier_shields", 0.0)))))
+	if not _barrier_grant_done:
+		_barrier_grant_done = true
+		barrier_shields = barrier_shield_cap
+	else:
+		barrier_shields = mini(barrier_shields, barrier_shield_cap)
+
 
 # One speed upgrade purchase of base strength pct (0.05 = +5%). Strength composition
 # (D-T012-3): run = base * (class_mult + raw pcts), Athletic cards counted x1.5 while
@@ -817,6 +945,17 @@ func apply_twin_dash() -> void:
 	bonus_dashes_max = 1
 	bonus_dashes = 1
 	bonus_cd = 0.0
+
+
+# Field Dressing (DESIGN.md section 8, D-086): the run owns total_stacks of the
+# upgrade and gratuitously grants the per-level free-fall budget with them. Every call
+# REPLACES the level's budget (uses = stacks), so the content layer's on_level_start
+# handler calls it with the owned stack total at each level start (the "once per level
+# per stack" reset), and a purchase mid-level calls it with the new total. Without a
+# call the controller has no stacks and every fall pays, exactly as before.
+func apply_field_dressing(total_stacks: int) -> void:
+	field_dressing_stacks = maxi(int(total_stacks), 0)
+	field_dressing_uses = field_dressing_stacks
 
 
 # T-053 Updraft (D-T053-6): the 3 u rise is granted ready; once per glide.

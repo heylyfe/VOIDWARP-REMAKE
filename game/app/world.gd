@@ -26,8 +26,13 @@ extends Node3D
 #     tick_gold(dt) advances the window, gold gift pickups pay collect_gold_gift,
 #     chain_reset events break the chain, beacon entry pays the stipend. A signal
 #     (level_completed) reports the completion so app.gd can advance.
-#   - curse sim knobs (the time-of-day curse family and friends) are NOT applied to the
-#     controller or the runtime; only class + enemy votes ride the resolved lobbies.
+#   - the run's owned upgrade stacks and held curses reach the live run through
+#     core/content_api.gd's apply_modifiers (DESIGN.md section 12): the economy reads the
+#     gold-phase stats (gold_value / chain_window / chain_cap / overtime_period /
+#     stipend_flat) and the controller reads its six (run_speed / glitch_slow_mul /
+#     respawn_delay / respawn_invuln / void_charges_max / void_fall_charge_cost). A stat
+#     with no consumer in either file is NOT applied here - see the ticket report; the
+#     enemy runtime, the mines, the gifts and the view keep their own knobs.
 #
 # The run seed reaches the controller and the camera unchanged; the ENEMY runtime gets the
 # same run seed (spawn stream), the intermissions are seeded mix(seed, 5000 + lobby) /
@@ -86,6 +91,16 @@ const GiftsScript := preload("res://sim/gifts.gd")
 const MinesScript := preload("res://sim/mines.gd")
 const EconomyScript := preload("res://sim/economy.gd")
 const DeathScript := preload("res://sim/death.gd")
+# The enemy presentation layer (the VFX wiring wave): every view below existed and was
+# tested in isolation, but nothing fed it, so attacks arrived with no ring, no line, no
+# sound, and projectiles were invisible. build() creates them, step() feeds them.
+const TelegraphViewScript := preload("res://view/vfx/telegraph_view.gd")
+const CoilTelegraphScript := preload("res://view/vfx/coil_telegraph.gd")
+const ProjectileViewScript := preload("res://view/vfx/projectile_view.gd")
+const StragglerBeamScript := preload("res://view/straggler_beam.gd")
+const DangerTextScript := preload("res://view/hud/danger_text.gd")
+const ScreenBlurScript := preload("res://view/hud/screen_blur.gd")
+const RespawnViewScript := preload("res://view/respawn_view.gd")
 
 signal level_completed()
 signal run_over(info: Dictionary)
@@ -106,6 +121,16 @@ var gifts_view: Node3D = null
 var tripmine_view: Node3D = null
 var beacon_view: Node3D = null
 var toucher_floor: Node3D = null   # the glitched-floor decals (floor-only mode)
+# The enemy presentation layer (see the preloads): telegraphs + their cues, Coil's own
+# landing ring/shockwave, projectiles, the straggler beam, the diegetic danger text,
+# thicc ben's screen blur and the respawn invulnerability visual.
+var telegraph_view: Node3D = null
+var coil_view: Node3D = null
+var projectile_view: Node3D = null
+var straggler_beam: Node3D = null
+var danger_text: Node3D = null
+var screen_blur: Control = null
+var respawn_view: Node3D = null
 var boards: Array = []          # EnemyRuntime enemies index -> billboard node (or null)
 var lstate: RefCounted = null   # the sim LevelState (gifts / mines / beacon); bot_run.gd's lv
 var player_model: Node3D = null # the T-015 player figure, feet on the controller's position
@@ -138,7 +163,13 @@ var _pose := {}                  # currently blended pose, _pose_run()'s shape
 var _anim_phase := 0.0           # gait/sway phase (view-side clock, view-legal)
 var _run_speed := 9.0            # data/player.json shared_kit.run_speed (read in build())
 
-var _economy: RefCounted = null   # the gold-phase economy (purse / chain); no upgrade stats yet
+var _economy: RefCounted = null   # the gold-phase economy (purse / chain / upgrade stats)
+# The run's stats, from core/content_api.gd apply_modifiers over the owned upgrade stacks
+# and held curses: _stats_black is the always-on set, _stats_gold adds the `when:
+# gold_phase` modifiers (Weighed Down) on top. The controller swaps between them on the
+# gold-phase edges; the economy is built from _stats_gold, whose numbers ARE the gold phase.
+var _stats_black: Dictionary = {}
+var _stats_gold: Dictionary = {}
 var _gold_began := false          # beacon open -> begin_gold_phase + rt.on_beacon_open fire once
 var _completed_emitted := false   # level_completed fires once
 var _run_over_emitted := false    # run_over fires once; a dead run stops ticking
@@ -172,19 +203,6 @@ func build(seed_value: int, level: int, p_ledger: Dictionary = {}) -> bool:
 	teardown()
 	if _bindings.is_empty():
 		_load_bindings()
-	lv = VoidGenScript.generate(seed_value, level, 1, 0)
-	if lv.is_empty():
-		push_warning("world: voidgen.generate(%d, %d) returned {}" % [seed_value, level])
-		return false
-	# The spawn is the level's own spawn tile (the collision default, spawns[0] - the same
-	# assembly feel_probe.gd and perf_probe.gd use). The bot_run override {"dais": beacon}
-	# plants the spawn inside the beacon monument, which encloses the 1.8 u figure and
-	# buries the third-person view's subject.
-	w = CollisionScript.make_world(lv["tiles"], lv["props"], lv["pads"])
-	# The sim LevelState: one level's slice of the state tree (players + gifts + mines +
-	# beacon). Built from the same Level dict; the run seed feeds the Defuse Kit roll.
-	lstate = LevelStateScript.build(lv, level, 1, seed_value)
-
 	# The run's own seeded plan for this level: replay the lobbies before it.
 	_api = ContentApiScript.load()
 	if _api == null or not _api.is_ok():
@@ -197,18 +215,64 @@ func build(seed_value: int, level: int, p_ledger: Dictionary = {}) -> bool:
 		return false
 	_ledger = plan.duplicate(true)
 
-	# The gold-phase economy: base stats (the app has no upgrade ledger yet, so no
-	# chain/stipend modifiers), tuned by data/economy.json through the content api.
-	_economy = EconomyScript.create({}, _api)
-	# The purse the run carries in from the last lobby (whole gold -> centi).
-	_economy.purse_centi = int(plan.get("purse", 0)) * EconomyScript.CENTI
-
+	# Gap 9 (FULL_GAME_PLAN.md): the collected votes land as extra tripmines on
+	# the NEXT level. The count -> weight arithmetic (per-vote constant, vote
+	# cap) is each roster module's own static (content/enemies/<entry>/enemy.gd,
+	# DESIGN.md section 5.7); sim keeps the ledger only (sim/gifts.gd's
+	# run_votes / run_votes_for, counts keyed by the lobby's own ids). App reads
+	# both here and hands the sum to terrain's generate() as its extra_mines
+	# argument (TERRAIN_SPEC section 6.8 clamps the applied count). Rows whose
+	# module declares no extra_mines() weigh nothing, so a run that voted for
+	# neither keeps the canon base roll (extra_mines 0).
+	var plan_votes: Dictionary = plan.get("votes", {}) as Dictionary
+	var extra_mines := 0
+	for id in plan_votes.keys():
+		var entry_id := str(id)
+		var n := maxi(0, int(plan_votes.get(id, 0)))
+		if n <= 0:
+			continue
+		var K = load("res://content/enemies/%s/enemy.gd" % entry_id)
+		if K == null or not K.has_method("extra_mines"):
+			continue
+		extra_mines += maxi(0, int(K.call("extra_mines", n)))
+	lv = VoidGenScript.generate(seed_value, level, 1, extra_mines)
+	if lv.is_empty():
+		push_warning("world: voidgen.generate(%d, %d) returned {}" % [seed_value, level])
+		teardown()
+		return false
+	# The spawn is the level's own spawn tile (the collision default, spawns[0] - the same
+	# assembly feel_probe.gd and perf_probe.gd use). The bot_run override {"dais": beacon}
+	# plants the spawn inside the beacon monument, which encloses the 1.8 u figure and
+	# buries the third-person view's subject.
+	w = CollisionScript.make_world(lv["tiles"], lv["props"], lv["pads"])
+	# The sim LevelState: one level's slice of the state tree (players + gifts + mines +
+	# beacon). Built from the same Level dict; the run seed feeds the Defuse Kit roll.
+	lstate = LevelStateScript.build(lv, level, 1, seed_value)
 	var kit := str(plan.get("class", ""))
 	if kit == "":
 		kit = FALLBACK_CLASS   # D-APPFLOW-6
 	ctl = ControllerScript.new()
 	ctl.setup(kit, ControllerScript.load_constants())
 	ctl.place(w)
+
+	# The run's owned upgrade stacks and held curses -> the closed stat list (DESIGN.md
+	# section 12) through core/content_api.gd's apply_modifiers. This is the only place the
+	# shipped game runs the modifier math, so a bought upgrade and a held curse change the
+	# live run. Two contexts, because `when: gold_phase` is live only while the gold phase
+	# is on: _stats_black is the always-on set, _stats_gold adds the gold-phase modifiers.
+	var mods := _run_modifiers(plan)
+	var base: Dictionary = ctl.base_stats()
+	_stats_black = ContentApiScript.apply_modifiers(base, mods, {"phase": "", "class": kit})
+	_stats_gold = ContentApiScript.apply_modifiers(base, mods,
+			{"phase": "gold_phase", "class": kit})
+	ctl.apply_stats(_stats_black)
+
+	# The gold-phase economy: the gold phase's own stats (gold_value / chain_window /
+	# chain_cap / overtime_period / stipend_flat), tuned by data/economy.json through the
+	# content api. A stat no modifier touches keeps the data file's value.
+	_economy = EconomyScript.create(_stats_gold, _api)
+	# The purse the run carries in from the last lobby (whole gold -> centi).
+	_economy.purse_centi = int(plan.get("purse", 0)) * EconomyScript.CENTI
 
 	rt = EnemyRuntimeScript.new()
 	rt.setup(lv, w, [ctl], seed_value, {})
@@ -319,6 +383,11 @@ func build(seed_value: int, level: int, p_ledger: Dictionary = {}) -> bool:
 	# HUD (CanvasLayer: a Control child of a Node3D never reaches the canvas).
 	_hud_layer = CanvasLayer.new()
 	add_child(_hud_layer)
+	# thicc ben's screen blur sits UNDER the HUD (the wash is a lens on the world, the
+	# counters stay readable). Stepped from step() on the sim clock, never _process.
+	screen_blur = ScreenBlurScript.new()
+	screen_blur.set_process(false)
+	_hud_layer.add_child(screen_blur)
 	hud = HudScript.new()
 	_hud_layer.add_child(hud)
 	_sync_hud()
@@ -343,6 +412,25 @@ func build(seed_value: int, level: int, p_ledger: Dictionary = {}) -> bool:
 	add_child(toucher_floor)
 	toucher_floor.setup(ToucherViewScript.SHEET_REL, ToucherViewScript.FOLDER_REL, true)
 
+	# The enemy presentation layer, all at the world origin (every feed is in absolute
+	# world coordinates): the generic telegraph view (rings / lines / patches + their
+	# cues), Coil's bespoke landing ring + shockwave, the projectiles, the straggler beam
+	# over the last 20% of REAL gifts, the diegetic danger text and the respawn view.
+	telegraph_view = TelegraphViewScript.new()
+	add_child(telegraph_view)
+	coil_view = CoilTelegraphScript.new()
+	add_child(coil_view)
+	projectile_view = ProjectileViewScript.new()
+	add_child(projectile_view)
+	straggler_beam = StragglerBeamScript.new()
+	add_child(straggler_beam)
+	straggler_beam.setup(lstate.gifts)
+	danger_text = DangerTextScript.new()
+	danger_text.driven = true
+	add_child(danger_text)
+	respawn_view = RespawnViewScript.new()
+	add_child(respawn_view)
+
 	_level_number = level
 	return true
 
@@ -362,6 +450,11 @@ func step(dt: float) -> void:
 		return   # the run is over: a dead run never ticks again (DESIGN.md section 3)
 	var a_in: Dictionary = _capture_input()
 	_mouse_lock_pass(int(a_in.get("app", 0)))
+	# The respawn safe-tile search reads w["hazards"] (controller.gd valid_safe_tile). Nothing
+	# published that list before, so a void-fall could put the player back down inside a mine.
+	# Built from the live mine set plus the runtime's LIVE telegraph rows - the same one-tick
+	# staleness the w["enemies"] / w["projectiles"] mirrors already accept.
+	w["hazards"] = LevelStateScript.hazard_footprints(lstate.mines, rt.live_telegraphs())
 	var ev: Array = ctl.step(dt, a_in, w)
 	# The LevelState's player row mirrors the controller (gifts/mines read lv.players).
 	var p0: Dictionary = lstate.players[0]
@@ -385,6 +478,7 @@ func step(dt: float) -> void:
 		rt.on_beacon_open()
 		if _economy != null:
 			_economy.begin_gold_phase()
+		_apply_phase_stats()   # `when: gold_phase` modifiers go live with the phase
 	if _economy != null and bool(_economy.gold_phase):
 		_economy.tick_gold(dt)
 	for e in rt.step(dt):
@@ -394,6 +488,7 @@ func step(dt: float) -> void:
 		if toucher_floor != null and str(e.get("e", "")) == "glitched_cleanse":
 			toucher_floor.on_cleanse(e)
 	_economy_pass(ev)
+	_fx_events(ev)
 	if rig != null:
 		rig.update_rig(Vector3(float(ctl.x), float(ctl.y), float(ctl.z)), dt)
 	_player_pass()
@@ -441,6 +536,39 @@ func _economy_pass(ev: Array) -> void:
 			_economy.break_chain(why)
 		elif kind == "beacon_enter":
 			_economy.enter_beacon(_level_number)
+			_apply_phase_stats()   # the gold phase ended: the gold-phase modifiers come off
+
+
+## The controller's stats follow the phase: a `when: gold_phase` modifier (Weighed Down)
+## is live only while the gold phase is on. Called at build and on both phase edges.
+func _apply_phase_stats() -> void:
+	if ctl == null:
+		return
+	var gold := _economy != null and bool(_economy.gold_phase)
+	ctl.apply_stats(_stats_gold if gold else _stats_black)
+
+
+## Every modifier the run owns: each held curse's and each owned upgrade's modifiers,
+## repeated once per stack (DESIGN.md sections 7 and 8). Data-driven - no content id is
+## named here - and sorted by id so the `set`-wins tie-break in apply_modifiers is
+## deterministic whatever order the ledger's dictionaries happen to hold.
+func _run_modifiers(plan: Dictionary) -> Array:
+	var out: Array = []
+	var curses: Dictionary = plan.get("curses", {})
+	var curse_ids: Array = curses.keys()
+	curse_ids.sort()
+	for id in curse_ids:
+		var c: Dictionary = _api.curse(str(id))
+		out.append_array(ContentApiScript.mods_for_stacks(c.get("modifiers", []),
+				int(curses[id])))
+	var stacks: Dictionary = plan.get("stacks", {})
+	var upgrade_ids: Array = stacks.keys()
+	upgrade_ids.sort()
+	for id in upgrade_ids:
+		var u: Dictionary = _api.upgrade(str(id))
+		out.append_array(ContentApiScript.mods_for_stacks(u.get("modifiers", []),
+				int(stacks[id])))
+	return out
 
 
 ## True once the beacon has been entered (the level is complete). Convenience for
@@ -468,6 +596,13 @@ func teardown() -> void:
 	tripmine_view = null
 	beacon_view = null
 	toucher_floor = null
+	telegraph_view = null
+	coil_view = null
+	projectile_view = null
+	straggler_beam = null
+	danger_text = null
+	screen_blur = null
+	respawn_view = null
 	player_model = null
 	_player_light = null
 	_player_yaw = 0.0
@@ -481,6 +616,8 @@ func teardown() -> void:
 	_anim_phase = 0.0
 	lstate = null
 	_economy = null
+	_stats_black = {}
+	_stats_gold = {}
 	_gold_began = false
 	_completed_emitted = false
 	_run_over_emitted = false
@@ -710,6 +847,14 @@ func _mouse_lock_pass(a_flags: int) -> void:
 	Input.mouse_mode = CameraRigScript.mouse_mode_for(_mouse_locked)
 
 
+## Apply the current lock state to the engine. This is the ONLY Input.mouse_mode write in
+## app/ (test_input.gd enforces the single-writer rule): the pause overlay releases and
+## restores the mouse by setting _mouse_locked and calling this, never by writing the mode
+## itself. A frozen state does not step, so _mouse_lock_pass cannot run while paused.
+func apply_mouse_mode() -> void:
+	Input.mouse_mode = CameraRigScript.mouse_mode_for(_mouse_locked)
+
+
 ## Mouse motion -> the rig (J5). The ONLY mouse path in app/: nothing runs unless the
 ## mouse is captured; released, this returns after the first check and the camera never
 ## turns. The toggle itself is NOT an event path - Ctrl is polled per tick in
@@ -929,6 +1074,64 @@ func _view_pass() -> void:
 		beacon_view.sync_from(lstate.beacon, lstate.gifts, lstate.tick)
 	if toucher_floor != null and rt != null:
 		toucher_floor.sync_floor_rows(rt.enemies)
+	_fx_pass()
+
+
+## The step's event list -> the one-shot presentation: every new telegraph's cue and the
+## sim's own audio events (telegraph_view), Coil's landing shockwave, the danger line at
+## each spawn, thicc ben's blur and the respawn reappear. Read only; nothing is fed back.
+func _fx_events(ev: Array) -> void:
+	if telegraph_view != null:
+		telegraph_view.on_events(ev)
+	for e in ev:
+		var kind := str(e.get("e", e.get("type", "")))
+		match kind:
+			"coil_land":
+				if coil_view != null:
+					coil_view.impact(Vector3(float(e.get("x", 0.0)), float(e.get("y", 0.0)),
+							float(e.get("z", 0.0))))
+			"enemy_spawn":
+				if danger_text != null:
+					danger_text.on_enemy_spawn(e)
+			"screen_blur":
+				# the eject's blur is the ejected player's own (player index 0 is this client)
+				if screen_blur != null and int(e.get("player", 0)) == 0:
+					screen_blur.trigger(int(e.get("ticks", ScreenBlurScript.TOTAL_TICKS_DEFAULT)))
+			"respawn":
+				if respawn_view != null and ctl != null:
+					respawn_view.on_respawn(lstate.tick if lstate != null else 0,
+							Vector3(float(ctl.x), float(ctl.y), float(ctl.z)))
+
+
+## The per-tick presentation sync: live telegraphs, projectiles, the straggler beam, the
+## danger text clock, the blur clock and the invulnerability rim + blink.
+func _fx_pass() -> void:
+	if rt == null or ctl == null:
+		return
+	var feet := Vector3(float(ctl.x), float(ctl.y), float(ctl.z))
+	var live: Array = rt.live_telegraphs()
+	if telegraph_view != null:
+		telegraph_view.sync(live, int(rt.tick), feet.y, feet + Vector3(0.0, 0.9, 0.0))
+	if coil_view != null:
+		coil_view.sync(live, 1)
+	if projectile_view != null:
+		projectile_view.sync(ProjectileViewScript.gather(rt))
+	if straggler_beam != null and lstate != null:
+		straggler_beam.sync(lstate.gifts)
+	if danger_text != null:
+		danger_text.advance(DT)
+	if screen_blur != null:
+		screen_blur.advance(1.0)
+	if respawn_view != null and lstate != null:
+		var left := int(ceil(maxf(float(ctl.invuln), 0.0) * 60.0))
+		respawn_view.sync_tick(lstate.tick, left, feet)
+		# the player model's own 8 Hz blink while the respawn invulnerability runs
+		if player_model != null:
+			var rtick: int = int(respawn_view.respawn_tick())
+			if left > 0 and rtick >= 0:
+				player_model.visible = RespawnViewScript.blink_on(float(lstate.tick - rtick))
+			else:
+				player_model.visible = true
 
 
 ## The eye the distance-driven view ramps measure from: the rig IS the camera holder, so
@@ -967,4 +1170,42 @@ func _sync_hud() -> void:
 		"last_light": str(ctl.hud_last_light()),
 		"kit": str(ctl.kit),
 		"roster": _roster,
+		"ability_remaining": _ability_remaining(),
+		"ability_total": _ability_total(),
+		"curses": _icon_items(_ledger.get("curses", {})),
+		"upgrades": _icon_items(_ledger.get("stacks", {})),
 	})
+
+
+## The class ability's live number for the cooldown HUD: the Dasher's dash cooldown
+## seconds left, the Glider's glide energy left (ability_cooldown.gd reads the glider as
+## energy, the dasher as cooldown). The Athletic has none (the element hides itself).
+func _ability_remaining() -> float:
+	if ctl == null:
+		return 0.0
+	if str(ctl.kit) == "glider":
+		return float(ctl.glide_energy)
+	return maxf(float(ctl.dash_cd), 0.0)
+
+
+func _ability_total() -> float:
+	if ctl == null:
+		return 3.0
+	var c: Dictionary = ctl.C
+	if str(ctl.kit) == "glider":
+		return float(c.get("glide_energy", 3.0))
+	return float(c.get("dash_regen", 3.0))
+
+
+## {id: stacks} -> the icon rows' [{id, stacks}], sorted by id so the row order is stable.
+static func _icon_items(held: Variant) -> Array:
+	var out: Array = []
+	if not (held is Dictionary):
+		return out
+	var ids: Array = (held as Dictionary).keys()
+	ids.sort()
+	for id in ids:
+		var n := int(held[id])
+		if n > 0:
+			out.append({"id": str(id), "stacks": n})
+	return out

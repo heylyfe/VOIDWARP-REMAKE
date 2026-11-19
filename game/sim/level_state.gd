@@ -110,3 +110,34 @@ static func floor_i(v: float) -> int:
 	if v < 0.0 and float(i) != v:
 		i -= 1
 	return i
+
+
+# D-059: hazard footprints for the void-fall safe-tile search (controller.gd
+# valid_safe_tile). The search refuses a tile whose top centre is inside any footprint
+# in w["hazards"], and that list was never populated - so a respawn could land on a
+# mined tile. The live mine set (the Level.gifts occ == 1 slots, minus consumed) is the
+# lethal footprint the sim tracks end to end; the list is built from it here, in the
+# search's own shape vocabulary (circle/ring/box, each an optional y band). No new
+# hazard concept is added and no shape is re-derived: a telegraph row's shape IS a
+# collision hazard footprint (enemy_runtime's telegraph contract), copied verbatim.
+#
+# Caller contract: assign the result to w["hazards"] BEFORE the controller's step -
+# the respawn check reads the list at that moment - e.g.
+#   w["hazards"] = LevelStateScript.hazard_footprints(st.mines, live_telegraphs)
+## mines: the MinesScript object (or null). telegraphs: the caller's LIVE telegraph rows
+## only (liveness is the runtime's caller-aged filter - a row is live while
+## t["tick"] <= tick < t["tick"] + t["total"]; this helper cannot know, so it copies
+## shapes verbatim either way). Deterministic: no RNG, iteration is ids order.
+static func hazard_footprints(mines: RefCounted, telegraphs: Array = []) -> Array:
+	var out: Array = []
+	if mines != null:
+		for slot_id in mines.ids:
+			if mines.is_consumed(slot_id):
+				continue
+			var p: Vector3 = mines.point(slot_id)
+			out.append({"shape": "circle", "cx": p.x, "cz": p.z, "r": MinesScript.CONTACT_R})
+	for t in telegraphs:
+		var shape = t.get("shape", null)
+		if shape is Dictionary and not shape.is_empty():
+			out.append(shape.duplicate(true))
+	return out
