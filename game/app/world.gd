@@ -212,6 +212,9 @@ var _run_over_emitted := false    # run_over fires once; a dead run stops tickin
 
 var _hud_layer: CanvasLayer = null
 var _mesh_instances: Array = []
+var _prebuilt_views: Dictionary = {}   # eid -> Array of ready host nodes; the spawn tick pops them
+var _warm_refs: Array = []   # billboard-path art pins; freed in teardown()
+var _warm_pinned: Dictionary = {}   # eid -> true, one pin per id
 var _level_number: int = 0
 var _roster: Array = []          # [{id, name, count}] built from the resolved votes
 var _bindings: Dictionary = {}
@@ -539,6 +542,14 @@ func build(seed_value: int, level: int, p_ledger: Dictionary = {}) -> bool:
 		"level": level, "tick": int(lstate.tick),
 	})
 	_boost_on = false
+	# The first spawn tick would otherwise pay two one-time costs inside a single 60 Hz
+	# step: the enemy runtime's spawn round-trip set (built on first use, cached per
+	# level) and the first bespoke enemy view build per roster id (frame textures via
+	# ResourceLoader). Both are pure functions of the level dict and the roster plan,
+	# so they are pre-paid here, before the first step is ever taken.
+	if rt != null:
+		rt._round_trip_cached()
+	_prebuild_enemy_views()
 	return true
 
 
@@ -817,6 +828,16 @@ func teardown() -> void:
 	boards.clear()
 	enemy_views.clear()
 	_roster.clear()
+	for eid in _prebuilt_views.keys():
+		for host in _prebuilt_views[eid]:
+			if is_instance_valid(host):
+				host.free()
+	_prebuilt_views.clear()
+	_warm_pinned.clear()
+	for wr in _warm_refs:
+		if is_instance_valid(wr):
+			wr.free()
+	_warm_refs.clear()
 	ctl = null
 	rt = null
 	rig = null
@@ -1483,6 +1504,12 @@ func _make_enemy_view(e: Dictionary):
 	var eid := str(e.get("id", ""))
 	if not bespoke_enemy_views or not EnemyViewHostScript.supports(eid):
 		return null
+	# built at build time (see _prebuild_enemy_views); pop one ready host
+	var stack: Array = _prebuilt_views.get(eid, [])
+	if not stack.is_empty():
+		var prebuilt = stack.pop_back()
+		add_child(prebuilt)
+		return prebuilt
 	var host = EnemyViewHostScript.new()
 	add_child(host)
 	if not host.setup(eid, "res://content/enemies/%s" % eid):
@@ -1503,6 +1530,43 @@ func _make_board(e: Dictionary):
 	bd.setup_from_sheet(doc, folder)
 	add_child(bd)
 	return bd
+
+
+## Build-time pre-build: the whole enemy plan spawns on one tick (the spawn delay), and
+## building each bespoke view there cost ~150 ms inside one 60 Hz step. The roster is the
+## whole plan, known now, so build the hosts here instead - one per planned copy - and
+## _make_enemy_view pops them off this stack when the rows appear. Unused pops and leftovers
+## are freed in teardown(). Ids with no bespoke view take the billboard path instead: one
+## pin per id here keeps their frame art in the loader's (weak) cache, so the real board
+## build on the spawn tick is cache hits. Pure presentation; the sim never sees any of this.
+func _prebuild_enemy_views() -> void:
+	for r in _roster:
+		var eid := str(r.get("id", ""))
+		var copies := int(r.get("count", 0))
+		if eid == "" or copies <= 0:
+			continue
+		var folder := "res://content/enemies/%s" % eid
+		if bespoke_enemy_views and EnemyViewHostScript.supports(eid):
+			if not _prebuilt_views.has(eid):
+				_prebuilt_views[eid] = []
+			var stack: Array = _prebuilt_views[eid]
+			for i in copies:
+				var host = EnemyViewHostScript.new()
+				if host.setup(eid, folder):
+					stack.append(host)
+				else:
+					push_warning("world: build-time view pre-build failed for %s; spawn tick will build it" % eid)
+					host.free()
+			continue
+		if _warm_pinned.get(eid, false):
+			continue
+		_warm_pinned[eid] = true
+		var doc: Variant = JSON.parse_string(
+				FileAccess.get_file_as_string(folder + "/sprites.json"))
+		if doc is Dictionary:
+			var bd = BillboardScript.new()
+			bd.setup_from_sheet(doc, folder)
+			_warm_refs.append(bd)
 
 
 ## The core-loop view pass: the three views read the same LevelState step() ticks, so
