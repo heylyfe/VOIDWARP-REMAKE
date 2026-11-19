@@ -7029,3 +7029,21 @@ WHY: honest coverage of the loop at a cost the gate can afford; the bot owns end
   runtime's own clock raises its tier independently, so a lower economy tier must never pull it back.
   Recorded because the shape generalises - any curse that writes an economy field the runtime mirrors
   needs the same one-way reconciliation, and a two-way sync would silently slow enemies down.
+
+- 2026-11-19 CRUMBLING MEANS THE OUTER LANE, NOT A 1-WIDE WALKWAY (lead ruling, game design).
+  The curse reads "1-wide walkway tiles fall 1.2 s after being stepped on and return after 5 s" and
+  is BRUTAL, min_level 10. A worker wired it completely and then proved it can never fire: GEN_VERSION 4
+  (owner override J1) makes every walkway exactly WALK_W = 3 cells wide, so a sweep of 12 levels x 5
+  seeds found ZERO qualifying tiles. A brutal curse that never fires is dead content, which is the exact
+  defect this wave exists to fix, so parking it was not an option.
+  RULING: "1-wide walkway tile" is read as THE OUTER LANE of a walkway - a tile with void on one side
+  and floor on the other along an axis. An isolated pad still does not qualify, because it needs floor
+  on the opposite side; it must be an edge, not a lone island.
+  WHY THIS READING AND NOT THE ALTERNATIVES: (a) changing the generator to emit 1-wide pieces would
+  break the owner's J1 override, which is a deliberate readability choice and not mine to move;
+  (b) parking the curse ships a brutal curse that does nothing, which is the defect; (c) the edge
+  reading keeps the rule's intent - the risky ground crumbles under you - and it is the only reading
+  under which the counter-play sentence "keep moving; never returns to a soft-lock because they regrow"
+  is actually true. The 5 s regrow is what stops it soft-locking, and that is unchanged.
+  GUARDRAIL: if the outer lane turns out to be more than half of a level's walkable tiles, the curse is
+  too broad and gets narrowed. The measurement is required in the worker's report before this ships.
