@@ -18,20 +18,28 @@ The world is serious. The enemies are not.
 
 Waves 1–4 land together: the systems the earlier alphas built but never wired are wired now.
 
-- **Every upgrade applies, and 11 of the 46 curses do.** All 36 upgrades and all 46 curses were
+- **Every upgrade applies, and 45 of the 46 curses do.** All 36 upgrades and all 46 curses were
   inert — the shop took gold and changed nothing. `world.gd` now runs the modifier pass into the
   black-phase and gold-phase stat blocks and swaps them on the phase edges, and the controller
   consumes them. Field Dressing gives the free fall DESIGN section 8 promises, and the Last Light
   8 u body push now moves the live enemy rows instead of a spawn-time copy. The wiring was
   mutation-tested five ways; the follow-up found a real hole (stack repetition was unproven) and
   closed it.
-- **35 of the 46 curses are still inert in play.** The 11 that are pure stat modifiers — brittle,
-  hasty, hungry_void, inflation, lights_out, long_night, rush_hour, short_chain, tarnish,
-  thick_fog, weighed_down — apply through the modifier pass and are proven by
-  `test_modifiers_applied.gd`. The other 35 declare a script and each now has a module with its own
-  unit test, but nothing in the shipped game dispatches them: the run tracks `curses_held` and
-  hands it to the world, and no code walks that dict calling each module's behaviour. A script
-  curse is drawable, pickable, tested and inert. This is the largest remaining gap.
+- **The curses are dispatched now.** 11 curses are pure stat modifiers and always applied through
+  the modifier pass. The other 35 declare a script, and each had a module with its own unit test
+  while nothing in the shipped game called any of them — the run tracked `curses_held` and handed
+  it to the world, and no code walked that dict. `sim/curse_runtime.gd` is that walk: it reads the
+  held ids generically, loads each module through a loader the world hands it, and runs the four
+  hooks (`on_level_start`, `on_tick`, `on_beacon_open`, `on_void_fall`) in sorted id order. The
+  pure queries — a blast radius, a tell distance, a rim glow, a reroll plinth, a straggler beam —
+  now have their real consumers in the mines, the views and the lobby.
+  34 of the 35 script curses are proven to change the game through `world.build()` and
+  `world.step()`, each against a control world with the curse absent. The 35th is `zoomies`, which
+  is retired from the offer pool and has no module. Two curses needed a design ruling to become
+  live at all: `crumbling` reads "1-wide walkway tiles" as the outer lane of a walkway, because
+  GEN_VERSION 4 makes every walkway three cells wide and the literal reading could never fire; and
+  the glitched floor is no longer slippery by itself, because DESIGN section 7 reserves that
+  friction for `wet_floor` and the sim was giving the curse's whole effect away for free.
 - **Eight dropped stats got consumers.** `defuse_chance` and `pickup_radius` now have consumers in
   `sim/mines.gd` and `sim/gifts.gd`, `shop_price_mul` reaches the lobby shop (bargain and inflation
   move the price), the telegraph and enemy-speed multipliers reach `sim/enemy_runtime.gd`,
