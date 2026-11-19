@@ -18,7 +18,7 @@ extends Control
 #   func open(p_current := "")  - show, marking the current pick on the altars
 #   func close() / func is_open() / func chosen_id() / func class_ids()
 #   func choose(class_id)       - one pick: validates against the table, emits the signal
-#   func skip()                 - emits skipped
+#   func skip()                 - closes the altar (the seeded replay decides), emits skipped
 #   static func blurb(class_id, p_classes) -> String   - the one-line kit text
 
 static var PlayerDataPath := "res://data/player.json"   # static var so tests can point it at a scratch file
@@ -143,6 +143,7 @@ func choose(class_id: String) -> void:
 
 func skip() -> void:
 	chosen = ""
+	close()   # the seeded replay decides the class - SKIP promises the same as the pick window expiring
 	skipped.emit()
 
 

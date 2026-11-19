@@ -98,6 +98,7 @@ var _first_launch := true   # the two-duration law: 5 s on the session's first l
 var _pause_codes: Array[int] = []   # KEY_* codes bound to "pause" (data/bindings.json), else ESC
 var _records: RefCounted = null
 var records_path := ""            # tests point this at a scratch file (settings.gd's pattern)
+var force_build_failure := false  # tests arm this to make level/lobby builds fail (the records_path pattern)
 var _run_level_reached := FIRST_LEVEL
 var _run_purse := 0
 var _run_class := ""
@@ -250,7 +251,11 @@ func _begin_run() -> void:
 	_state = STATE_LOADING
 	# Build the world in the same frame the loading screen appears (the ticket's contract).
 	if not _build_world(FIRST_LEVEL, ledger):
-		_loading.free()
+		# queue_free, not free: the screen is already in the tree and emits from inside its
+		# own call stack (D-APPFLOW-7). A synchronous free here is the one shape that rule
+		# exists to forbid, and the next refactor that routes this failure through a signal
+		# would trip it.
+		_loading.queue_free()
 		_loading = null
 		_show_menu()
 		return
@@ -277,6 +282,9 @@ func _build_world(p_level: int, p_ledger: Dictionary) -> bool:
 func _build_world_node(p_level: int, p_ledger: Dictionary) -> Node:
 	print("app: run seed=%d level=%d" % [_seed, p_level])
 	_run_level_reached = maxi(_run_level_reached, p_level)
+	if force_build_failure:
+		push_warning("app: forced world build failure (test hook)")
+		return null
 	var fresh := WorldScript.new()
 	fresh.level_completed.connect(_on_level_completed)
 	fresh.run_over.connect(_on_run_over)
@@ -338,10 +346,11 @@ func _enter_lobby(p_completed: int, p_ledger: Dictionary) -> void:
 	_lobby = LobbySceneScript.new()
 	_lobby.exited.connect(_on_lobby_exited)
 	add_child(_lobby)
-	if not _lobby.build(_seed, p_completed, p_ledger):
+	if force_build_failure or not _lobby.build(_seed, p_completed, p_ledger):
 		push_warning("app: lobby.build(level_completed %d) failed; back to menu" % p_completed)
 		_lobby.queue_free()
 		_lobby = null
+		_end_run()   # a run that ends in a build failure still records + logs
 		_show_menu()
 		return
 	_ever_entered_world = true   # the run walked into the lobby: a later _end_run() records it
@@ -364,6 +373,7 @@ func _on_lobby_exited(p_ledger: Dictionary) -> void:
 	_lobby = null
 	_step_acc = 0.0
 	if not _build_world(next_level, p_ledger):
+		_end_run()   # a run that ends in a build failure still records + logs
 		_show_menu()
 		return
 	add_child(_world)
@@ -418,6 +428,8 @@ func _show_run_over() -> void:
 ## the normal LOADING -> WORLD transition. The screen is queue_free'd, not freed: retried is
 ## emitted from inside its own Button.
 func _on_retry_requested() -> void:
+	if _state != STATE_RUN_OVER:
+		return   # RETRY is not re-entrant: a double activation is a no-op
 	var retry_seed := _seed
 	if _run_over != null:
 		_run_over.queue_free()
@@ -432,7 +444,8 @@ func _on_retry_requested() -> void:
 		_lobby.free()
 		_lobby = null
 	if _loading != null:
-		_loading.free()
+		# queue_free, not free(): a live loading screen may be mid-frame.
+		_loading.queue_free()
 		_loading = null
 	_step_acc = 0.0
 	# Land in MENU state (the menu stays hidden) so start_run takes the run path.
