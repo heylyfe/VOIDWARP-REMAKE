@@ -685,8 +685,13 @@ func _exhibit_enemy(p_anchor: Node3D, p_altar: Dictionary) -> String:
 		parsed = JSON.parse_string(FileAccess.get_file_as_string(sheet_path))
 	if parsed is Dictionary and not (parsed as Dictionary).is_empty():
 		bb.setup_from_sheet(parsed, "res://content/enemies/" + eid)
-		# scale the sheet's own world_height up to the exhibit body height
-		var doc_h: float = float((parsed as Dictionary).get("world_height", 1.0))
+		# scale the sheet's own world_height up to the exhibit body height.
+		# A sheet may declare the key with a JSON null (nuke does), and .get() only
+		# falls back to its default when the key is ABSENT - so float(null) would
+		# throw "Nonexistent 'float' constructor" and abort this function on every
+		# lobby build. Type-check the value instead of trusting the default.
+		var raw_h: Variant = (parsed as Dictionary).get("world_height", 1.0)
+		var doc_h: float = float(raw_h) if typeof(raw_h) in [TYPE_INT, TYPE_FLOAT] else 1.0
 		var k: float = ENEMY_BODY_H / maxf(doc_h, 0.01)
 		bb.scale = bb.scale * k
 		bb.world_height = ENEMY_BODY_H
