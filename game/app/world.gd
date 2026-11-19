@@ -106,6 +106,11 @@ const RespawnViewScript := preload("res://view/respawn_view.gd")
 # on_tick / on_beacon_open / on_void_fall) and its build-time queries run through it. The
 # declarative "modifiers" half of a curse still goes through _run_modifiers below.
 const CurseRuntimeScript := preload("res://sim/curse_runtime.gd")
+# The bespoke per-enemy views (W11-A): nine view files existed, complete and tested, and
+# nothing instantiated them, so every enemy rendered as the generic billboard. The host
+# owns the per-view signatures (view/ may name content ids; this file may not) and is
+# fed through one uniform call set. A row whose id has no bespoke view keeps the billboard.
+const EnemyViewHostScript := preload("res://view/enemies/enemy_view_host.gd")
 
 signal level_completed()
 signal run_over(info: Dictionary)
@@ -137,6 +142,12 @@ var danger_text: Node3D = null
 var screen_blur: Control = null
 var respawn_view: Node3D = null
 var boards: Array = []          # EnemyRuntime enemies index -> billboard node (or null)
+# EnemyRuntime enemies index -> the row's bespoke view host (or null; a row has a host OR
+# a billboard, never both, so nothing is drawn twice). Index-aligned with boards.
+var enemy_views: Array = []
+# Off = every row falls back to the generic billboard (the wiring test's negative
+# control). Not reset by teardown(): it is a setting, not per-level state.
+var bespoke_enemy_views := true
 var lstate: RefCounted = null   # the sim LevelState (gifts / mines / beacon); bot_run.gd's lv
 var player_model: Node3D = null # the T-015 player figure, feet on the controller's position
 var _player_yaw := 0.0          # facing yaw, follows the camera's forward while captured
@@ -577,7 +588,7 @@ func step(dt: float) -> void:
 	if rig != null:
 		rig.update_rig(Vector3(float(ctl.x), float(ctl.y), float(ctl.z)), dt)
 	_player_pass()
-	_billboard_pass(dt)
+	_billboard_pass(dt, ev)
 	_view_pass()
 	_sync_hud()
 	# Death ends the run (DESIGN.md section 3). The row is sim/death.gd's own screen_data()
@@ -712,6 +723,7 @@ func teardown() -> void:
 		child.free()
 	_mesh_instances.clear()
 	boards.clear()
+	enemy_views.clear()
 	_roster.clear()
 	ctl = null
 	rt = null
@@ -1306,15 +1318,39 @@ func _apply_pose() -> void:
 			node.rotation = Vector3(float(_pose[POSE_KEYS[i]]), 0.0, 0.0)
 
 
-func _billboard_pass(dt: float) -> void:
+## The enemy body pass: every live runtime row gets ONE body - its bespoke view host when
+## its id has one (and the switch is on), else the generic billboard. A new row is the
+## spawn: rows are append-only and a row appears on its enemy_spawn tick, so the host's
+## on_spawn fires right at creation. Then this tick's telegraph / screen_blur events are
+## routed to the row that raised them (the host decides which copy owns an event), and
+## every host is stepped once. No content id is named here.
+func _billboard_pass(dt: float, ev: Array = []) -> void:
 	# outside the tree, global transforms error: the rig is a direct child of this node and
 	# this node is its own world, so the local position carries the same information
 	var cam_pos: Vector3 = rig.global_position if (rig != null and rig.is_inside_tree()) \
 			else (rig.position if rig != null else Vector3.ZERO)
 	while boards.size() < rt.enemies.size():
-		boards.append(_make_board(rt.enemies[boards.size()]))
+		var row: Dictionary = rt.enemies[boards.size()]
+		var host = _make_enemy_view(row)
+		enemy_views.append(host)
+		boards.append(null if host != null else _make_board(row))
+		if host != null:
+			host.on_spawn()
+	var feet := Vector3(float(ctl.x), float(ctl.y), float(ctl.z)) if ctl != null \
+			else Vector3.ZERO
+	for e in ev:
+		var idx: int = EnemyViewHostScript.route(rt.enemies, e, feet)
+		if idx >= 0 and idx < enemy_views.size() and enemy_views[idx] != null:
+			enemy_views[idx].on_event(e, rt.enemies[idx])
+	var ctx := {
+		"dt": dt, "cam": cam_pos,
+		"player": {"x": feet.x, "y": feet.y, "z": feet.z},
+		"curses": _curses.state if _curses != null else {},
+	}
 	for i in rt.enemies.size():
 		var e: Dictionary = rt.enemies[i]
+		if enemy_views[i] != null:
+			enemy_views[i].sync(e, ctx)
 		var bd = boards[i]
 		if bd == null:
 			continue
@@ -1322,6 +1358,21 @@ func _billboard_pass(dt: float) -> void:
 		bd.set_animation(str(e.get("anim_state", "")))
 		bd.advance_animation(dt)
 		bd.face_camera(cam_pos)
+
+
+## The row's bespoke view host, added as a child of this node, or null (no bespoke view
+## for the id, the switch is off, or the view failed to build - the billboard then draws).
+func _make_enemy_view(e: Dictionary):
+	var eid := str(e.get("id", ""))
+	if not bespoke_enemy_views or not EnemyViewHostScript.supports(eid):
+		return null
+	var host = EnemyViewHostScript.new()
+	add_child(host)
+	if not host.setup(eid, "res://content/enemies/%s" % eid):
+		push_warning("world: bespoke view for %s failed to build; billboard used" % eid)
+		host.free()
+		return null
+	return host
 
 
 func _make_board(e: Dictionary):
@@ -1378,9 +1429,23 @@ func _fx_events(ev: Array) -> void:
 				if screen_blur != null and int(e.get("player", 0)) == 0:
 					screen_blur.trigger(int(e.get("ticks", ScreenBlurScript.TOTAL_TICKS_DEFAULT)))
 			"void_fall":
-				# Field Dressing's free fall: the HUD's pip flash (no charge was spent)
-				if bool(e.get("free", false)) and hud != null and hud.void_pips != null:
-					hud.void_pips.pip_free_fall()
+				# Field Dressing's free fall: the HUD's pip flash (no charge was spent).
+				# A paid fall flashes the screen edge in the void colour - screen_fx's
+				# contract is "once per spend", so the free fall keeps only its pip flash.
+				if hud != null:
+					if bool(e.get("free", false)):
+						if hud.void_pips != null:
+							hud.void_pips.pip_free_fall()
+					elif hud.screen_fx != null:
+						hud.screen_fx.void_flash()
+			"last_light_save":
+				# controller.try_kill's save: the full-screen white bloom and the Last
+				# Light icon's shatter on the pips row (T-086)
+				if hud != null:
+					if hud.screen_fx != null:
+						hud.screen_fx.white_bloom()
+					if hud.void_pips != null:
+						hud.void_pips.last_light_trigger()
 			"respawn":
 				if respawn_view != null and ctl != null:
 					respawn_view.on_respawn(lstate.tick if lstate != null else 0,
