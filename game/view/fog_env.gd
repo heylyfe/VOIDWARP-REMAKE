@@ -22,9 +22,12 @@ const CYCLE_DENSITY := 0.015  # levels 31+ keep the densest density, D-T014c-1
 const PALETTE_PATH := "res://data/palette.json"
 const BIOME_DIR := "res://content/biomes"
 const RosterScript := preload("res://core/roster.gd")
+const StatsScript := preload("res://core/stats.gd")
 
 var biome_id := ""  # "" = the act-I biome (resolved from content)
 var level := 0
+var _base_density := 0.0  # the biome/level fog density configure() resolved
+var _density_delta := 0.0  # the curse delta apply_stats() added (0.0 = none)
 
 
 # ---- biome / palette resolution ---------------------------------------------------------------
@@ -122,6 +125,7 @@ func configure(biome_id_: String, level_: int = 0) -> void:
 	biome_id = biome_id_
 	level = level_
 	var pal := resolve_palette(biome_id, level)
+	_base_density = float(pal["fog_density"])
 	var env := Environment.new()
 	env.background_mode = Environment.BG_COLOR
 	env.background_color = Color(pal["void"])
@@ -132,9 +136,29 @@ func configure(biome_id_: String, level_: int = 0) -> void:
 	env.fog_enabled = true
 	env.fog_mode = Environment.FOG_MODE_EXPONENTIAL
 	env.fog_light_color = Color(pal["fog"])
-	env.fog_density = pal["fog_density"]
+	env.fog_density = maxf(0.0, _base_density + _density_delta)
 	env.fog_aerial_perspective = 0.0
 	environment = env
+
+
+## Curse consumer (gap 27): a fog_density modifier (thick_fog) RAISES the fog. The stats
+## dict carries the final modified stat (base + adds - e.g. 0.012 -> 0.018 -> 0.024); the view
+## applies only the DELTA over the biome's own density, so every biome keeps its identity and
+## the curse's `add` reads exactly. The base comes from core/stats.gd DEFAULTS, never a literal.
+## No-op when the stat is absent (an empty stats dict leaves the biome fog untouched).
+## Safe before or after configure(); a re-configure keeps the delta (the curse stays held).
+func apply_stats(stats: Dictionary) -> void:
+	if not stats.has("fog_density"):
+		return
+	var base := float(StatsScript.DEFAULTS.get("fog_density", 0.0))
+	_density_delta = float(stats["fog_density"]) - base
+	_apply_density()
+
+
+func _apply_density() -> void:
+	if environment == null:
+		return  # configure() applies the pending delta itself
+	environment.fog_density = maxf(0.0, _base_density + _density_delta)
 
 
 func _ready() -> void:

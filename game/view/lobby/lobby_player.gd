@@ -89,6 +89,15 @@ func build(p_spawn: Vector3) -> void:
 	rig.update_rig(Vector3(x, y, z), 1.0)
 
 
+## Curse consumer (gap 27): lights_out shrinks the player fill light range to the modified
+## stat. The curse uses op=set (absolute), so the stat IS the range; the palette base only
+## survives when the stat is absent. Never a literal here. No-op before build() (no light yet).
+func apply_stats(stats: Dictionary) -> void:
+	if _fill == null or not stats.has("fill_light_range"):
+		return
+	_fill.omni_range = maxf(0.0, float(stats["fill_light_range"]))
+
+
 ## One frame of walking. p_move_x / p_move_z are the captured int8 world-space axes
 ## (-127..127, already rotated by the camera yaw by app/input_capture.gd).
 func move(p_dt: float, p_move_x: int, p_move_z: int) -> void:

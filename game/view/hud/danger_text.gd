@@ -25,6 +25,9 @@ const TTL := 4.0
 const HEIGHT := 2.0   # u above the spawn point (sprite stand + clear)
 const TBD_LINE := "TBD SHALL ARRIVE"
 
+var driven := false   # true: the owner calls advance() each sim step (world.gd)
+var _lines: Array = []   # [{"label": Label3D, "t": seconds alive}]
+
 
 ## Normalise an enemy id for the table: lower case, "?!"/"!" stripped, spaces -> underscores.
 static func normalize_id(id: String) -> String:
@@ -52,6 +55,37 @@ func on_enemy_spawn(ev: Dictionary) -> void:
 	label.outline_modulate = Color(0.0, 0.0, 0.0, 0.85)
 	label.position = Vector3(float(ev.get("x", 0.0)), float(ev.get("y", 0.0)) + HEIGHT, float(ev.get("z", 0.0)))
 	add_child(label)
-	var tw := label.create_tween()
-	tw.tween_interval(TTL)
-	tw.tween_callback(label.queue_free)
+	_lines.append({"label": label, "t": 0.0})
+
+
+## Ages every raised line by dt seconds and frees the ones past TTL. The world's view
+## pass drives it from the fixed sim step (deterministic, and safe outside the tree -
+## a tween cannot be created there); _process drives it when no one else does.
+func advance(dt: float) -> void:
+	var keep: Array = []
+	for l in _lines:
+		l["t"] = float(l["t"]) + maxf(dt, 0.0)
+		var label: Label3D = l["label"]
+		if float(l["t"]) >= TTL:
+			remove_child(label)
+			label.queue_free()
+		else:
+			keep.append(l)
+	_lines = keep
+
+
+func _process(delta: float) -> void:
+	if not driven:
+		advance(delta)
+
+
+## The live line count and texts (tests and the HUD-less probe read these).
+func line_count() -> int:
+	return _lines.size()
+
+
+func line_texts() -> Array:
+	var out: Array = []
+	for l in _lines:
+		out.append((l["label"] as Label3D).text)
+	return out

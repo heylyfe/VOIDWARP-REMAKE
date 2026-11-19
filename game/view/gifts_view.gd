@@ -30,18 +30,38 @@ extends Node3D
 # on spec #FFC83D - see out/decisions/J14.md).
 #
 # The caller drives sync(gifts) every frame (or on change); this node never
-# writes sim state.
+# writes sim state. The clock is the caller's too: sync() accepts an optional
+# absolute time in sim seconds (the tripmine_view set_time() idiom); when the
+# caller supplies none, sync() advances its own fixed 1/60 s counter once per
+# call - the fixed step the sim runs at, never a wall clock.
+#
+# Idle motion (FULL_GAME_PLAN.md gap 10: the gift bodies were inert props):
+# both the black and the gold gift turn one revolution per 4.0 s, exactly the
+# tripmine's turn (DESIGN.md section 3.3, the T-021 TURN_PERIOD), phase-offset
+# per build order so neighbouring slots do not spin in lockstep. A Larper's
+# fake gift and a real gift are the same box (section 3.3's lie) - if the real
+# ones sat dead still, the turn alone would give the Larper away. State
+# reaction is the existing sync() pass: which body is shown follows the sim's
+# phase and the collected bitsets, and a body never shows on an occ == 1 slot.
 
 const GiftsScript := preload("res://sim/gifts.gd")
 
 const BLACK_MODEL := "res://assets/models/black_gift.glb"
 const GOLD_MODEL := "res://assets/models/gold_gift.glb"
+## The turn: one full revolution per 4.0 s (the tripmine's TURN_PERIOD, DESIGN.md
+## section 3.3). The fake gift (the Larper's) turns on the same period - the
+## real gifts must match it or motion itself gives the lie away.
+const TURN_PERIOD := 4.0
+const TAU_F := 6.283185307179586
+const DT := 1.0 / 60.0   # the fixed sim step; the internal clock advances this per sync()
 const RIM_FACTOR := 1.5   # black_gift_rim emission x 1.5 (TERRAIN_SPEC 12.2, D-T020-6). The black gift no longer applies it as an additive overlay (J8: measured to add a flat ~+45 to EVERY pixel, body included - the "near-black body" could never land near-black); kept as the spec's recorded value. The rim renders via the unshaded vertex-colour base pass (see _black_body_material).
 const GOLD_FACTOR := 2.0  # gold_gift emission x 2.0 (TERRAIN_SPEC 12.2); no longer used to render anything (the gold gift renders via _gold_body_material()); kept as the spec's value
 
 var _gifts: RefCounted = null
 var _black: Array = []    # slot id -> Node3D (null on occ == 1 slots)
 var _gold: Array = []     # slot id -> Node3D
+var _turn_idx: Array = [] # slot id -> build order (phase offset source; -1 not built)
+var _time := 0.0          # sim seconds (caller-set via sync()/set_time(), else advanced per sync())
 
 
 ## Builds one node per real gift slot. level: the Level dict; gifts_state: the
@@ -50,6 +70,7 @@ var _gold: Array = []     # slot id -> Node3D
 ## exactly as view/tripmine_view.gd setup() does.
 func setup(level: Dictionary, gifts_state: RefCounted) -> void:
 	_gifts = gifts_state
+	_time = 0.0
 	for child in get_children():
 		child.free()
 	_black = []
@@ -57,11 +78,17 @@ func setup(level: Dictionary, gifts_state: RefCounted) -> void:
 	var n: int = _gifts.slots.size()
 	_black.resize(n)
 	_gold.resize(n)
+	_turn_idx = []
+	_turn_idx.resize(n)
+	_turn_idx.fill(-1)
 	var black_ps: PackedScene = load(BLACK_MODEL)
 	var gold_ps: PackedScene = load(GOLD_MODEL)
+	var built: int = 0
 	for i in n:
 		if not _gifts.is_real(i):
 			continue
+		_turn_idx[i] = built
+		built += 1
 		var pos: Vector3 = _gifts.slot_pos(i)
 		var b: Node3D = black_ps.instantiate()
 		b.position = pos
@@ -154,16 +181,38 @@ static func emission_material(factor: float) -> StandardMaterial3D:
 	return m
 
 
+## The clock: seconds of sim/level time (the caller owns it; no engine clock).
+## sync() also accepts the same absolute time as its second argument; when the
+## caller supplies neither this nor a time, sync() advances a fixed 1/60 s
+## counter once per call - never a wall clock.
+func set_time(t: float) -> void:
+	_time = t
+
+
 ## Syncs visibility from the sim's gift state (call every frame or on change).
-func sync(gifts_state: RefCounted = null) -> void:
+## time_secs, when >= 0.0, sets the absolute sim clock for the turn; negative
+## (the default) advances the internal fixed-step clock by one 1/60 s tick.
+func sync(gifts_state: RefCounted = null, time_secs: float = -1.0) -> void:
 	if gifts_state != null:
 		_gifts = gifts_state
+	if time_secs >= 0.0:
+		_time = time_secs
+	else:
+		_time += DT
 	if _gifts == null:
 		return
 	var gold: bool = _gifts.phase == GiftsScript.PHASE_GOLD
+	var rot_base: float = _time * TAU_F / TURN_PERIOD
 	for i in _gifts.slots.size():
 		var shown: bool = _gifts.is_real(i) and not _gifts.collected(i)
+		# one full turn per TURN_PERIOD seconds, phase from the build order so
+		# neighbouring gifts in a line do not spin in lockstep - the tripmine's
+		# own formula (view/tripmine_view.gd sync())
+		var ph: float = float(_turn_idx[i]) * 0.7 if i < _turn_idx.size() and _turn_idx[i] >= 0 else 0.0
+		var rot: float = rot_base + ph
 		if _black[i] != null:
+			_black[i].rotation.y = rot
 			_black[i].visible = shown and not gold
 		if _gold[i] != null:
+			_gold[i].rotation.y = rot
 			_gold[i].visible = shown and gold

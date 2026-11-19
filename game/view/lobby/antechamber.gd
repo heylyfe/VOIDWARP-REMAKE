@@ -297,6 +297,15 @@ func _lights() -> void:
 	add_child(fill_light)
 
 
+## Curse consumer (gap 27): lights_out shrinks the player fill light range to the modified
+## stat (op=set, absolute). The lobby spawns no curses, but the setter keeps the hall's fill
+## light honest to the same stat the run uses. No-op before _lights() built the light.
+func apply_stats(stats: Dictionary) -> void:
+	if fill_light == null or not stats.has("fill_light_range"):
+		return
+	fill_light.omni_range = maxf(0.0, float(stats["fill_light_range"]))
+
+
 ## Procedural props (DESIGN.md section 11: urns, barrels and tall jars along the walls, at
 ## fixed offsets - a deterministic script build). The shipped T-015 models are used when
 ## they are present; the box fallback keeps a checkout without the imported assets working.

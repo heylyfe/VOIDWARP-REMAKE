@@ -45,12 +45,18 @@ func _init() -> void:
 
 
 ## items: Array of {"id": String, "stacks": int}. stacks defaults to 1.
+## An unchanged list is a no-op (hud.sync runs every tick; rebuilding the cells each tick
+## would churn nodes for nothing).
 func set_curses(items: Array) -> void:
+	if items == _curse_items and _curses_row.get_child_count() == items.size():
+		return
 	_curse_items = items.duplicate()
 	_rebuild(_curses_row, _curse_items)
 
 
 func set_upgrades(items: Array) -> void:
+	if items == _upgrade_items and _upgrades_row.get_child_count() == items.size():
+		return
 	_upgrade_items = items.duplicate()
 	_rebuild(_upgrades_row, _upgrade_items)
 
