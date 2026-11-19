@@ -30,8 +30,12 @@
 #
 # Works in Windows PowerShell 5.1. Keep this file ASCII-only (5.1 reads a BOM-less file as ANSI).
 
+# Per-step budget. This is a runner limit, not a test threshold: no assertion depends on it.
+# It was 300 s, which the suite outgrew - 92 tests now take ~352 s on this machine, because the
+# suite grew from 71 tests and the bot probe models tripmines as lethal ground. A step that
+# genuinely hangs still fails; it just takes longer to say so.
 param(
-    [int]$StepTimeoutSec = 300
+    [int]$StepTimeoutSec = 900
 )
 
 $ErrorActionPreference = 'Stop'

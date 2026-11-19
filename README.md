@@ -9,10 +9,73 @@ third fall is the end of the run.
 
 The world is serious. The enemies are not.
 
-> **Status: alpha — `v0.1.1-alpha.3`.** One level, playable end to end. Not yet a 30-level run.
+> **Status: alpha — `v0.1.2-alpha.3`.** One level, playable end to end. Not yet a 30-level run.
 > See [What works today](#what-works-today) for the honest list.
 
 **VOIDWRAP RUN is a personal, non-commercial project — no money is involved, and it is not affiliated with, endorsed by, or connected to any person, brand, character, or IP referenced or depicted in the game.**
+
+## What changed in v0.1.2-alpha.3
+
+Waves 1–4 land together: the systems the earlier alphas built but never wired are wired now.
+
+- **Upgrades and curses apply.** All 36 upgrades and 46 curses were inert — the shop took gold and
+  changed nothing. `world.gd` now runs the modifier pass into the black-phase and gold-phase stat
+  blocks and swaps them on the phase edges, and the controller consumes them. Field Dressing gives
+  the free fall DESIGN section 8 promises, and the Last Light 8 u body push now moves the live enemy
+  rows instead of a spawn-time copy. The wiring was mutation-tested five ways; the follow-up found
+  a real hole (stack repetition was unproven) and closed it.
+- **Eight dropped stats got consumers.** `defuse_chance` and `pickup_radius` now have consumers in
+  `sim/mines.gd` and `sim/gifts.gd`, `shop_price_mul` reaches the lobby shop (bargain and inflation
+  move the price), the telegraph and enemy-speed multipliers reach `sim/enemy_runtime.gd`,
+  `barrier_shields` absorbs a tripmine in `sim/controller.gd`, `fog_density` and `fill_light_range`
+  reach the fog environment and the view's fill light.
+- **The eleven enemy-linked curses get their modules** — `quarter_chimes`, `second_strike`,
+  `understudies`, `wide_blast`, `spreading_rot`, `wet_floor`, `pup_pack`, `slipstream_trail`,
+  `unannounced`, `token_limit` and `twin_fangs`. They were drawable and pickable but had no
+  implementation, so the mandatory curse bay was a tax with no effect. They are reimplementations on
+  `main`; the stale branch that once held them must never be merged.
+- **Pause and the class altar.** ESC opened no pause at all — it destroyed the run. The pause
+  overlay now freezes whatever is running and resumes it from the tick it stopped on. The class
+  altar lets the player pick a kit instead of the app rolling one in three. Retry restarts the same
+  seed into loading instead of returning to the menu, and the run log is written when a run ends.
+- **Camera collision.** The camera clipped inside the level. `camera_rig.gd` now pulls in on a
+  deterministic sphere sweep over the same tile-slab and prop boxes the sim moves bodies against —
+  pure math, no engine physics, so the determinism rule holds. Pull-in snaps, the return eases, and
+  the no-obstruction case is bit-identical to the old placement.
+- **A settings screen that works.** The store had no UI and three of its four fields were inert.
+  `settings_menu.gd` drives volume, FOV, fullscreen and mouse sensitivity, and each now reaches its
+  consumer. The gate found seven real defects in the first version of this screen (the volume slider
+  never reached the store or the master bus, the FOV slider never reached the store, nothing
+  persisted, and show/close did not load or hide); all seven are fixed and `test_settings.gd` is
+  green.
+- **The presentation layer stops being dead code.** Every attack used to arrive with no ring, no
+  line, no patch and no sound. The telegraph view draws the tells, the projectile view draws the
+  balls, wind shots and the missile, the straggler beam gets its marker, danger text announces
+  enemies, thicc ben's eject blurs the screen, and respawn invulnerability is visible. The ability
+  cooldown bar and the curse and upgrade icon rows are fed. The audio cue layer gives every lethal
+  threat a cue that precedes the attack — Coil's landing, Claude's drums and wind, gin's crack
+  rumble — synthesized at runtime, with no binary assets.
+- **Telegraphs expire and the nuke kills everyone in the blast.** Telegraph footprints never
+  expired, so one nuke ring could block an enemy for the rest of a run. The live-telegraph filter
+  now applies at the gate and the read layer; the raw list is deliberately not pruned. The nuke
+  killed the nearest player rather than every player in the blast; it now hits them all.
+- **Records.** `core/records.gd` is a local JSON store at `user://records.json` that ratchets the
+  best level and best purse up only and never blocks on a missing or corrupt file. The menu shows
+  both.
+- **Safe respawns.** A void-fall respawn could land inside a lethal hazard. `level_state.gd`
+  publishes the hazard footprints and the respawn search reads them.
+- **The Larper's mines.** Gift Larper votes now land as extra tripmines on the next level. The sim
+  keeps the vote ledger only; the app reads the roster module's own `extra_mines()` and hands the
+  sum to the generator, because sim may not import `res://content/` at all.
+- **Bot honesty.** The bot read the raw telegraph list, so it dodged telegraphs that had already
+  ended. It now uses the same live-telegraph filter the game does.
+- **Menu and ramps.** The menu shows the records store, and `test_classes.gd` now covers ramp
+  kinds 1–4 (surface height, standing, and a walk in both directions) — the only gap left in the
+  ramp fix.
+
+The gate is green on this tree: `GATE OK (9 ran, 0 skipped, 327 s)`, `TESTS 89 passed 0 failed`
+(was 71), `PARITY 56/56 OK`, `SPRITES OK`, `FOGCHECK OK (550 checks over 5 biomes)`, `SELFTEST
+18/18`, `GALLERY 16/16`, zero SCRIPT ERROR lines. 68 changed or new files across ten commits.
 
 ## What changed in v0.1.1-alpha.3
 
@@ -83,16 +146,34 @@ Known gaps, stated plainly:
   100 seeds re-measured on this tree). The acceptance bar is 95. The probe crashes with a Godot
   `Unreferenced static string` error at around 30 runs in one process, so long runs are measured
   in chunks; seeds are independent, so the splice loses nothing.
+- **The difficulty bands are NOT met, and the measurement is not yet measuring the game.**
+  Re-measured on this tree at full depth: level 6 = 4/100 (4.0%) against a bar of ≥80%;
+  level 12 = 0% against 40–60%; level 18 = 0% against 15–30%; median level reached 4, max 6.
+  The reason is plain: the bot probe cannot see mines. `bot_run.gd` calls `MinesScript.tick()` to
+  advance the sim and never reads a mine position. 37 of the deaths are D-MINE; at level 5,
+  34 of 39 deaths are tripmines (87%), and 34% of all runs end on a mine at level 5 — with only
+  2 enemy votes, so density is not the cause. Three more bot gaps: it dodges the rumble instead of
+  YOU?!'s ring (the ring outlives its telegraph by 94 ticks), it uses a 1.5 u vertical contact
+  band against the game's 1.8 u body, and enemy velocity is keyed by content id so two copies of
+  the same enemy corrupt each other's velocity. All four are tool gaps, not game defects. Until
+  the probe can see mines, the bands say nothing about the game, and enemy data is not being
+  tuned to chase them. One real game-side defect was found in the process: `rt.telegraphs` grows
+  without bound and is scanned linearly — the live-telegraph filter now applies at the read
+  layer, but the list itself is deliberately not pruned.
 - **No 30-level run yet.** The intermission lobby is wired into the app loop: a completed level
   tears the world down and opens the Antechamber (`view/lobby/lobby_scene.gd`), and the next
   level is built from the lobby's ledger (class, votes, curses, purchases) when the player walks
   into the Descent Gate. What is still missing is a shipped, full-length run — one level at a
   time is what exists today.
-- **Three of the five parked HIGH bugs are closed** ([`PARKED.md`](PARKED.md) rows 25–28): the
-  Last Light body push now reaches the live enemy rows, ramp kinds 3 and 4 report the slope the
-  mesh draws, and every enemy body mirror is refreshed each step so the safe-tile and SR-4 checks
-  stop reading spawn points. The bot route regressions are partly closed. One exe-related row was
-  closed by the v0.1.0-alpha.1 export.
+- **PARKED.md rows 25, 26 and 27 are closed; row 28 is partly closed.** Row 25 (the Last Light
+  body push now reaches the live enemy rows), row 26 (ramp kinds 3 and 4 report the slope the
+  mesh draws, with `test_classes.gd` covering all four kinds) and row 27 (every enemy body mirror
+  is refreshed each step so the safe-tile and SR-4 checks stop reading spawn points) are closed.
+  Row 28's jump-arc scan, ban-lift re-routes and sideways regressions are partly closed; the dead
+  `spawn_deferred` field and the unproducible empty-C-bay stall outcome remain.
+- **The menu's version tag still prints `v0.1.1-alpha.3`.** It lives in `game/app/menu.gd` and
+  ships inside the build; it moves with the next export, not with this README.
+- One exe-related row was closed by the v0.1.0-alpha.1 export.
 
 ## How a run works
 
@@ -160,7 +241,7 @@ powershell -File tools\gate.ps1
 powershell -File tools\harness.ps1
 ```
 
-The gate is the contract: 62 test files, terrain parity, sprite validation, fog readability across
+The gate is the contract: 90 test files, terrain parity, sprite validation, fog readability across
 five biomes, and a zero-`SCRIPT ERROR` requirement. Nothing merges red.
 
 ### Build
