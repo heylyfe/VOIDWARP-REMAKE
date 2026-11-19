@@ -1,17 +1,19 @@
 extends RefCounted
 #
-# T-051 scripted curses - the ENEMY-LINKED modules on main. The 12 "script": true
+# T-051 scripted curses - the ENEMY-LINKED modules on main. The 23 "script": true
 # curses whose requires_enemy is set AND whose module is merged here:
 #   aftershock, bunker_buster, crescendo, direct_shot, double_ring, egoist, litter,
-#   long_toll, longer_speech, method_acting, mirror_match, overwound.
-# One test per curse, each asserting the JSON's own rule sentence. The other 12
-# enemy-linked script curses (pup_pack, quarter_chimes, second_strike,
-# slipstream_trail, spreading_rot, token_limit, twin_fangs, unannounced,
-# understudies, wet_floor, wide_blast, zoomies) have their modules on the unmerged
-# t3/scripted-curses-groups-4-6 branch, not on main - PARKED.md keeps that row; the
-# module-contract test below pins the full 24-id inventory so the next module merge
-# must promote those ids into this file. Nothing here names the general family's
-# 11 curses, and every helper lives IN THIS FILE (no shared helper file).
+#   long_toll, longer_speech, method_acting, mirror_match, overwound,
+#   pup_pack, quarter_chimes, second_strike, slipstream_trail, spreading_rot,
+#   token_limit, twin_fangs, unannounced, understudies, wet_floor, wide_blast.
+# One test per curse, each asserting the JSON's own rule sentence. The last id of the
+# 24-id family, zoomies, is still NOT_ON_MAIN: it is retired from the offer pool
+# (commit "Zoomies: retired from the offer pool, not deleted") and its module lives on
+# the unmerged t3/scripted-curses-groups-4-6 branch, which the owner ruled must never
+# be merged - so it is reimplemented on main only if it ever returns to the pool. The
+# module-contract test below pins the full 24-id inventory so that day cannot pass
+# silently. Nothing here names the general family's 11 curses, and every helper lives
+# IN THIS FILE (no shared helper file).
 #
 # Module contract (D-T051-1): game/content/curses/<id>.gd, handlers named after the
 # CLOSED hook list of core/hooks.gd, signature handler(state, api) -> <void|events>;
@@ -25,14 +27,17 @@ extends RefCounted
 #   "curses_held"   {curse_id: stacks}
 #   "curse_st"      per-curse scratch slots
 #
-# The two ticket done-whens that are THIS file's:
+# The ticket done-whens that are THIS file's:
 #   - long_toll: the second ben arrival lands at the same locked point exactly
 #     90 ticks (1.5 s) after the first and never kills - proven END-TO-END below
 #     against the REAL thicc_ben behavior driven inside a REAL sim/enemy_runtime.gd
-#     (the only curse where the rule lives in a behavior contract); and
-#   - understudies' 20% mine cap: MODULE NOT ON MAIN (see the parked row) - the
-#     1,000-seed walk is tools/check_mine_cap.gd on that branch, this checkout has
-#     neither the tool nor the module, so the 100-seed assertion cannot exist yet.
+#     (the only curse where the rule lives in a behavior contract);
+#   - understudies' 20% mine cap: the REAL generator (terrain/voidgen.gd) is run with
+#     the curse's flat add on top of the roster's and the placed tripmines are counted
+#     against n // 5 - the cap holds and the base roll is untouched (no per-slot chance
+#     moved); and
+#   - quarter_chimes / pup_pack: the shortened ben interval and the staggered second
+#     seal are proven END-TO-END against the REAL behaviors in a REAL runtime.
 #
 # Where a curse's rule needs the api, the test passes the FakeApi stub and asserts
 # on what the module ASKED for (push/kill/spawn/telegraph calls); where the rule is
@@ -44,7 +49,10 @@ const EnemyRuntimeScript := preload("res://sim/enemy_runtime.gd")
 const ContentApiScript := preload("res://core/content_api.gd")
 const HooksScript := preload("res://core/hooks.gd")
 const TestUtil := preload("res://tests/sim_testutil.gd")
+const VoidGenScript := preload("res://terrain/voidgen.gd")
 const BenScript := preload("res://content/enemies/thicc_ben/enemy.gd")
+const SealScript := preload("res://content/enemies/seal/enemy.gd")
+const GinScript := preload("res://content/enemies/gin/enemy.gd")
 
 const Aftershock := preload("res://content/curses/aftershock.gd")
 const BunkerBuster := preload("res://content/curses/bunker_buster.gd")
@@ -60,18 +68,32 @@ const MethodActing := preload("res://content/curses/method_acting.gd")
 const MirrorMatch := preload("res://content/curses/mirror_match.gd")
 const Overwound := preload("res://content/curses/overwound.gd")
 
-## The 12 modules above, in the order the tests run (one _t_ per curse below).
+# The reimplemented-on-main group (the 11 ids the audit found inert; the stale
+# t3/scripted-curses-groups-4-6 branch is never merged - these are fresh modules).
+const QuarterChimes := preload("res://content/curses/quarter_chimes.gd")
+const SecondStrike := preload("res://content/curses/second_strike.gd")
+const Understudies := preload("res://content/curses/understudies.gd")
+const WideBlast := preload("res://content/curses/wide_blast.gd")
+const SpreadingRot := preload("res://content/curses/spreading_rot.gd")
+const WetFloor := preload("res://content/curses/wet_floor.gd")
+const PupPack := preload("res://content/curses/pup_pack.gd")
+const SlipstreamTrail := preload("res://content/curses/slipstream_trail.gd")
+const Unannounced := preload("res://content/curses/unannounced.gd")
+const TokenLimit := preload("res://content/curses/token_limit.gd")
+const TwinFangs := preload("res://content/curses/twin_fangs.gd")
+
+## The modules above, in the order the tests run (one _t_ per curse below).
 const MODULES: Array = [
 	Aftershock, BunkerBuster, Crescendo, DirectShot, DoubleRing, Egoist,
 	Litter, LongToll, LongerSpeech, MethodActing, MirrorMatch, Overwound,
+	QuarterChimes, SecondStrike, Understudies, WideBlast, SpreadingRot, WetFloor,
+	PupPack, SlipstreamTrail, Unannounced, TokenLimit, TwinFangs,
 ]
 
 ## The enemy-linked script-curse ids whose modules are NOT on this checkout yet
 ## (each lives on the unmerged t3/scripted-curses-groups-4-6 branch; PARKED.md).
 const NOT_ON_MAIN: Array[String] = [
-	"pup_pack", "quarter_chimes", "second_strike", "slipstream_trail",
-	"spreading_rot", "token_limit", "twin_fangs", "unannounced",
-	"understudies", "wet_floor", "wide_blast", "zoomies",
+	"zoomies",
 ]
 
 
@@ -89,6 +111,17 @@ func run() -> Array[String]:
 	_t_method_acting(f)
 	_t_mirror_match(f)
 	_t_overwound(f)
+	_t_quarter_chimes(f)
+	_t_second_strike(f)
+	_t_understudies(f)
+	_t_wide_blast(f)
+	_t_spreading_rot(f)
+	_t_wet_floor(f)
+	_t_pup_pack(f)
+	_t_slipstream_trail(f)
+	_t_unannounced(f)
+	_t_token_limit(f)
+	_t_twin_fangs(f)
 	_t_module_contract(f)
 	return f
 
@@ -916,14 +949,679 @@ func _t_overwound(f: Array[String]) -> void:
 	_check(f, not coil2["cfg"].has("idle_s"), "overwound: a not-held run shortened the idle")
 
 
+## "ben's teleport interval 13.35 → 9 s" - proven END-TO-END: the REAL thicc_ben
+## behavior runs inside a REAL sim/enemy_runtime.gd and the curse joins the tick loop
+## where a dispatcher would call it (once per tick, right after the runtime's step).
+func _t_quarter_chimes(f: Array[String]) -> void:
+	_eqi(f, QuarterChimes.INTERVAL_TICKS, 540,
+			"quarter_chimes: the interval is not 9 s (540 ticks)")
+	_eqi(f, QuarterChimes.TELEPORT_TICKS, BenScript.TELEPORT_TICKS,
+			"quarter_chimes: the curse's ben cycle moved off the behavior's 801")
+	_eqi(f, QuarterChimes.TELEGRAPH_TICKS, BenScript.TELEGRAPH_TICKS,
+			"quarter_chimes: the curse's smoke moved off the behavior's 75")
+	_eqi(f, QuarterChimes.IDLE_LIMIT_TICKS, 465,
+			"quarter_chimes: the smoke does not start 465 ticks into the idle")
+	_eqf(f, QuarterChimes.LOCK_LEAD_S, BenScript.LOCK_LEAD_S,
+			"quarter_chimes: the destination lead moved off ben's 0.5 s")
+	_eqf(f, QuarterChimes.TELEGRAPH_R, BenScript.TELEGRAPH_R,
+			"quarter_chimes: the smoke column moved off ben's 1.2 u")
+	_eqs(f, QuarterChimes.KIND, BenScript.KIND, "quarter_chimes: the telegraph kind moved")
+	var held := _quarter_chimes_run(f, true)
+	var free := _quarter_chimes_run(f, false)
+	if held.size() < 2 or free.size() < 2:
+		return
+	_eqi(f, int(held[1]) - int(held[0]), 540,
+			"quarter_chimes: the arrival-to-arrival interval is not 9 s")
+	_eqi(f, int(free[1]) - int(free[0]), 801,
+			"quarter_chimes: an unheld run's interval is not ben's own 801")
+
+
+## The shared driver for quarter_chimes: a REAL sim/enemy_runtime.gd runs the REAL
+## thicc_ben behavior and the curse joins the tick loop once per tick, right after the
+## runtime's step. Returns the arrival ticks (the telegraph -> idle transitions).
+func _quarter_chimes_run(f: Array[String], held: bool) -> Array:
+	var rt := _rt()
+	var ctl = rt.controllers[0]
+	ctl.x = 0.5
+	ctl.y = 0.5
+	ctl.z = 0.5
+	ctl.vx = 0.0
+	ctl.vy = 0.0
+	ctl.vz = 0.0
+	var ben: Dictionary = rt.spawn_at("thicc_ben", "Thicc Ben", BenScript.new_behavior(),
+			{"contact_kill": false, "world_height": 4.0, "hit_diameter": 1.2},
+			Vector3(10.5, 0.5, 10.5))
+	var st := _state(rt, _held("quarter_chimes") if held else {}, 0)
+	var api := FakeApi.new()
+	var arrivals: Array = []
+	var prev := "idle"
+	for t in 1800:
+		rt.step(TestUtil.DT)
+		st["tick"] = rt.tick
+		api.near = {"index": 0, "x": float(ctl.x), "y": float(ctl.y), "z": float(ctl.z),
+				"vx": 0.0, "vy": 0.0, "vz": 0.0}
+		QuarterChimes.on_tick(st, api)
+		var phase := str(ben.get("phase", "idle"))
+		if prev == "telegraph" and phase == "idle":
+			arrivals.append(t)
+		prev = phase
+		if arrivals.size() >= 2:
+			break
+	_check(f, not bool(ctl.dead), "quarter_chimes: ben's arrival killed the player")
+	return arrivals
+
+
+## "a second missile lands 1.0 s after the first on your new position"
+func _t_second_strike(f: Array[String]) -> void:
+	_eqi(f, SecondStrike.SECOND_DELAY_TICKS, 60,
+			"second_strike: the delay is not 1.0 s (60 ticks)")
+	_eqf(f, SecondStrike.BLAST_RADIUS, 5.0, "second_strike: the sphere is not the nuke's 5 u")
+	_eqs(f, SecondStrike.DEATH_CODE, "D-NUKE", "second_strike: the death code is not the nuke's")
+	_eqs(f, SecondStrike.RING_KIND, "ground_ring",
+			"second_strike: the ring kind is not the nuke's")
+	# the blast tick: the nuke row ENTERS its pause with paused_by "blast"
+	var rt := _rt()
+	var ctl = rt.controllers[0]
+	ctl.x = 3.5
+	ctl.y = 0.5
+	ctl.z = 0.5
+	var nuke := _row(rt, "nuke", Vector3(0.5, 0.5, 0.5), {})
+	nuke["phase"] = "lock"
+	nuke["det"] = {"x": 0.5, "y": 0.5, "z": 0.5}
+	var api := FakeApi.new()
+	api.near = {"index": 0, "x": 3.5, "y": 0.5, "z": 0.5, "vx": 0.0, "vy": 0.0, "vz": 0.0}
+	var st := _state(rt, _held("second_strike"), 10)
+	SecondStrike.on_tick(st, api)
+	_eqi(f, (st["curse_st"].get(SecondStrike.ST_KEY, []) as Array).size(), 0,
+			"second_strike: a missile was scheduled before any blast")
+	nuke["phase"] = "pause"
+	nuke["paused_by"] = "blast"
+	st["tick"] = 20
+	SecondStrike.on_tick(st, api)
+	var entries: Array = st["curse_st"].get(SecondStrike.ST_KEY, [])
+	_eqi(f, entries.size(), 1, "second_strike: the blast did not schedule a second missile")
+	if entries.size() == 1:
+		_eqi(f, int(entries[0]["due"]), 80,
+				"second_strike: the second missile is not 1.0 s out")
+		_eqf(f, float(entries[0]["x"]), 3.5,
+				"second_strike: the missile did not aim at the new x")
+		_eqf(f, float(entries[0]["z"]), 0.5,
+				"second_strike: the missile did not aim at the new z")
+	_eqi(f, api.telegraphs.size(), 1, "second_strike: the second missile announced no ring")
+	if api.telegraphs.size() == 1:
+		_eqs(f, str(api.telegraphs[0]["kind"]), "ground_ring",
+				"second_strike: the second missile is not the nuke's own ring")
+		_eqi(f, int(api.telegraphs[0]["ticks"]), 60, "second_strike: the ring is not 1.0 s")
+	# the pause's remaining ticks schedule nothing more (the transition, not the phase)
+	st["tick"] = 21
+	SecondStrike.on_tick(st, api)
+	_eqi(f, (st["curse_st"][SecondStrike.ST_KEY] as Array).size(), 1,
+			"second_strike: the pause scheduled a second missile twice")
+	# the counter-play: running out of the 5 u sphere survives
+	ctl.x = 12.5
+	st["tick"] = 80
+	SecondStrike.on_tick(st, api)
+	_eqi(f, api.kills.size(), 0, "second_strike: the second missile killed a player who ran")
+	_eqi(f, (st["curse_st"][SecondStrike.ST_KEY] as Array).size(), 0,
+			"second_strike: the landed missile stayed scheduled")
+	# standing still inside the sphere dies with the nuke's own code
+	var rt2 := _rt()
+	var ctl2 = rt2.controllers[0]
+	ctl2.x = 3.5
+	ctl2.y = 0.5
+	ctl2.z = 0.5
+	var nuke2 := _row(rt2, "nuke", Vector3(0.5, 0.5, 0.5), {})
+	nuke2["phase"] = "lock"
+	nuke2["det"] = {"x": 0.5, "y": 0.5, "z": 0.5}
+	var api2 := FakeApi.new()
+	api2.near = {"index": 0, "x": 3.5, "y": 0.5, "z": 0.5, "vx": 0.0, "vy": 0.0, "vz": 0.0}
+	var st2 := _state(rt2, _held("second_strike"), 10)
+	SecondStrike.on_tick(st2, api2)
+	nuke2["phase"] = "pause"
+	nuke2["paused_by"] = "blast"
+	st2["tick"] = 20
+	SecondStrike.on_tick(st2, api2)
+	st2["tick"] = 80
+	SecondStrike.on_tick(st2, api2)
+	_eqi(f, api2.kills.size(), 1, "second_strike: the second missile did not kill the stander")
+	if api2.kills.size() == 1:
+		_eqs(f, str(api2.kills[0]["code"]), "D-NUKE",
+				"second_strike: the kill code is not D-NUKE")
+		_eqs(f, str(api2.kills[0]["killer"]), "nuke",
+				"second_strike: the killer is not the nuke")
+	# not held: no second missile
+	var rt3 := _rt()
+	var nuke3 := _row(rt3, "nuke", Vector3(0.5, 0.5, 0.5), {})
+	nuke3["phase"] = "lock"
+	nuke3["det"] = {"x": 0.5, "y": 0.5, "z": 0.5}
+	var api3 := FakeApi.new()
+	api3.near = {"index": 0, "x": 0.5, "y": 0.5, "z": 0.5, "vx": 0.0, "vy": 0.0, "vz": 0.0}
+	var st3 := _state(rt3, {}, 10)
+	SecondStrike.on_tick(st3, api3)
+	nuke3["phase"] = "pause"
+	nuke3["paused_by"] = "blast"
+	st3["tick"] = 20
+	SecondStrike.on_tick(st3, api3)
+	_eqi(f, (st3["curse_st"].get(SecondStrike.ST_KEY, []) as Array).size(), 0,
+			"second_strike: a not-held run scheduled a second missile")
+
+
+## "+4 flat extra mines per stack (20% cap still holds)"
+func _t_understudies(f: Array[String]) -> void:
+	_eqi(f, Understudies.MINES_PER_STACK, 4, "understudies: the flat add is not +4 per stack")
+	_eqi(f, Understudies.MAX_STACKS, 3, "understudies: the stack cap is not the JSON's 3")
+	_eqi(f, Understudies.extra_mines(_held("understudies", 1)), 4,
+			"understudies: one stack is not +4 mines")
+	_eqi(f, Understudies.extra_mines(_held("understudies", 2)), 8,
+			"understudies: two stacks are not +8 mines")
+	_eqi(f, Understudies.extra_mines(_held("understudies", 3)), 12,
+			"understudies: three stacks are not +12 mines")
+	_eqi(f, Understudies.extra_mines(_held("understudies", 4)), 12,
+			"understudies: a fourth stack went past the JSON's max_stacks")
+	_eqi(f, Understudies.extra_mines({"curses_held": {}}), 0,
+			"understudies: a not-held run added mines")
+	_eqi(f, Understudies.total_extra_mines(_held("understudies", 1), 6), 10,
+			"understudies: the roster's own extra mines were not added to the flat add")
+	# the 20% cap still holds: the REAL generator never places more than n // 5 mines,
+	# with the curse's flat add on top of the roster's - and the base roll is untouched
+	# (every base mine is still a mine, so no per-slot chance moved)
+	var l0: Dictionary = VoidGenScript.generate(11, 12, 1, 0)
+	var l3: Dictionary = VoidGenScript.generate(11, 12, 1,
+			Understudies.total_extra_mines(_held("understudies", 3), 0))
+	var g0: Array = l0.get("gifts", [])
+	var g3: Array = l3.get("gifts", [])
+	if g0.is_empty() or g3.is_empty():
+		f.append("understudies: the generator produced no gift slots")
+		return
+	var cap := Understudies.mine_cap(g0.size())
+	_eqi(f, cap, g0.size() / 5, "understudies: the cap is not the 20% n // 5")
+	var n0 := _mine_count(g0)
+	var n3 := _mine_count(g3)
+	_check(f, n0 <= cap, "understudies: the base level already broke the 20% cap")
+	_check(f, n3 <= cap, "understudies: the flat add broke the 20%% cap (%d > %d)" % [n3, cap])
+	_check(f, n3 >= n0, "understudies: the flat add placed no extra mine")
+	var moved := 0
+	for i in range(mini(g0.size(), g3.size())):
+		if int(g0[i]["occ"]) == 1 and int(g3[i]["occ"]) != 1:
+			moved += 1
+	_eqi(f, moved, 0, "understudies: the flat add changed the per-slot mine chance")
+
+
+## The tripmine count of a generated level's gift rows (occ 1 = tripmine).
+func _mine_count(gifts: Array) -> int:
+	var n := 0
+	for g in gifts:
+		if int(g["occ"]) == 1:
+			n += 1
+	return n
+
+
+## "mine blast radius 3 → 4.5 u and the blast chain-detonates mines inside it"
+func _t_wide_blast(f: Array[String]) -> void:
+	_eqf(f, WideBlast.BLAST_RADIUS_BASE, 3.0, "wide_blast: the base radius is not 3 u")
+	_eqf(f, WideBlast.BLAST_RADIUS_HELD, 4.5, "wide_blast: the widened radius is not 4.5 u")
+	_eqf(f, WideBlast.blast_radius_u({"curses_held": {}}), 3.0,
+			"wide_blast: a not-held run widened the blast")
+	_eqf(f, WideBlast.blast_radius_u(_held("wide_blast")), 4.5,
+			"wide_blast: the held blast is not 4.5 u")
+	_check(f, not WideBlast.chain_detonates({"curses_held": {}}),
+			"wide_blast: a not-held run chain-detonated")
+	_check(f, WideBlast.chain_detonates(_held("wide_blast")),
+			"wide_blast: the held blast does not chain")
+	# the chain: the mine 3.5 u away is inside BOTH spheres, the one 4.4 u away only
+	# inside the widened one - so the widening is what adds it
+	var origin := Vector3(0.0, 0.5, 0.0)
+	var mines: Array = [Vector3(0.0, 0.5, 0.0), Vector3(3.5, 0.5, 0.0),
+			Vector3(6.0, 0.5, 0.0), {"x": 0.0, "y": 0.5, "z": 4.4}]
+	var held: Array = WideBlast.chain_targets(_held("wide_blast"), origin, mines, 0)
+	_eqi(f, held.size(), 2, "wide_blast: the chain did not reach both mines inside 4.5 u")
+	if held.size() == 2:
+		_eqi(f, int(held[0]), 1, "wide_blast: the 3.5 u mine did not chain")
+		_eqi(f, int(held[1]), 3, "wide_blast: the 4.4 u mine did not chain")
+	var free: Array = WideBlast.chain_targets({"curses_held": {}}, origin, mines, 0)
+	_eqi(f, free.size(), 0, "wide_blast: a not-held run chained a mine")
+	# the detonating mine itself is never in its own chain
+	var self_only: Array = WideBlast.chain_targets(_held("wide_blast"), origin,
+			[Vector3(0.0, 0.5, 0.0)], 0)
+	_eqi(f, self_only.size(), 0, "wide_blast: the blast chained the mine that detonated")
+
+
+## A REAL sim/enemy_runtime.gd whose LEVEL carries tiles (the glitched-tile curses read
+## rt.level's tile set, which the shared _rt() fixture leaves empty).
+func _rt_with_level(tiles: Array) -> RefCounted:
+	var ctl = ControllerScript.new()
+	ctl.setup("dasher", TestUtil.consts())
+	var rt = EnemyRuntimeScript.new()
+	rt.setup({"tiles": tiles, "beacon": [0, 0, 1], "spawns": [[0, 0, 1]]},
+			TestUtil.world_from_tiles(tiles), [ctl], 7)
+	return rt
+
+
+## "each glitched tile infects one adjacent tile after 6 s (max 2 generations)"
+func _t_spreading_rot(f: Array[String]) -> void:
+	_eqi(f, SpreadingRot.SPREAD_DELAY_TICKS, 360, "spreading_rot: the delay is not 6 s")
+	_eqi(f, SpreadingRot.MAX_GENERATIONS, 2,
+			"spreading_rot: the cap is not 2 generations")
+	# a 5-tile strip at y_hu 0: the source at x = 2 grows +x first
+	var tiles: Array = [[0, 0, 0], [1, 0, 0], [2, 0, 0], [3, 0, 0], [4, 0, 0]]
+	var keys: Dictionary = SpreadingRot.tile_keys({"tiles": tiles})
+	_eqi(f, keys.size(), 5, "spreading_rot: the level's tile keys were not read")
+	_eqs(f, SpreadingRot.pick_adjacent("2,0,0", keys, {}), "3,0,0",
+			"spreading_rot: the first adjacent tile is not +x")
+	_eqs(f, SpreadingRot.pick_adjacent("2,0,0", keys, {"3,0,0": true}), "1,0,0",
+			"spreading_rot: an already glitched neighbour was picked")
+	_eqs(f, SpreadingRot.pick_adjacent("0,0,0", {"0,0,0": true}, {}), "",
+			"spreading_rot: a tile with no neighbour still spread")
+	# end to end: one glitched tile grows one ring per 6 s and stops at generation 2
+	var rt := _rt_with_level(tiles)
+	rt.world["glitched"]["2,0,0"] = true
+	var st := _state(rt, _held("spreading_rot"), 0)
+	var api := FakeApi.new()
+	SpreadingRot.on_tick(st, api)
+	_eqi(f, (rt.world["glitched"] as Dictionary).size(), 1,
+			"spreading_rot: the source spread before its 6 s")
+	for t in range(1, 361):
+		st["tick"] = t
+		SpreadingRot.on_tick(st, api)
+	_eqi(f, (rt.world["glitched"] as Dictionary).size(), 2,
+			"spreading_rot: the source did not infect exactly one tile at 6 s")
+	_check(f, (rt.world["glitched"] as Dictionary).has("3,0,0"),
+			"spreading_rot: the infected tile is not the +x neighbour")
+	for t in range(361, 721):
+		st["tick"] = t
+		SpreadingRot.on_tick(st, api)
+	_eqi(f, (rt.world["glitched"] as Dictionary).size(), 3,
+			"spreading_rot: generation 1 did not spread once")
+	_check(f, (rt.world["glitched"] as Dictionary).has("4,0,0"),
+			"spreading_rot: generation 2 is not the next ring out")
+	# generation 2 never spreads: nothing new in the next 6 s
+	for t in range(721, 1080):
+		st["tick"] = t
+		SpreadingRot.on_tick(st, api)
+	_eqi(f, (rt.world["glitched"] as Dictionary).size(), 3,
+			"spreading_rot: a generation-2 tile spread (the cap is 2)")
+	# the curse's own grown tile ages out at the toucher's own 12 s (born 360)
+	st["tick"] = 1080
+	SpreadingRot.on_tick(st, api)
+	_eqi(f, (rt.world["glitched"] as Dictionary).size(), 2,
+			"spreading_rot: the curse's own tile never aged out")
+	_check(f, not (rt.world["glitched"] as Dictionary).has("3,0,0"),
+			"spreading_rot: the aged tile is not the generation-1 one")
+	# not held: the source never spreads
+	var rt2 := _rt_with_level(tiles)
+	rt2.world["glitched"]["2,0,0"] = true
+	var st2 := _state(rt2, {}, 0)
+	for t in range(0, 400):
+		st2["tick"] = t
+		SpreadingRot.on_tick(st2, api)
+	_eqi(f, (rt2.world["glitched"] as Dictionary).size(), 1,
+			"spreading_rot: a not-held run spread the rot")
+
+
+## "glitched tiles are slippery (friction ×0.4); the toucher's slow stays −20% — no
+## extra slow (D-075)"
+func _t_wet_floor(f: Array[String]) -> void:
+	_eqf(f, WetFloor.FRICTION_MUL, 0.4, "wet_floor: the friction is not x0.4")
+	_eqf(f, WetFloor.friction_mul({"curses_held": {}}), 1.0,
+			"wet_floor: a not-held run made the floor slippery")
+	_eqf(f, WetFloor.friction_mul(_held("wet_floor")), 0.4,
+			"wet_floor: the held floor is not x0.4 friction")
+	# D-075: the toucher's slow stays -20% - the curse adds NO extra slow
+	_eqf(f, WetFloor.slow_mul(_held("wet_floor")), ControllerScript.GLITCH_SLOW_MUL,
+			"wet_floor: the curse changed the glitched floor's own slow")
+	_eqf(f, WetFloor.slow_mul({"curses_held": {}}), ControllerScript.GLITCH_SLOW_MUL,
+			"wet_floor: the base glitched slow moved")
+	# on_tick marks exactly the glitched tiles in the world's own slippery map
+	var rt := _rt()
+	rt.world["glitched"]["2,0,0"] = true
+	rt.world["glitched"]["3,0,0"] = true
+	WetFloor.on_tick(_state(rt, _held("wet_floor"), 0), FakeApi.new())
+	var slip: Dictionary = rt.world["slippery"]
+	_eqi(f, slip.size(), 2, "wet_floor: the glitched tiles were not marked slippery")
+	_check(f, slip.has("2,0,0") and slip.has("3,0,0"),
+			"wet_floor: the marked keys are not the glitched keys")
+	var ctl = rt.controllers[0]
+	ctl.cur_key = "2,0,0"
+	# the run speed is the glitched floor's own -20%, never more
+	_eqf(f, ctl.run_speed(rt.world), float(ctl.C["run_speed"]) * ControllerScript.GLITCH_SLOW_MUL,
+			"wet_floor: the glitched slow is not the toucher's own -20%")
+	# the write is load-bearing: with the glitched map emptied, the controller still
+	# reads 0.4 friction off the slippery map the curse wrote
+	(rt.world["glitched"] as Dictionary).clear()
+	_eqf(f, ctl.friction_mult(rt.world), 0.4,
+			"wet_floor: the slippery map the curse wrote is not what the controller reads")
+	# not held: nothing is marked
+	var rt2 := _rt()
+	rt2.world["glitched"]["2,0,0"] = true
+	WetFloor.on_tick(_state(rt2, {}, 0), FakeApi.new())
+	_eqi(f, (rt2.world["slippery"] as Dictionary).size(), 0,
+			"wet_floor: a not-held run marked the floor slippery")
+
+
+## The api a dispatcher hands a curse, with a spawn_enemy that REALLY lands the row in
+## the runtime - so a curse that spawns a second body can be driven end-to-end.
+class SpawnApi:
+	extends RefCounted
+	var rt = null
+	var spawns: Array = []
+	var telegraphs: Array = []
+	var near: Dictionary = {}
+
+	func nearest_player(_pos: Vector3) -> Dictionary:
+		return near
+
+	func spawn_enemy(def: Dictionary) -> void:
+		spawns.append(def)
+		if rt == null:
+			return
+		rt.spawn_at(str(def["id"]), str(def.get("name", "")), SealScript.SealBehavior.new(),
+				def.get("cfg", {}), Vector3(float(def["x"]), float(def["y"]), float(def["z"])))
+
+	func telegraph(kind: String, shape: Dictionary, ticks: int) -> void:
+		telegraphs.append({"kind": kind, "shape": shape, "ticks": ticks})
+
+	func sync_body() -> void:
+		pass
+
+
+## "every seal has a second seal that dashes 0.5 s after it" - proven END-TO-END: a REAL
+## seal runs in a REAL sim/enemy_runtime.gd, the curse spawns its partner through
+## api.spawn_enemy and staggers that partner's dash.
+func _t_pup_pack(f: Array[String]) -> void:
+	_eqi(f, PupPack.DASH_DELAY_TICKS, 30, "pup_pack: the stagger is not 0.5 s (30 ticks)")
+	_eqi(f, PupPack.TELEGRAPH_TICKS, SealScript.TELEGRAPH_TICKS,
+			"pup_pack: the seal's telegraph moved off 45")
+	_eqi(f, PupPack.DASH_TICKS, SealScript.DASH_TICKS,
+			"pup_pack: the seal's dash moved off 60")
+	_eqf(f, PupPack.DASH_LENGTH_U, SealScript.DASH_LENGTH_U,
+			"pup_pack: the fixed line moved off 20 u")
+	_eqf(f, PupPack.BODY_HEIGHT, SealScript.BODY_HEIGHT,
+			"pup_pack: the body height moved off the seal's")
+	_eqf(f, PupPack.PLAYER_CENTRE_U, SealScript.PLAYER_CENTRE_U,
+			"pup_pack: the aim point moved off the seal's")
+	_eqs(f, PupPack.KIND, "dash_line", "pup_pack: the telegraph kind is not the seal's")
+	_eqi(f, PupPack.second_telegraph_ticks(), 75,
+			"pup_pack: the second seal's telegraph is not 45 + 30")
+	var rt := _rt()
+	var ctl = rt.controllers[0]
+	ctl.x = 0.5
+	ctl.y = 0.5
+	ctl.z = 0.5
+	ctl.vx = 0.0
+	ctl.vy = 0.0
+	ctl.vz = 0.0
+	ctl.invuln = 1.0e9   # the dash line runs through the player: keep the geometry stable
+	var seal: Dictionary = rt.spawn_at("seal", "seal", SealScript.SealBehavior.new(),
+			SealScript.cfg(), Vector3(8.5, 0.5, 0.5))
+	var api := SpawnApi.new()
+	api.rt = rt
+	var st := _state(rt, _held("pup_pack"), 0)
+	var first_dash := -1
+	var second_dash := -1
+	var second_row: Variant = null
+	for t in 400:
+		rt.step(TestUtil.DT)
+		st["tick"] = rt.tick
+		api.near = {"index": 0, "x": float(ctl.x), "y": float(ctl.y), "z": float(ctl.z),
+				"vx": 0.0, "vy": 0.0, "vz": 0.0}
+		PupPack.on_tick(st, api)
+		if first_dash < 0 and str(seal.get("phase", "")) == "dash":
+			first_dash = t
+		if second_row == null and rt.enemies.size() > 1:
+			second_row = rt.enemies[1]
+		if second_row != null and second_dash < 0 \
+				and str(second_row.get("phase", "")) == "dash":
+			second_dash = t
+		if first_dash >= 0 and second_dash >= 0:
+			break
+	_eqi(f, api.spawns.size(), 1, "pup_pack: the seal was not given exactly one partner")
+	_check(f, first_dash >= 0, "pup_pack: the first seal never dashed")
+	_check(f, second_dash >= 0, "pup_pack: the second seal never dashed")
+	if first_dash >= 0 and second_dash >= 0:
+		_eqi(f, second_dash - first_dash, 30,
+				"pup_pack: the second seal did not dash 0.5 s after the first")
+	# the pack never grows: the partner carries the marker, so it is never paired again
+	PupPack.on_tick(st, api)
+	_eqi(f, api.spawns.size(), 1, "pup_pack: the pack grew a third seal")
+
+
+## "a dash leaves a slippery trail (friction ×0.4) for 3 s"
+func _t_slipstream_trail(f: Array[String]) -> void:
+	_eqi(f, SlipstreamTrail.TRAIL_TICKS, 180, "slipstream_trail: the trail is not 3 s")
+	_eqf(f, SlipstreamTrail.FRICTION_MUL, 0.4, "slipstream_trail: the friction is not x0.4")
+	_eqf(f, SlipstreamTrail.friction_mul({"curses_held": {}}), 1.0,
+			"slipstream_trail: a not-held run made the floor slippery")
+	_eqf(f, SlipstreamTrail.friction_mul(_held("slipstream_trail")), 0.4,
+			"slipstream_trail: the held trail is not x0.4 friction")
+	_eqs(f, SlipstreamTrail.tile_key_at(3.4, 0.5, 2.6), "3,2,1",
+			"slipstream_trail: the tile key is not collision.gd's x,z,y_hu")
+	# a dashing seal leaves its tile slippery; a flapping one does not
+	var rt := _rt()
+	var seal := _row(rt, "seal", Vector3(3.5, 0.5, 2.5), {})
+	seal["phase"] = "flap"
+	var st := _state(rt, _held("slipstream_trail"), 0)
+	SlipstreamTrail.on_tick(st, FakeApi.new())
+	_eqi(f, (rt.world["slippery"] as Dictionary).size(), 0,
+			"slipstream_trail: a flapping seal left a trail")
+	seal["phase"] = "dash"
+	st["tick"] = 10
+	SlipstreamTrail.on_tick(st, FakeApi.new())
+	var slip: Dictionary = rt.world["slippery"]
+	_eqi(f, slip.size(), 1, "slipstream_trail: the dash left no trail")
+	_check(f, slip.has("3,2,1"), "slipstream_trail: the trail is not under the seal")
+	# the controller standing there really is slippery
+	var ctl = rt.controllers[0]
+	ctl.cur_key = "3,2,1"
+	_eqf(f, ctl.friction_mult(rt.world), 0.4, "slipstream_trail: the trail is not slippery")
+	# the trail expires 3 s after the last dash tick (stamped at 10, so due at 190)
+	seal["phase"] = "recover"
+	st["tick"] = 189
+	SlipstreamTrail.on_tick(st, FakeApi.new())
+	_eqi(f, (rt.world["slippery"] as Dictionary).size(), 1,
+			"slipstream_trail: the trail expired early")
+	st["tick"] = 190
+	SlipstreamTrail.on_tick(st, FakeApi.new())
+	_eqi(f, (rt.world["slippery"] as Dictionary).size(), 0,
+			"slipstream_trail: the trail never expired")
+	# not held: no trail
+	var rt2 := _rt()
+	var seal2 := _row(rt2, "seal", Vector3(3.5, 0.5, 2.5), {})
+	seal2["phase"] = "dash"
+	SlipstreamTrail.on_tick(_state(rt2, {}, 0), FakeApi.new())
+	_eqi(f, (rt2.world["slippery"] as Dictionary).size(), 0,
+			"slipstream_trail: a not-held run left a trail")
+
+
+## "no trumpet — only the sprite and the rumble"
+func _t_unannounced(f: Array[String]) -> void:
+	_eqs(f, Unannounced.TRUMPET_CUE, "spawn_trumpet",
+			"unannounced: the silenced cue is not the trumpet")
+	_eqi(f, Unannounced.ALL_CUES.size(), 3,
+			"unannounced: the cue list is not address me's own 3")
+	var free: Array = Unannounced.cue_names({"curses_held": {}})
+	_eqi(f, free.size(), 3, "unannounced: a not-held run dropped a cue")
+	_check(f, free.has("spawn_trumpet"), "unannounced: the base run lost its trumpet")
+	var held: Array = Unannounced.cue_names(_held("unannounced"))
+	_eqi(f, held.size(), 2, "unannounced: the trumpet was not the only cue dropped")
+	_check(f, not held.has("spawn_trumpet"), "unannounced: the trumpet still plays")
+	_check(f, held.has("rumble_build"), "unannounced: the rumble was silenced too")
+	_check(f, held.has("explode_boom"), "unannounced: the kill's boom was silenced too")
+	_check(f, not Unannounced.cue_allowed(_held("unannounced"), "spawn_trumpet"),
+			"unannounced: cue_allowed still allows the trumpet")
+	_check(f, Unannounced.cue_allowed(_held("unannounced"), "rumble_build"),
+			"unannounced: cue_allowed dropped the rumble")
+	_check(f, Unannounced.sprite_visible(_held("unannounced")),
+			"unannounced: the sprite was hidden")
+	_check(f, Unannounced.rumble_audible(_held("unannounced")),
+			"unannounced: the rumble was silenced")
+
+
+## "plushies remove 20 agitation instead of 35 and spawn every 30 s"
+func _t_token_limit(f: Array[String]) -> void:
+	_eqf(f, TokenLimit.PLUSHIE_CALM_BASE, 35.0,
+			"token_limit: Claude's own calm moved off 35")
+	_eqf(f, TokenLimit.PLUSHIE_CALM_HELD, 20.0, "token_limit: the held calm is not 20")
+	_eqi(f, TokenLimit.PLUSHIE_INTERVAL_BASE_TICKS, 1500,
+			"token_limit: Claude's own interval moved off 1500")
+	_eqi(f, TokenLimit.PLUSHIE_INTERVAL_HELD_TICKS, 1800,
+			"token_limit: the held interval is not 30 s")
+	_eqf(f, TokenLimit.plushie_calm({"curses_held": {}}), 35.0,
+			"token_limit: a not-held run changed the calm")
+	_eqf(f, TokenLimit.plushie_calm(_held("token_limit")), 20.0,
+			"token_limit: the held calm is not 20")
+	_eqi(f, TokenLimit.plushie_interval_ticks({"curses_held": {}}), 1500,
+			"token_limit: a not-held run changed the interval")
+	_eqi(f, TokenLimit.plushie_interval_ticks(_held("token_limit")), 1800,
+			"token_limit: the held interval is not 30 s")
+	# a placement re-arms the clock at 30 s
+	var rt := _rt()
+	var claude := _row(rt, "claude", Vector3(5.0, 0.5, 5.0), {})
+	claude["agitation"] = 50.0
+	claude["plushies"] = []
+	claude["last_plushie_tick"] = -1
+	claude["plushie_cd"] = 0
+	var st := _state(rt, _held("token_limit"), 0)
+	TokenLimit.on_tick(st, FakeApi.new())
+	claude["plushies"] = [{"x": 1.0, "y": 0.5, "z": 1.0}]
+	claude["last_plushie_tick"] = 100
+	claude["plushie_cd"] = 1500   # the behavior's own re-arm
+	st["tick"] = 100
+	TokenLimit.on_tick(st, FakeApi.new())
+	_eqi(f, int(claude["plushie_cd"]), 1800, "token_limit: the plushie clock is not 30 s")
+	# a pickup removes exactly 20, not 35 (the behavior left 50 + rise - 35)
+	claude["agitation"] = 50.0 + 2.0 / 60.0 - 35.0
+	claude["plushies"] = []
+	st["tick"] = 101
+	TokenLimit.on_tick(st, FakeApi.new())
+	_eqf(f, float(claude["agitation"]), 50.0 + 2.0 / 60.0 - 20.0,
+			"token_limit: the pickup did not remove exactly 20")
+	# and on a calm bar the behavior's clamp at 0 does not leave 15 behind
+	claude["agitation"] = 10.0
+	st["tick"] = 102
+	TokenLimit.on_tick(st, FakeApi.new())
+	claude["plushies"] = [{"x": 1.0, "y": 0.5, "z": 1.0}]
+	claude["last_plushie_tick"] = 200
+	claude["plushie_cd"] = 1500
+	st["tick"] = 200
+	TokenLimit.on_tick(st, FakeApi.new())
+	claude["agitation"] = 0.0   # the behavior's own clamp at 0
+	claude["plushies"] = []
+	st["tick"] = 201
+	TokenLimit.on_tick(st, FakeApi.new())
+	_eqf(f, float(claude["agitation"]), 0.0,
+			"token_limit: a calm bar kept agitation after the pickup")
+	# not held: the row is never touched
+	var rt2 := _rt()
+	var c2 := _row(rt2, "claude", Vector3(5.0, 0.5, 5.0), {})
+	c2["agitation"] = 50.0
+	c2["plushies"] = []
+	c2["last_plushie_tick"] = -1
+	c2["plushie_cd"] = 0
+	var st2 := _state(rt2, {}, 0)
+	TokenLimit.on_tick(st2, FakeApi.new())
+	c2["plushies"] = [{"x": 1.0, "y": 0.5, "z": 1.0}]
+	c2["last_plushie_tick"] = 100
+	c2["plushie_cd"] = 1500
+	st2["tick"] = 100
+	TokenLimit.on_tick(st2, FakeApi.new())
+	_eqi(f, int(c2["plushie_cd"]), 1500, "token_limit: a not-held run re-armed the clock")
+	_eqf(f, float(c2["agitation"]), 50.0, "token_limit: a not-held run moved the agitation")
+
+
+## "each strike marks two patches: yours and where you will be in 1.0 s"
+func _t_twin_fangs(f: Array[String]) -> void:
+	_eqi(f, TwinFangs.PREDICT_TICKS, 60, "twin_fangs: the lead is not 1.0 s (60 ticks)")
+	_eqi(f, TwinFangs.PATCH_HALF, GinScript.PATCH_HALF,
+			"twin_fangs: the patch is not gin's own 5x5")
+	_eqi(f, TwinFangs.TELEGRAPH_TICKS, GinScript.TELEGRAPH_TICKS,
+			"twin_fangs: the mark is not gin's own 120 ticks")
+	_eqs(f, TwinFangs.DEATH_CODE, GinScript.DEATH_CODE,
+			"twin_fangs: the death code is not gin's own")
+	_eqs(f, TwinFangs.KIND, GinScript.MARK, "twin_fangs: the telegraph kind is not gin's")
+	# where the player will be in 1.0 s
+	var p: Vector3 = TwinFangs.predict_point({"x": 10.0, "y": 0.5, "z": 10.0,
+			"vx": 2.0, "vy": 0.0, "vz": -1.0})
+	_eqf(f, p.x, 12.0, "twin_fangs: the predicted x is not 1.0 s of velocity ahead")
+	_eqf(f, p.z, 9.0, "twin_fangs: the predicted z is not 1.0 s of velocity ahead")
+	_eqf(f, p.y, 0.5, "twin_fangs: the predicted point left the player's plane")
+	# the patch is gin's own 5x5, minus the dais cell
+	_eqi(f, TwinFangs.patch_cells(12, 10, [1, 1, 1]).size(), 25,
+			"twin_fangs: the patch is not the strike's own 5x5")
+	_eqi(f, TwinFangs.patch_cells(1, 1, [1, 1, 1]).size(), 24,
+			"twin_fangs: the dais cell was marked")
+	# the strike's start marks the second patch, and the void window makes it lethal
+	var rt := _rt()
+	var ctl = rt.controllers[0]
+	ctl.x = 10.5
+	ctl.y = 0.5
+	ctl.z = 10.5
+	ctl.vx = 2.0
+	ctl.vz = 0.0
+	var gin := _row(rt, "gin", Vector3(30.5, 0.5, 30.5), {})
+	gin["phase"] = "spawn"
+	var api := FakeApi.new()
+	api.near = {"index": 0, "x": 10.5, "y": 0.5, "z": 10.5, "vx": 2.0, "vy": 0.0, "vz": 0.0}
+	var st := _state(rt, _held("twin_fangs"), 0)
+	TwinFangs.on_tick(st, api)
+	_eqi(f, api.telegraphs.size(), 0, "twin_fangs: a mark was announced before the strike")
+	gin["phase"] = "mark"
+	st["tick"] = 1
+	TwinFangs.on_tick(st, api)
+	_eqi(f, api.telegraphs.size(), 1, "twin_fangs: the strike did not mark a second patch")
+	if api.telegraphs.size() == 1:
+		var sh: Dictionary = api.telegraphs[0]["shape"]
+		_eqf(f, float(sh["cx"]), 12.5,
+				"twin_fangs: the second patch is not 1.0 s ahead in x")
+		_eqf(f, float(sh["cz"]), 10.5,
+				"twin_fangs: the second patch left the player's z")
+		_eqi(f, int(api.telegraphs[0]["ticks"]), GinScript.TELEGRAPH_TICKS,
+				"twin_fangs: the second mark is not the strike's own 120 ticks")
+	# the void window: a player standing in the second patch dies with D-GIN
+	ctl.x = 12.5
+	ctl.z = 10.5
+	gin["phase"] = "void"
+	st["tick"] = 140
+	TwinFangs.on_tick(st, api)
+	_eqi(f, api.kills.size(), 1, "twin_fangs: the second patch did not kill")
+	if api.kills.size() == 1:
+		_eqs(f, str(api.kills[0]["code"]), "D-GIN",
+				"twin_fangs: the kill code is not gin's own")
+		_eqs(f, str(api.kills[0]["killer"]), "gin", "twin_fangs: the killer is not gin")
+	# the counter-play: a player who changed direction during the mark survives
+	ctl.x = 40.5
+	ctl.z = 40.5
+	st["tick"] = 141
+	TwinFangs.on_tick(st, api)
+	_eqi(f, api.kills.size(), 1, "twin_fangs: the second patch killed a player who moved")
+	# the patch is spent when the window closes: the next strike marks afresh
+	gin["phase"] = "fade_back"
+	st["tick"] = 700
+	TwinFangs.on_tick(st, api)
+	_check(f, not st["curse_st"].has("tf_patch_0"),
+			"twin_fangs: the spent patch stayed armed after the window closed")
+	# not held: no second patch
+	var rt2 := _rt()
+	var gin2 := _row(rt2, "gin", Vector3(30.5, 0.5, 30.5), {})
+	gin2["phase"] = "spawn"
+	var api2 := FakeApi.new()
+	api2.near = {"index": 0, "x": 10.5, "y": 0.5, "z": 10.5, "vx": 2.0, "vy": 0.0, "vz": 0.0}
+	var st2 := _state(rt2, {}, 0)
+	TwinFangs.on_tick(st2, api2)
+	gin2["phase"] = "mark"
+	st2["tick"] = 1
+	TwinFangs.on_tick(st2, api2)
+	_eqi(f, api2.telegraphs.size(), 0, "twin_fangs: a not-held run marked a second patch")
+
+
 # ---- the module contract ---------------------------------------------------------
 
 ## Every "script": true curse with requires_enemy set (the family THIS ticket owns)
 ## has a module here, whose CURSE_ID is the JSON id and whose source quotes the
 ## JSON's own rule sentence VERBATIM (whitespace-normalised) - one rule sentence,
-## asserted. The full inventory is pinned at 24; the 12 modules the pending
-## t3/scripted-curses-groups-4-6 branch holds are the NOT_ON_MAIN list exactly (see
-## PARKED.md) - when they land, that list must shrink and the ids join this file.
+## asserted. The full inventory is pinned at 24; the only id still NOT_ON_MAIN is
+## zoomies (retired from the offer pool, its module on the never-merged
+## t3/scripted-curses-groups-4-6 branch) - if it returns to the pool, that list must
+## shrink and the id joins this file.
 func _t_module_contract(f: Array[String]) -> void:
 	var api: RefCounted = ContentApiScript.load()
 	if not api.call("is_ok"):
@@ -957,6 +1655,12 @@ func _t_module_contract(f: Array[String]) -> void:
 		"direct_shot": DirectShot, "double_ring": DoubleRing, "egoist": Egoist,
 		"litter": Litter, "long_toll": LongToll, "longer_speech": LongerSpeech,
 		"method_acting": MethodActing, "mirror_match": MirrorMatch, "overwound": Overwound,
+		"quarter_chimes": QuarterChimes, "second_strike": SecondStrike,
+		"understudies": Understudies, "wide_blast": WideBlast,
+		"spreading_rot": SpreadingRot, "wet_floor": WetFloor,
+		"pup_pack": PupPack, "slipstream_trail": SlipstreamTrail,
+		"unannounced": Unannounced, "token_limit": TokenLimit,
+		"twin_fangs": TwinFangs,
 	}
 	for id in family:
 		if not modules_by_id.has(id):
