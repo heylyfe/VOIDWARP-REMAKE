@@ -18,12 +18,20 @@ The world is serious. The enemies are not.
 
 Waves 1–4 land together: the systems the earlier alphas built but never wired are wired now.
 
-- **Upgrades and curses apply.** All 36 upgrades and 46 curses were inert — the shop took gold and
-  changed nothing. `world.gd` now runs the modifier pass into the black-phase and gold-phase stat
-  blocks and swaps them on the phase edges, and the controller consumes them. Field Dressing gives
-  the free fall DESIGN section 8 promises, and the Last Light 8 u body push now moves the live enemy
-  rows instead of a spawn-time copy. The wiring was mutation-tested five ways; the follow-up found
-  a real hole (stack repetition was unproven) and closed it.
+- **Every upgrade applies, and 11 of the 46 curses do.** All 36 upgrades and all 46 curses were
+  inert — the shop took gold and changed nothing. `world.gd` now runs the modifier pass into the
+  black-phase and gold-phase stat blocks and swaps them on the phase edges, and the controller
+  consumes them. Field Dressing gives the free fall DESIGN section 8 promises, and the Last Light
+  8 u body push now moves the live enemy rows instead of a spawn-time copy. The wiring was
+  mutation-tested five ways; the follow-up found a real hole (stack repetition was unproven) and
+  closed it.
+- **35 of the 46 curses are still inert in play.** The 11 that are pure stat modifiers — brittle,
+  hasty, hungry_void, inflation, lights_out, long_night, rush_hour, short_chain, tarnish,
+  thick_fog, weighed_down — apply through the modifier pass and are proven by
+  `test_modifiers_applied.gd`. The other 35 declare a script and each now has a module with its own
+  unit test, but nothing in the shipped game dispatches them: the run tracks `curses_held` and
+  hands it to the world, and no code walks that dict calling each module's behaviour. A script
+  curse is drawable, pickable, tested and inert. This is the largest remaining gap.
 - **Eight dropped stats got consumers.** `defuse_chance` and `pickup_radius` now have consumers in
   `sim/mines.gd` and `sim/gifts.gd`, `shop_price_mul` reaches the lobby shop (bargain and inflation
   move the price), the telegraph and enemy-speed multipliers reach `sim/enemy_runtime.gd`,
