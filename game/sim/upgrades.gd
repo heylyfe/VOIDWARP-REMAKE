@@ -227,15 +227,22 @@ func step_player(lv: RefCounted, p_index: int, inp, prev_buttons: int,
 
 ## The Pocket Beacon channel. Start: the INTERACT press edge while standing still
 ## (D-T053-3 [CONTESTABLE]: DESIGN.md section 8 names no activation button and owns
-## only the channel length and the stand-still rule). Cancel: ANY input - any
-## button (pressed OR held), any move axis, leaving the ground. Fill: after
-## CHANNEL_TICKS ticks held, the player's row teleports to the beacon dais centre
-## and the beacon_teleport event fires; the beacon's own state machine is untouched.
+## only the channel length and the stand-still rule). Cancel: any input OTHER
+## than the channel button - any other button (pressed OR held), any move axis,
+## leaving the ground. Fill: after CHANNEL_TICKS ticks held, the player's row
+## teleports to the beacon dais centre and the beacon_teleport event fires; the
+## beacon's own state machine is untouched.
+##
+## The channel button is excluded from the cancel test on purpose. A human press
+## lasts several 16.7 ms ticks, so counting a held INTERACT as a cancel made the
+## channel unfinishable: the press edge started it on tick N and the same key,
+## still down, killed it on tick N+1. Only a one-tick tap could ever fill it.
 func _channel_step(lv: RefCounted, p_index: int, p: Dictionary, inp,
 		prev_buttons: int, events: Array) -> void:
 	var buttons := int(inp.buttons)
 	if channels.has(p_index):
-		if buttons != 0 or float(inp.move_x) != 0.0 or float(inp.move_z) != 0.0 \
+		var other_buttons := buttons & ~InputScript.BUTTON_INTERACT
+		if other_buttons != 0 or float(inp.move_x) != 0.0 or float(inp.move_z) != 0.0 \
 				or not bool(p.get("grounded", true)):
 			channels.erase(p_index)
 			events.append({"e": "beacon_channel_cancelled", "player": p_index})

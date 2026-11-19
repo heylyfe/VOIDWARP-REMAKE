@@ -49,6 +49,7 @@ const LEVEL := 1
 const DT := 1.0 / 60.0
 const BTN_JUMP := 1
 const BTN_ABILITY := 2
+const BTN_INTERACT := 4
 const JUMP_HELD := {"move_x": 0, "move_z": 0, "buttons": BTN_JUMP, "aim_x": 0, "aim_z": 1}
 const JUMP_RELEASED := {"move_x": 0, "move_z": 0, "buttons": 0, "aim_x": 0, "aim_z": 1}
 const ABILITY_TAP := {"move_x": 0, "move_z": 0, "buttons": BTN_ABILITY, "aim_x": 0, "aim_z": 1}
@@ -63,6 +64,7 @@ func run() -> Array[String]:
 	_leg_ledge_grace(f)
 	_leg_marathon(f)
 	_leg_more(f)
+	_leg_pocket_beacon(f)
 	_leg_quick_recovery(f)
 	_leg_spring_heels(f)
 	_leg_straggler_scope(f)
@@ -106,6 +108,84 @@ func _collect_until(gifts, rem_target: int) -> void:
 			return
 		if bool(gifts.is_real(i)) and not bool(gifts.collected(i)):
 			gifts.collect(i, 0, 0, [])
+
+
+# ---- pocket_beacon: the 180-tick channel must survive a HELD channel button ------------
+#
+# The defect this closes: the channel cancelled on `buttons != 0`, and INTERACT is a
+# HELD bit (input_capture sets it from Input.is_key_pressed), so the press edge started
+# the channel on tick N and the same key, still down, killed it on tick N+1. Only a
+# one-tick tap could ever fill it, which no human can do - so the 1200 g upgrade was
+# inert in practice even after its call site landed. The sim test proves the rule; this
+# leg proves the SHIPPED path through world.step(), because "a consumer with no call
+# site" is exactly the defect that let this through the first time.
+
+## A world whose input is scripted. world.step() reads the Input singleton, which
+## delivers no key state headless, so the leg overrides the one seam that reads it.
+class ScriptedWorld:
+	extends WorldScript
+	var script_in: Dictionary = {"move_x": 0, "move_z": 0, "buttons": 0, "aim_x": 0, "aim_z": 1}
+	func _capture_input():
+		return script_in
+
+
+func _build_scripted(stacks: Dictionary):
+	var world = ScriptedWorld.new()
+	var ledger := {
+		"class": "dasher", "votes": {}, "curses": {},
+		"stacks": stacks.duplicate(),
+		"purse": 500, "tithes": 0, "hunger": 0, "last_vote": "",
+	}
+	if not world.build(SEED, LEVEL, ledger):
+		world.free()
+		return null
+	return world
+
+
+func _leg_pocket_beacon(f: Array[String]) -> void:
+	var owned = _build_scripted({"pocket_beacon": 1})
+	var base = _build_scripted({})
+	if owned == null or base == null:
+		_check(f, false, "pocket_beacon: a world failed to build")
+		_drop(owned)
+		_drop(base)
+		return
+	var b: RefCounted = owned.lstate.beacon
+	var bx := float(b.cx)
+	var bz := float(b.cz)
+	var sx := float(owned.ctl.x)
+	var sz := float(owned.ctl.z)
+	# The dais sits 1.41 u from the spawn on every level (measured), so the guard is
+	# "the spawn is not already the dais centre", not a distance threshold.
+	if (bx - sx) * (bx - sx) + (bz - sz) * (bz - sz) <= 0.01:
+		_check(f, false, "pocket_beacon: the spawn is already the dais centre - the fixture proves nothing")
+		_drop(owned)
+		_drop(base)
+		return
+	# Hold INTERACT for the whole channel, exactly as a human does.
+	var held := {"move_x": 0, "move_z": 0, "buttons": BTN_INTERACT, "aim_x": 0, "aim_z": 1}
+	owned.script_in = held
+	base.script_in = held
+	var teleported := false
+	for _t in 200:
+		owned.step(DT)
+		base.step(DT)
+		if is_equal_approx(float(owned.ctl.x), bx) and is_equal_approx(float(owned.ctl.z), bz):
+			teleported = true
+			break
+	_check(f, teleported,
+		"pocket_beacon: 200 ticks of held INTERACT never teleported the owned body (at %.2f, %.2f; dais %.2f, %.2f)"
+			% [float(owned.ctl.x), float(owned.ctl.z), bx, bz])
+	_check(f, owned.lstate.upgrades != null and bool(owned.lstate.upgrades.channel_used.get(0, false)),
+		"pocket_beacon: the body moved but the channel never recorded as used")
+	# Negative control: the same held input on the un-owned twin must not reach the dais.
+	_check(f, not (is_equal_approx(float(base.ctl.x), bx) and is_equal_approx(float(base.ctl.z), bz)),
+		"pocket_beacon: the un-owned twin reached the dais - the leg proves nothing")
+	_check(f, is_equal_approx(float(base.ctl.x), sx) and is_equal_approx(float(base.ctl.z), sz),
+		"pocket_beacon: the un-owned twin drifted from its spawn (%.2f, %.2f) to (%.2f, %.2f)"
+			% [sx, sz, float(base.ctl.x), float(base.ctl.z)])
+	_drop(owned)
+	_drop(base)
 
 
 # ---- brace: external push velocity -30% per stack (compounding) ------------------------

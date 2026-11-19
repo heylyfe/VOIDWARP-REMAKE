@@ -8,8 +8,9 @@ extends RefCounted
 #   radar_threats - enemies within 30 u, nearest first
 #   cartographer  - pieces within 40 u of anywhere you have stood
 #   skeleton_key  - the beacon opens at 90 % of real black gifts, rest go gold
-#   pocket_beacon - INTERACT starts a 180-tick still channel; any input cancels;
-#                   fill teleports to the dais; once per level
+#   pocket_beacon - INTERACT starts a 180-tick still channel; any input other
+#                   than the channel button cancels; fill teleports to the dais;
+#                   once per level
 #   twin_dash     - a second dash stock, own 3 s regen, dasher only (by wiring)
 #   updraft       - mid-glide re-press rises exactly 3.0 u, 6 s cooldown, once/glide
 #   marathon      - athletic + owned -> +2 max stacks of Yearn for Speed in the shop
@@ -65,6 +66,7 @@ func run() -> Array[String]:
 	_test_cartographer(f)
 	_test_skeleton_key(f)
 	_test_pocket_beacon(f)
+	_test_pocket_beacon_held(f)
 	_test_twin_dash(f)
 	_test_updraft(f)
 	_test_marathon(f)
@@ -446,6 +448,45 @@ func _test_pocket_beacon(f: Array[String]) -> void:
 			"pocket beacon: the 180-tick contract moved")
 	if rs.level.upgrades == null or not pair2[0].level.upgrades.has(UpgradesScript.ROLE_BEACON_CHANNEL):
 		f.append("pocket beacon: roles wiring lost")
+
+
+## The channel must survive the channel button being HELD. A human press lasts
+## several 16.7 ms ticks, so a cancel-on-any-held-button rule made the 1200 g
+## upgrade unfinishable: the press edge started the channel on tick N and the
+## same key, still down, killed it on tick N+1. Only a one-tick tap could fill it.
+## This leg holds INTERACT for every tick of the channel and expects the teleport.
+func _test_pocket_beacon_held(f: Array[String]) -> void:
+	var pair := _run_channel(SEED)
+	var rs: RefCounted = pair[0]
+	var lv: RefCounted = rs.level
+	var ev: Array = SimScript.step(rs, [InputScript.new(0, 0, InputScript.BUTTON_INTERACT)])
+	_expect(f, _kind(ev, "beacon_channel_started") == 1,
+			"pocket beacon held: the press edge started no channel")
+	var done := false
+	for t in PocketBeaconContent.CHANNEL_TICKS:
+		# INTERACT stays down for the whole channel - exactly what a human does.
+		ev = SimScript.step(rs, [InputScript.new(0, 0, InputScript.BUTTON_INTERACT)])
+		if _kind(ev, "beacon_channel_cancelled") == 1:
+			f.append("pocket beacon held: a held INTERACT cancelled the channel at tick %d" % (t + 1))
+			return
+		if _kind(ev, "beacon_teleport") == 1:
+			_expect(f, t == PocketBeaconContent.CHANNEL_TICKS - 1,
+					"pocket beacon held: the fill took %d held ticks, want 180" % (t + 1))
+			done = true
+			break
+	_expect(f, done, "pocket beacon held: 180 ticks of held INTERACT did not teleport")
+	var p: Dictionary = lv.players[0]
+	_expect(f, _near(float(p["x"]), float(lv.beacon.cx), 1e-6)
+			and _near(float(p["z"]), float(lv.beacon.cz), 1e-6),
+			"pocket beacon held: the teleport did not land on the dais")
+	# The exclusion is only for the channel button: any OTHER held button still cancels.
+	var pair3 := _run_channel(SEED)
+	var rs3: RefCounted = pair3[0]
+	SimScript.step(rs3, [InputScript.new(0, 0, InputScript.BUTTON_INTERACT)])
+	var ev3: Array = SimScript.step(rs3, [InputScript.new(0, 0,
+			InputScript.BUTTON_INTERACT | InputScript.BUTTON_ABILITY)])
+	_expect(f, _kind(ev3, "beacon_channel_cancelled") == 1,
+			"pocket beacon held: a second held button did not cancel the channel")
 
 
 # ---- Twin Dash (second dash stock, own 3 s regen, granted charged) -----------------
