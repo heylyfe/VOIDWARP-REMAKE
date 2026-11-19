@@ -162,6 +162,13 @@ Known gaps, stated plainly:
   recorded in `PARKED.md` row 31 and NOT applied, because tuning the game to satisfy an instrument
   that cannot play it is the mistake the mine model already exposed. The bands are a target for a
   competent human and this probe cannot validate them.
+- **Enemies still render as billboards, not bespoke per-enemy views.** The generic telegraph view
+  covers every enemy's tells, and the projectile view covers Isagi's balls, Claude's wind shots and
+  the nuke missile, so nothing is invisible. What is missing is the per-enemy character work — the
+  seal, the kiwi cat, the toucher's body and the rest still stand as billboards. Gin's five cues are
+  also not emitted by the sim, so only `crack_rumble` plays, as the mark telegraph's cue. Coil's
+  sprite effects and the screen effects (void flash, Last Light bloom) are not fed either. None of
+  these were in this alpha's scope; they are the next art and audio pass.
 - **No 30-level run yet.** The intermission lobby is wired into the app loop: a completed level
   tears the world down and opens the Antechamber (`view/lobby/lobby_scene.gd`), and the next
   level is built from the lobby's ledger (class, votes, curses, purchases) when the player walks
