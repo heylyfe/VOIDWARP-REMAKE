@@ -28,6 +28,7 @@ const SLAB := 1.0           # visual slab thickness (u) = collision
 const TRIM := 0.125         # trim band height (u) at the top of faces (UV.y < TRIM rule)
 const TEXEL := 8.0          # px per u, nearest filtering (section 12.2)
 const SPIKE_MAX_BBOX := 7   # spike only under platforms with bbox <= 7x7 cells (section 12.4)
+const HUB_CLEAR_HU := 12    # HU: section 4 distance at which two pieces read as one (section 12.4)
 # Inverted stepped spike profile: [width fraction of the 1x1 cell, height in u] top to tip,
 # totalling 8 HU = 4 u (section 12.4). Fixed - section 12.4's mix(seed, piece id) allowance
 # stays unused, so the dressing adds no RNG.
@@ -811,10 +812,39 @@ static func build(L: Dictionary, biome: Dictionary = {}) -> Dictionary:
 		_side_rect(s, 3, px, px + 1.0, pbase, ptop, pz, pz + 1.0, ptop)
 		pads_meshed += 1
 
+	# "Anything that reads as part of the hub" (section 12.4, "Under the HUB: nothing"). The role
+	# filter alone keeps the hub piece spike-free, but a spike under ANOTHER piece can still hang
+	# on the hub: centre inside the hub footprint and vertical span within HUB_CLEAR_HU of the hub
+	# slab reads as attached to it. Suppress it there, whatever the supporting piece is; a span a
+	# full layer away is a different floor and stays legal. This mirrors test_mesh.gd's hub rule
+	# (spike span from the platform's lowest tile, slab 2 HU, spike 8 HU) so the mesher and the test
+	# agree on what hangs on the hub.
+	var hub_bb: Array = []
+	var hub_pid := -1
+	for p in L.get("pieces", []):
+		if int(p["role"]) == ROLES_HUB:
+			hub_bb = p["bbox"]
+			hub_pid = int(p["id"])
+			break
+	var hub_ymin := 1 << 30
+	var hub_ymax := -(1 << 30)
+	if hub_pid >= 0:
+		for t in L.get("tiles", []):
+			if int(t[4]) == hub_pid:
+				var hty: int = int(t[2])
+				if hty < hub_ymin:
+					hub_ymin = hty
+				if hty > hub_ymax:
+					hub_ymax = hty
+	var spike_len_hu := 0
+	for seg in SPIKE_STEPS:
+		spike_len_hu += roundi(float(seg[1]) / HU)
+	var slab_hu: int = roundi(SLAB / HU)
+
 	# Support spikes (section 12.4): under each role-1/2 piece with bbox <= 7x7 cells, an
 	# inverted stepped spike below the bbox centre, 1x1 cell, 8 HU total. Skipped entirely when
 	# any of the 9 columns around the centre column holds a tile below the platform. Never
-	# under the hub (role 0 is not in the role filter).
+	# under the hub, and never on anything that reads as part of the hub (see above).
 	var spike_cells: Array = []    # [cx, cz] centre cell of each spike, for tests
 	for p in L.get("pieces", []):
 		var srole: int = int(p["role"])
@@ -838,6 +868,8 @@ static func build(L: Dictionary, biome: Dictionary = {}) -> Dictionary:
 					if int(y2) < int(piece_y[pid]):
 						below = true
 		if below:
+			continue
+		if hub_pid >= 0 and _spike_hangs_on_hub(hub_bb, hub_ymin, hub_ymax, cxi, czi, int(piece_y[pid]), slab_hu, spike_len_hu):
 			continue
 		var stem: Surf = surf["spike"]
 		var bottom: float = float(int(piece_y[pid])) * HU - SLAB
@@ -891,3 +923,23 @@ static func build(L: Dictionary, biome: Dictionary = {}) -> Dictionary:
 		"pads": pads_meshed,
 		"spikes": spike_cells,
 	}
+
+
+## True when a spike at centre cell (cx, cz), hung from a platform whose lowest tile is at
+## plat_min_y (HU), reads as part of the hub: its centre sits inside the hub bbox AND its vertical
+## span (slab bottom down the spike's full length) comes within HUB_CLEAR_HU of the hub slab.
+## hub_ymin / hub_ymax are the hub tiles' y range in HU. Same predicate as test_mesh.gd's
+## _spike_hangs_on_hub, so the mesher and the test agree on what hangs on the hub.
+static func _spike_hangs_on_hub(hub_bb: Array, hub_ymin: int, hub_ymax: int, cx: int, cz: int, plat_min_y: int, slab_hu: int, spike_hu: int) -> bool:
+	if cx < int(hub_bb[0]) or cx > int(hub_bb[2]) or cz < int(hub_bb[1]) or cz > int(hub_bb[3]):
+		return false
+	var s_top: int = plat_min_y - slab_hu
+	var s_bot: int = s_top - spike_hu
+	var h_top: int = hub_ymax
+	var h_bot: int = hub_ymin - slab_hu
+	var gap := 0
+	if s_bot > h_top:
+		gap = s_bot - h_top
+	elif s_top < h_bot:
+		gap = h_bot - s_top
+	return gap < HUB_CLEAR_HU
