@@ -76,3 +76,44 @@ func save_to(path: String = DEFAULT_PATH) -> bool:
 	f.store_string(JSON.stringify(to_dict()))
 	f.flush()
 	return true
+
+
+# ---- application: each field to its actual consumer ----------------------------------------------
+# The store only holds values; these push them to the live consumers so a changed field is
+# felt the same frame: the master audio bus, a Camera3D's FOV, a Window's mode. The settings
+# screen calls them on every change. Mouse sensitivity has its own consumer already (world.gd
+# and lobby_scene.gd read it when a level builds), so it lives here as a stored value only.
+
+const MASTER_BUS := 0
+
+
+## The Window.mode value the fullscreen flag maps to.
+static func window_mode_for(fs: bool) -> int:
+	return Window.MODE_FULLSCREEN if fs else Window.MODE_WINDOWED
+
+
+## Push the master volume to the audio bus as decibels (0-100 linear -> db), muting the bus
+## at 0 so silence is real silence. Returns the db now on the bus (tests read it back).
+func apply_volume(bus: int = MASTER_BUS) -> float:
+	AudioServer.set_bus_mute(bus, volume <= 0)
+	var db := linear_to_db(float(volume) / 100.0) if volume > 0 else -80.0
+	AudioServer.set_bus_volume_db(bus, db)
+	return AudioServer.get_bus_volume_db(bus)
+
+
+## Push the FOV onto a camera (the world's Camera3D). Returns the camera's FOV, or a
+## negative value when no camera was given.
+func apply_camera(camera: Camera3D) -> float:
+	if camera == null:
+		return -1.0
+	camera.fov = field_of_view
+	return camera.fov
+
+
+## Push fullscreen onto a window (the running game's root window). Returns the window's
+## mode, or a negative value when no window was given.
+func apply_window(window: Window) -> int:
+	if window == null:
+		return -1
+	window.mode = window_mode_for(fullscreen)
+	return window.mode
