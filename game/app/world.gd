@@ -75,6 +75,7 @@ const ContentApiScript := preload("res://core/content_api.gd")
 const IntermissionScript := preload("res://sim/intermission.gd")
 const VoidRngScript := preload("res://terrain/void_rng.gd")
 const InputCaptureScript := preload("res://app/input_capture.gd")
+const SettingsScript := preload("res://app/settings.gd")
 # The T-015 player figure. Without it the third-person rig frames empty space and the game
 # reads first-person: the camera sits 7 u behind a body that was never drawn.
 const PLAYER_MODEL := "res://assets/models/player_figure.glb"
@@ -108,8 +109,34 @@ var toucher_floor: Node3D = null   # the glitched-floor decals (floor-only mode)
 var boards: Array = []          # EnemyRuntime enemies index -> billboard node (or null)
 var lstate: RefCounted = null   # the sim LevelState (gifts / mines / beacon); bot_run.gd's lv
 var player_model: Node3D = null # the T-015 player figure, feet on the controller's position
-var _player_yaw := 0.0          # facing yaw, locked to the camera's forward (D-T082-4)
+var _player_yaw := 0.0          # facing yaw, follows the camera's forward while captured
 var _player_light: OmniLight3D = null   # palette.json player_fill_light, rides the figure
+
+# --- J5: mouse-lock and the procedural figure pose (view side; sim is never touched) -----
+# MOUSE-LOOK (J5, supersedes D-T082-4's "no turn"): Ctrl toggles capture. Captured, the
+# cursor is hidden and every mouse-motion delta turns the rig through apply_mouse() at the
+# settings' sensitivity; released, the cursor shows and the motion handler is a no-op.
+# The state machine is camera_rig.next_mouse_locked (pure); the mode applier is
+# camera_rig.mouse_mode_for. Release paths: the APP_PAUSE edge, the death latch and
+# teardown() (menu) - all four transitions live here in world.gd.
+var _mouse_locked := false       # start captured when a level begins (build() sets it)
+var _prev_mouse_toggle := false  # last tick's APP_MOUSE_TOGGLE, for the edge detect
+var _prev_app_pause := false     # last tick's APP_PAUSE, for the edge detect
+var _mouse_sens := CameraRigScript.MOUSE_SENS_DEFAULT  # settings.mouse_sensitivity
+
+# Procedural limb pose: the .glb is one object per limb (joint origin at hip/shoulder/
+# neck), so animating is rotating those nodes. Targets come from the pure _pose_* statics
+# off the SIM STATE (grounded / horizontal speed / vertical velocity) read here in the view
+# pass - nothing is fed back into sim/, and no AnimationPlayer is involved (J5's Part B).
+const LIMB_NAMES := ["Torso", "Head", "ArmL", "ArmR", "LegL", "LegR"]
+const POSE_KEYS := ["torso", "head", "arm_l", "arm_r", "leg_l", "leg_r"]  # same order
+const ANIM_BLEND_TIME := 0.08    # s, pose blend constant (1 - e^(-dt/tau) toward target)
+const ANIM_PHASE_IDLE := 1.6     # rad/s idle sway rate
+const ANIM_PHASE_RUN := 10.5     # rad/s full-speed gait rate (per stride radian pair)
+var _limbs: Array = []           # LIMB_NAMES order -> limb nodes of player_model (or null)
+var _pose := {}                  # currently blended pose, _pose_run()'s shape
+var _anim_phase := 0.0           # gait/sway phase (view-side clock, view-legal)
+var _run_speed := 9.0            # data/player.json shared_kit.run_speed (read in build())
 
 var _economy: RefCounted = null   # the gold-phase economy (purse / chain); no upgrade stats yet
 var _gold_began := false          # beacon open -> begin_gold_phase + rt.on_beacon_open fire once
@@ -122,6 +149,7 @@ var _level_number: int = 0
 var _roster: Array = []          # [{id, name, count}] built from the resolved votes
 var _bindings: Dictionary = {}
 var _api: RefCounted = null
+var _ledger: Dictionary = {}     # the run's carried state (class / votes / curses / purse)
 
 
 func _ready() -> void:
@@ -137,7 +165,10 @@ func _load_bindings() -> void:
 
 
 ## Build the level. Returns false on generator/content failure; never crashes.
-func build(seed_value: int, level: int) -> bool:
+## p_ledger is the run's carried state from the last lobby (app.gd hands over
+## view/lobby/lobby_scene.gd's ledger()). Empty = resolve the run by replaying the
+## intermissions before this level, which is what the bot and the first level do.
+func build(seed_value: int, level: int, p_ledger: Dictionary = {}) -> bool:
 	teardown()
 	if _bindings.is_empty():
 		_load_bindings()
@@ -160,14 +191,17 @@ func build(seed_value: int, level: int) -> bool:
 		push_warning("world: content registry failed to boot; cannot vote the level plan")
 		teardown()
 		return false
-	var plan := _resolve_run(seed_value, level)
+	var plan := _resolve_run(seed_value, level, p_ledger)
 	if plan.is_empty():
 		teardown()
 		return false
+	_ledger = plan.duplicate(true)
 
 	# The gold-phase economy: base stats (the app has no upgrade ledger yet, so no
 	# chain/stipend modifiers), tuned by data/economy.json through the content api.
 	_economy = EconomyScript.create({}, _api)
+	# The purse the run carries in from the last lobby (whole gold -> centi).
+	_economy.purse_centi = int(plan.get("purse", 0)) * EconomyScript.CENTI
 
 	var kit := str(plan.get("class", ""))
 	if kit == "":
@@ -238,6 +272,7 @@ func build(seed_value: int, level: int) -> bool:
 	var ps: PackedScene = load(PLAYER_MODEL)
 	if ps != null:
 		player_model = ps.instantiate()
+		_apply_player_body_material(player_model)
 		player_model.position = Vector3(float(ctl.x), float(ctl.y), float(ctl.z))
 		player_model.rotation.y = _player_yaw
 		add_child(player_model)
@@ -257,6 +292,29 @@ func build(seed_value: int, level: int) -> bool:
 	else:
 		_player_light.position = Vector3(float(ctl.x), float(ctl.y) + 1.3, float(ctl.z) + 2.0)
 		add_child(_player_light)
+
+	# J5 mouse-lock: a level begins CAPTURED (hidden cursor; Ctrl releases/toggles). The
+	# sensitivity comes from the settings store's clamped value (default 0.12 deg/px).
+	# Headless (the tests and the bot) the mode set is a harmless no-op.
+	var sett := SettingsScript.new()
+	sett.load_from()
+	_mouse_sens = sett.mouse_sensitivity
+	_prev_mouse_toggle = false
+	_prev_app_pause = false
+	_mouse_locked = true
+	Input.mouse_mode = CameraRigScript.mouse_mode_for(true)
+
+	# J5 procedural pose: cache the limb nodes (part names from the .glb, see
+	# assets_src/blender/player_figure.py) and the run speed the gait rate normalises to.
+	_limbs = []
+	for nm in LIMB_NAMES:
+		_limbs.append(player_model.find_child(nm, true, false) if player_model != null else null)
+	_pose = {}
+	_anim_phase = 0.0
+	var pstats: Variant = JSON.parse_string(
+			FileAccess.get_file_as_string("res://data/player.json"))
+	if pstats is Dictionary and (pstats as Dictionary).has("shared_kit"):
+		_run_speed = float((pstats["shared_kit"] as Dictionary).get("run_speed", 9.0))
 
 	# HUD (CanvasLayer: a Control child of a Node3D never reaches the canvas).
 	_hud_layer = CanvasLayer.new()
@@ -303,6 +361,7 @@ func step(dt: float) -> void:
 	if _run_over_emitted:
 		return   # the run is over: a dead run never ticks again (DESIGN.md section 3)
 	var a_in: Dictionary = _capture_input()
+	_mouse_lock_pass(int(a_in.get("app", 0)))
 	var ev: Array = ctl.step(dt, a_in, w)
 	# The LevelState's player row mirrors the controller (gifts/mines read lv.players).
 	var p0: Dictionary = lstate.players[0]
@@ -347,6 +406,8 @@ func step(dt: float) -> void:
 	# dead controller), so the two signals never both fire on one tick.
 	if not _run_over_emitted and bool(ctl.dead):
 		_run_over_emitted = true
+		_mouse_locked = false
+		Input.mouse_mode = CameraRigScript.mouse_mode_for(false)   # death screen: release
 		var purse := -1
 		if _economy != null:
 			purse = int(_economy.purse_centi)   # centi, the same integer the HUD shows
@@ -410,6 +471,14 @@ func teardown() -> void:
 	player_model = null
 	_player_light = null
 	_player_yaw = 0.0
+	# J5: back to the menu = release the mouse, drop the pose/lock state.
+	_mouse_locked = false
+	_prev_mouse_toggle = false
+	_prev_app_pause = false
+	Input.mouse_mode = CameraRigScript.mouse_mode_for(false)
+	_limbs = []
+	_pose = {}
+	_anim_phase = 0.0
 	lstate = null
 	_economy = null
 	_gold_began = false
@@ -418,6 +487,7 @@ func teardown() -> void:
 	lv = {}
 	w = {}
 	_level_number = 0
+	_ledger = {}
 
 
 func level_number() -> int:
@@ -431,8 +501,24 @@ func level_number() -> int:
 ## bot: lobby n from mix(seed, 5000 + n), pick stream mix(mix(seed, 0xB07), n + 1), uniform
 ## random among the unresolved mandatory bays (CLASS / E / C), U and REST untouched, an
 ## empty mandatory C draw tithe-passed when affordable. Returns
-## {"class": String, "votes": Dictionary, "curses": Dictionary} or {} on failure.
-func _resolve_run(seed_value: int, level: int) -> Dictionary:
+## {"class": String, "votes": Dictionary, "curses": Dictionary, "stacks": Dictionary,
+##  "purse": int, "tithes": int, "hunger": int, "last_vote": String} or {} on failure.
+##
+## A CARRIED ledger (p_ledger, the app's own lobby picks) IS the run's state and is
+## returned as-is: replaying the lobbies again would overwrite the player's votes with the
+## bot's. The replay stays the only source for a run the player has not voted in yet.
+func _resolve_run(seed_value: int, level: int, p_ledger: Dictionary = {}) -> Dictionary:
+	if not p_ledger.is_empty() and p_ledger.has("votes"):
+		return {
+			"class": str(p_ledger.get("class", "")),
+			"votes": (p_ledger.get("votes", {}) as Dictionary).duplicate(),
+			"curses": (p_ledger.get("curses", {}) as Dictionary).duplicate(),
+			"stacks": (p_ledger.get("stacks", {}) as Dictionary).duplicate(),
+			"purse": int(p_ledger.get("purse", 0)),
+			"tithes": int(p_ledger.get("tithes", 0)),
+			"hunger": int(p_ledger.get("hunger", 0)),
+			"last_vote": str(p_ledger.get("last_vote", "")),
+		}
 	var votes := {}
 	var curses := {}
 	var stacks := {}
@@ -483,7 +569,18 @@ func _resolve_run(seed_value: int, level: int) -> Dictionary:
 		hunger = int(lb.hunger)
 		last_vote = str(lb.last_vote)
 		class_chosen = str(lb.class_chosen)
-	return {"class": class_chosen, "votes": votes, "curses": curses}
+	return {"class": class_chosen, "votes": votes, "curses": curses, "stacks": stacks,
+			"purse": purse, "tithes": tithes, "hunger": hunger, "last_vote": last_vote}
+
+
+## The run's carried state after this level: what the lobby needs (view/lobby/lobby_scene.gd
+## build()) and what the next level's build() takes. The purse is the economy's live
+## whole-gold balance, so gold earned in the gold phase reaches the shop.
+func run_ledger() -> Dictionary:
+	var out := _ledger.duplicate(true)
+	if _economy != null:
+		out["purse"] = int(_economy.purse_gold())
+	return out
 
 
 # Per-id behavior construction, content-derived: the enemy module's factory shape is
@@ -578,10 +675,13 @@ func _capture_input():
 	var yaw := 0.0
 	if rig != null:
 		yaw = float(rig.yaw_deg)
-	var res: Dictionary = InputCaptureScript.capture(keys, joy, stick_x, stick_y, yaw, _bindings)
+	var res: Dictionary = InputCaptureScript.capture(keys, joy, stick_x, stick_y, yaw, _bindings,
+			Input.is_key_pressed(InputCaptureScript.KEY_MOUSE_LOCK))
 	var pi: RefCounted = res["input"]
 	# PlayerInput -> the Dictionary the controller reads (buttons/move_x/move_z/aim_*).
 	# Aim follows the move stick/keys (no separate aim device exists yet).
+	# The APP_* flags ride along (the controller ignores unknown keys); world.step()
+	# edge-detects them for the mouse-lock toggle and the pause release.
 	var mx := int(pi.move_x)
 	var mz := int(pi.move_z)
 	var aim_x := 0.0
@@ -591,29 +691,194 @@ func _capture_input():
 		aim_x = float(mx) / l
 		aim_z = float(mz) / l
 	return {"move_x": mx, "move_z": mz, "buttons": int(pi.buttons),
-			"aim_x": aim_x, "aim_z": aim_z}
+			"aim_x": aim_x, "aim_z": aim_z,
+			"app": int(res.get("app", 0))}
 
 
-## The player figure pass: stand at the controller's feet, facing the camera's forward. The
-## figure's forward is Godot's -Z, the glTF Y-up conversion of the Blender +Y visor side.
-##
-## CAMERA LOCK (owner request, D-T082-4): the character does NOT turn. It is locked to the
-## camera's forward, so it always faces away from the viewer and strafes instead of rotating
-## to face its velocity. The camera does not turn either - no InputEventMouseMotion handler
-## exists anywhere in app/, so there is no path from the mouse to the rig yaw. Character and
-## camera are locked to each other, which is what the request asks for.
-##
-## Why the camera does not instead trail the character's facing: input_capture.capture()
-## rotates the stick by the rig yaw, so a camera that chases the facing closes a feedback
-## loop (yaw -> input -> velocity -> facing -> yaw). Measured on this rig, holding a lateral
-## direction circles the character at ~350 deg/s and the camera never catches up (it ends up
-## side-on). Locking both is the stable reading of the request.
+## The mouse-capture state machine (J5): Ctrl toggles, the APP_PAUSE edge and the death /
+## menu latches force a release. a_flags is this tick's APP_* bitmask from capture().
+## All four transitions live here: build() captures, teardown() releases (menu), the death
+## latch below releases (death screen), and this pass handles pause + Ctrl.
+func _mouse_lock_pass(a_flags: int) -> void:
+	var toggled := (a_flags & InputCaptureScript.APP_MOUSE_TOGGLE) != 0
+	var paused := (a_flags & InputCaptureScript.APP_PAUSE) != 0
+	_mouse_locked = CameraRigScript.next_mouse_locked(
+			_mouse_locked, toggled and not _prev_mouse_toggle,
+			paused and not _prev_app_pause)
+	_prev_mouse_toggle = toggled
+	_prev_app_pause = paused
+	Input.mouse_mode = CameraRigScript.mouse_mode_for(_mouse_locked)
+
+
+## Mouse motion -> the rig (J5). The ONLY mouse path in app/: nothing runs unless the
+## mouse is captured; released, this returns after the first check and the camera never
+## turns. The toggle itself is NOT an event path - Ctrl is polled per tick in
+## _capture_input / _mouse_lock_pass, so the toggle remains the only capture transition.
+func _unhandled_input(event: InputEvent) -> void:
+	if not _mouse_locked or rig == null:
+		return
+	if event is InputEventMouseMotion:
+		var mm := event as InputEventMouseMotion
+		var np := CameraRigScript.apply_mouse(rig.yaw_deg, rig.pitch_deg,
+				float(mm.relative.x), float(mm.relative.y), _mouse_sens)
+		rig.yaw_deg = (np as Vector2).x
+		rig.pitch_deg = (np as Vector2).y
+
+
+## The player figure pass: stand at the controller's feet, then animate.
 func _player_pass() -> void:
 	if player_model == null:
 		return
 	player_model.position = Vector3(float(ctl.x), float(ctl.y), float(ctl.z))
 	_player_yaw = deg_to_rad(float(rig.yaw_deg)) if rig != null else 0.0
 	player_model.rotation.y = _player_yaw
+	_anim_pass()
+
+
+## The figure's yaw follows the captured camera's forward (D-T082-4's character/camera
+## coupling kept; the MOUSE-LOOK part of D-T082-4 is superseded by J5, see the header of
+## this file and camera_rig.gd): the character always faces away from the viewer and strafes instead
+## of rotating to face its velocity. The camera now turns - through world.gd's
+## _unhandled_input, which applies deltas only while the mouse is captured.
+##
+## Why the camera does not instead trail the character's facing (unchanged since D-T082-4):
+## input_capture.capture() rotates the stick by the rig yaw, so a camera that chases the
+## facing closes a feedback loop (yaw -> input -> velocity -> facing -> yaw). Locking the
+## character's yaw to the camera's is the stable reading of the request.
+
+
+## The player figure's base pass (J11): the T-015 .glb carries no material by design
+## (export_materials="NONE"; the palette rides the vertex colours), so without a base
+## override every surface renders Godot's default WHITE and the authored palette is never
+## seen (the J11 defect - the fill light made the white figure visible, which is why it
+## went unnoticed). Unshaded with vertex colours as albedo, the exact base pass
+## gifts_view.gd uses for the gifts: this world has no sun and a teal ambient that renders
+## a LIT vertex-colour body near-black (J3/J8 measured), and the palette intent is the
+## authored hex, not a lighting result. A surface override material does not touch the
+## limb nodes' transforms, so the J5 pose layer is unaffected.
+static func _player_body_material() -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.vertex_color_use_as_albedo = true
+	m.albedo_color = Color(1.0, 1.0, 1.0)
+	return m
+
+
+## Adds the base material to every mesh surface under the figure (the glb carries no
+## material of its own - see _player_body_material).
+static func _apply_player_body_material(p_root: Node3D) -> void:
+	var mat := _player_body_material()
+	var stack: Array = [p_root]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		for c in n.get_children():
+			stack.push_back(c)
+		if n is MeshInstance3D and (n as MeshInstance3D).mesh != null:
+			var mi := n as MeshInstance3D
+			for s in mi.mesh.get_surface_count():
+				mi.set_surface_override_material(s, mat)
+
+
+## Animation state -> pose target (radians), the pure half of Part B. Returned shape:
+## {torso, head, arm_l, arm_r, leg_l, leg_r} - limb pitch about X (positive = the limb's
+## tip swings BACKWARD, since the figure's forward is Godot -Z), except head (sway about
+## Z). Non-root only: the figure's position/yaw stay in _position_player. Everything lerps
+## toward the target, never snaps.
+## Sign convention: a limb node hangs along -Y; rotating +X swings its tip toward +Z =
+## backward, -X forward. An arm swung up over the shoulder is ~+2.6.
+
+## Gait: legs swing sin(phase) apart scaled by amp (0 = idle sway, 1 = full run), arms
+## counter the same-side leg, torso leans into the run. amp normalises by the run speed.
+static func _pose_run(phase: float, amp: float) -> Dictionary:
+	var swing := sin(phase) * 0.9 * amp
+	var counter := -swing * 0.85
+	return {
+		"torso": -0.28 * amp,
+		"head": 0.0,
+		"arm_l": counter * (1.0 - 0.4 * (1.0 - amp)),
+		"arm_r": -counter * (1.0 - 0.4 * (1.0 - amp)),
+		"leg_l": swing,
+		"leg_r": -swing,
+	}
+
+
+## Idle: a slow phase-driven sway, the head drifting a little, arms loose at the sides.
+static func _pose_idle(phase: float) -> Dictionary:
+	return {
+		"torso": -0.02,
+		"head": sin(phase * 0.5) * 0.10,
+		"arm_l": sin(phase * 0.5) * 0.06,
+		"arm_r": -sin(phase * 0.5) * 0.06,
+		"leg_l": 0.0,
+		"leg_r": 0.0,
+	}
+
+
+## Jump (rising): both legs tucked back, arms swung back-up, torso leaning into the rise.
+static func _pose_jump() -> Dictionary:
+	return {
+		"torso": -0.22,
+		"head": 0.0,
+		"arm_l": 0.95,
+		"arm_r": 0.95,
+		"leg_l": 0.65,
+		"leg_r": 0.65,
+	}
+
+
+## Fall (sinking): flail - arms up over the head, legs trailing, one knee higher.
+static func _pose_fall() -> Dictionary:
+	return {
+		"torso": 0.10,
+		"head": 0.0,
+		"arm_l": 2.55,
+		"arm_r": 2.35,
+		"leg_l": -0.35,
+		"leg_r": -0.10,
+	}
+
+
+## The pose applier: pick the state from the sim body state (read ONLY here), advance the
+## phase, blend the current pose toward the target, write the limb rotations. Pure in ->
+## nodes out; nothing in the pose feeds back into the sim.
+func _anim_pass() -> void:
+	if _limbs.is_empty() or ctl == null:
+		return
+	var speed := sqrt(float(ctl.vx) * float(ctl.vx) + float(ctl.vz) * float(ctl.vz))
+	var grounded := bool(ctl.grounded)
+	var vy := float(ctl.vy)
+	var target: Dictionary
+	if not grounded:
+		target = _pose_jump() if vy >= -0.4 else _pose_fall()
+	else:
+		var amp := clampf(speed / maxf(_run_speed, 0.001), 0.0, 1.0)
+		if amp < 0.05:
+			_anim_phase = fmod(_anim_phase + ANIM_PHASE_IDLE, TAU)
+			target = _pose_idle(_anim_phase)
+		else:
+			_anim_phase = fmod(_anim_phase + (ANIM_PHASE_IDLE
+					+ (ANIM_PHASE_RUN - ANIM_PHASE_IDLE) * amp), TAU)
+			target = _pose_run(_anim_phase, amp)
+	# Blend: exponential toward the target with time constant ANIM_BLEND_TIME; at 60 Hz
+	# (the only rate step() is driven at) the per-tick factor is 1 - e^(-dt/tau).
+	var k := 1.0 - exp(-1.0 / 60.0 / ANIM_BLEND_TIME)
+	if _pose.is_empty():
+		_pose = target.duplicate()
+		k = 1.0
+	for key in _pose.keys():
+		_pose[key] = float(_pose[key]) + (float(target.get(key, 0.0)) - float(_pose[key])) * k
+	_apply_pose()
+
+
+func _apply_pose() -> void:
+	for i in LIMB_NAMES.size():
+		var node = _limbs[i]
+		if node == null or not _pose.has(POSE_KEYS[i]):
+			continue
+		if i == 1:   # Head: the sway rides Z, every other limb pitches about X
+			node.rotation = Vector3(0.0, 0.0, float(_pose[POSE_KEYS[i]]))
+		else:
+			node.rotation = Vector3(float(_pose[POSE_KEYS[i]]), 0.0, 0.0)
 
 
 func _billboard_pass(dt: float) -> void:

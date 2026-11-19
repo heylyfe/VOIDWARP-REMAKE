@@ -25,6 +25,13 @@ const BUTTON_INTERACT := 4
 ## App-level action flags in the returned dictionary (never enter the buttons bitmask).
 const APP_HUD_TOGGLE := 1
 const APP_PAUSE := 2
+const APP_MOUSE_TOGGLE := 4
+
+## The mouse-lock key (Ctrl). Deliberately NOT a bindings.json action: bindings.json is
+## the sim-facing action set (T-082-2) and has no mouse-lock row, so the key is named
+## here and the caller polls it like the other device state. Changing all capture()
+## call shapes to thread an extra bool is the same cost with less ceremony.
+const KEY_MOUSE_LOCK := KEY_CTRL
 
 const AXIS_127 := 127.0
 
@@ -108,7 +115,8 @@ static func _resolve_keys(d: Dictionary, action: String, errors: Array[String]) 
 ## exceeds run speed, rotated by the camera yaw (yaw 0 = world forward -z), scaled to the
 ## int8 axis (127 == full speed, D-T010-2) and rounded.
 static func capture(pressed_keys: Array, pressed_joy: Array, stick_x: float, stick_y: float,
-		camera_yaw_deg: float, bindings: Dictionary) -> Dictionary:
+		camera_yaw_deg: float, bindings: Dictionary,
+		mouse_lock_pressed: bool = false) -> Dictionary:
 	var kb: Dictionary = bindings.get("key_bindings", {})
 	var jb: Dictionary = bindings.get("joy_bindings", {})
 
@@ -137,6 +145,8 @@ static func capture(pressed_keys: Array, pressed_joy: Array, stick_x: float, sti
 		app |= APP_HUD_TOGGLE
 	if _held(pressed_keys, kb, "pause"):
 		app |= APP_PAUSE
+	if mouse_lock_pressed:
+		app |= APP_MOUSE_TOGGLE
 
 	return {"input": InputScript.new(move_x, move_z, buttons), "app": app}
 

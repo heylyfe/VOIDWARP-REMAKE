@@ -10,9 +10,15 @@ extends Node3D
 #   - the camera's HEIGHT above the world follows the player's feet through a 0.12 s
 #     exponential spring so the 0.5 u auto step-up does not jolt the view.
 # The math lives in pure static functions (headless tests exercise them directly); the node
-# side is the thin applier the future app/main.gd scene will drive. The rig reads sim state,
-# never writes it — it has no reference to any sim object at all (the replay test in
-# tests/test_input.gd proves a randomly moved camera cannot change sim state).
+# side is the thin applier world.gd drives. The rig reads sim state, never writes it — it
+# has no reference to any sim object at all (the replay test in tests/test_input.gd proves
+# a randomly moved camera cannot change sim state).
+#
+# MOUSE-LOOK (J5, supersedes D-T082-4's "no path to the yaw"): apply_mouse() is now called
+# by world.gd's mouse-motion handler, but ONLY while the mouse is captured. When released
+# the rig has no turn path again. The capture state machine is the pure toggle below; the
+# sanctioned wiring is: captured -> apply_mouse with the settings' sensitivity; released ->
+# no motion applied; Ctrl edge (this file's next_mouse_locked) is the only toggle.
 
 const DISTANCE := 7.0
 const PIVOT_HEIGHT := 2.5
@@ -58,6 +64,24 @@ static func apply_mouse(yaw_deg_: float, pitch_deg_: float, dx_px: float, dy_px:
 	var yaw2 := yaw_deg_ - dx_px * sens_deg_per_px
 	var pitch2 := clampf(pitch_deg_ - dy_px * sens_deg_per_px, PITCH_MIN, PITCH_MAX)
 	return Vector2(yaw2, pitch2)
+
+
+## The mouse-capture toggle (J5): pure, so the headless test can pin it. toggle_edge is the
+## Ctrl edge this tick (already edge-detected against the previous tick by the caller);
+## release_request is any force-release (the APP_PAUSE edge, and build/teardown/death use
+## the same state directly). A release wins over a same-tick toggle: the annotations say
+## "release on pause, menu and death screens" without exception.
+static func next_mouse_locked(locked: bool, toggle_edge: bool, release_request: bool) -> bool:
+	if release_request:
+		return false
+	if toggle_edge:
+		return not locked
+	return locked
+
+
+## The Input.mouse_mode for a lock state (single point so the wiring cannot drift).
+static func mouse_mode_for(locked: bool) -> int:
+	return Input.MOUSE_MODE_CAPTURED if locked else Input.MOUSE_MODE_VISIBLE
 
 
 ## Exponential spring: the camera height eases toward the feet height with time constant

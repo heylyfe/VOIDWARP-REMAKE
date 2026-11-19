@@ -302,37 +302,100 @@ func _test_camera_statics() -> Array[String]:
 	return failures
 
 
-# --- 5b. no manual camera turn (D-T082-4) --------------------------------------------------
+# --- 5b. the mouse-lock guarantee (J5; supersedes the D-T082-4 no-turn pin) -----------------
 
-## The camera lock's guarantee is a negative one: nothing in app/ can rotate the rig. The rig
-## yaw is written only by world.gd's build() (to 0) and read by input_capture.capture() to
-## rotate the stick, so the player has no path to it. apply_mouse() is a static the tests
-## exercise, nothing more - there is no mouse-motion handler to call it.
+## J5 REVERSED the shipped no-turn decision: with the mouse CAPTURED, world.gd's
+## _unhandled_input turns the rig through apply_mouse() at the settings sensitivity; with
+## it RELEASED the camera still must not turn; and the Ctrl toggle (input_capture's
+## APP_MOUSE_TOGGLE, edge-detected in world.gd's _mouse_lock_pass) is the ONLY capture
+## transition - no other file in app/ may touch the mouse mode, the mouse motion, or the
+## rig's yaw. The old test pinned the opposite (any handler fails); it is rewritten here,
+## not weakened: the new probe fails unless the gating is present and exclusive.
 func _test_no_manual_camera_turn() -> Array[String]:
 	var failures: Array[String] = []
-	# "You can't turn": no mouse-motion handler exists anywhere in app/, so the player has no
-	# path to the camera yaw. apply_mouse() is a static the tests exercise, nothing more.
 	var app_files := _app_gd_files()
 	if app_files.size() < 5:
-		failures.append("app/ scan found only %d .gd files - the no-turn check did not run"
+		failures.append("app/ scan found only %d .gd files - the mouse-lock check did not run"
 				% app_files.size())
+	var motion_files: Array[String] = []
+	var mode_files: Array[String] = []
 	for name in app_files:
 		var f := FileAccess.open("res://app/" + name, FileAccess.READ)
 		if f == null:
-			failures.append("could not read res://app/%s for the no-turn check" % name)
+			failures.append("could not read res://app/%s for the mouse-lock check" % name)
 			continue
 		var text := f.get_as_text()
 		f.close()
-		# Comments are not handlers: the rig's own header names the class it says is absent.
-		for line in text.split("\n"):
+		for line in (text as String).split("\n"):
 			var code := (line as String).strip_edges()
 			if code.begins_with("#"):
 				continue
-			if code.contains("InputEventMouseMotion"):
-				failures.append("app/%s gained a mouse-motion handler (the camera must not turn)"
-						% name)
-				break
+			if code.contains("InputEventMouseMotion") and not motion_files.has(name):
+				motion_files.append(name)
+			if code.contains("Input.mouse_mode") and not mode_files.has(name):
+				mode_files.append(name)
+	# Exactly one handler file (world.gd), exactly one mouse-mode writer (world.gd).
+	if not (motion_files == ["world.gd"]):
+		failures.append("InputEventMouseMotion must appear ONLY in world.gd, found in %s"
+				% str(motion_files))
+	if not (mode_files == ["world.gd"]):
+		failures.append("Input.mouse_mode writes must live ONLY in world.gd, found in %s"
+				% str(mode_files))
+	if app_files.has("world.gd"):
+		# The handler must gate on the lock state BEFORE any apply_mouse call, i.e. the
+		# released camera has no turn path inside the handler.
+		var body := _func_body("res://app/world.gd", "_unhandled_input")
+		var gate := -1
+		var apply := -1
+		for i in body.size():
+			if body[i].contains("_mouse_locked") and gate == -1:
+				gate = i
+			if body[i].contains("apply_mouse") and apply == -1:
+				apply = i
+		if gate == -1 or apply == -1 or gate > apply:
+			failures.append("world.gd _unhandled_input must check _mouse_locked before"
+					+ " apply_mouse (gate line %d, apply line %d in body)" % [gate, apply])
+		# The toggle: Ctrl polled in the capture path, the state machine in camera_rig.
+		var capture_body := _func_body("res://app/world.gd", "_capture_input")
+		var has_ctrl := false
+		for line in capture_body:
+			if line.contains("KEY_MOUSE_LOCK"):
+				has_ctrl = true
+		if not has_ctrl:
+			failures.append("world.gd _capture_input must poll input_capture's"
+					+ " KEY_MOUSE_LOCK - the toggle is the only capture path")
+		var rig_text := _file_text("res://app/camera_rig.gd")
+		if not rig_text.contains("static func next_mouse_locked"):
+			failures.append("camera_rig.gd lost next_mouse_locked (the toggle state machine)")
+	else:
+		failures.append("world.gd missing from the app/ scan")
 	return failures
+
+
+## The non-comment lines of one named function in one file, from its "func" line to the
+## next top-level "func". Empty when the function is absent.
+func _func_body(path: String, fname: String) -> Array[String]:
+	var out: Array[String] = []
+	var inside := false
+	for line in _file_text(path).split("\n"):
+		var code := (line as String).strip_edges()
+		if code.begins_with("func ") or (inside and code.begins_with("func ")):
+			if inside:
+				break
+			inside = code.begins_with("func %s(" % fname)
+			continue
+		if inside and not code.begins_with("#"):
+			out.append(code)
+	return out
+
+
+func _file_text(path: String) -> String:
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		return ""
+	var t := f.get_as_text()
+	f.close()
+	return t
 
 
 ## Every .gd file name under res://app/. The no-turn guarantee is a property of the source
