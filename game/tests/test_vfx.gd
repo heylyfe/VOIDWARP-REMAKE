@@ -5,7 +5,9 @@ extends RefCounted
 #
 #   2.1 tripmine   the emitter is ACTIVE at every distance and its particle alpha
 #                  is 0 at 14 u and 1 at 10 u (5 u / 7 u under Method Acting); the
-#                  rim glow parameters equal a black gift's; the particle spec
+#                  rim glow is the rim frame (unshaded #7CFFF4, view geometry,
+#                  J10; the additive overlay lifted every pixel by a flat
+#                  ~(+45,+46,+54), J8); the particle spec
 #                  numbers (12/s, 1.5 s, 0.06 u, #FF4FD8, 0.4 u/s, 0.2 u drift,
 #                  emission 2.0); the star ramp; the 0.9 u trigger ring at alpha
 #                  0.25; the Radar Module outline within 14 u whatever the ramp;
@@ -25,7 +27,6 @@ extends RefCounted
 # prints it for all 5 biomes); this file asserts the row's distance constant.
 
 const TripmineViewScript := preload("res://view/tripmine_view.gd")
-const GiftsViewScript := preload("res://view/gifts_view.gd")
 const BeaconViewScript := preload("res://view/beacon_view.gd")
 const RespawnViewScript := preload("res://view/respawn_view.gd")
 const ToucherViewScript := preload("res://view/toucher_view.gd")
@@ -64,18 +65,6 @@ static func _level(occs: Array) -> Dictionary:
 		"beacon": [0, 0, 1], "spawns": [[0, 0, 1]], "arms": [], "pieces": [],
 		"tiles": tiles, "props": [], "edges": [], "gifts": slots, "anchors": [], "pads": [],
 	}
-
-
-## The first MeshInstance3D's material_overlay under a node (the gift view's rim).
-static func _first_overlay(root: Node) -> StandardMaterial3D:
-	var stack: Array = [root]
-	while not stack.is_empty():
-		var n: Node = stack.pop_back()
-		if n is MeshInstance3D and n.material_overlay != null:
-			return n.material_overlay
-		for c in n.get_children():
-			stack.push_back(c)
-	return null
 
 
 ## The eye position that puts the camera exactly `dist` u from a mine's box point.
@@ -133,55 +122,67 @@ func _test_mine_emitter(f: Array[String]) -> void:
 	print("VFX mine emitter: constant at every distance, alpha 0@14u 1@10u (5u/7u under Method Acting)")
 
 
-# ---- 2.1: the rim glow is a black gift's, at every distance ----------------------
+# ---- 2.1: the rim glow: the rim frame, at every distance -----------------------
 
 func _test_mine_rim(f: Array[String]) -> void:
 	var level := _level([0, 1])
-	var lv: RefCounted = LevelStateScript.build(level, 1, 1)
-	var gv = GiftsViewScript.new()
-	gv.setup(level, lv.gifts)
-	var gift_rim: StandardMaterial3D = _first_overlay(gv._black[0])
-	if gift_rim == null:
-		f.append("mine rim: the black gift has no rim overlay to compare against")
-		gv.free()
-		return
+	# The rim (TERRAIN_SPEC 12.2 "black_gift_rim", D-T020-6) is carried by the rim
+	# FRAME - twelve thin unshaded #7CFFF4 boxes on the box's edges (J10; the
+	# glb carries no ribbon, and an additive overlay lifts EVERY pixel of the mesh
+	# by a flat ~(+45,+46,+54) regardless of base albedo, so it could never stay -
+	# J8's measurement, re-measured for the mine by J10). Asserted against LITERALS;
+	# the body's base material is pinned alongside (it is what makes the mine read
+	# as its palette colour, and what the overlay used to wash out).
 	var m := MinesScript.create(level, 1, 1)
 	var v = TripmineViewScript.new()
 	v.setup(level, m)
+	# the body: unshaded, vertex colours as albedo, white tint - the palette frame,
+	# not a white or washed box, and no additive overlay on top of it
+	var mine_body: StandardMaterial3D = v.body_material_for_slot(1)
+	if mine_body == null:
+		f.append("mine body: the mine has no base material (renders default white)")
+		v.free()
+		return
+	if mine_body.shading_mode != BaseMaterial3D.SHADING_MODE_UNSHADED:
+		f.append("mine body: shading_mode %d, want UNSHADED (%d)"
+				% [mine_body.shading_mode, BaseMaterial3D.SHADING_MODE_UNSHADED])
+	if not mine_body.vertex_color_use_as_albedo:
+		f.append("mine body: vertex_color_use_as_albedo is off, want on (the body is the mesh's colours)")
+	if not mine_body.albedo_color.is_equal_approx(Color(1.0, 1.0, 1.0)):
+		f.append("mine body: albedo %s, want (1.0, 1.0, 1.0) (pass the mesh's colours through)"
+				% str(mine_body.albedo_color))
+	var body_mi: MeshInstance3D = v.body_for_slot(1)
+	if body_mi != null and body_mi.material_overlay != null:
+		f.append("mine body: an additive material_overlay is back on the body (it lifts every pixel ~(+45,+46,+54))")
+	# the rim frame: unshaded #7CFFF4, shadows off, opaque - the black gift's ribbon
 	var mine_rim: StandardMaterial3D = v.rim_material_for_slot(1)
 	if mine_rim == null:
-		f.append("mine rim: the mine has no rim overlay")
+		f.append("mine rim: the mine has no rim frame")
 		v.free()
-		gv.free()
 		return
-	# every parameter the gift's rim material carries must match
-	if mine_rim.shading_mode != gift_rim.shading_mode:
-		f.append("mine rim: shading_mode %d != the black gift's %d"
-				% [mine_rim.shading_mode, gift_rim.shading_mode])
-	if mine_rim.transparency != gift_rim.transparency:
-		f.append("mine rim: transparency %d != the black gift's %d"
-				% [mine_rim.transparency, gift_rim.transparency])
-	if mine_rim.blend_mode != gift_rim.blend_mode:
-		f.append("mine rim: blend_mode %d != the black gift's %d"
-				% [mine_rim.blend_mode, gift_rim.blend_mode])
-	if mine_rim.vertex_color_use_as_albedo != gift_rim.vertex_color_use_as_albedo:
-		f.append("mine rim: vertex_color_use_as_albedo differs from the black gift's")
-	if not mine_rim.albedo_color.is_equal_approx(gift_rim.albedo_color):
-		f.append("mine rim: albedo %s != the black gift's %s (want the x1.5 factor)"
-				% [str(mine_rim.albedo_color), str(gift_rim.albedo_color)])
-	if mine_rim.disable_receive_shadows != gift_rim.disable_receive_shadows:
-		f.append("mine rim: disable_receive_shadows differs from the black gift's")
-	# the x1.5 emission factor of TERRAIN_SPEC 12.2, read off the material
-	if absf(mine_rim.albedo_color.r - 1.5) > 1e-6:
-		f.append("mine rim: factor %.4f, want 1.5 (black_gift_rim x1.5)" % mine_rim.albedo_color.r)
-	# the lie holds at EVERY distance: the rim is still there at 60 u
+	# every parameter the rim carries must match
+	if mine_rim.shading_mode != BaseMaterial3D.SHADING_MODE_UNSHADED:
+		f.append("mine rim: shading_mode %d, want UNSHADED (%d)"
+				% [mine_rim.shading_mode, BaseMaterial3D.SHADING_MODE_UNSHADED])
+	if not mine_rim.albedo_color.is_equal_approx(Color(0.486275, 1.0, 0.956863)):
+		f.append("mine rim: albedo %s, want #7CFFF4 (0.486, 1.0, 0.957) (black_gift_rim)"
+				% str(mine_rim.albedo_color))
+	if not mine_rim.disable_receive_shadows:
+		f.append("mine rim: disable_receive_shadows is off, want on")
+	if mine_rim.transparency != BaseMaterial3D.TRANSPARENCY_DISABLED:
+		f.append("mine rim: transparency %d, want disabled (the frame is opaque)"
+				% mine_rim.transparency)
+	if mine_rim.cull_mode != BaseMaterial3D.CULL_BACK:
+		f.append("mine rim: cull_mode %d, want CULL_BACK (%d)"
+				% [mine_rim.cull_mode, BaseMaterial3D.CULL_BACK])
+	# the lie holds at EVERY distance: the rim frame is still there at 60 u
 	var point: Vector3 = m.point(1)
 	v.sync(_eye_at(point, 60.0))
-	if v.rim_material_for_slot(1) == null:
-		f.append("mine rim: the rim overlay vanished at 60 u (it must hold at every distance)")
+	var far_rim: MeshInstance3D = v.rim_for_slot(1)
+	if far_rim == null or not far_rim.visible:
+		f.append("mine rim: the rim frame vanished at 60 u (it must hold at every distance)")
 	v.free()
-	gv.free()
-	print("VFX mine rim: identical to a black gift's (additive, vertex colours, x1.5) at every distance")
+	print("VFX mine rim: unshaded #7CFFF4 rim frame, body pass-through (J10), at every distance")
 
 
 # ---- 2.1: the rest of the table (particles, star, ring, radar, turn) -------------

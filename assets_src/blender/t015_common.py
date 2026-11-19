@@ -29,10 +29,20 @@ QUADS = [
 ]
 
 
+def _srgb_to_linear(c):
+    """The standard sRGB transfer function (IEC 61966-2-1): decode one channel."""
+    return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+
 def hex_rgba(hexstr):
+    # glTF defines COLOR_0 as LINEAR, so the palette's sRGB bytes must be
+    # decoded to linear here - otherwise Godot treats them as linear and
+    # re-encodes linear->sRGB for display, rendering every model lighter
+    # than its palette.
     h = hexstr.lstrip("#")
-    return (int(h[0:2], 16) / 255.0, int(h[2:4], 16) / 255.0,
-            int(h[4:6], 16) / 255.0, 1.0)
+    return (_srgb_to_linear(int(h[0:2], 16) / 255.0),
+            _srgb_to_linear(int(h[2:4], 16) / 255.0),
+            _srgb_to_linear(int(h[4:6], 16) / 255.0), 1.0)
 
 
 def begin():
@@ -88,8 +98,8 @@ class Mesh:
         # the glTF exporter then re-scales it to uint16, which Godot truncates
         # back to 8 bit - losing a full byte step on some channels. FLOAT_COLOR
         # goes through the whole chain (Blender -> glb float32 -> Godot Color)
-        # unchanged, so the engine recovers the exact palette byte with
-        # round(c * 255).
+        # unchanged. hex_rgba() hands us LINEAR values (glTF COLOR_0 is linear),
+        # so the engine renders the palette hex, not an sRGB-lifted copy.
         attr = mesh.color_attributes.new(name="COL_0", type="FLOAT_COLOR",
                                          domain="POINT")
         flat = []

@@ -5,14 +5,20 @@ extends Node3D
 # A small floating island in the void, in the gold phase: the beacon is OPEN (the real
 # view/beacon_view.gd, light column to Y +60 u), gold gifts sit on their slots, one tripmine
 # sparks pink, and the whole enemy roster stands on stepped terraces facing the camera. The
-# camera drifts slowly in a shallow arc; it never orbits behind the roster (D-MENU-3).
+# camera drifts slowly in a shallow arc; it never orbits behind the roster (D-MENU-3). It is
+# also the gift showcase: one black gift stands on its own slot so both T-015 gift models
+# render here, each through view/gifts_view.gd's own fixed body path (J8).
 #
 # Everything the player sees is the game's own material:
 #   - fog / background / ambient: view/fog_env.gd configured for one biome (D-MENU-2);
 #   - tile, slab, trim, dais, prop colours: fog_env.resolve_palette() roles, checker rule
 #     (x + z) & 1 == 0 = light (data/palette.json "checker");
 #   - beacon: view/beacon_view.gd (model, column, pulse) opened on the frame path;
-#   - gifts / tripmine: the T-015 .glb models with view/gifts_view.gd's emission overlay;
+#   - gifts / tripmine: the T-015 .glb models; the gifts through view/gifts_view.gd's
+#     unshaded vertex-colour body pass (the glb carries no material by design, so an
+#     overlay-only pass rendered a white box; J3/J8), the tripmine through
+#     view/tripmine_view.gd's own fixed body pass + #7CFFF4 rim frame (J10 - the
+#     overlay-only pass rendered a washed box too);
 #   - enemies: view/billboard.gd fed each enemy's own sprites.json (the real per-enemy PNGs),
 #     an idle-type animation, facing the camera every frame (BILLBOARDING hard rule);
 #   - the roster caption: view/hud/danger_text.gd's spawn lines in #FF2A2A, one enemy at a time.
@@ -37,11 +43,13 @@ const BillboardScript := preload("res://view/billboard.gd")
 const FogEnvScript := preload("res://view/fog_env.gd")
 const BeaconViewScript := preload("res://view/beacon_view.gd")
 const GiftsViewScript := preload("res://view/gifts_view.gd")
+const TripmineViewScript := preload("res://view/tripmine_view.gd")
 const DangerTextScript := preload("res://view/hud/danger_text.gd")
 const MakeTbd := preload("res://tools/make_tbd_png.gd")
 
 const ENEMY_DIR := "res://content/enemies"
 const GOLD_MODEL := "res://assets/models/gold_gift.glb"
+const BLACK_MODEL := "res://assets/models/black_gift.glb"
 const MINE_MODEL := "res://assets/models/tripmine_box.glb"
 
 ## D-MENU-2: the biome whose fog/palette the menu wears. Picked by a palette field read
@@ -408,10 +416,11 @@ func _build_props() -> void:
 		ci.material_override = cm
 		ci.position = Vector3(0.0, h * 0.5 - TRIM * 0.5, 0.0)
 		mi.add_child(ci)
-	# gold phase: gold gifts on their slots (emission x 2.0 overlay, the in-game look)
+	# the gift showcase: gold gifts on their slots through gifts_view's body path (the
+	# in-game look; vertex colours unshaded - the overlay-only pass rendered a white box),
+	# plus one black gift on the mirrored slot through the same fixed path (J8)
 	var gold_ps: PackedScene = load(GOLD_MODEL) if ResourceLoader.exists(GOLD_MODEL) else null
 	if gold_ps != null:
-		var gold_mat := GiftsViewScript.emission_material(GiftsViewScript.GOLD_FACTOR)
 		# in the gaps between front-row enemies, never in front of one
 		for gxz in [Vector2(0.0, 3.2), Vector2(2.7, 3.3), Vector2(7.6, -0.4),
 				Vector2(3.4, -5.2), Vector2(-3.2, -5.4)]:
@@ -421,9 +430,22 @@ func _build_props() -> void:
 			var g: Node3D = gold_ps.instantiate()
 			g.position = gp
 			g.rotation.y = gp.x * 0.7
-			_overlay(g, gold_mat)
+			GiftsViewScript._add_body(g, GiftsViewScript._gold_body_material())
 			add_child(g)
-	# one tripmine: the only pink in the scene (its constant #FF4FD8 particle tell)
+	var black_ps: PackedScene = load(BLACK_MODEL) if ResourceLoader.exists(BLACK_MODEL) else null
+	if black_ps != null:
+		var bp := _on_tile(Vector2(-7.6, -0.4))
+		if not is_nan(bp.y):
+			var b: Node3D = black_ps.instantiate()
+			b.position = bp
+			b.rotation.y = bp.x * 0.7
+			GiftsViewScript._add_body(b, GiftsViewScript._black_body_material())
+			add_child(b)
+	# one tripmine: the only pink in the scene (its constant #FF4FD8 particle tell) -
+	# the same fixed path as the in-game view: unshaded vertex-colour base (its palette
+	# colour, not a white/washed box), plus the #7CFFF4 rim frame (J10; the additive
+	# overlay rendered it a washed box here too). The raw glb keeps its pink star
+	# triangles, which read through the unshaded base.
 	var mine_ps: PackedScene = load(MINE_MODEL) if ResourceLoader.exists(MINE_MODEL) else null
 	var mine_pos := _on_tile(Vector2(-3.1, 3.0))
 	if is_nan(mine_pos.y):
@@ -432,7 +454,12 @@ func _build_props() -> void:
 		var mine: Node3D = mine_ps.instantiate()
 		mine.name = "Tripmine"
 		mine.position = mine_pos
-		_overlay(mine, GiftsViewScript.emission_material(1.5))
+		GiftsViewScript._add_body(mine, TripmineViewScript._body_material())
+		var menu_rim := MeshInstance3D.new()
+		menu_rim.name = "Rim"
+		menu_rim.mesh = TripmineViewScript._rim_mesh()
+		menu_rim.material_override = TripmineViewScript._rim_material()
+		mine.add_child(menu_rim)
 		add_child(mine)
 	var sparks := CPUParticles3D.new()
 	sparks.name = "TripmineSparks"
@@ -463,16 +490,6 @@ func _build_props() -> void:
 ## A point on the island surface at (x, z); y is NAN when no tile is there.
 static func _on_tile(xz: Vector2) -> Vector3:
 	return Vector3(xz.x, tile_top(int(floor(xz.x)), int(floor(xz.y))), xz.y)
-
-
-static func _overlay(root: Node, mat: Material) -> void:
-	var stack: Array = [root]
-	while not stack.is_empty():
-		var n: Node = stack.pop_back()
-		for c in n.get_children():
-			stack.push_back(c)
-		if n is MeshInstance3D:
-			(n as MeshInstance3D).material_overlay = mat
 
 
 # ---- beacon ------------------------------------------------------------------------------------

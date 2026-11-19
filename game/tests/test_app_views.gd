@@ -13,6 +13,12 @@ extends RefCounted
 #   Collecting every real black gift through world.step() flips the phase: the gold
 #   models take over at the same slots and the light column is up on the open tick.
 #   teardown() leaves no child, no view reference and no live node behind.
+#   leg A also asserts the gifts render through a real, non-default base material
+#   (the glb carries no material by design, so without the override the surface drew
+#   Godot's default white and the vertex colours were never seen - J3/J8), and the
+#   beacon's CLOSED body does the same (the glb's COLOR_0 is a single flat
+#   beacon_closed #3A4A55 - J13), while the OPEN body stays the emissive #E8FFFF
+#   override (T-085 / TERRAIN_SPEC 6.1).
 #   leg B (level 5, seed 0 - mine occupancy): one tripmine view root per mine, on the
 #   sim's own point(), all shown; a consumed mine leaves the view on the next step().
 #
@@ -104,6 +110,7 @@ func _leg_a(f: Array[String]) -> void:
 				% [str(world.beacon_view.position), str(want_bp)])
 	if world.beacon_view.column_visible():
 		f.append("leg A: the beacon column shows while the beacon is CLOSED")
+	_check_beacon_body(f, world.beacon_view, false)
 
 	# collect every real black gift, one world.step() each (test_app_loop.gd's idiom):
 	# the black models go out, the gold ones arrive at the same slots, and the light
@@ -142,6 +149,8 @@ func _leg_a(f: Array[String]) -> void:
 		f.append("leg A: no light column on the tick the beacon opened")
 	elif world.beacon_view.column_height() <= 0.0:
 		f.append("leg A: the light column has zero height on the open tick")
+	_check_beacon_body(f, world.beacon_view, true)
+	_check_gift_materials(f, gv)
 
 	# teardown leaves nothing behind: no child, no reference, no live node
 	var freed_view = world.gifts_view
@@ -153,6 +162,179 @@ func _leg_a(f: Array[String]) -> void:
 	if world.gifts_view != null or world.tripmine_view != null or world.beacon_view != null:
 		f.append("teardown: a view reference was not cleared (step() would touch freed nodes)")
 	world.free()
+
+
+## The gifts must render through a real, non-default base material (J3/J8): the glb
+## carries no material by design, so before the fix the surface drew with Godot's
+## default white material and the vertex colours were never seen. Asserts on the
+## actual material properties and on the mesh's vertex colours - never on a screenshot.
+## The black gift must carry the #7CFFF4 ribbon in its vertex colours (the rim) and must
+## NOT carry the additive rim overlay (J8: it lifts the body to a slate box).
+func _check_gift_materials(f: Array[String], gv) -> void:
+	for i in gv._black.size():
+		var b = gv._black[i]
+		if b != null:
+			_check_gift_body(f, b, "black", Color(1.0, 1.0, 1.0), BaseMaterial3D.SHADING_MODE_UNSHADED)
+			if _first_overlay(b) != null:
+				f.append("gift materials: black gift %d still carries the additive rim overlay (J8: it lifts the body to a slate box)" % i)
+			if not _mesh_has_rim(b):
+				f.append("gift materials: black gift %d has no #7CFFF4 ribbon in its vertex colours (the rim, D-T020-6)" % i)
+		var g = gv._gold[i]
+		if g != null:
+			_check_gift_body(f, g, "gold", Color(1.0, 1.0, 1.0), BaseMaterial3D.SHADING_MODE_UNSHADED)
+
+
+## One gift instance's surfaces: each must carry a StandardMaterial3D that uses the
+## mesh's vertex colours as albedo, with the expected albedo tint and shading mode
+## (both gifts are unshaded: J3 for gold, J8 for black), and the mesh must actually
+## carry vertex colours ("not the default white").
+func _check_gift_body(f: Array[String], root: Node3D, which: String, want_albedo: Color,
+		want_shading: BaseMaterial3D.ShadingMode) -> void:
+	var found := 0
+	var stack: Array = [root]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		for c in n.get_children():
+			stack.push_back(c)
+		if n is MeshInstance3D and (n as MeshInstance3D).mesh != null:
+			var mi := n as MeshInstance3D
+			for s in mi.mesh.get_surface_count():
+				found += 1
+				var m: Material = mi.get_surface_override_material(s)
+				if m == null:
+					f.append("gift materials: %s gift surface %d has no base material (renders default white)"
+							% [which, s])
+					continue
+				if not (m is StandardMaterial3D):
+					f.append("gift materials: %s gift surface %d base material is %s, want StandardMaterial3D"
+							% [which, s, m.get_class()])
+					continue
+				var sm := m as StandardMaterial3D
+				if sm.shading_mode != want_shading:
+					f.append("gift materials: %s gift surface %d shading_mode %d, want %d"
+							% [which, s, sm.shading_mode, want_shading])
+				if not sm.vertex_color_use_as_albedo:
+					f.append("gift materials: %s gift surface %d does not use vertex colours as albedo"
+							% [which, s])
+				if not sm.albedo_color.is_equal_approx(want_albedo):
+					f.append("gift materials: %s gift surface %d albedo %s, want %s"
+							% [which, s, str(sm.albedo_color), str(want_albedo)])
+				var arrays: Array = mi.mesh.surface_get_arrays(s)
+				var col_v: Variant = arrays[Mesh.ARRAY_COLOR] if arrays.size() > Mesh.ARRAY_COLOR else null
+				if not (col_v is PackedColorArray) or (col_v as PackedColorArray).is_empty():
+					f.append("gift materials: %s gift surface %d carries no vertex colours" % [which, s])
+	if found == 0:
+		f.append("gift materials: %s gift has no mesh surfaces" % which)
+
+
+## The black gift's glb must carry the #7CFFF4 ribbon in its vertex colours (the rim,
+## D-T020-6): the mesh is the only place the rim lives once the additive overlay is gone.
+func _mesh_has_rim(root: Node3D) -> bool:
+	const RIM_MAX_DIST_SQUARED := 0.01  # #7CFFF4 within ~0.1 per channel
+	var rim := Color(0.2016, 1.0, 0.9047)   # #7CFFF4 as stored LINEAR by the glTF COLOR_0 export (J14)
+	var stack: Array = [root]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		for c in n.get_children():
+			stack.push_back(c)
+		if n is MeshInstance3D and (n as MeshInstance3D).mesh != null:
+			var mi := n as MeshInstance3D
+			for s in mi.mesh.get_surface_count():
+				var arrays: Array = mi.mesh.surface_get_arrays(s)
+				if arrays.size() <= Mesh.ARRAY_COLOR:
+					continue
+				var cols: Variant = arrays[Mesh.ARRAY_COLOR]
+				if not (cols is PackedColorArray):
+					continue
+				for col in cols:
+					var d: Vector3 = Vector3(col.r, col.g, col.b) - Vector3(rim.r, rim.g, rim.b)
+					if d.length_squared() <= RIM_MAX_DIST_SQUARED:
+						return true
+	return false
+
+
+## The first MeshInstance3D's material_overlay under a node (the gift view's rim).
+static func _first_overlay(root: Node) -> StandardMaterial3D:
+	var stack: Array = [root]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		if n is MeshInstance3D and (n as MeshInstance3D).material_overlay != null:
+			return (n as MeshInstance3D).material_overlay as StandardMaterial3D
+		for c in n.get_children():
+			stack.push_back(c)
+	return null
+
+
+## The beacon's body must never draw Godot's default white (J13). While CLOSED the
+## base pass renders: unshaded, vertex_color_use_as_albedo, white albedo, no
+## material_override; the mesh must carry non-empty COLOR_0, and the recorded
+## beacon_closed palette (#3A4A55, stored as LINEAR floats - glTF COLOR_0) is
+## pinned with a u16-quantization tolerance.
+## While OPEN the body must carry the emissive #E8FFFF material_override (T-085 /
+## TERRAIN_SPEC 6.1, white when open, EMISSION_MAX x4.0 ramped). Asserts on the
+## material properties only - never on a screenshot.
+func _check_beacon_body(f: Array[String], bv, want_open: bool) -> void:
+	const CLOSED_TAG := "beacon materials: CLOSED body surface %d "
+	const OPEN_TAG := "beacon materials: OPEN body surface %d "
+	const OPEN_COL := Color(0.910, 1.0, 1.0)   # #E8FFFF beacon_open
+	const DIM_COL := Color(0.0423, 0.0685, 0.0908)   # #3A4A55 beacon_closed, LINEAR (glTF COLOR_0)
+	var found := 0
+	for mi in bv._body:
+		if not (mi is MeshInstance3D) or mi.mesh == null:
+			continue
+		for s in mi.mesh.get_surface_count():
+			found += 1
+			var tag := OPEN_TAG if want_open else CLOSED_TAG
+			if want_open:
+				var om: Material = mi.material_override
+				if om == null:
+					f.append(tag % s + "has no material_override (the OPEN state is the emissive override)")
+					continue
+				if not (om is StandardMaterial3D):
+					f.append(tag % s + "material_override is %s, want StandardMaterial3D" % om.get_class())
+					continue
+				var osm := om as StandardMaterial3D
+				if not osm.emission_enabled:
+					f.append(tag % s + "emission is off, want on (beacon_open is emissive, EMISSION_MAX x4.0)")
+				if not osm.emission.is_equal_approx(OPEN_COL):
+					f.append(tag % s + "emission %s, want #E8FFFF" % str(osm.emission))
+				if not osm.albedo_color.is_equal_approx(OPEN_COL):
+					f.append(tag % s + "albedo %s, want #E8FFFF (TERRAIN_SPEC 6.1, white when open)" % str(osm.albedo_color))
+				if osm.emission_energy_multiplier <= 0.0:
+					f.append(tag % s + "emission x %.2f, want > 0 (EMISSION_MAX x4.0 through the open ramp)"
+							% osm.emission_energy_multiplier)
+				continue
+			if mi.material_override != null:
+				f.append(tag % s + "carries a material_override (the closed body renders the vertex-colour base pass)")
+			var m: Material = mi.get_surface_override_material(s)
+			if m == null:
+				f.append(tag % s + "has no base material (renders default white)")
+				continue
+			if not (m is StandardMaterial3D):
+				f.append(tag % s + "base material is %s, want StandardMaterial3D" % m.get_class())
+				continue
+			var sm := m as StandardMaterial3D
+			if sm.shading_mode != BaseMaterial3D.SHADING_MODE_UNSHADED:
+				f.append(tag % s + "shading_mode %d, want UNSHADED (%d)"
+						% [sm.shading_mode, BaseMaterial3D.SHADING_MODE_UNSHADED])
+			if not sm.vertex_color_use_as_albedo:
+				f.append(tag % s + "does not use vertex colours as albedo (the glb's palette is beacon_closed #3A4A55)")
+			if not sm.albedo_color.is_equal_approx(Color(1.0, 1.0, 1.0)):
+				f.append(tag % s + "albedo %s, want (1.0, 1.0, 1.0) (pass the mesh's colours through)"
+						% str(sm.albedo_color))
+			var arrays: Array = mi.mesh.surface_get_arrays(s)
+			var col_v: Variant = arrays[Mesh.ARRAY_COLOR] if arrays.size() > Mesh.ARRAY_COLOR else null
+			if not (col_v is PackedColorArray) or (col_v as PackedColorArray).is_empty():
+				f.append(tag % s + "carries no vertex colours")
+			else:
+				for col in col_v:
+					var d: float = maxf(absf(col.r - DIM_COL.r),
+							maxf(absf(col.g - DIM_COL.g), absf(col.b - DIM_COL.b)))
+					if d > 0.01:   # u16-normalized quantization tolerance
+						f.append(tag % s + "COLOR_0 %s, want beacon_closed #3A4A55 (within 0.01)" % str(col))
+						break
+	if found == 0:
+		f.append("beacon materials: the beacon body has no mesh surfaces")
 
 
 func _leg_b(f: Array[String]) -> void:

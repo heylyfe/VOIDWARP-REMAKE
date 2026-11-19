@@ -7,9 +7,11 @@ extends Node3D
 # section 2.1 table is the spec, row by row:
 #   body        the T-015 tripmine box at the slot position, one revolution per
 #               4.0 s (TURN_PERIOD, binding);
-#   rim glow    identical to a black gift - #7CFFF4 x 1.5 emission, at EVERY
-#               distance (the lie): the gift view's own additive overlay material,
-#               so the two cannot drift apart;
+#   rim glow    identical to a black gift - #7CFFF4, at EVERY distance (the lie):
+#               an unshaded #7CFFF4 rim frame built as view geometry (the T-015
+#               glb carries no ribbon; the additive overlay was removed in J10 -
+#               J8 measured it lifts every pixel of the mesh by a flat
+#               ~(+45,+46,+54), body included);
 #   star        six-pointed, #FF4FD8, emission 1.0, on the top face (baked into the
 #               T-015 model) and on all four side faces (view geometry, D-T085-1);
 #               alpha 0 beyond 14 u -> 1 at 10 u;
@@ -30,7 +32,6 @@ extends Node3D
 # The caller drives sync() every frame (or on change) and owns the clock; this
 # node never writes sim state. No engine calls beyond the view surface.
 
-const GiftsViewScript := preload("res://view/gifts_view.gd")
 const MinesScript := preload("res://sim/mines.gd")
 
 const MODEL := "res://assets/models/tripmine_box.glb"
@@ -42,8 +43,14 @@ const TAU_F := 6.283185307179586
 ## The tell colour (section 3.3, the particles + star): #FF4FD8.
 const PINK := Color(1.0, 0.309804, 0.847059)
 
-## Rim glow: the black gift's own factor (TERRAIN_SPEC 12.2, section 2.1 row 2).
+## Rim emission (TERRAIN_SPEC 12.2, D-T020-6): the black gift's own x1.5. NOT
+## applied as an additive pass anywhere in this renderer (J8 measured it lifts
+## every pixel by ~(+45,+46,+54), body included, making a near-black body
+## impossible); kept as the spec's recorded value, exactly as the gift views keep
+## theirs. The mine's rim is the unshaded #7CFFF4 frame (_rim_mesh, _rim_material).
 const RIM_FACTOR := 1.5
+## The rim colour (TERRAIN_SPEC 12.2 "black_gift_rim", palette.json, #7CFFF4).
+const RIM_COLOR := Color(0.486275, 1.0, 0.956863)
 ## Star emission (section 2.1 row 3).
 const STAR_EMISSION := 1.0
 
@@ -95,9 +102,15 @@ func setup(level: Dictionary, mines_state: RefCounted) -> void:
 		var body := MeshInstance3D.new()
 		body.mesh = parts["box"]
 		body.material_override = _body_material()
-		# the lie: the black gift's own additive rim overlay, at every distance
-		body.material_overlay = GiftsViewScript.emission_material(RIM_FACTOR)
 		root.add_child(body)
+		# the lie: the black gift's rim, at every distance - a thin unshaded #7CFFF4
+		# frame on the box's edges (view geometry; the glb carries no ribbon). The
+		# additive overlay was removed (J10): measured, it lifts the body to a pale
+		# slate/cream (163,234,228) from palette #050608 no matter the base albedo.
+		var rim := MeshInstance3D.new()
+		rim.mesh = _rim_mesh()
+		rim.material_override = _rim_material()
+		root.add_child(rim)
 		# the star: its own surface, so the 14 u -> 10 u ramp can fade it
 		var star := MeshInstance3D.new()
 		star.mesh = parts["star"]
@@ -138,7 +151,7 @@ func setup(level: Dictionary, mines_state: RefCounted) -> void:
 		puffs.position = Vector3(0.0, PARTICLE_HEIGHT, 0.0)
 		root.add_child(puffs)
 		_nodes.append({
-			"node": root, "slot": slot, "body": body, "star": star,
+			"node": root, "slot": slot, "body": body, "rim": rim, "star": star,
 			"sides": sides, "ring": ring, "radar": radar, "puffs": puffs,
 		})
 	sync()
@@ -238,11 +251,35 @@ func star_material_for_slot(slot: int) -> StandardMaterial3D:
 	return null
 
 
-## The rim overlay of the mine on `slot` - the black gift's own material.
+## The rim frame material of the mine on `slot` - unshaded #7CFFF4 (J10).
 func rim_material_for_slot(slot: int) -> StandardMaterial3D:
 	for e in _nodes:
 		if int(e["slot"]) == slot:
-			return (e["body"] as MeshInstance3D).material_overlay
+			return (e["rim"] as MeshInstance3D).material_override
+	return null
+
+
+## The rim frame of the mine on `slot` (null when that slot carries no mine).
+func rim_for_slot(slot: int) -> MeshInstance3D:
+	for e in _nodes:
+		if int(e["slot"]) == slot:
+			return e["rim"]
+	return null
+
+
+## The body of the mine on `slot` (null when that slot carries no mine).
+func body_for_slot(slot: int) -> MeshInstance3D:
+	for e in _nodes:
+		if int(e["slot"]) == slot:
+			return e["body"]
+	return null
+
+
+## The body base material of the mine on `slot` (null when that slot carries none).
+func body_material_for_slot(slot: int) -> StandardMaterial3D:
+	for e in _nodes:
+		if int(e["slot"]) == slot:
+			return (e["body"] as MeshInstance3D).material_override
 	return null
 
 
@@ -349,13 +386,16 @@ static func _add_surface(dst: ArrayMesh, arrays: Array, idx: PackedInt32Array) -
 
 # ---- materials ------------------------------------------------------------------
 
-## The box body: the model's own vertex colours, unlit-ish and flat (the voxel
-## style of TERRAIN_SPEC 12.1 rule 5).
+## The box body: the model's own vertex colours, unshaded and flat (the voxel
+## style of TERRAIN_SPEC 12.1 rule 5; the black gift's pass, J8). Unshaded so the
+## body renders its palette colour (#050608 frame, #0A2E30 panels) at every
+## lighting - the shaded default was muddied by the act-I world's teal ambient
+## (J3 measured the same on the gold gift).
 static func _body_material() -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	m.vertex_color_use_as_albedo = true
-	m.roughness = 1.0
-	m.metallic = 0.0
+	m.albedo_color = Color(1.0, 1.0, 1.0)
 	return m
 
 
@@ -457,3 +497,73 @@ static func _radar_material() -> StandardMaterial3D:
 	m.disable_fog = true
 	m.disable_receive_shadows = true
 	return m
+
+
+## The rim frame (J10): the black gift's ribbon, as view geometry - twelve thin
+## boxes on the box's edges, protruding a hair past its faces so it never
+## z-fights. Unshaded #7CFFF4, opaque: lit-independent, fog-affected (exactly
+## the black gift's ribbon, which does not disable the fog either), so it holds
+## at EVERY distance (the lie) and never needs an additive pass.
+const RIM_THICK := 0.05
+const RIM_HALF := 0.25      # the box's half width (the model spans ±0.25, y 0..0.5)
+const RIM_HEIGHT := 0.5
+
+static func _rim_mesh() -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var t := RIM_THICK
+	var h := RIM_HALF
+	var yc := RIM_HEIGHT * 0.5
+	# the four vertical edges
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			_add_box(st, Vector3(sx * h, yc, sz * h), Vector3(t, RIM_HEIGHT, t))
+	# the four top and the four bottom edges
+	for sy in [0.0, RIM_HEIGHT]:
+		for sz in [-1.0, 1.0]:
+			_add_box(st, Vector3(0.0, sy, sz * h), Vector3(2.0 * h + t, t, t))
+		for sx in [-1.0, 1.0]:
+			_add_box(st, Vector3(sx * h, sy, 0.0), Vector3(t, t, 2.0 * h + t))
+	return st.commit()
+
+
+## The rim material: unshaded #7CFFF4, shadows off - the black gift's ribbon
+## pass (gifts_view._black_body_material, J8), NOT an emission-boosted one:
+## x1.5 on a lit colour clips toward white in this renderer's FILMIC tonemap.
+static func _rim_material() -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.albedo_color = RIM_COLOR
+	m.disable_receive_shadows = true
+	return m
+
+
+## Adds one axis-aligned box to the surface tool, with flat outward normals.
+static func _add_box(st: SurfaceTool, centre: Vector3, size: Vector3) -> void:
+	var axes := [Vector3.RIGHT, Vector3.UP, Vector3.BACK]
+	# (u, v) per axis such that cross(u, v) == the axis; swapped for the -i face
+	var pairs := [[Vector3.UP, Vector3.BACK], [Vector3.BACK, Vector3.RIGHT],
+			[Vector3.RIGHT, Vector3.UP]]
+	var half := size * 0.5
+	for a in 3:
+		for s in [1.0, -1.0]:
+			var n: Vector3 = axes[a] * s
+			var u: Vector3 = pairs[a][0]
+			var v: Vector3 = pairs[a][1]
+			if s < 0.0:
+				var tmp := u
+				u = v
+				v = tmp
+			# half extents along u and v (the two axes that are not `a`)
+			var ub: int = (a + 1) % 3
+			var vb: int = (a + 2) % 3
+			var huv: float = half[ub]
+			var hvv: float = half[vb]
+			var base: Vector3 = centre + n * half[a]
+			var p00: Vector3 = base - u * huv - v * hvv
+			var p10: Vector3 = base + u * huv - v * hvv
+			var p11: Vector3 = base + u * huv + v * hvv
+			var p01: Vector3 = base - u * huv + v * hvv
+			for p in [p00, p10, p11, p00, p11, p01]:
+				st.set_normal(n)
+				st.add_vertex(p)

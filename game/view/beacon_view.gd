@@ -5,8 +5,12 @@ extends Node3D
 # DESIGN.md section 3).
 #
 # CLOSED: the T-015 beacon mesh as modelled (dull beacon_closed #3A4A55, no
-# emission), plus the progress read-out: a dim ring of 8 unlit segments around
-# the dais edge, one lit per 12.5% of real black gifts collected.
+# emission), carried by a base pass on the body surfaces: unshaded, white albedo,
+# vertex_color_use_as_albedo - the mesh's COLOR_0 (a single flat #3A4A55,
+# palette beacon_closed) is the albedo (T-085 / J13). The OPEN state's
+# material_override replaces it; the CLOSED path assigns material_override = null,
+# so the base pass is what renders. Plus the progress read-out: a dim ring of 8
+# unlit segments around the dais edge, one lit per 12.5% of real black gifts collected.
 # OPEN: white emissive (beacon_open #E8FFFF, emission x4.0) and the light
 # column #E8FFFF, 1.5 u wide, alpha 0.6, to Y +60 u, visible through the fog;
 # both ramp in over 0.6 s (36 ticks) from the open tick, then the column pulses
@@ -71,6 +75,7 @@ func _init() -> void:
 				stack.push_back(c)
 			if n is MeshInstance3D:
 				_body.append(n)
+	_apply_closed_body_material()
 	_build_ring()
 	_build_column()
 	_build_shock_ring()
@@ -170,6 +175,32 @@ func _build_slow_door() -> void:
 	mi.visible = false
 	add_child(mi)
 	_slow_door = mi
+
+
+## The CLOSED body's base pass: unshaded, using the mesh's vertex colours (the
+## glb's COLOR_0 is a single flat #3A4A55 "beacon_closed", TERRAIN_SPEC 6.1 /
+## palette.json; J13 read the accessor and every one of the 144 vertices carries
+## it) - exactly the gifts' base pass (gifts_view.gd _add_body / _black_body_material,
+## J3/J8/J10/J11). White albedo passes the mesh colours through unshaded. The OPEN
+## state's material_override (_open_material(), emissive #E8FFFF x4.0) replaces it
+## while open; set_open(false) clears the override so this pass renders again.
+static func _closed_body_material() -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.vertex_color_use_as_albedo = true
+	m.albedo_color = Color(1.0, 1.0, 1.0)
+	return m
+
+
+## Adds the closed body's base material to every mesh surface under the instance
+## (the glb carries no material of its own - see the file header).
+func _apply_closed_body_material() -> void:
+	var mat := _closed_body_material()
+	for mi in _body:
+		if mi.mesh == null:
+			continue
+		for s in mi.mesh.get_surface_count():
+			mi.set_surface_override_material(s, mat)
 
 
 static func _ring_material(lit: bool) -> StandardMaterial3D:
