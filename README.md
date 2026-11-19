@@ -203,20 +203,23 @@ Known gaps, stated plainly:
   (an earlier version of this list said they were not — that was stale). What remains is art
   quality, not wiring: the views are procedural placeholders, not the bespoke sprite work the art
   brief describes.
-- **No 30-level run yet.** The intermission lobby is wired into the app loop: a completed level
-  tears the world down and opens the Antechamber (`view/lobby/lobby_scene.gd`), and the next
-  level is built from the lobby's ledger (class, votes, curses, purchases) when the player walks
-  into the Descent Gate. What is still missing is a shipped, full-length run — one level at a
-  time is what exists today. Two attempts to prove it at depth both failed, and the second one is
-  worth recording because it says where the difficulty is: the app cannot be driven headless at
-  all (it reads devices only through the `Input` singleton, which delivers no key state without a
-  window), so a proof has to drive the level loop directly. The first attempt wrote a 531-line
-  driver that crashes the engine — exit 127, no error output, before its first print — and it
-  crashes at two levels as well as ten, so it is structural rather than a scale problem. What is
-  known: the seam is sound (`class BotWorld extends WorldScript` overriding `_capture_input()`,
-  the same stub `test_determinism.gd` uses), a world builds and steps headless, and the lobby
-  builds and ticks headless. The crash is in the driver's own loop. The next attempt should get
-  one level green and report before trying ten.
+- **No 30-level run yet, and the blocker is now the bot rather than the harness.** The intermission
+  lobby is wired into the app loop: a completed level tears the world down and opens the Antechamber
+  (`view/lobby/lobby_scene.gd`), and the next level is built from the lobby's ledger (class, votes,
+  curses, purchases) when the player walks into the Descent Gate. What is still missing is a
+  shipped, full-length run — one level at a time is what exists today.
+  Three attempts to prove it at depth failed, and the third one finally says where the difficulty
+  is. The app cannot be driven headless at all (it reads devices only through the `Input`
+  singleton, which delivers no key state without a window), so a proof has to drive the level loop
+  directly. The first attempt wrote a 531-line driver that crashed the engine — exit 127, no error
+  output, before its first print — at two levels as well as ten, so it was structural rather than a
+  scale problem. The second died of a provider outage. The third worked, and the reason it worked
+  is the lesson: it is 40 lines and it calls the shipped `BotRun.play_run` entry point instead of
+  reimplementing the loop. It runs 30 levels headless, exits 0, and prints a result.
+  That result is the finding: across 14 seeds the bot enters a median of 3–4 levels and dies, with
+  a best of 7 and a worst of 2. So the harness is proven and the *bot* is the limit — it is a
+  simple heuristic and it does not survive the difficulty curve. Proving a 30-level run now needs
+  a better bot or a human playthrough, not more driver work.
 - **PARKED.md rows 25, 26, 27 and 28 are closed.** Row 25 (the Last Light body push now reaches
   the live enemy rows), row 26 (ramp kinds 3 and 4 report the slope the mesh draws, with
   `test_classes.gd` covering all four kinds), row 27 (every enemy body mirror is refreshed each

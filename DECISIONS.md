@@ -7330,3 +7330,23 @@ so a loader that always returned a stale value would fail. Removing the fallback
 failures; keeping it produces 0. `f.flush()` is still not an fsync, so a power cut can still
 leave a zero-byte file - `load_from` parses that to null and falls back safely, which is the
 behaviour this ruling makes explicit.
+
+## D-C2-11: the 30-level proof is parked because the bot is the limit, not the harness
+
+**Ruling.** The 30-level run proof is parked for this cycle. The harness is proven; the bot is
+not. The next attempt is a bot-skill ticket, not a driver ticket.
+
+**Why.** Three attempts. The first wrote a 531-line driver that crashed the engine with exit 127
+and no error output, before its first print, at two levels as well as ten - structural, not
+scale. The second died of a provider outage. The third worked, and the reason is the lesson: it
+is 40 lines and it calls the shipped `BotRun.play_run` entry point instead of reimplementing the
+loop. It runs 30 levels headless, exits 0, and prints a result per seed. Verified by hand: seed
+38 gives `entered=2 outcome=dead l1_tick=1774 class=glider death_tick=1872`, exit 0.
+
+**Consequence.** Across 14 seeds the bot enters a median of 3-4 levels and dies - best 7, worst 2,
+none reached 30. So the intermission-to-next-level handoff is proven end to end at depth, and what
+remains unproven is whether a *player* can go 30 levels. The bot is a simple heuristic and does
+not survive the difficulty curve. The README's known gap now says this instead of "the crash is in
+the driver's own loop", which was true of the first attempt and misleading as a description of the
+gap. The driver is preserved at `game/out/full_run_proof.gd` (gitignored) so the next attempt
+starts from a working harness rather than from scratch.
