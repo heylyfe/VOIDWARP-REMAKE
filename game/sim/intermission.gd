@@ -52,16 +52,26 @@ var stamp: int = 0                # bumped on every draw change; the view rebuil
 var rng_s: int = 0                # the lobby draw stream's state (exposed for dumps/hashes)
 var _rng: RefCounted = null
 var _gate_announced: bool = false  # EV_GATE_OPENED fired once per intermission
+# The world-computed run stats (app/world.gd's apply_modifiers over the owned
+# upgrade stacks and held curses). Read for shop_price_mul by the U / REST bays;
+# empty = 1.0 (no Bargain / Inflation wired in). Set at create time via p_stats
+# or late via set_stats(). Never a hardcoded number.
+var _stats: Dictionary = {}
 
 
 ## Builds one lobby. p_votes / p_curses / p_stacks carry the run's ledgers in and are
 ## COPIED in, not aliased: read lb.votes / lb.curses_held / lb.upgrade_stacks back after
 ## the visit and pass those dictionaries in next time - re-passing the ones the caller
 ## kept would lose every vote, curse and purchase of the run.
+## p_stats carries the world-computed run stats (world.gd's apply_modifiers over
+## the owned stacks and held curses). The U / REST bays read shop_price_mul from
+## it, so Bargain / Inflation tune the altar prices; an empty dict means 1.0.
+## Callers that can pass it at create time should; late wiring goes through
+## set_stats() (see below).
 static func create(p_api: RefCounted, p_level_completed: int, p_purse: int, p_seed: int,
 		p_votes: Dictionary = {}, p_curses: Dictionary = {}, p_stacks: Dictionary = {},
 		p_class: String = "", p_tithes: int = 0, p_hunger: int = 0,
-		p_last_vote: String = "") -> RefCounted:
+		p_last_vote: String = "", p_stats: Dictionary = {}) -> RefCounted:
 	var lb := new()
 	lb.content = p_api
 	lb.level_completed = p_level_completed
@@ -73,10 +83,54 @@ static func create(p_api: RefCounted, p_level_completed: int, p_purse: int, p_se
 	lb.tithes = p_tithes
 	lb.hunger = p_hunger
 	lb.last_vote = p_last_vote
+	lb._stats = p_stats.duplicate()
 	lb._rng = VoidRngScript.new(VoidRngScript.mix(p_seed, 0x10BE))
 	lb.rng_s = int(lb._rng.s)
 	lb._build_bays(p_api)
 	return lb
+
+
+## Late wiring for callers that build the lobby before the stats are at hand:
+## stores the world-computed run stats and re-prices every UNRESOLVED U / REST
+## altar in place, so the price on the altar - and the gold a purchase deducts -
+## reflects shop_price_mul without re-drawing the shop (same offers, no rng
+## churn). Callers that can pass stats at create time use p_stats and never
+## need this. A resolved bay is left alone: its offers already settled.
+func set_stats(p_stats: Dictionary) -> void:
+	_stats = p_stats.duplicate()
+	_reprice_shop_bays()
+
+
+## The shop_price_mul the world computed (1.0 when none is wired in or the
+## stats dict carries no shop_price_mul). Reads the stored stats; never a literal.
+func _price_mul() -> float:
+	return float(_stats.get("shop_price_mul", 1.0))
+
+
+## Re-price the unresolved U / REST bays' altars from the stored stats. Bumps
+## stamp only when a price actually moved (the state changed, the view rebuilds).
+func _reprice_shop_bays() -> void:
+	var mul := _price_mul()
+	var changed := false
+	for bay in bays:
+		var kind := str(bay.get("kind", ""))
+		if kind != "U" and kind != "REST":
+			continue
+		if bool(bay.get("resolved", false)):
+			continue
+		var disc := (100.0 - float(int(bay.get("discount_pct", 0)))) / 100.0
+		for altar in (bay["altars"] as Array):
+			var u: Dictionary = {}
+			if content != null:
+				u = content.upgrade(str(altar.get("id", "")))
+			if u.is_empty():
+				continue
+			var new_price := OffersScript.price_for(u, int(altar.get("stacks", 0)), mul, disc)
+			if int(altar.get("price", 0)) != new_price:
+				altar["price"] = new_price
+				changed = true
+	if changed:
+		_bump()
 
 
 ## The schedule rows for p_level, copied bay by bay with defaults filled in
@@ -168,7 +222,8 @@ func _redraw_curse(p_bay: Dictionary, p_bump: bool = true) -> void:
 func _redraw_shop(p_bay: Dictionary, p_api: RefCounted, p_bump: bool = true) -> void:
 	var discount_mul: float = (100.0 - float(int(p_bay.get("discount_pct", 0)))) / 100.0
 	var drawn: Dictionary = OffersScript.draw_shop(
-			p_api, level_completed, purse, upgrade_stacks, class_chosen, _rng, discount_mul)
+			p_api, level_completed, purse, upgrade_stacks, class_chosen, _rng, discount_mul,
+			_stats)
 	p_bay["altars"] = drawn["offers"]
 	if p_bump:
 		_bump()

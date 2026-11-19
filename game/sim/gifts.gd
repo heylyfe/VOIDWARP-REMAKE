@@ -105,6 +105,16 @@ func pickup_radius() -> float:
 	return PICKUP_RADIUS * pickup_mult
 
 
+## Feed the run's stats dict (the same dict the controller consumes via its own
+## apply_stats; core/stats.gd semantics). The pickup_radius stat is a MULTIPLIER
+## on the base radius (Long Reach: x1.4 per stack; the drop-in curse fixture:
+## x1.1). A dict without the key (or no stats at all) leaves the canon 0.4 u
+## ring. The value is clamped at 0: a negative radius reads as "never picks up",
+## never as a bigger ring.
+func apply_stats(p_stats: Dictionary) -> void:
+	pickup_mult = maxf(0.0, float(p_stats.get("pickup_radius", 1.0)))
+
+
 func collected(i: int) -> bool:
 	if phase == PHASE_BLACK:
 		return bit_get(black_taken, i)
@@ -197,3 +207,35 @@ func collect(i: int, tick: int, player_index: int, events: Array) -> void:
 	ev["slot"] = i
 	ev["phase"] = "black" if was_black else PHASE_GOLD
 	events.append(ev)
+
+# ---- the vote ledger (FULL_GAME_PLAN.md gap 9) ---------------------------------
+#
+# The vote ledger is SIM STATE: which roster row holds how many collected votes
+# for the NEXT level. One row per roster entry, keyed by whatever row id the
+# lobby wrote into the ledger; sim stores and reads the counts, nothing else.
+# The COUNT -> MINES arithmetic is the roster module's own job (each enemy row
+# under res://content/enemies/ declares its per-vote weight and vote cap next
+# to its other roster numbers): app/ reads the ledger here, the row weight in
+# the roster module, and hands the result to terrain's generate() as its
+# extra_mines argument (TERRAIN_SPEC section 6.8 clamps the applied count).
+# sim names no roster entry and never loads content data - that separation is
+# the boundary test's whole point (FLEET_PACK.md section 3).
+#
+# Pure: one dict in, one count out. An absent key, an empty key or a count
+# below zero all read as no votes; sim never invents a vote.
+## The run's whole vote ledger, read-only (gap 9): every collected count, keyed
+## by whatever roster entry the lobby voted for. A ledger without a "votes"
+## entry, or votes that are not a Dictionary, reads as no votes at all. Callers
+## never mutate the returned copy.
+static func run_votes(ledger: Dictionary) -> Dictionary:
+	var votes: Variant = ledger.get("votes", {})
+	return (votes as Dictionary).duplicate(true) if votes is Dictionary else {}
+
+
+## One entry's collected-vote count, read from the ledger by the entry's own
+## id-string (the ledger's keys are data; sim names none of them). Absent key,
+## empty key or a count below zero read as no votes.
+static func run_votes_for(ledger: Dictionary, gift_id: String) -> int:
+	if gift_id.is_empty():
+		return 0
+	return maxi(0, int(run_votes(ledger).get(gift_id, 0)))

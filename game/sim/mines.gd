@@ -22,10 +22,11 @@ extends RefCounted
 #
 # CONTACT LADDER (DESIGN.md section 3.3, fixed order, D-058):
 #   1. defuse roll (Defuse Kit, D-051): roll = mix(mix(run_seed, level), slot_id)
-#      mod 100; pass when roll < 20 x stacks (cap 60). PASS: the mine is
-#      consumed, there is no blast and no death, the chain resets. 0 stacks can
-#      never pass. The roll is a pure function of (run_seed, level, slot_id,
-#      stacks) - every client computes the same outcome.
+#      mod 100; pass when roll < 20 x stacks (cap 60) - or, when a stats dict was
+#      applied via apply_stats(), when roll < defuse_chance x 100 (the run's stat).
+#      PASS: the mine is consumed, there is no blast and no death, the chain resets.
+#      0 stacks / a 0.0 chance can never pass. The roll is a pure function of
+#      (run_seed, level, slot_id, threshold) - every client computes the same outcome.
 #   2. Subspacial Barrier (D-051): a held shield is consumed, the mine is
 #      consumed with no blast, the chain resets. Tripmines only - nothing
 #      absorbs the blast.
@@ -80,6 +81,11 @@ var level_number: int = 0
 ## T-080: the per-player bypass tracker, {"in": bool, "slot": int, "closest": float} —
 ## live state of ONE level (reset by create() per level); deterministic, controller-driven.
 var pass_state: Dictionary = {}
+## The run's defuse_chance from the stats dict (core/stats.gd semantics; the same dict
+## the controller consumes): a PROBABILITY, 0.0 = no Defuse Kit. -1.0 = no stats dict
+## has been applied - tick() then uses the stacks argument exactly as before (the bot
+## and the sim tests drive that path).
+var defuse_chance: float = -1.0
 
 
 static func create(level: Dictionary, p_level_number: int, p_run_seed: int) -> RefCounted:
@@ -99,6 +105,14 @@ static func create(level: Dictionary, p_level_number: int, p_run_seed: int) -> R
 
 func count() -> int:
 	return ids.size()
+
+
+## Feed the run's stats dict (the same dict the controller consumes via its own
+## apply_stats; core/stats.gd semantics). The defuse_chance stat is a probability
+## (Defuse Kit, +0.2 per stack, content-capped at 0.6); clamped to [0, 1].
+## Calling this switches tick() from the stacks argument to the stat.
+func apply_stats(p_stats: Dictionary) -> void:
+	defuse_chance = clampf(float(p_stats.get("defuse_chance", 0.0)), 0.0, 1.0)
 
 
 func is_consumed(slot_id: int) -> bool:
@@ -140,6 +154,17 @@ static func defuse_roll(p_run_seed: int, p_level: int, slot_id: int, stacks: int
 	return roll < mini(DEFUSE_PCT * stacks, DEFUSE_CAP)
 
 
+## The stats-driven defuse roll: the same mix(mix(run_seed, level), slot_id) mod 100,
+## against a probability threshold instead of a stack count (chance 0.2 == 1 stack,
+## 0.4 == 2, 0.6 == 3). chance <= 0 can never pass; the [0, 1] clamp lives in
+## apply_stats, so any probability the content layer computes is honoured as-is.
+static func defuse_roll_chance(p_run_seed: int, p_level: int, slot_id: int, chance: float) -> bool:
+	if chance <= 0.0:
+		return false
+	var roll: int = VoidRngScript.mix(VoidRngScript.mix(p_run_seed & VoidRngScript.M32, p_level), slot_id) % 100
+	return float(roll) < chance * 100.0
+
+
 ## Nearest (horizontal) live mine to (px, pz): Vector2(distance, slot id); distance -1.0
 ## when no live mine exists (T-080, the bypass tracker's probe).
 func nearest_dist(px: float, pz: float) -> Vector2:
@@ -161,6 +186,8 @@ func nearest_dist(px: float, pz: float) -> Vector2:
 ##   ctls:   one controller per player index (or a null entry to skip that
 ##           player - the T-010 placeholder rows pass nulls);
 ##   stacks: defuse stacks per player index (the Defuse Kit purchase count).
+##           When a stats dict was applied via apply_stats(), the defuse_chance
+##           probability wins and stacks only reaches the event payload.
 static func tick(lv, ctls: Array, w: Dictionary, stacks: Array, tick: int,
 		events: Array) -> void:
 	var mines: RefCounted = lv.mines
@@ -229,10 +256,20 @@ static func _contact(lv, ctls: Array, w: Dictionary, i: int, ctl,
 	# the mine is consumed by every non-invulnerable contact outcome below
 	mines.consume(slot)
 	# 1. defuse roll (D-051): consumed, no blast, no death, chain resets.
-	if defuse_roll(mines.run_seed, mines.level_number, slot, stacks):
+	#    With a stats dict applied (apply_stats) the defuse_chance PROBABILITY
+	#    decides; otherwise the stacks argument does (the bot / sim tests).
+	var chance: float = mines.defuse_chance
+	var defused := false
+	if chance >= 0.0:
+		defused = defuse_roll_chance(mines.run_seed, mines.level_number, slot, chance)
+	else:
+		defused = defuse_roll(mines.run_seed, mines.level_number, slot, stacks)
+	if defused:
 		var ev1 := EventsScript.make(EV_MINE_DEFUSED, tick, i)
 		ev1["slot"] = slot
 		ev1["stacks"] = stacks
+		if chance >= 0.0:
+			ev1["chance"] = chance
 		events.append(ev1)
 		_chain_reset(events, tick, i, "defused_mine")
 		return "defused"
