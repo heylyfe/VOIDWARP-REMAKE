@@ -7350,3 +7350,44 @@ not survive the difficulty curve. The README's known gap now says this instead o
 the driver's own loop", which was true of the first attempt and misleading as a description of the
 gap. The driver is preserved at `game/out/full_run_proof.gd` (gitignored) so the next attempt
 starts from a working harness rather than from scratch.
+
+## D-C2-12: ten levels are proven through the shipped path; D-C2-11's depth figure was measured on the wrong harness
+
+**Ruling.** The 30-level proof stays parked, but the recorded reason changes. Ten consecutive
+levels are proven end to end through the real intermission loop. The bot dies on level 11.
+
+**Why.** D-C2-11 recorded a median of 3-4 levels and a best of 7, measured on `BotRun.play_run`.
+That harness does not shop between levels, so it measures a weaker bot than the one the game
+actually gives a player. The driver I had written off as crashing - W14-D's
+`old_driver_single_free.gd` - works, and it drives the shipped path: real `world.build`, real
+lobby, real purchases, ledger carried forward. Run by hand twice:
+
+- `TARGET_LEVEL 10`: `outcome=target_reached deepest=10 completed=9 lobbies=9 ledger_checks=72
+  purchases=1 stack_types_carried=3 purse=184 class=glider ticks=34480`
+- `TARGET_LEVEL 30`: `outcome=dead deepest=11 completed=10 lobbies=10 ledger_checks=80
+  purchases=2 stack_types_carried=5 purse=224 class=glider ticks=41621 ms=97272`
+
+**Consequence.** The intermission handoff, the purchase path and the carried stacks are all proven
+at depth, which is a stronger claim than this cycle previously made. The remaining gap is exactly
+"the bot dies on level 11". The same bot reaches a median of 4 levels without shopping, so shopping
+between levels roughly doubles its depth - a real balance signal, and the reason the two harnesses
+disagree. The next attempt should raise the bot's skill, not rewrite the driver. The working
+driver is preserved at `game/out/old_driver_single_free.gd` (gitignored).
+
+## D-C2-13: a JSON null is not an absent key, and Dictionary.get() will not save you
+
+**Ruling.** Any read of a numeric field from a content JSON must type-check the value rather than
+trust `Dictionary.get(key, default)`. `antechamber.gd` was the one place that did not.
+
+**Why.** `nuke`'s `sprites.json` declares `"world_height": null`, because DESIGN.md section 5 gives
+the nuke no body row (SR-2). `Dictionary.get("world_height", 1.0)` returns `null`, not `1.0`,
+because the key is present - the default only applies when the key is absent. `float(null)` then
+throws `Invalid call. Nonexistent 'float' constructor`, which aborted the exhibit function on
+every lobby build: the exhibit's name came back empty and its body scale was never applied. It
+looked cosmetic because the billboard is added before the throw.
+
+**Consequence.** `billboard.gd`, `coil_view.gd`, `menu_stage.gd` and `enemy_anim.gd` already used
+the correct `if (v is float or v is int)` shape; `antechamber.gd` now does too.
+`test_antechamber_exhibits.gd` builds every registered enemy's exhibit and asserts a non-empty
+name, with the null-world_height enemy as the explicit control - reverted, it fails twice naming
+nuke. The same run's log went from dozens of `SCRIPT ERROR` lines to zero.
