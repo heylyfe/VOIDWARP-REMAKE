@@ -38,7 +38,7 @@ const ENTRY_HOWTO := 1
 const ENTRY_QUIT := 2
 
 ## D-MENU-5: the build's version tag (the alpha tag named in AUDIT.md was not created yet).
-const VERSION_TAG := "v0.1.0-alpha.3 pre-release"
+const VERSION_TAG := "v0.1.1-alpha.3 pre-release"
 
 ## One line under the entries, per entry (what confirming it does).
 const ENTRY_HINTS := [
@@ -50,6 +50,7 @@ const ENTRY_HINTS := [
 const StageScript := preload("res://app/menu_stage.gd")
 const HowToScript := preload("res://app/menu_howto.gd")
 const InputCaptureScript := preload("res://app/input_capture.gd")
+const RecordsScript := preload("res://core/records.gd")
 
 ## Palette (data/palette.json roles; D-MENU-2).
 const C_VOID := Color(0.0078, 0.0118, 0.0588)        # #02030F the void backdrop
@@ -68,6 +69,9 @@ var selected := ENTRY_PLAY
 var bindings: Dictionary = {}
 var stage: Node3D = null
 var ui_scale := 1.0
+## Tests point this at a scratch file (app.gd's records_path pattern); "" = the player's real file.
+var records_path := ""
+var _records: RefCounted = null
 
 var _entries: Array[Button] = []
 var _entry_anim: Array[float] = []      # 0 = unselected look, 1 = selected look (eased)
@@ -89,6 +93,7 @@ var _tagline: Label
 var _entry_box: VBoxContainer
 var _entry_hint: Label
 var _keys_hint: RichTextLabel
+var _bests: Label
 var _version: Label
 var _disclaimer: Label
 var _panel: PanelContainer
@@ -275,6 +280,12 @@ func _build() -> void:
 	_scaled.append([_keys_hint, "bold_font_size", 14])
 	_keys_hint.text = keys_hint_bbcode()
 	_column.add_child(_keys_hint)
+	# the locally recorded bests (DESIGN.md section 9): one quiet line under the key hint,
+	# dim like the version tag (the menu never restyles for it)
+	_bests = _label("", "body", 0.2, 13, C_MUTED)
+	_bests.name = "Bests"
+	_column.add_child(_bests)
+	refresh_records()
 
 	# footer: version tag + the disclaimer (always on screen - the About entry is gone)
 	_version = _label(VERSION_TAG, "body", 0.2, 13, C_DIM)
@@ -507,6 +518,20 @@ func entry_buttons() -> Array[Button]:
 
 func version_label() -> Label:
 	return _version
+
+
+## Re-read the records file (records_path, or the default user://records.json) and refresh the
+## bests line. Called once from _build; tests call it after pointing records_path at a scratch
+## file. A missing/corrupt file reads as 0/0 (records.gd's contract) - never an error here.
+func refresh_records() -> void:
+	_records = RecordsScript.new()
+	_records.load_from(records_path if records_path != "" else RecordsScript.DEFAULT_PATH)
+	if _bests != null:
+		_bests.text = "BEST LEVEL %d     BEST PURSE %d" % [_records.get_best_level(), _records.get_best_purse()]
+
+
+func bests_label() -> Label:
+	return _bests
 
 
 func disclaimer_label() -> Label:

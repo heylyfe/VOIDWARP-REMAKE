@@ -721,7 +721,7 @@ static func _fresh_mem() -> Dictionary:
 	return {
 		"path": [], "path_i": 0, "goal_kind": "", "goal_tile": -1, "goal_slot": -1,
 		"repath": true, "replan_in": 0,
-		"seen": 0, "first_seen": {},
+		"tracked": [],   # live telegraphs registered so far: [{"t": Dictionary, "fs": tick}]
 		"overtime_on": false, "jump_hold": 0,
 		"stuck_timer": 0, "last_pos": Vector2(-9999.0, -9999.0),
 		"slot_tiles": [], "cur_tile": -1,
@@ -786,12 +786,26 @@ static func _cfg_for(entry: Dictionary, id: String, level: int, votes: int) -> D
 
 # ---------------------------------------------------------------- telegraph dodge --
 
-## Register newly appeared telegraph dicts (the runtime's array is append-only).
+## Register newly appeared telegraph dicts. The liveness filter is the same one the
+## game uses (rt.live_telegraphs()): footprints whose telegraph has ended are never
+## seen here, so the bot never dodges a ghost. Tracked by telegraph dict (order is
+## unstable across live filters), storing the tick each was first registered.
 static func _track_telegraphs(mem: Dictionary, rt, tick: int) -> void:
-	var seen: int = int(mem["seen"])
-	for i in range(seen, rt.telegraphs.size()):
-		mem["first_seen"][i] = tick
-	mem["seen"] = rt.telegraphs.size()
+	var tracked: Array = mem["tracked"]
+	var live: Array = rt.live_telegraphs()
+	for t in live:
+		var found := false
+		for entry in tracked:
+			if entry["t"] == t:
+				found = true
+				break
+		if not found:
+			tracked.append({"t": t, "fs": tick})
+	# bound the bookkeeping the same way the old index-keyed map was pruned
+	for i in range(tracked.size() - 1, -1, -1):
+		var e: Dictionary = tracked[i]
+		if tick - int(e["fs"]) > int(e["t"].get("total", 0)) + 120:
+			tracked.remove_at(i)
 
 
 ## A telegraph footprint worth dodging: a real area, not a zero-radius cue.
@@ -872,18 +886,19 @@ static func _e_vel(mem: Dictionary, e: Dictionary) -> Vector2:
 static func _dodge_vector(mem: Dictionary, rt, ctl, tick: int, w) -> Variant:
 	var best_strike := 1 << 30
 	var best_shape: Dictionary = {}
-	for i in range(int(mem["seen"])):
-		var fs_v: Variant = mem["first_seen"].get(i, null)
-		if fs_v == null:
+	var tracked: Array = mem["tracked"]
+	for t in rt.live_telegraphs():
+		var fs := -1
+		for entry in tracked:
+			if entry["t"] == t:
+				fs = int(entry["fs"])
+				break
+		if fs < 0:
 			continue
-		var t: Dictionary = rt.telegraphs[i]
-		var fs := int(fs_v)
 		var strike := fs + int(t.get("total", 0))
 		var t_now := int(t.get("ticks", 0))
 		if strike < tick or t_now <= 0:
 			# strike has landed (or the entry died): forget it
-			if tick - fs > int(t.get("total", 0)) + 120:
-				mem["first_seen"].erase(i)
 			continue
 		if tick - fs < REACT_TICKS:
 			continue

@@ -10,6 +10,7 @@ const StageScript := preload("res://app/menu_stage.gd")
 const HowToScript := preload("res://app/menu_howto.gd")
 const InputCaptureScript := preload("res://app/input_capture.gd")
 const BillboardScript := preload("res://view/billboard.gd")
+const RecordsScript := preload("res://core/records.gd")
 
 const MAIN_SCENE := "res://app/main.tscn"
 
@@ -29,6 +30,7 @@ func run() -> Array[String]:
 	_test_quit(f, m, b)
 	_test_feedback(f, m, b)
 	_test_version_and_disclaimer(f, m)
+	_test_bests(f)
 	_test_roster(f, m)
 	_test_bot_path(f, b)
 	m.free()
@@ -244,6 +246,41 @@ func _test_version_and_disclaimer(f: Array[String], m) -> void:
 		f.append("disclaimer: the footer does not carry ABOUT_DISCLAIMER verbatim")
 	if not MenuScript.about_text().contains(MenuScript.ABOUT_DISCLAIMER):
 		f.append("disclaimer: about_text() lost the disclaimer")
+
+
+## DESIGN.md section 9: the locally recorded bests are on the main menu. A scratch records file
+## (never the player's real user://records.json) holds best_level 5 / best_purse 300; the menu's
+## bests label must show both.
+func _test_bests(f: Array[String]) -> void:
+	var scratch := "user://test_menu_records_scratch.json"
+	var seed_rec := RecordsScript.new()
+	seed_rec.best_level = 5
+	seed_rec.best_purse = 300
+	if not seed_rec.save_to(scratch):
+		f.append("bests: could not write the scratch records file %s" % scratch)
+		_remove_scratch(scratch)
+		return
+	var bm = MenuScript.new()
+	bm.records_path = scratch
+	bm.refresh_records()
+	var bests: Label = bm.bests_label()
+	if bests == null:
+		f.append("bests: the menu has no bests label")
+	else:
+		if bests.get_parent() == null or bests.get_parent().name != "MenuColumn":
+			f.append("bests: the bests label is not in the menu column")
+		if not bests.text.contains("BEST LEVEL") or not bests.text.contains("5"):
+			f.append("bests: the bests label does not show best level 5 ('%s')" % bests.text)
+		if not bests.text.contains("BEST PURSE") or not bests.text.contains("300"):
+			f.append("bests: the bests label does not show best purse 300 ('%s')" % bests.text)
+	bm.free()
+	_remove_scratch(scratch)
+
+
+func _remove_scratch(scratch: String) -> void:
+	var da := DirAccess.open("user://")
+	if da != null:
+		da.remove(scratch.get_file())
 
 
 func _test_roster(f: Array[String], m) -> void:

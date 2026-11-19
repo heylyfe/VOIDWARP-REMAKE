@@ -17,6 +17,7 @@ func run() -> Array[String]:
 	_test_pads(f)
 	_test_ramps(f)
 	_test_ramp_kinds(f)
+	_test_ramp_all_kinds(f)
 	_test_prop_top(f)
 	_test_constants(f)
 	return f
@@ -118,6 +119,83 @@ func _test_ramp_kinds(f: Array[String]) -> void:
 			if not ctl.grounded or absf(ctl.y - float(specs[3])) > 0.02:
 				f.append("ramp kind %d: walking from %.1f ended at y=%.4f grounded=%s, want %.1f" % [
 					1 + d, float(specs[1]), ctl.y, str(ctl.grounded), float(specs[3])])
+
+
+# All four ramp facings (kinds 1-4, TERRAIN_SPEC section 4): a ramp ascends toward its own
+# direction, kinds 3 and 4 are the opposite-facing ramps to kinds 1 and 2 (PARKED row 26).
+# Standing at either in-cell probe position gives the analytic whole-footprint surface
+# height (0.4 u near the low side, 0.5 u / 0.4 u mirrored by facing), and walking the strip
+# in both directions climbs / descends exactly 0.5 u without blocking.
+func _test_ramp_all_kinds(f: Array[String]) -> void:
+	for k in range(1, 5):
+		var d: int = k - 1
+		var on_x: bool = d % 2 == 0
+		var neg: bool = d >= 2          # ascends toward -x / -z: high side on the - axis
+		var tiles: Array = []
+		for i in range(-8, 0):
+			var t := [i, 0, 1 if neg else 0, 0, 0] if on_x else [0, i, 1 if neg else 0, 0, 0]
+			tiles.append(t)
+		tiles.append([0, 0, 0, k, 0])    # ramp cell, low edge y 0
+		for i in range(1, 9):
+			var t := [i, 0, 0 if neg else 1, 0, 0] if on_x else [0, i, 0 if neg else 1, 0, 0]
+			tiles.append(t)
+		var w := Util.CollisionScript.make_world(tiles, [], [])
+		# whole-footprint probes near each side of the ramp cell (want: 0.4 low side, 0.5 high
+		# side for + FACING ramps; mirrored for - FACING ramps)
+		var want_a: float = 0.5 if neg else 0.4   # local 0.4
+		var want_b: float = 0.4 if neg else 0.5   # local 0.6
+		var s_a: float = 0.0
+		var s_b: float = 0.0
+		if on_x:
+			s_a = Util.CollisionScript.support_at(w, 0.4, 0.5, 5.0, 0.5)
+			s_b = Util.CollisionScript.support_at(w, 0.6, 0.5, 5.0, 0.5)
+		else:
+			s_a = Util.CollisionScript.support_at(w, 0.5, 0.4, 5.0, 0.5)
+			s_b = Util.CollisionScript.support_at(w, 0.5, 0.6, 5.0, 0.5)
+		if absf(s_a - want_a) > 1e-6:
+			f.append("ramp kind %d: surface %.4f at local 0.4, want %.1f" % [k, s_a, want_a])
+		if absf(s_b - want_b) > 1e-6:
+			f.append("ramp kind %d: surface %.4f at local 0.6, want %.1f" % [k, s_b, want_b])
+		# standing on the ramp at both probe positions: settles onto the surface, stays grounded
+		for probe in [[0.4, want_a], [0.6, want_b]]:
+			var ctl = Util.ControllerScript.new()
+			ctl.setup("dasher", Util.consts())
+			ctl.place(w)
+			if on_x:
+				ctl.x = probe[0]
+				ctl.z = 0.5
+			else:
+				ctl.x = 0.5
+				ctl.z = probe[0]
+			ctl.y = float(probe[1]) + 0.01
+			Util.run_ticks(ctl, w, 10)
+			if not ctl.grounded or absf(ctl.y - float(probe[1])) > 1e-3:
+				f.append("ramp kind %d: standing at local %.1f ended at y=%.4f grounded=%s, want %.1f" % [
+					k, probe[0], ctl.y, str(ctl.grounded), probe[1]])
+		# walking the strip both ways: up from the low side to the high flat and back down
+		var walk: Array = []
+		if neg:
+			walk = [[-1, 3.5, 0.0, 0.5], [1, -3.5, 0.5, 0.0]]
+		else:
+			walk = [[1, -3.5, 0.0, 0.5], [-1, 3.5, 0.5, 0.0]]
+		for specs in walk:
+			var ctl = Util.ControllerScript.new()
+			ctl.setup("dasher", Util.consts())
+			ctl.place(w)
+			var dir: int = int(specs[0])
+			if on_x:
+				ctl.x = float(specs[1])
+				ctl.z = 0.5
+			else:
+				ctl.x = 0.5
+				ctl.z = float(specs[1])
+			ctl.y = float(specs[2])
+			var mx: int = dir if on_x else 0
+			var mz: int = 0 if on_x else dir
+			Util.run_ticks(ctl, w, 75, func(_c, _i): return Util.mk_in(mx, mz))
+			if not ctl.grounded or absf(ctl.y - float(specs[3])) > 0.02:
+				f.append("ramp kind %d: walking dir=%d from %.1f ended at y=%.4f grounded=%s, want %.1f" % [
+					k, dir, specs[1], ctl.y, str(ctl.grounded), specs[3]])
 
 
 # A prop is a horizontal blocker with no walkable top in the tile sense, but a body that
