@@ -40,16 +40,32 @@ func get_best_purse() -> int:
 	return best_purse
 
 
+## Reads and parses one JSON file. Returns null when the file is absent or unparseable,
+## which is the same signal load_from uses to try the next recovery candidate.
+static func _read_json(p: String) -> Variant:
+	var f := FileAccess.open(p, FileAccess.READ)
+	if f == null:
+		return null
+	return JSON.parse_string(f.get_as_text())
+
+
 ## Reading from disk. Unknown keys are ignored; a bad or absent field keeps its default.
 ## Missing or corrupt file = both records stay 0. Never fails loudly.
+##
+## Recovery: a crash between the two renames in _rename_over can leave the destination
+## absent with the good bytes sitting in .old (or the new bytes in .tmp). Reading only the
+## destination would then silently reset the player's bests to 0, and the next save would
+## overwrite the recoverable copy. So a missing or unparseable destination falls back to
+## .old, then .tmp, through the same validated parse.
 func load_from(p_path: String = "") -> void:
 	if p_path != "":
 		path = p_path
 	defaults()
-	var f := FileAccess.open(path, FileAccess.READ)
-	if f == null:
-		return
-	var parsed: Variant = JSON.parse_string(f.get_as_text())
+	var parsed: Variant = _read_json(path)
+	if parsed == null:
+		parsed = _read_json(path + ".old")
+	if parsed == null:
+		parsed = _read_json(path + ".tmp")
 	if typeof(parsed) != TYPE_DICTIONARY:
 		return
 	var d: Dictionary = parsed
@@ -79,8 +95,10 @@ func save_to(p_path: String = "") -> bool:
 
 ## Renames a finished .tmp file over the destination. The destination is renamed to
 ## destination + ".old" FIRST, then the .tmp is renamed over the destination, then the
-## ".old" file is removed on success or moved back on failure - so the destination is
-## never left absent. This matters when the rename fails for any reason (a locked file,
+## ".old" file is removed on success or moved back on failure. The destination is absent
+## only inside that two-rename window, and load_from recovers from .old or .tmp if a crash
+## lands there, so the bytes are never lost - but "never absent" would be a stronger claim
+## than the code makes. This matters when the rename fails for any reason (a locked file,
 ## a virus scanner holding the handle): on this platform the engine's rename has been
 ## observed to delete the destination before the move fails, and a remove-then-retry
 ## fallback would then leave no destination at all. Only after the .tmp write has fully

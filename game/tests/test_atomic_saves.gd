@@ -57,6 +57,7 @@ func run() -> Array[String]:
 	_records(failures)
 	_run_log(failures)
 	_rename_over_fallback(failures)
+	_recovery(failures)
 	_level_clear_sentinel(failures)
 	_rm_scratch()
 	return failures
@@ -210,6 +211,76 @@ func _rename_over_fallback(failures: Array[String]) -> void:
 
 
 # ---- run log ----------------------------------------------------------------------------
+
+# ---- recovery from the two-rename window ------------------------------------------------
+
+## A crash between the two renames in _rename_over leaves the destination absent with the
+## good bytes in .old (or the new bytes in .tmp). Reading only the destination would reset
+## the player's settings and bests to defaults, and the next save would then overwrite the
+## recoverable copy. This leg proves the fallback; the no-files case is the control, so a
+## loader that always returned a stale value would fail here.
+func _recovery(failures: Array[String]) -> void:
+	var default_volume := SettingsScript.new().volume
+	# settings: destination absent, good bytes in .old
+	_rm(SETTINGS_SCRATCH)
+	_rm(SETTINGS_SCRATCH + ".old")
+	_rm(SETTINGS_SCRATCH + ".tmp")
+	var s := SettingsScript.new()
+	s.volume = 42
+	s.fullscreen = true
+	if not s.save_to(SETTINGS_SCRATCH):
+		failures.append("recovery: the settings seed save failed")
+	if DirAccess.rename_absolute(SETTINGS_SCRATCH, SETTINGS_SCRATCH + ".old") != OK:
+		failures.append("recovery: could not move the settings destination aside")
+	var r := SettingsScript.new()
+	r.load_from(SETTINGS_SCRATCH)
+	if r.volume != 42 or not r.fullscreen:
+		failures.append("recovery: settings did not recover from .old (volume %d, want 42)" % r.volume)
+	# settings: destination absent, good bytes in .tmp
+	_rm(SETTINGS_SCRATCH + ".old")
+	var t := SettingsScript.new()
+	t.volume = 55
+	if not t.save_to(SETTINGS_SCRATCH):
+		failures.append("recovery: the settings .tmp seed save failed")
+	if DirAccess.rename_absolute(SETTINGS_SCRATCH, SETTINGS_SCRATCH + ".tmp") != OK:
+		failures.append("recovery: could not move the settings destination to .tmp")
+	r = SettingsScript.new()
+	r.load_from(SETTINGS_SCRATCH)
+	if r.volume != 55:
+		failures.append("recovery: settings did not recover from .tmp (volume %d, want 55)" % r.volume)
+	# control: nothing on disk at all -> the default, not a stale value
+	_rm(SETTINGS_SCRATCH + ".tmp")
+	r = SettingsScript.new()
+	r.load_from(SETTINGS_SCRATCH)
+	if r.volume != default_volume:
+		failures.append("recovery: the no-file control read volume %d, want the default %d"
+			% [r.volume, default_volume])
+	# records: destination absent, good bytes in .old
+	_rm(RECORDS_SCRATCH)
+	_rm(RECORDS_SCRATCH + ".old")
+	_rm(RECORDS_SCRATCH + ".tmp")
+	var rec := RecordsScript.new()
+	rec.best_level = 7
+	rec.best_purse = 900
+	if not rec.save_to(RECORDS_SCRATCH):
+		failures.append("recovery: the records seed save failed")
+	if DirAccess.rename_absolute(RECORDS_SCRATCH, RECORDS_SCRATCH + ".old") != OK:
+		failures.append("recovery: could not move the records destination aside")
+	var rr := RecordsScript.new()
+	rr.load_from(RECORDS_SCRATCH)
+	if rr.best_level != 7 or rr.best_purse != 900:
+		failures.append("recovery: records did not recover from .old (level %d purse %d, want 7/900)"
+			% [rr.best_level, rr.best_purse])
+	# control: nothing on disk -> zeros
+	_rm(RECORDS_SCRATCH + ".old")
+	rr = RecordsScript.new()
+	rr.load_from(RECORDS_SCRATCH)
+	if rr.best_level != 0 or rr.best_purse != 0:
+		failures.append("recovery: the no-file control read level %d purse %d, want 0/0"
+			% [rr.best_level, rr.best_purse])
+	_rm(SETTINGS_SCRATCH + ".old")
+	_rm(RECORDS_SCRATCH + ".old")
+
 
 func _write_old_log(p_path: String, p_class: String) -> String:
 	DirAccess.make_dir_recursive_absolute(RUNS_DIR)
