@@ -83,11 +83,15 @@ func data(name: String) -> Dictionary:
 
 ## Curses eligible at p_level (DESIGN.md section 7 gating): min_level <= level, and an
 ## enemy-linked curse appears only if that enemy has >= 1 vote. votes: {enemy_id: int}
-## (absent key = 0 votes). Returns sorted ids.
+## (absent key = 0 votes). Curses whose file carries "retired": true are never eligible,
+## at any level and regardless of votes - they stay on disk (honest no-ops, not deleted)
+## but leave every offer pool. Returns sorted ids.
 func eligible_curses(p_level: int, votes: Dictionary) -> Array[String]:
 	var out: Array[String] = []
 	for id in curse_ids():
 		var c: Dictionary = curse(id)
+		if bool(c.get("retired", false)):
+			continue
 		if int(c.get("min_level", 1)) > p_level:
 			continue
 		var req: Variant = c.get("requires_enemy")

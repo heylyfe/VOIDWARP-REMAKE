@@ -10,6 +10,7 @@
     "min_level": {"type": "integer", "minimum": 1},
     "requires_enemy": {"type": ["string", "null"], "pattern": "^[a-z][a-z0-9_]*$", "$comment": "an enemy id or null; validated against the scanned enemy ids at registry load (FIX-A14, D-FIX-A14-3) - the roster is never enumerated here"},
     "max_stacks": {"type": "integer", "minimum": 1},
+    "retired": {"type": "boolean", "$comment": "true = content stays on disk and schema-valid but is never offered (eligibility pools skip it); used to pull an honest no-op rather than delete it"},
     "rule": {"type": "string"},
     "counter_play": {"type": "string"},
     "script": {"type": "boolean"},

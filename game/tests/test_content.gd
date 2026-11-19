@@ -14,6 +14,8 @@ const RegistryScript := preload("res://core/registry.gd")
 const ContentApiScript := preload("res://core/content_api.gd")
 const StatsScript := preload("res://core/stats.gd")
 const HooksScript := preload("res://core/hooks.gd")
+const OffersScript := preload("res://sim/offers.gd")
+const VoidRngScript := preload("res://terrain/void_rng.gd")
 
 
 func run() -> Array[String]:
@@ -100,11 +102,26 @@ func _api_semantics(failures: Array[String]) -> void:
 	# Eligibility: min_level gating + the >= 1 vote gate on enemy-linked curses.
 	var l1: Array = api.call("eligible_curses", 1, {})
 	_check(failures, str(l1) == str(["hungry_void", "thick_fog", "unmarked"]), "eligible curses at level 1 = %s, expected the three min_level-1 general curses" % str(l1))
-	var votes: Dictionary = {"kiwi_cat": 1}
-	var l3: Array = api.call("eligible_curses", 3, votes)
-	_check(failures, (l3 as Array).has("zoomies"), "zoomies (kiwi_cat, min 3) not offered with 1 kiwi_cat vote at level 3")
-	var l3_no_votes: Array = api.call("eligible_curses", 3, {})
-	_check(failures, not (l3_no_votes as Array).has("zoomies"), "zoomies offered with zero kiwi_cat votes")
+	# Retirement (J9): zoomies carries "retired": true in its file and must never be
+	# eligible at any level, including levels where the kiwi cat has votes (the only
+	# condition under which it was ever eligible).
+	var kiwi_votes: Dictionary = {"kiwi_cat": 1}
+	for level in range(1, 31):
+		for votes in [{}, {"kiwi_cat": 1}, {"kiwi_cat": 4}]:
+			var pool: Array = api.call("eligible_curses", level, votes)
+			_check(failures, not (pool as Array).has("zoomies"),
+				"zoomies (retired) eligible at level %d with votes %s" % [level, str(votes)])
+	var l3: Array = api.call("eligible_curses", 3, kiwi_votes)
+	_check(failures, not (l3 as Array).has("zoomies"), "zoomies offered at its old min_level 3 with 1 kiwi_cat vote")
+	# The C bay must never draw zoomies either (sim/offers.gd draw_curse_bay rides
+	# eligible_curses; sweep the levels and vote sets where it was ever eligible).
+	for level in range(1, 31):
+		for seed_value in [1, 7, 42, 1234, 99999]:
+			var rng: RefCounted = VoidRngScript.new(seed_value)
+			var bay: Dictionary = OffersScript.draw_curse_bay(api, level, {"kiwi_cat": 4}, {}, rng, 0)
+			for altar in bay.get("altars", []):
+				_check(failures, str((altar as Dictionary).get("id", "")) != "zoomies",
+					"C bay drew retired zoomies at level %d seed %d" % [level, seed_value])
 	# Bounty: floor(base x (20 + level) / 20), data/economy.json bounties 20/45/90.
 	_check(failures, int(api.call("curse_bounty", "hungry_void", 1)) == 47, "harsh bounty at level 1 is %s, expected floor(45 x 21 / 20) = 47" % str(api.call("curse_bounty", "hungry_void", 1)))
 	_check(failures, int(api.call("curse_bounty", "unmarked", 0)) == 20, "mild bounty at level 0 is %s, expected 20" % str(api.call("curse_bounty", "unmarked", 0)))

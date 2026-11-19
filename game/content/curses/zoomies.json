@@ -5,8 +5,9 @@
   "min_level": 3,
   "requires_enemy": "kiwi_cat",
   "max_stacks": 2,
-  "rule": "every 12 s each cat sprints at +60% speed for 3 s after a double meow",
-  "counter_play": "a burst is bounded: ≤ 0.55 × base run (4.95 u/s) for ≤ 3.0 s, then back under its 0.40 ceiling (SR-5) — gain height (it rises 2.0 u/s, SR-1) or hurdle it as it arrives",
+  "retired": true,
+  "rule": "Zoomies is inert for the kiwi cat - it ignores the burst and does not speed up; after a double meow every 12 s, the cat simply keeps following",
+  "counter_play": "no burst exists for the kiwi cat (its behavior cancels any active burst every tick), so it never exceeds its 0.20 ceiling (1.8 u/s, SR-5) whether Zoomies is held or not - gain height (it rises 2.0 u/s, SR-1) or hurdle it as it arrives",
   "modifiers": [],
   "script": true,
   "hooks": []
