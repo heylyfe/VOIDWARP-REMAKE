@@ -193,6 +193,19 @@ var _bindings: Dictionary = {}
 var _api: RefCounted = null
 var _ledger: Dictionary = {}     # the run's carried state (class / votes / curses / purse)
 var _curses: RefCounted = null   # sim/curse_runtime.gd, built per level in build()
+# The tile-schedule curses (W10-C): a held module that declares step_on(state, key) arms
+# a tile when the player's feet settle on it, and its on_tick returns tile_fell /
+# tile_returned events that this file applies to w["removed"]. No content id is named:
+# the modules are found by the step_on signature. _tile_step_keys is the set of tile keys
+# the rule applies to (edge_lane_keys below: the outer lane of a walkway), computed once per level from the level's
+# STATIC geometry; _tiles_dropped is the set of keys THIS applicator removed, so a return
+# never restores a tile some other writer removed.
+const TILE_STEP_QUERY := "step_on"
+const TILE_FELL := "tile_fell"
+const TILE_RETURNED := "tile_returned"
+var _tile_step_mods: Array = []
+var _tile_step_keys: Dictionary = {}
+var _tiles_dropped: Dictionary = {}
 
 
 func _ready() -> void:
@@ -466,6 +479,11 @@ func build(seed_value: int, level: int, p_ledger: Dictionary = {}) -> bool:
 		"seed": seed_value, "level": level, "tick": int(lstate.tick),
 	})
 	_curses.level_start(int(lstate.tick))
+	# The mines ask the held curses for their blast radius, their chain targets and their
+	# tell distance. Nothing handed them the dispatcher before, so those queries could never
+	# be reached - the same gap this wave exists to close.
+	lstate.mines.curses = _curses
+	_tile_step_setup()
 	return true
 
 
@@ -541,7 +559,11 @@ func step(dt: float) -> void:
 	# the economy and fx passes so a kill / drop / tier jump a curse makes is paid and drawn
 	# on the same tick.
 	if _curses != null:
+		var ev0 := ev.size()
 		_curses.tick(int(lstate.tick), ev)
+		# The tile applicator: a fell / returned event a module raised THIS tick changes
+		# collision now, so the next tick's controller and enemy moves see it.
+		_apply_tile_events(ev, ev0)
 		# A curse can raise the economy's overtime tier (the beacon-open tier jump), but the
 		# enemy runtime keeps its own tier and that is the one that drives enemy speed and
 		# cooldowns. Push the difference across, and only upward: the runtime's own clock
@@ -724,6 +746,9 @@ func teardown() -> void:
 	if _curses != null:
 		_curses.clear()   # drops the modules and their per-level curse_st scratch
 	_curses = null
+	_tile_step_mods = []
+	_tile_step_keys = {}
+	_tiles_dropped = {}
 	_economy = null
 	_stats_black = {}
 	_stats_gold = {}
@@ -747,6 +772,122 @@ func _curse_module(id: String) -> Variant:
 	if not ResourceLoader.exists(path):
 		return null
 	return load(path)
+
+
+## Tile-schedule curses (W10-C): find every held module declaring step_on, compute the
+## level's walkway-edge set once, and subscribe to the controller's tile-step hook. With no such
+## module held nothing is subscribed - the un-cursed run pays nothing.
+func _tile_step_setup() -> void:
+	_tile_step_mods = []
+	_tile_step_keys = {}
+	_tiles_dropped = {}
+	if _curses == null or ctl == null:
+		return
+	for m in _curses.modules:
+		if (m["argc"] as Dictionary).has(TILE_STEP_QUERY):
+			_tile_step_mods.append(m["mod"])
+	if _tile_step_mods.is_empty():
+		return
+	tile_step_rescan()
+	ctl.tile_step_hook = Callable(self, "_on_tile_step")
+
+
+## Recompute the walkway-edge set from w's static geometry. build() calls it once; a caller that
+## edits the level's geometry after build (a test fixture) calls it again.
+func tile_step_rescan() -> void:
+	_tile_step_keys = edge_lane_keys(w) if not w.is_empty() else {}
+
+
+## The walkway-edge predicate ("1-wide walkway tiles fall ...", the curse's rule).
+## DECISION (lead, W10, DECISIONS.md): "1-wide walkway tiles" is read as THE OUTER LANE OF
+## A WALKWAY. voidgen tags no piece as 1-wide and GEN_VERSION 4 (owner override, J1)
+## builds every walkway WALK_W = 3 cells wide, so the literal reading matched zero tiles in
+## every shipped level and the brutal curse could never fire. The edge reading keeps the
+## owner's geometry, keeps the rule's intent (the ground a player would fall off crumbles
+## underfoot) and makes the counter-play ("keep moving; they regrow") true. The rule:
+##   A neighbour column is FLOOR when it holds a prop, or a tile whose top is within
+##   SIDE_BAND_HU (4 HU = 2.0 u) of this tile's - a ledge, a stair tread or a wall the
+##   player stands beside. Anything farther is open void.
+##   A tile (not under a prop) is an EDGE when, along one axis, one neighbour is void and
+##   the opposite one is floor - the outer lane, with ground on its inner side.
+##   A true 1-wide strip (void on BOTH sides along one axis, floor along the other) still
+##   qualifies: it is edge on both sides, and the literal reading must never be narrower
+##   than the reinterpretation.
+##   An isolated pad (void on all four sides) never qualifies: a stepping stone, not a
+##   walkway edge.
+## Why void and not walkable-connectivity: reading "walkable" as the 1 HU auto-step makes
+## every 2 HU stair tread look like an edge; the side test asks whether there is any ground
+## beside the tile at all.
+## Static geometry only (w["cols"] / w["prop_cols"]; w["removed"] is ignored), so a fallen
+## tile never turns its neighbours into edges. Returns {tile key "x,z,y_hu": true}.
+const SIDE_BAND_HU := 4
+
+
+static func edge_lane_keys(wd: Dictionary) -> Dictionary:
+	var out := {}
+	var cols: Dictionary = wd.get("cols", {})
+	var props: Dictionary = wd.get("prop_cols", {})
+	for ck in cols.keys():
+		if props.has(ck):
+			continue
+		var parts: PackedStringArray = str(ck).split(",")
+		var x := int(parts[0])
+		var z := int(parts[1])
+		for t in cols[ck]:
+			var y := int(t["y"])
+			var px := _floor_beside(cols, props, x + 1, z, y)
+			var nx := _floor_beside(cols, props, x - 1, z, y)
+			var pz := _floor_beside(cols, props, x, z + 1, y)
+			var nz := _floor_beside(cols, props, x, z - 1, y)
+			var edge := (px != nx) or (pz != nz)
+			var strip := (not pz and not nz and (px or nx)) or (not px and not nx and (pz or nz))
+			if edge or strip:
+				out[CollisionScript.tile_key(x, z, y)] = true
+	return out
+
+
+static func _floor_beside(cols: Dictionary, props: Dictionary, x: int, z: int, y: int) -> bool:
+	var k := "%d,%d" % [x, z]
+	if props.has(k):
+		return true
+	for t in cols.get(k, []):
+		if absi(int(t["y"]) - y) <= SIDE_BAND_HU:
+			return true
+	return false
+
+
+## The controller's tile-step hook: a walkway-edge tile the feet just settled on is armed in
+## every held tile-schedule module. The module reads the clock from state["tick"], set
+## here to the LevelState tick this controller step runs on.
+func _on_tile_step(key: String) -> void:
+	if _curses == null or not _tile_step_keys.has(key):
+		return
+	_curses.state["tick"] = int(lstate.tick) if lstate != null else 0
+	for mod in _tile_step_mods:
+		mod.call(TILE_STEP_QUERY, _curses.state, key)
+
+
+## Apply the tile events raised at index >= from: fell erases the tile from collision
+## (into w["removed"]), returned restores it - only a tile this applicator dropped.
+func _apply_tile_events(ev: Array, from: int) -> void:
+	if w.is_empty():
+		return
+	for k in range(from, ev.size()):
+		var e: Variant = ev[k]
+		if not (e is Dictionary):
+			continue
+		var kind := str((e as Dictionary).get("e", ""))
+		var key := str((e as Dictionary).get("key", ""))
+		if key == "":
+			continue
+		if kind == TILE_FELL:
+			if not w["removed"].has(key):
+				w["removed"][key] = true
+				_tiles_dropped[key] = true
+		elif kind == TILE_RETURNED:
+			if _tiles_dropped.has(key):
+				_tiles_dropped.erase(key)
+				w["removed"].erase(key)
 
 
 ## The curse dispatcher's enemy factory (api.spawn_enemy): the same behavior + cfg

@@ -86,6 +86,13 @@ var pass_state: Dictionary = {}
 ## has been applied - tick() then uses the stacks argument exactly as before (the bot
 ## and the sim tests drive that path).
 var defuse_chance: float = -1.0
+## The curse hook dispatcher (sim/curse_runtime.gd) the app hands in after it builds one,
+## or null. Duck-typed, never preloaded: only its `modules` rows ({"mod", "argc"}, the held
+## curses with a script, sorted) and its shared `state` dict are read. The mine-side
+## queries below probe the modules by METHOD NAME (blast_radius_u, chain_detonates,
+## chain_targets, tell_visible_u, tell_radius_u) - no curse is named here. null, or a
+## dispatcher with no module that answers, leaves every number at this file's constant.
+var curses: RefCounted = null
 
 
 static func create(level: Dictionary, p_level_number: int, p_run_seed: int) -> RefCounted:
@@ -143,6 +150,77 @@ func contact_at(px: float, pz: float) -> int:
 		if dx * dx + dz * dz <= CONTACT_R2:
 			return slot_id
 	return -1
+
+
+## The held curse modules that declare `query`: [{"mod", "argc"}] in the dispatcher's
+## sorted order; empty without a dispatcher.
+func _query_rows(query: String) -> Array:
+	var out: Array = []
+	if curses == null:
+		return out
+	for row in curses.modules:
+		if (row["argc"] as Dictionary).has(query):
+			out.append(row)
+	return out
+
+
+## The radius the blast measures with (DESIGN.md 3.3's 3 u, unless a held curse widens it):
+## the largest answer of every module's blast_radius_u(state), never below BLAST_RADIUS.
+func blast_radius() -> float:
+	var r: float = BLAST_RADIUS
+	for row in _query_rows("blast_radius_u"):
+		r = maxf(r, float(row["mod"].call("blast_radius_u", curses.state)))
+	return r
+
+
+## The live mines a blast at `origin_slot` chain-detonates (ascending slot ids): every
+## module that declares chain_targets(state, origin, mine_points, skip_index) - and whose
+## chain_detonates(state), when declared, is true - is handed the origin's point plus every
+## OTHER live mine point, with skip_index naming the origin. Never the origin, never a
+## consumed mine. Empty without a dispatcher (the base blast reaches players only).
+func chain_slots(origin_slot: int) -> Array:
+	var rows: Array = _query_rows("chain_targets")
+	if rows.is_empty():
+		return []
+	var cand: Array = [origin_slot]
+	var pts: Array = [point(origin_slot)]
+	for s in ids:
+		if s == origin_slot or is_consumed(s):
+			continue
+		cand.append(s)
+		pts.append(point(s))
+	var hit := {}
+	for row in rows:
+		if (row["argc"] as Dictionary).has("chain_detonates") \
+				and not bool(row["mod"].call("chain_detonates", curses.state)):
+			continue
+		for k in row["mod"].call("chain_targets", curses.state, pts[0], pts, 0):
+			var idx := int(k)
+			if idx > 0 and idx < cand.size():
+				hit[int(cand[idx])] = true
+	var out: Array = hit.keys()
+	out.sort()
+	return out
+
+
+## The tell distance (DESIGN.md 3.3's 12 u rim-glow cutoff, unless a held curse shrinks
+## it): the smallest answer of every module's tell_visible_u(state), never above
+## TELL_DISTANCE. The sim itself never reads the tell; the mine view does.
+func tell_distance() -> float:
+	var d: float = TELL_DISTANCE
+	for row in _query_rows("tell_visible_u"):
+		d = minf(d, float(row["mod"].call("tell_visible_u", curses.state)))
+	return d
+
+
+## The view's alpha-ramp NEAR distance: the smallest answer of every module's
+## tell_radius_u(state), never above `base_near` (the view's own constant, passed in -
+## the ramp numbers are the view's, sim/ only folds the curse answer).
+func tell_ramp_near(base_near: float) -> float:
+	var d: float = base_near
+	for row in _query_rows("tell_radius_u"):
+		d = minf(d, float(row["mod"].call("tell_radius_u", curses.state)))
+	return d
 
 
 ## The defuse roll (D-051), verbatim: mix(mix(run_seed, level), slot_id) mod 100
@@ -288,18 +366,31 @@ static func _contact(lv, ctls: Array, w: Dictionary, i: int, ctl,
 			w, events)
 	var ev3 := EventsScript.make(EV_MINE_DETONATED, tick, i)
 	ev3["slot"] = slot
-	ev3["blast_radius"] = BLAST_RADIUS
+	# the radius is BLAST_RADIUS (3 u) unless a held curse widens it (blast_radius)
+	var r: float = mines.blast_radius()
+	ev3["blast_radius"] = r
 	if saved:
 		ev3["result"] = "last_light"
 		events.append(ev3)
 		return "last_light"
 	ev3["result"] = "death"
 	events.append(ev3)
-	# the blast kills every OTHER player within 3 u of the mine point; each
+	# the blast kills every OTHER player within r of the mine point; each
 	# victim runs shield -> Last Light -> death, no defuse re-roll (D-T021-4)
-	var mp: Vector3 = mines.point(slot)
+	_blast(lv, ctls, w, i, mines.point(slot), r, tick, events)
+	# a held curse's chain: the blast detonates the live mines inside it (chain_slots),
+	# each of which blasts in turn - breadth-first, every mine at most once (consumed)
+	_chain(lv, ctls, w, i, slot, r, tick, events)
+	return "death"
+
+
+## The blast sphere at mine point mp, radius r: every player except skip_j (the
+## contactor) whose body centre is within r runs _blast_victim. Dead / respawning /
+## invulnerable players are untouched (DESIGN.md 3.1).
+static func _blast(lv, ctls: Array, w: Dictionary, skip_j: int, mp: Vector3, r: float,
+		tick: int, events: Array) -> void:
 	for j in lv.players.size():
-		if j == i or j >= ctls.size() or ctls[j] == null:
+		if j == skip_j or j >= ctls.size() or ctls[j] == null:
 			continue
 		var other = ctls[j]
 		if bool(other.dead) or other.respawn_t >= 0.0 or other.invuln > 0.0:
@@ -308,10 +399,33 @@ static func _contact(lv, ctls: Array, w: Dictionary, i: int, ctl,
 		var dx: float = float(pp["x"]) - mp.x
 		var dy: float = float(pp["y"]) + GiftsScript.BODY_CENTER - mp.y
 		var dz: float = float(pp["z"]) - mp.z
-		if dx * dx + dy * dy + dz * dz > BLAST_RADIUS * BLAST_RADIUS:
+		if dx * dx + dy * dy + dz * dz > r * r:
 			continue
 		_blast_victim(lv, w, j, other, tick, events)
-	return "death"
+
+
+## The chain (a held curse only; chain_slots is empty otherwise, so this is a no-op):
+## every live mine inside a detonating mine's sphere is consumed, raises one mine_chain
+## event (slot, from, blast_radius; player = the contactor whose step started it) and
+## blasts the players around ITS own point; then its own chain is followed. The chained
+## mine kills nobody by itself - only its blast does, through the same victim ladder.
+static func _chain(lv, ctls: Array, w: Dictionary, i: int, origin: int, r: float,
+		tick: int, events: Array) -> void:
+	var mines: RefCounted = lv.mines
+	var queue: Array = [origin]
+	while not queue.is_empty():
+		var from: int = int(queue.pop_front())
+		for s in mines.chain_slots(from):
+			if mines.is_consumed(int(s)):
+				continue
+			mines.consume(int(s))
+			var evx := EventsScript.make(EV_MINE_CHAIN, tick, i)
+			evx["slot"] = int(s)
+			evx["from"] = from
+			evx["blast_radius"] = r
+			events.append(evx)
+			_blast(lv, ctls, w, -1, mines.point(int(s)), r, tick, events)
+			queue.append(int(s))
 
 
 ## Steps 2..4 of the ladder for a blast victim (no defuse re-roll, D-T021-4).
@@ -339,3 +453,7 @@ const EV_MINE_CONTACT := "mine_contact"
 const EV_MINE_DEFUSED := "mine_defused"
 const EV_MINE_SHIELDED := "mine_shielded"
 const EV_MINE_DETONATED := "mine_detonated"
+## A mine set off by another mine's blast (a held curse's chain): its own kind, so the
+## contact consumers (run_log's mine_contact record, the bot's death watch) never read a
+## chained mine as a second player contact.
+const EV_MINE_CHAIN := "mine_chain"

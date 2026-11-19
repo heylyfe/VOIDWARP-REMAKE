@@ -7047,3 +7047,21 @@ WHY: honest coverage of the loop at a cost the gate can afford; the bot owns end
   is actually true. The 5 s regrow is what stops it soft-locking, and that is unchanged.
   GUARDRAIL: if the outer lane turns out to be more than half of a level's walkable tiles, the curse is
   too broad and gets narrowed. The measurement is required in the worker's report before this ships.
+
+- 2026-11-19 I OVERRODE MY OWN 50% GUARDRAIL ON CRUMBLING, WITH THE MEASUREMENT (lead ruling).
+  The guardrail above said: if the outer lane is more than half a level's walkable tiles, narrow it.
+  Measured at seed 60717 through `world.build()`: level 10 520/942 = 55.2%, level 15 750/1324 = 56.6%,
+  level 20 736/1297 = 56.7%, level 30 771/1356 = 56.9%. Above the bar. The worker said do not ship it.
+  RULING: ship it anyway, because the guardrail's PREMISE was wrong, not its arithmetic. The premise was
+  "too broad means the floor is gone and the level is unplayable". The mechanics say otherwise: a tile is
+  1 HU = 0.5 u, the player runs 9.0 u/s, so crossing one tile takes 3.3 ticks against a 72-tick fall
+  delay - a moving player crosses about 22 tiles before the first one falls. Moving is always safe;
+  only STOPPING is fatal. That is not an unplayable level, it is a level you cannot stand still on, and
+  the curse's own counter-play sentence is "keep moving; never returns to a soft-lock because they
+  regrow". The 5 s regrow is what makes the sentence true, and it is unchanged.
+  The shape it produces is worth naming: a 3-wide walkway becomes a tightrope, because the two outer
+  lanes crumble and the centre-interior tiles survive. There is always a safe spine, just a narrow one.
+  WHAT WOULD HAVE MADE ME NARROW IT: a fraction near 100%, or a fall delay short enough that a running
+  player could not cross a tile, or no surviving centre lane. None of those is true.
+  The lesson, recorded because it will recur: a guardrail is a hypothesis about the game, and when the
+  measurement crosses it the right move is to test the hypothesis, not to tune the number until it fits.
