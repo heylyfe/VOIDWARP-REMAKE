@@ -146,20 +146,22 @@ Known gaps, stated plainly:
   100 seeds re-measured on this tree). The acceptance bar is 95. The probe crashes with a Godot
   `Unreferenced static string` error at around 30 runs in one process, so long runs are measured
   in chunks; seeds are independent, so the splice loses nothing.
-- **The difficulty bands are NOT met, and the measurement is not yet measuring the game.**
-  Re-measured on this tree at full depth: level 6 = 4/100 (4.0%) against a bar of ≥80%;
-  level 12 = 0% against 40–60%; level 18 = 0% against 15–30%; median level reached 4, max 6.
-  The reason is plain: the bot probe cannot see mines. `bot_run.gd` calls `MinesScript.tick()` to
-  advance the sim and never reads a mine position. 37 of the deaths are D-MINE; at level 5,
-  34 of 39 deaths are tripmines (87%), and 34% of all runs end on a mine at level 5 — with only
-  2 enemy votes, so density is not the cause. Three more bot gaps: it dodges the rumble instead of
-  YOU?!'s ring (the ring outlives its telegraph by 94 ticks), it uses a 1.5 u vertical contact
-  band against the game's 1.8 u body, and enemy velocity is keyed by content id so two copies of
-  the same enemy corrupt each other's velocity. All four are tool gaps, not game defects. Until
-  the probe can see mines, the bands say nothing about the game, and enemy data is not being
-  tuned to chase them. One real game-side defect was found in the process: `rt.telegraphs` grows
-  without bound and is scanned linearly — the live-telegraph filter now applies at the read
-  layer, but the list itself is deliberately not pruned.
+- **The difficulty bands are NOT met, and the probe that measures them cannot reach them.**
+  Measured on this tree (seed base 60717, 20 runs, full depth): level 6 = 15% against a bar of
+  ≥80%; level 12 = 0% against 40–60%; level 18 = 0% against 15–30%; median level reached 4, max 8.
+  Two probe defects were found and both are fixed, which is why those numbers are the honest ones.
+  The bot had no mine model at all — it advanced the sim through `MinesScript.tick()` and never
+  read a mine position, so 37 of 99 deaths were tripmines it could not see. It also routed over
+  unsupported tiles and fell into the void in 5 of 20 runs. With both fixed, D-MINE and D-VOID are
+  ZERO and every remaining death is a genuine enemy kill (Coil 8, Kiwi 6, YOU?! 4, Toucher 1).
+  The bands still fail because of arithmetic, not a bug: per-level survival is 95 / 84 / 88 / **43**
+  / **33** percent, and reaching 80% at level 6 needs about 96% survival on each of levels 1–5.
+  Levels 3 and 4 differ only by one extra enemy body, and survival drops 45 points. No enemy-data
+  change closes that. The one band-safe change identified — moving the third enemy vote from lobby
+  3 to lobby 5, which preserves every DESIGN §9 row and would take level 6 to roughly 48% — is
+  recorded in `PARKED.md` row 31 and NOT applied, because tuning the game to satisfy an instrument
+  that cannot play it is the mistake the mine model already exposed. The bands are a target for a
+  competent human and this probe cannot validate them.
 - **No 30-level run yet.** The intermission lobby is wired into the app loop: a completed level
   tears the world down and opens the Antechamber (`view/lobby/lobby_scene.gd`), and the next
   level is built from the lobby's ledger (class, votes, curses, purchases) when the player walks
@@ -171,8 +173,6 @@ Known gaps, stated plainly:
   is refreshed each step so the safe-tile and SR-4 checks stop reading spawn points) are closed.
   Row 28's jump-arc scan, ban-lift re-routes and sideways regressions are partly closed; the dead
   `spawn_deferred` field and the unproducible empty-C-bay stall outcome remain.
-- **The menu's version tag still prints `v0.1.1-alpha.3`.** It lives in `game/app/menu.gd` and
-  ships inside the build; it moves with the next export, not with this README.
 - One exe-related row was closed by the v0.1.0-alpha.1 export.
 
 ## How a run works
