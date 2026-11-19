@@ -102,6 +102,10 @@ const StragglerBeamScript := preload("res://view/straggler_beam.gd")
 const DangerTextScript := preload("res://view/hud/danger_text.gd")
 const ScreenBlurScript := preload("res://view/hud/screen_blur.gd")
 const RespawnViewScript := preload("res://view/respawn_view.gd")
+# The curse hook dispatcher (W9-A): every held SCRIPT curse's module hooks (on_level_start /
+# on_tick / on_beacon_open / on_void_fall) and its build-time queries run through it. The
+# declarative "modifiers" half of a curse still goes through _run_modifiers below.
+const CurseRuntimeScript := preload("res://sim/curse_runtime.gd")
 
 signal level_completed()
 signal run_over(info: Dictionary)
@@ -188,6 +192,7 @@ var _roster: Array = []          # [{id, name, count}] built from the resolved v
 var _bindings: Dictionary = {}
 var _api: RefCounted = null
 var _ledger: Dictionary = {}     # the run's carried state (class / votes / curses / purse)
+var _curses: RefCounted = null   # sim/curse_runtime.gd, built per level in build()
 
 
 func _ready() -> void:
@@ -242,6 +247,10 @@ func build(seed_value: int, level: int, p_ledger: Dictionary = {}) -> bool:
 		if K == null or not K.has_method("extra_mines"):
 			continue
 		extra_mines += maxi(0, int(K.call("extra_mines", n)))
+	# A held curse's build-time mine query (total_extra_mines(state, roster_extra)) folds
+	# the roster's number - the dispatcher probes the modules, no curse id is named here.
+	extra_mines = CurseRuntimeScript.extra_mines(plan.get("curses", {}) as Dictionary,
+			extra_mines, Callable(self, "_curse_module"))
 	lv = VoidGenScript.generate(seed_value, level, 1, extra_mines)
 	if lv.is_empty():
 		push_warning("world: voidgen.generate(%d, %d) returned {}" % [seed_value, level])
@@ -447,6 +456,16 @@ func build(seed_value: int, level: int, p_ledger: Dictionary = {}) -> bool:
 	_feed_run_stats(_stats_black)
 
 	_level_number = level
+	# The curse hooks: last, so every piece a module touches (the runtime's spawn delay,
+	# the controller's kit numbers, the economy's purse) already holds its final build value
+	# and nothing later in build() overwrites a curse's change.
+	_curses = CurseRuntimeScript.new()
+	_curses.setup(plan.get("curses", {}) as Dictionary, Callable(self, "_curse_module"), {
+		"rt": rt, "players": [ctl], "economy": _economy, "beacon": lstate.beacon,
+		"spawn_plan": _roster.duplicate(true), "enemy_factory": Callable(self, "_curse_enemy"),
+		"seed": seed_value, "level": level, "tick": int(lstate.tick),
+	})
+	_curses.level_start(int(lstate.tick))
 	return true
 
 
@@ -472,6 +491,15 @@ func step(dt: float) -> void:
 	# staleness the w["enemies"] / w["projectiles"] mirrors already accept.
 	w["hazards"] = LevelStateScript.hazard_footprints(lstate.mines, rt.live_telegraphs())
 	var ev: Array = ctl.step(dt, a_in, w)
+	# on_void_fall: one dispatch per void_fall event the controller reported this tick
+	# (free falls included - the fall happened; what it costs is the module's call).
+	if _curses != null:
+		var falls: Array = []
+		for e in ev:
+			if str(e.get("e", "")) == "void_fall":
+				falls.append(e)
+		for e in falls:
+			_curses.void_fall(int(lstate.tick), ev, e)
 	# The LevelState's player row mirrors the controller (gifts/mines read lv.players).
 	var p0: Dictionary = lstate.players[0]
 	p0["x"] = ctl.x
@@ -488,10 +516,15 @@ func step(dt: float) -> void:
 	MinesScript.tick(lstate, [ctl], w, [0], lstate.tick, minev)
 	for e in minev:
 		ev.append(e)
-	lstate.beacon.try_enter(ctl, lstate.tick, 0, ev)
+	# The curse entry gate (a crowded dais, an unserved dwell): a refused player simply
+	# does not enter this tick; the beacon stays open and the next tick asks again.
+	if _curses == null or bool(_curses.entry_allowed(0)):
+		lstate.beacon.try_enter(ctl, lstate.tick, 0, ev)
 	if lstate.beacon.is_open() and not _gold_began:
 		_gold_began = true
 		rt.on_beacon_open()
+		if _curses != null:
+			_curses.beacon_open(int(lstate.tick), ev)
 		if _economy != null:
 			_economy.begin_gold_phase()
 		_apply_phase_stats()   # `when: gold_phase` modifiers go live with the phase
@@ -503,6 +536,20 @@ func step(dt: float) -> void:
 		# 18-tick outward ring from the tile the player cleaned
 		if toucher_floor != null and str(e.get("e", "")) == "glitched_cleanse":
 			toucher_floor.on_cleanse(e)
+	# on_tick runs AFTER rt.step: the modules read rows the behaviors already moved this
+	# tick (a landing, a telegraph start, a teleport) instead of last tick's, and BEFORE
+	# the economy and fx passes so a kill / drop / tier jump a curse makes is paid and drawn
+	# on the same tick.
+	if _curses != null:
+		_curses.tick(int(lstate.tick), ev)
+		# A curse can raise the economy's overtime tier (the beacon-open tier jump), but the
+		# enemy runtime keeps its own tier and that is the one that drives enemy speed and
+		# cooldowns. Push the difference across, and only upward: the runtime's own clock
+		# raises its tier independently, so a lower economy tier must never pull it back.
+		if _economy != null and rt != null:
+			var tier_gap: int = int(_economy.overtime_tier) - int(rt.overtime_tier)
+			if tier_gap > 0:
+				rt.add_overtime_tier(tier_gap)
 	_economy_pass(ev)
 	_fx_events(ev)
 	if rig != null:
@@ -674,6 +721,9 @@ func teardown() -> void:
 	_pose = {}
 	_anim_phase = 0.0
 	lstate = null
+	if _curses != null:
+		_curses.clear()   # drops the modules and their per-level curse_st scratch
+	_curses = null
 	_economy = null
 	_stats_black = {}
 	_stats_gold = {}
@@ -688,6 +738,32 @@ func teardown() -> void:
 
 func level_number() -> int:
 	return _level_number
+
+
+## The curse dispatcher's module loader: a curse's script module, or null for a curse that
+## is declarative only (its modifiers already ran in _run_modifiers).
+func _curse_module(id: String) -> Variant:
+	var path := "res://content/curses/%s.gd" % id
+	if not ResourceLoader.exists(path):
+		return null
+	return load(path)
+
+
+## The curse dispatcher's enemy factory (api.spawn_enemy): the same behavior + cfg
+## construction the level plan uses, scaled for this level and the id's own vote count
+## (1 when the id was not voted - a curse may add an enemy the run never voted for).
+func _curse_enemy(id: String) -> Dictionary:
+	if _api == null:
+		return {}
+	var entry: Dictionary = _api.enemy(id)
+	var beh = _behavior_for(id)
+	if entry.is_empty() or beh == null:
+		return {}
+	var n := maxi(1, int((_ledger.get("votes", {}) as Dictionary).get(id, 1)))
+	var cfg := _cfg_for(entry, id, _level_number, n, beh)
+	if cfg.is_empty():
+		return {}
+	return {"behavior": beh, "cfg": cfg, "name": str(cfg.get("name", id))}
 
 
 # ---- the run's own seeded plan (replay the lobbies before this level) -----------------------
