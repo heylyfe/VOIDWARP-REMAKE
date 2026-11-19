@@ -225,6 +225,14 @@ var push_hook: Callable = Callable()
 # body held outside the sim never resolves the first tick after a teleport
 # against the old position. No hook set = a no-op (hand-made worlds, tests).
 var sync_body_hook: Callable = Callable()
+# Tile-step subscriber (W10-C): called with collision.gd's own tile key "x,z,y_hu" on the
+# tick the player's feet SETTLE on a tile other than the one they last stood on - the
+# grounded support tile changing in _track_ring (a landing, or walking across a tile
+# border). The owner (app/world.gd) sets it only when a held curse module schedules
+# tiles off foot contact; the owner filters which tiles count. Teleport paths (place,
+# the respawn landing, the Last Light save) write cur_key directly and never call it:
+# a teleport is not a step. No hook set = a no-op (hand-made worlds, tests).
+var tile_step_hook: Callable = Callable()
 
 
 func setup(kit_id: String, consts: Dictionary = {}) -> void:
@@ -289,7 +297,11 @@ func run_speed(w: Dictionary) -> float:
 
 
 func friction_mult(w: Dictionary) -> float:
-	if cur_key != "" and (w["glitched"].has(cur_key) or w["slippery"].has(cur_key)):
+	# Only the slippery map. A glitched tile is NOT slippery by itself: DESIGN section 7 (D-075)
+	# reserves the x0.4 slipperiness for the curse that grants it, and the glitched floor's own
+	# effect is the -20% run speed in run_speed() above, which is untouched by this. Reading the
+	# glitched map here as well handed that curse's whole effect away for free.
+	if cur_key != "" and w["slippery"].has(cur_key):
 		return 0.4
 	return 1.0
 
@@ -763,6 +775,8 @@ func _track_ring(dt: float, w: Dictionary, _ev: Array) -> void:
 	if key != cur_key:
 		cur_key = key
 		dwell = 0.0
+		if tile_step_hook.is_valid():
+			tile_step_hook.call(key)
 	dwell += dt
 	if dwell < float(C["safe_dwell"]):
 		return

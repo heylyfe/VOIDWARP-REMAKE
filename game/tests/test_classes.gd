@@ -462,7 +462,9 @@ func _test_locks(f: Array[String]) -> void:
 
 
 func _test_friction(f: Array[String]) -> void:
-	# addendum R4: acceleration is 90 u/s^2 x friction; glitched floor: x0.4 and -20% speed
+	# addendum R4: acceleration is 90 u/s^2 x friction. A glitched tile is NOT slippery by itself
+	# (DESIGN section 7 / D-075 reserves the x0.4 for the curse that grants it); its own effect is
+	# the -20% run speed, asserted separately below. A tile in the slippery map is x0.4.
 	var ctl = Util.ControllerScript.new()
 	ctl.setup("dasher", Util.consts())
 	var w := _flat(20)
@@ -477,8 +479,19 @@ func _test_friction(f: Array[String]) -> void:
 	wg.cur_key = "5,0,0"   # simulate standing on a glitched tile
 	w2["glitched"]["5,0,0"] = true
 	wg.step(Util.DT, Util.mk_in(1, 0), w2)
-	if absf(wg.vx - 0.6) > 1e-6:
-		f.append("friction: tick-1 speed on glitched floor %.4f, expected 0.6 (90 x 0.4 x dt)" % wg.vx)
+	if absf(wg.vx - 1.5) > 1e-6:
+		f.append("friction: tick-1 speed on glitched floor %.4f, expected 1.5 - a glitched tile is not slippery by itself" % wg.vx)
+	if absf(wg.run_speed(w2) - 7.2) > 1e-6:
+		f.append("friction: glitched run speed %.4f, expected 7.2 (9.0 x 0.8, the -20% slow)" % wg.run_speed(w2))
+	var ws = Util.ControllerScript.new()
+	ws.setup("dasher", Util.consts())
+	var w3 := _flat(20)
+	ws.place(w3)
+	ws.cur_key = "5,0,0"   # simulate standing on a slippery tile
+	w3["slippery"]["5,0,0"] = true
+	ws.step(Util.DT, Util.mk_in(1, 0), w3)
+	if absf(ws.vx - 0.6) > 1e-6:
+		f.append("friction: tick-1 speed on slippery floor %.4f, expected 0.6 (90 x 0.4 x dt)" % ws.vx)
 
 
 func _test_pads(f: Array[String]) -> void:

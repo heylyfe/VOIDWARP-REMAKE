@@ -7065,3 +7065,26 @@ WHY: honest coverage of the loop at a cost the gate can afford; the bot owns end
   player could not cross a tile, or no surviving centre lane. None of those is true.
   The lesson, recorded because it will recur: a guardrail is a hypothesis about the game, and when the
   measurement crosses it the right move is to test the hypothesis, not to tune the number until it fits.
+
+- 2026-11-19 THE GLITCHED FLOOR IS NO LONGER SLIPPERY BY ITSELF (lead ruling, NEEDS OWNER CONFIRMATION).
+  `sim/controller.gd` `friction_mult` returned 0.4 for a glitched tile OR a slippery one. DESIGN section 7
+  (D-075) says the opposite: "the toucher's slow stays -20% - no extra slow", and DESIGN.md:598-599 says
+  "D-075 fixes the glitched floor's slow at 20% for everyone and Wet Floor adds only slipperiness
+  (friction x0.4)". So the sim was handing the curse's entire effect away for free, and a worker proved
+  it by measurement: with the curse held and not held, the coast distance on a live glitched tile was
+  IDENTICAL (1.0500 vs 1.0500). The curse only mattered after a cleanse.
+  RULING: the sim follows DESIGN. `friction_mult` now reads only `w["slippery"]`. A glitched tile keeps
+  its -20% run speed, which `run_speed()` applies independently and which is untouched - so the toucher's
+  actual threat is unchanged. What changes is that the x0.4 slipperiness now requires the curse.
+  MEASURED AFTER: held coast 1.0500 vs not held 0.3750 on a live glitched tile - the curse is now the
+  only thing that makes that floor slippery, which is what its rule sentence says.
+  THIS IS A BALANCE CHANGE TO A SHIPPED ENEMY EFFECT AND THE OWNER IS AWAY. It is one line and it is
+  reversible in one line. The reasoning for making it rather than parking it: (a) the spec is
+  unambiguous and the sim contradicted it, (b) FULL_GAME_PLAN.md already flagged this exact line as
+  needing a ruling, (c) the alternative is shipping a curse that does nothing, which is the defect this
+  whole wave exists to fix. If the owner prefers the old feel, revert `friction_mult` to read both maps
+  and retire the curse instead - but then the curse must be retired honestly, not left inert.
+  TWO TESTS WERE UPDATED, and this is NOT a threshold move: `test_classes.gd` pinned the glitched tile at
+  0.6 tick-1 speed (90 x 0.4 x dt) and now pins 1.5 plus the 7.2 run speed and a separate slippery case at
+  0.6; `test_curse_friction.gd` asserted the curse must NOT slow a live glitched tile and now asserts it
+  must. Both tests were pinning the spec violation. The new assertions are stricter, not looser.
