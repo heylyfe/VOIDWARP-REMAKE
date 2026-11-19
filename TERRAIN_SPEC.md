@@ -1,4 +1,4 @@
-# TERRAIN_SPEC.md — VOIDWRAP RUN terrain generator (GEN_VERSION 3)
+# TERRAIN_SPEC.md — VOIDWRAP RUN terrain generator (GEN_VERSION 4)
 
 The terrain IS the level. This document specifies a pure, deterministic, seeded generator and the
 headless validator that judges it. The working reference implementation is `terrain_ref/voidgen.py`
@@ -38,17 +38,29 @@ points and as the hubs of sub-areas. Large platforms joined by wide flat walkway
 as a route to solve; this section is the contract that forbids them. Every number here was fixed
 before measurement (D-030); a failing check is fixed in the generator, never by moving a number.
 
+**GEN_VERSION 4 (job J1, owner override, recorded in out/decisions/J1.md):** every walkway is
+exactly **3 cells wide** (it was 1..2), every walkable piece is at least 3 cells wide, and every gift
+slot sits on a **centre lane** (§6.7). The width-1 share `w1_pct` is gone. Everything else in this
+section stands.
+
 ### 1A.1 Vocabulary (exact)
 
 - **Spawn platform (hub)** — piece 0, role 0, arch `hub`. Exactly one per level. §6.1 fixes its
   geometry: plaza x,z ∈ [−6,6] at y=0, dais x,z ∈ [−2,2] at y=1, four 3-wide stubs at cells 7..9.
   205 tiles, bbox max dimension 19.
 - **Walkway** — a piece with `kind = 1`. A straight run of **rows** along one direction; every row is
-  1 or 2 cells wide and every cell of a row has the same height. Its **length** is its number of rows.
-  Its **width** is the number of cells in a row. Walkways are the paths; they include the shortcut
-  bridges and drop ledges (roles 4 and 5).
+  exactly 3 cells wide (lateral offsets −1, 0, +1) and every cell of a row has the same height. Its
+  **length** is its number of rows. Its **width** is the number of cells in a row, counted along the
+  walkway's **travel axis** (the axis along which it touches its parent piece). Walkways are the
+  paths; they include the shortcut bridges and drop ledges (roles 4 and 5).
+- **Centre lane** — the middle cells of a 3-wide part. A tile is on a centre lane when all four
+  neighbour columns hold a walkable tile on its layer (within 12 HU of it) and, along at least one
+  axis, the columns two away on both sides hold none: exactly one walkable tile on each side.
 - **Platform** — a piece with `kind = 0` that is not the hub. A compact area: bbox at most 7×7 cells
   and at most 40 tiles. Its **length** (for the path-share metric) is its bbox max dimension.
+- **At least 3 wide** — every tile of a piece lies inside a full 3×3 square of cells, each holding a
+  tile of the same piece or of a piece joined to it by an edge (a walkway's first row may lean on its
+  parent). Footprint only: heights and props do not narrow a piece.
 - **Sub-area** — a platform plus the walkways that leave it. A level is the hub plus 3..12 sub-areas.
 - **Sub-area boundary (junction)** — a pair of 4-adjacent tiles where one belongs to a walkway and
   the other to a non-hub platform. Its **delta** is the smallest |Δy| over the adjacent tile pairs of
@@ -76,9 +88,11 @@ before measurement (D-030); a failing check is fixed in the generator, never by 
    strictly larger than every other flat walkable component. It contains the beacon dais (25 tiles at
    y=1), the beacon tile (0,0,1) and the 8 spawn tiles. No other area may equal it in width or
    walkable area. (H16)
-2. **Everything else is paths.** Walkway width is 1 or 2 cells, never more (H17). The share of
-   width-1 walkway length rises with level: `w1_pct = 20 + 40·(min(level,30) − 1) // 29` (20% at
-   level 1, 60% at level 30); the gentle-start zone (§6.3 step 0) always uses width 2. Platforms are
+2. **Everything else is paths.** Walkway width is exactly 3 cells (H17), and every walkable piece is
+   at least 3 cells wide (H24). (GEN_VERSION 2–3 had 1..2 and a width-1 share `w1_pct` that rose
+   with level; the owner overrode it in GEN_VERSION 4: a 1–2 cell path read as a balance beam, not a
+   route.) The upper bound stays at 3 so the centre lane is unique and the hub stays the widest
+   piece. Platforms are
    at most 7×7 cells and at most 40 tiles, and there are between 3 and `plat_max = min(12, 4 +
    level // 3)` of them per level (H18). Path share ≥ 70% of centre-line length and path tiles ≥ 50%
    of non-hub walkable tiles (H19).
@@ -97,7 +111,9 @@ before measurement (D-030); a failing check is fixed in the generator, never by 
 
 ### 1A.3 How the generator meets it
 
-- The hub is enlarged (§6.1) and its sockets allow width 2 only.
+- The hub is enlarged (§6.1) and its sockets take a 3-wide walkway centred on the stub.
+- Every platform socket sits in the middle of a face at least 3 cells wide, so the 3-wide walkway
+  leaving it meets three platform tiles (no corner sockets).
 - Growth builds a **walkway** out of a socket and then either attaches a **platform** at its far end
   or leaves the walkway's far end as a socket that the next step grows from. So a path between two
   platforms is 2..4 walkways long, and the piece graph is hub → walkway → … → platform → walkway → …
@@ -124,7 +140,7 @@ before measurement (D-030); a failing check is fixed in the generator, never by 
 2. 2–4 **arms** grow outward from the hub's sockets. Each arm has a **trait** that biases what it is
    built from (stepped climbs, jump stairs, drop ledges, flat runs, ramps, and which platform
    archetypes it prefers).
-3. Each growth step takes an open socket and builds a **walkway** out of it (§6.4): 1–2 cells wide,
+3. Each growth step takes an open socket and builds a **walkway** out of it (§6.4): 3 cells wide,
    treads of 1–3 rows, each tread 1–2 HU above or below the previous one. At the walkway's far end the
    step either attaches a small **platform** (§6.5, bbox ≤ 7×7, ≤ 40 tiles) or leaves the walkway's
    far end as a socket that the next step grows from. So paths are long and thin, and platforms are
@@ -268,8 +284,8 @@ no shortcut was built; or fewer than 2 dead-end platforms exist (the last two ar
   (1,1) (−1,−1) (−1,1) (1,−1) (2,0) (−2,0) (0,2) (0,−2).
 - No gift slot is ever placed on the dais. The hub's outer ring does receive slots (so the first
   gift is seconds away — feel budget "level start → first gift ≤ 8 s").
-- Hub sockets: (9,0,dir0) (0,9,dir1) (−9,0,dir2) (0,−9,dir3), y=0, **max link width 2** (a walkway
-  is never wider than 2, §1A rule 2).
+- Hub sockets: (9,0,dir0) (0,9,dir1) (−9,0,dir2) (0,−9,dir3), y=0, link width 3 (every walkway is
+  exactly 3 wide, §1A rule 2), centred on the 3-wide stub.
 
 ### 6.2 Plan (stream PLAN)
 `n_arms = ri(arms_min, arms_max)`. Shuffle the four hub socket indices; the first `n_arms` become arm
@@ -289,12 +305,15 @@ Traits (multipliers are in quarter units; 4 = ×1; unlisted walkway/platform arc
 
 | trait | walkways favoured | platforms favoured | up-chance | width |
 |---|---|---|---|---|
-| grand | step ×2, flat ×2, ramp ×1, stair ×0.5, ledge ×0.5 | pad ×2, cross ×2, disc ×2 | 50% | always 2 |
-| ascent | step ×2, stair ×2, ledge ×1, ramp ×1 | terrace ×3, spire ×3, bastion ×2 | 85% | random |
-| descent | same as ascent | terrace ×3, disc ×1.5, pad ×1.5 | 15% | random |
-| hop | stair ×2.5, ledge ×2, step ×1 | spire ×5, cross ×2, disc ×1.5 | 55% | random |
-| maze | step ×1.5, flat ×1.5, others ×1 | cross ×3, ell ×3, pad ×1.5 | 50% | random |
-| thin | step ×2.5, ledge ×1.25, stair ×1 | nook ×4, ell ×2, bastion ×2 | 50% | always 1 |
+| grand | step ×2, flat ×2, ramp ×1, stair ×0.5, ledge ×0.5 | pad ×2, cross ×2, disc ×2 | 50% | 3 |
+| ascent | step ×2, stair ×2, ledge ×1, ramp ×1 | terrace ×3, spire ×3, bastion ×2 | 85% | 3 |
+| descent | same as ascent | terrace ×3, disc ×1.5, pad ×1.5 | 15% | 3 |
+| hop | stair ×2.5, ledge ×2, step ×1 | spire ×5, cross ×2, disc ×1.5 | 55% | 3 |
+| maze | step ×1.5, flat ×1.5, others ×1 | cross ×3, ell ×3, pad ×1.5 | 50% | 3 |
+| thin | step ×2.5, ledge ×1.25, stair ×1 | nook ×4, ell ×2, bastion ×2 | 50% | 3 |
+
+The width column is 3 for every trait since GEN_VERSION 4 (it was: grand always 2, thin always 1,
+the rest random 1..2). `thin` keeps its walkway and platform weights; it no longer means narrow.
 
 ### 6.3 Growth (stream GROW, re-seeded per step)
 Loop until the platform target is met, no arm has an open socket, or `60 × plat_max` steps passed:
@@ -308,17 +327,25 @@ Loop until the platform target is met, no arm has an open socket, or `60 × plat
 3. Up to `grow_tries` (5) times, `try_grow`:
    0. `gentle = (parent depth + 1) < jump_min_depth`. **Gentle-start rule**: while gentle, the
       platform archetype `spire` has weight 0, the walkway archetypes `stair` and `ledge` have weight
-      0, every walkway is width 2, every terrace step is 1 HU instead of 2, and the junction step is
+      0, every terrace step is 1 HU instead of 2, and the junction step is
       −1..+1 instead of −2..+2. So on level 1 the whole level is walkable without jumping; the rule
       is off from level 9 (`jump_min_depth = max(1, 10 − t)`).
    a. Walkway archetype by weight = `walk_w[arch] × trait multiplier`, then the gentle rule's
       zeroing. Build it (§6.4) from the cell in front of the source socket.
-   b. Walkway width: `hi = min(source.wmax, 2)`; gentle → `hi`; thin → 1; grand → `hi`; else
-      `1 if chance(w1_pct, 100) else 2`, clamped to `hi`.
+   b. Walkway width: always 3 (GEN_VERSION 4). No RNG is drawn for it (the `w1_pct` draw of
+      GEN_VERSION 3 is gone, so every later draw moved up by one).
    c. **Attach a platform?** `roll = chance(plat_pct = 40, 100)` is always drawn. Attach when
       `placed < target` and `since ≥ 2` and (`since ≥ 4` or `roll` or `placed ≥ target − 1`), where
       `since` counts walkways grown since the last platform. Otherwise the walkway is committed on
-      its own and its far end becomes a socket (the path continues).
+      its own and its far end becomes a socket (the path continues). Two draws follow, always:
+      `turn = range(2)` and `do_turn = chance(turn_pct, 100)`. When `do_turn` and the walkway has
+      ≥ 4 rows, TWO sockets are returned, in this order: the straight-ahead socket (on the last row's
+      centre, pointing along the walkway) and a turn socket on the outer tile of row n−2 on side
+      `turn` (lateral +1 for 0, −1 for 1), pointing sideways, at row n−2's height — the 3-wide
+      walkway that grows from it covers rows n−3..n−1 flush, a clean L corner, and ≥ 4 rows keeps
+      its 8-neighbour ring off this walkway's parent. The turn socket is the later one, so the deep
+      pick takes it first; the straight socket is grown when the turn fails, and a random pick may
+      grow both, which makes a T junction. Otherwise only the straight-ahead socket is returned.
    d. Platform archetype by weight = `plat_w[arch] × trait multiplier`, ÷4 if same archetype as the
       parent piece, ÷count if that archetype already appears ≥ 2 times in the level, then +1
       (then the gentle rule's zeroing).
@@ -346,7 +373,8 @@ After growth: every platform that is nobody's parent gets role DEADEND. An attem
 than `target` platforms is rejected (§6.0).
 
 ### 6.4 Walkway archetypes (all straight; bends come from platforms)
-Lateral offsets by width: 1→[0], 2→[0,1]. `up` = one `chance(up_pct, 100)` draw per walkway; the
+Lateral offsets: width 3 → [−1, 0, +1]; offset 0 is the centre lane (the breadcrumb line of §6.7).
+`up` = one `chance(up_pct, 100)` draw per walkway; the
 generator forces `up_pct = 0` at y ≥ 24 and `up_pct = 100` at y ≤ −24 so paths stay inside the height
 band. A **tread** is a run of rows at one height; consecutive treads differ by the step shown.
 
@@ -364,17 +392,18 @@ Every step respects the AUTHORING envelope in BOTH directions, so tree links are
 
 ### 6.5 Platform archetypes (8; each is a parametric family, not a fixed shape)
 Sockets always sit on a tile behind which the whole platform lies (so a walkway can never overlap its
-own platform). Each socket = (tile, outward dir, height offset, max link width). Every archetype
-respects §1A rule 2: bbox ≤ 7×7 cells, ≤ 40 tiles.
+own platform). Each socket = (tile, outward dir, height offset, max link width = 3). Since GEN_VERSION 4
+a socket is never on a corner: it sits in the middle of a face at least 3 cells wide. Every archetype
+respects §1A rule 2: bbox ≤ 7×7 cells, ≤ 40 tiles, and is at least 3 cells wide (H24).
 
 | arch | parameters (RNG order) | what it is / what it is for |
 |---|---|---|
-| pad | w ∈ 3..7, d ∈ 3..min(7, 40//w); 0–2 props | rest point / sub-area hub; `open` anchor if w·d ≥ 25 |
+| pad | w ∈ 3..7, d ∈ 3..min(7, 40//w); sockets at 1..w−2 / 1..d−2 on each face; 0–2 props | rest point / sub-area hub; `open` anchor if w·d ≥ 25 |
 | disc | radius 2..3 (cells with x²+z² ≤ r²+r); 0–1 props | round rest point; `open` anchor if r ≥ 3 |
-| cross | arm width 1..2; four arm lengths 1..3 (bbox ≤ 7) | four-way junction; routing decisions |
-| ell | arm width 1..2; arm lengths 2..5 | corner; breaks sightlines |
-| terrace | w 3..6; two bands of depth 2..3, +2 HU (+1 HU when gentle) | height gain inside a sub-area |
-| nook | 4..6 square walled on three sides; ONE socket | guaranteed dead end; `nook` anchor |
+| cross | arm width 3 (no draw); four arm lengths 1..3 (bbox ≤ 7) | four-way junction; routing decisions |
+| ell | arm width 3 (no draw); arm lengths 4..6 | corner; breaks sightlines |
+| terrace | w 3..5; band depths d1 ∈ 3..4, d2 ∈ 3..7−d1, upper band +2 HU (+1 HU when gentle); sockets centred on 3-cell faces | height gain inside a sub-area |
+| nook | 5..6 square walled on three sides (walled interior ≥ 3 wide); ONE socket | guaranteed dead end; `nook` anchor |
 | spire | 2..3 pads 3×3 spiralling up, +3 HU each, gap 1; top socket | vertical climb; `perch` anchor on top |
 | bastion | 5..6 square with a 3×3 tower +4 HU in the middle | overlook; `perch` anchor on the tower |
 
@@ -398,11 +427,12 @@ each call `try_loop` until `loops_max` bridges and `drops_max` drops exist:
 2. Reject if the hit belongs to the socket's own piece, is a ramp, or has a prop on it.
 3. With `n = cells between socket and hit`, `dy = hit.y − socket.y`:
    - **Bridge** (two-way, role LOOP): if `|dy| ≤ n`, `n ≥ 2`, bridges < `loops_max`, and the piece
-     graph distance between the two pieces ≥ 4: build n rows, width 2 (fallback 1), with the height
+     graph distance between the two pieces ≥ 4: build n rows, width 3 (lateral −1..+1, no
+     fallback), with the height
      change spread as `|dy|` single-HU steps (row k sits at `y + sign(dy)·(|dy|·(k+1)) // n`), so the
      bridge is stepped, not ramped. `fits(allow = {source, target})`.
    - **Drop ledge** (role DROP): else if `−30 ≤ dy ≤ −5`, `n ≥ 1`, drops < `drops_max`, graph
-     distance ≥ 3: build a flat ledge of n rows, width 2 (1 if the socket only allows 1). Walking off
+     distance ≥ 3: build a flat ledge of n rows, width 3 (lateral −1..+1). Walking off
      its end lands on the hit tile. If `dy ≥ −7`, 50%: add a **pad** on the hit tile that launches
      back up to the ledge's last centre tile (edge kind PAD, two-way); otherwise edge kind DROP.
 4. A level with zero shortcuts is rejected (§6.0).
@@ -421,7 +451,13 @@ A slot is a **stable, identified position**: `{id, x, z, y, piece, tier, occ}`.
 
 Slot target: `S = min(160, 40 + 4·(level−1)) · (1 + players) // 2`.
 
-Candidates = tiles that are round-trip reachable, flat, prop-free, not on the dais, not a pad tile.
+Candidates = tiles that are round-trip reachable, flat, prop-free, not on the dais, not a pad tile,
+and (GEN_VERSION 4) **on a centre lane** (§1A.1): all four neighbour columns hold a walkable tile
+within 12 HU of the candidate and, along at least one axis, the columns two away on both sides hold
+none — exactly one walkable tile on each side of the gift. On a walkway that is the middle lane; on
+the hub it is the middle of each stub; a platform contributes only its 3-wide strips (cross and ell
+arms, spire pads, 3-deep pad/terrace strips, disc rims). Slot count, apportionment and spacing are
+unchanged; only the candidate set is narrower.
 Because candidates come from `rt`, a slot is never inside geometry and never unreachable by
 construction; the validator re-proves both independently.
 
@@ -455,11 +491,12 @@ cylinder of radius 0.9 u around that centre, unbounded in height.
 
 **Modelling assumption (binding for the controller ticket).** The player's centre is treated as
 travelling along the straight segment between two tile centres when it moves from one tile to the
-next. Under that assumption a player passing a mine on the **adjacent lane of a 2-wide walkway** keeps
-its centre exactly **1.0 u** from the mine centre — a **0.1 u margin** outside the 0.9 u cylinder.
-That margin is the whole reason a 2-wide walkway still has a bypass, so it is stated here as a number
-the controller ticket depends on. A 1-wide walkway has no such lane: its only bypass is a route that
-leaves the walkway.
+next. Under that assumption a player passing a mine on an **edge lane of a 3-wide walkway** (the mine
+sits on the centre lane, §6.7) keeps its centre exactly **1.0 u** from the mine centre — a **0.1 u
+margin** outside the 0.9 u cylinder. That margin is the whole reason a walkway has a bypass, so it is
+stated here as a number the controller ticket depends on. (Until GEN_VERSION 3 the same margin held
+for the adjacent lane of a 2-wide walkway, and a 1-wide walkway had none; neither width exists any
+more.)
 
 #### 6.8.2 The bypass graph (definition)
 For a set `M` of mine tiles, the **bypass graph** `B(M)` is the movement graph of §5 (validator
@@ -493,7 +530,7 @@ disconnect nothing that was reachable, and must not swallow another gift.
 #### 6.8.4 The joint rule
 For the final mine set `M` of a level, in `B(M)` every **real gift slot** (`occ = 0`) and the
 **beacon tile** must still be round-trip reachable, and every round-trip tile not in `C(M)` must still
-be round-trip reachable. Two mines side by side may not seal a 2-wide walkway.
+be round-trip reachable. Three mines side by side may not seal a 3-wide walkway.
 
 #### 6.8.5 Order of operations (exact; mirror `roll_mines` in `voidgen.py`)
 1. One `range(400)` is drawn per slot, in slot-id order, at every level. A slot becomes a mine only
@@ -583,7 +620,8 @@ END
 | turn_pct | 75 | chance a straight-through socket yields to a turning sibling |
 | walk_w | step 20 · stair 6+t//3 · ledge 5 · flat max(1, 4−t//8) · ramp max(2, 5−t//6) | walkway mix; `flat` and `ramp` are the exception at every level |
 | plat_w | pad 10 · disc 7 · cross 10 · ell 8 · terrace 8 · nook 5 · spire 3+t//5 · bastion 5 | platform mix |
-| w1_pct | 20 + 40·(t−1)//29 | chance a walkway is 1 cell wide: 20% (L1) → 60% (L30) |
+>>>
+
 | plat_pct | 40 | chance a walkway's far end gets a platform once `since ≥ 2` |
 | term_pct | 35 | chance a platform is terminal (a dead end) |
 | jump_min_depth | max(1, 10 − t) | pieces shallower than this are jump-free: 9 (L1), 8 (L2), … 2 (L8), 1 = off (L9+) |
@@ -591,7 +629,7 @@ END
 Global constants: CLEAR 12, SLAB 2, Y_MIN −48, Y_MAX 72, MAX_ATTEMPTS 24, JUMP_GAP (5,4,3),
 AUTH_GAP (4,3,2), JUMP_UP_MAX 4, DROP_MAX 60, height band ±24 HU for the `up` bias.
 
-Difficulty ramps through: more platforms and slots; more width-1 walkways; more `stair` and `ledge`
+Difficulty ramps through: more platforms and slots; more `stair` and `ledge`
 walkways and fewer `flat`/`ramp` ones; more shortcuts to learn; `hop`/`thin` arms more likely; the
 gentle-start zone shrinking to nothing by level 9.
 
@@ -624,13 +662,15 @@ fails, fix the generator. Changing a threshold requires a new DECISIONS.md entry
 | H14 | shortcuts (loop bridges + drop ledges) ≥ 1 | every level has a routing decision |
 | H15 | attempt ≤ 12 | the re-roll loop has huge headroom before MAX_ATTEMPTS |
 | H16 | spawn platform: exactly one role-0 piece; its tile count and bbox max dimension are strictly greater than every other **platform**'s (a path is not an area); its largest flat walkable component is strictly larger than every other flat walkable component; it holds the beacon tile, the 8 spawn tiles and the 25-tile dais | the canon shape has ONE dominant spawn platform (§1A rule 1) |
-| H17 | every walkway piece is at most 2 cells wide (width recomputed from its tiles) | paths are 1–2 cell walkways, never rooms (§1A rule 2) |
+| H17 | every row of every walkway piece is **exactly 3** cells wide (recomputed from its tiles; rows are taken along the walkway's travel axis, the axis along which it touches its parent piece — the bbox long axis is wrong for a 3-wide walkway of 1–2 rows). GEN_VERSION 2–3: "at most 2". Min 3 is the owner's rule (J1); max 3 keeps a unique centre lane and keeps paths from becoming rooms | paths are 3-wide walkways, never rooms and never balance beams (§1A rule 2) |
 | H18 | every platform piece has bbox ≤ 7×7 and ≤ 40 tiles; the platform count is in [3, `plat_max`] | platforms are rest points, not rooms (§1A rule 2) |
 | H19 | path share: Σ walkway length / (Σ walkway length + Σ platform length) ≥ 0.70, and walkway tiles ≥ 50% of non-hub walkable tiles | the level is mostly route (§1A rule 2) |
 | H20 | flat-share ≤ 0.35 and ramp-share ≤ 0.10 of path rows | flat runs and ramps are the exception (§1A rule 3) |
 | H21 | elevation variance σ over non-hub tiles ≥ `3 + 3·(min(level,10)−1)//9` HU | paths gain and lose height (§1A rule 3) |
 | H22 | at least 50% of sub-area boundaries have |Δy| ≥ 1 HU | a sub-area is entered by a step, not a walk (§1A rule 3) |
-| H23 | **no tripmine without a walkable bypass**: for every level, every mine slot is eligible by the brute-force definition of §6.8.3 (remove every tile inside the mine's trigger cylinder — the mine tile and every tile in its column — and every edge, walk included, whose segment passes within 0.9 u of the mine centre, then recompute the round-trip set) **and** the joint rule of §6.8.4 holds for the level's mine set | with 1–2 cell walkways and a 0.9 u contact radius that a jump does not clear, a mine on a path with no way around is a lethal wall, not a fake gift the player chooses not to touch |
+| H23 | **no tripmine without a walkable bypass**: for every level, every mine slot is eligible by the brute-force definition of §6.8.3 (remove every tile inside the mine's trigger cylinder — the mine tile and every tile in its column — and every edge, walk included, whose segment passes within 0.9 u of the mine centre, then recompute the round-trip set) **and** the joint rule of §6.8.4 holds for the level's mine set | with a 0.9 u contact radius that a jump does not clear, a mine on a path with no way around is a lethal wall, not a fake gift the player chooses not to touch |
+| H24 | **every walkable piece is at least 3 cells wide**: every tile lies inside a full 3×3 square of cells, each holding a tile of the same piece or of a piece joined to it by an edge (§1A.1). Footprint only | owner rule (J1, GEN_VERSION 4): nothing narrower than 3 anywhere — the walkway check H17 alone cannot see a narrow platform part |
+| H25 | **every gift slot is on a centre lane** (§1A.1, §6.7): all four neighbour columns hold a walkable tile within 12 HU and, along at least one axis, exactly one walkable tile on each side | owner rule (J1, GEN_VERSION 4): gifts sit in the middle of the path, never on an edge |
 
 Path distance = Dijkstra over the movement graph; walk edge cost 1, jump/drop/pad cost
 `max(|dx|,|dz|)`. For H11 run one multi-source Dijkstra from all real-gift tiles on the REVERSED graph.
@@ -678,10 +718,13 @@ of A and B = max over the 8 dihedral transforms of B (apply to tile coordinates 
 ### 10.4 Reported metrics (per level, and mean/min/max per level bucket in the report)
 - `walkable`, `playable_pct` (H9), `platforms`, `walkways`, `dead_ends`, `max_depth`, `arms`
 - `loops`, `drops`, `pads`
-- `chokepoints` = walkway pieces with `w ≤ 2` whose removal disconnects the piece graph (bridges of
+- `chokepoints` = walkway pieces whose removal disconnects the piece graph (bridges of
   the undirected piece graph restricted to walkways). These are the places enemies trap you.
 - `J` = % of slots NOT round-trip reachable using walk edges only
-- `N` = **% of path length that is 1 cell wide** (redefined for GEN_VERSION 2: when every walkway is
+- `N` = **% of path length that is 1 cell wide**. **Since GEN_VERSION 4 N is 0 by construction**
+  (every walkway is 3 wide) and adds nothing to `D`; it is still computed and reported, so a
+  regression to narrow paths would show. The D7 ramp is carried by S, K, V and J alone (measured:
+  still strictly increasing). The old note: (redefined for GEN_VERSION 2: when every walkway is
   ≤ 2 wide, "% of links with w ≤ 2" is always 100 and measures nothing; the width-1 share is the
   quantity that actually rises with level, §1A rule 2)
 - `V` = (max tile y − min tile y) / 2, in u
@@ -701,12 +744,15 @@ per check with the measured number and the threshold; writes `out/report.json`; 
 pass. `--jobs N` uses multiprocessing. `--selftest` plants defects into a generated level (a slot
 moved onto a prop; a slot moved to a tile cut off from the hub; a tile inserted 4 HU above another;
 occ flipped to exceed the cap; a ledge tile group reachable only by a drop with no return; a second
-area as large as the hub; a walkway widened to 3 cells; a platform grown past 7×7; every walkway
+area as large as the hub; a walkway narrowed to 2 cells; a walkway widened to 4 cells; a platform grown past 7×7; every walkway
 relabelled as a platform; every walkway flattened; every non-hub tile set to y=0; every platform
-flush with its path; a mine flipped onto a 1-wide walkway tile with no bypass; two mines placed side
-by side sealing a 2-wide walkway; a mine whose trigger cylinder swallows another gift slot) and
+flush with its path; a mine flipped onto a tile with no bypass (when no slot lacks one, the side
+lanes of a walkway are carved away around a slot first); three mines placed side by side sealing a
+3-wide walkway; a mine whose trigger cylinder swallows another gift slot (a tile is planted 12 HU above
+a slot when no slot shares its column); a one-cell-wide strip of tiles; a gift moved onto an edge
+lane) and
 asserts the matching H-check FAILS for each — a validator that cannot fail is not a validator.
-15 defects.
+18 defects.
 
 ## 11. Pinned gallery (`terrain_ref/gallery.json`)
 
@@ -717,8 +763,8 @@ and compares every field; any difference = regression, visible without eyes. `py
 
 | # | seed | level | why it is pinned |
 |---|---|---|---|
-| 1 | 1 | 1 | first level a player ever sees |
-| 2 | 2 | 1 | two-arm level with bridges AND a drop at level 1 |
+| 1 | 1 | 1 | the old fixed first level (DEFAULT_SEED 1, retired in J1: each run now draws a fresh seed); still what start_run(1) and the pinned app tests build |
+| 2 | 2 | 1 | level 1 with a bridge (pinned in GEN_VERSION 3 as a two-arm level with bridges AND a drop; at GEN_VERSION 4 it is three arms, one bridge) |
 | 3 | 3 | 1 | three-arm level 1 |
 | 4 | 1001 | 2 | early |
 | 5 | 1002 | 3 | `stair` walkways become legal |
@@ -728,7 +774,7 @@ and compares every field; any difference = regression, visible without eyes. `py
 | 9 | 1006 | 10 | elevation-variance floor reaches its cap (6 HU) |
 | 10 | 1007 | 12 | mid game |
 | 11 | 7 | 12 | mid game, four arms |
-| 12 | 1008 | 16 | mid-late: width-1 share past 40% |
+| 12 | 1008 | 16 | mid-late (pinned in GEN_VERSION 3 for the width-1 share, which no longer exists) |
 | 13 | 1009 | 20 | late |
 | 14 | 1010 | 25 | tripmine chance reaches 1/10 |
 | 15 | 7 | 30 | platform ceiling reached (12) |

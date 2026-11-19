@@ -7,7 +7,7 @@ extends RefCounted
 
 const VoidRngScript := preload("res://terrain/void_rng.gd")
 
-const GEN_VERSION := 3
+const GEN_VERSION := 4
 const M32 := 0xFFFFFFFF
 
 # ---- units ---------------------------------------------------------------
@@ -37,6 +37,10 @@ const EDGE_TREE := 0
 const EDGE_LOOP := 1
 const EDGE_DROP := 2
 const EDGE_PAD := 3
+
+# GEN_VERSION 4 (owner override, out/decisions/J1.md): every walkway is exactly WALK_W = 3 cells
+# wide, every walkable piece is at least 3 cells wide, and every gift slot sits on a centre lane.
+const WALK_W := 3
 
 const WALKS := ["step", "stair", "ledge", "flat", "ramp"]
 const PLATS := ["pad", "disc", "cross", "ell", "terrace", "nook", "spire", "bastion"]
@@ -123,7 +127,6 @@ static func tuning(level: int, players: int) -> Dictionary:
 			"pad": 10, "disc": 7, "cross": 10, "ell": 8, "terrace": 8,
 			"nook": 5, "spire": 3 + t / 5, "bastion": 5,
 		},
-		"w1_pct": 20 + 40 * (t - 1) / 29,
 		"plat_pct": 40,
 		"term_pct": 35,
 		"jump_min_depth": maxi(1, 10 - t),
@@ -221,11 +224,13 @@ static func plat_pad(rng, _t: int, _gentle: bool) -> Array:
 	for x in range(w):
 		for z in range(d):
 			tiles.append([x, z, 0, 0])
-	var jx: int = rng.ri(0, w - 1)
-	var jz: int = rng.ri(0, d - 1)
-	var jx2: int = rng.ri(0, w - 1)
-	var jz2: int = rng.ri(0, d - 1)
-	var socks: Array = [[w - 1, jz, 0, 0, 2], [jx, d - 1, 1, 0, 2], [0, jz2, 2, 0, 2], [jx2, 0, 3, 0, 2]]
+	# a socket is never on a corner: the 3-wide walkway leaving it meets 3 platform tiles
+	var jx: int = rng.ri(1, w - 2)
+	var jz: int = rng.ri(1, d - 2)
+	var jx2: int = rng.ri(1, w - 2)
+	var jz2: int = rng.ri(1, d - 2)
+	var socks: Array = [[w - 1, jz, 0, 0, WALK_W], [jx, d - 1, 1, 0, WALK_W], [0, jz2, 2, 0, WALK_W],
+		[jx2, 0, 3, 0, WALK_W]]
 	var props: Array = []
 	scatter(rng, tiles, socks, rng.ri(0, 2), props)
 	var anchors: Array = []
@@ -242,7 +247,7 @@ static func plat_disc(rng, _t: int, _gentle: bool) -> Array:
 		for z in range(-r, r + 1):
 			if x * x + z * z <= r * r + r:
 				tiles.append([x, z, 0, 0])
-	var socks: Array = [[r, 0, 0, 0, 2], [0, r, 1, 0, 2], [-r, 0, 2, 0, 2], [0, -r, 3, 0, 2]]
+	var socks: Array = [[r, 0, 0, 0, WALK_W], [0, r, 1, 0, WALK_W], [-r, 0, 2, 0, WALK_W], [0, -r, 3, 0, WALK_W]]
 	var props: Array = []
 	scatter(rng, tiles, socks, rng.ri(0, 1), props)
 	var anchors: Array = []
@@ -253,8 +258,8 @@ static func plat_disc(rng, _t: int, _gentle: bool) -> Array:
 
 @warning_ignore("integer_division")
 static func plat_cross(rng, _t: int, _gentle: bool) -> Array:
-	# Four-way junction. Arm width 1..2, arm lengths 1..3, bbox <= 7x7.
-	var a: int = rng.ri(1, 2)
+	# Four-way junction. Arm width 3 (GEN_VERSION 4), arm lengths 1..3, bbox <= 7x7.
+	var a: int = WALK_W
 	var rem: int = 7 - a
 	var l0: int = rng.ri(1, 3)
 	if l0 > rem - 1:
@@ -283,10 +288,10 @@ static func plat_cross(rng, _t: int, _gentle: bool) -> Array:
 
 @warning_ignore("integer_division")
 static func plat_ell(rng, _t: int, _gentle: bool) -> Array:
-	# Corner. Arm width 1..2, arm lengths 2..5.
-	var a: int = rng.ri(1, 2)
-	var la: int = rng.ri(2, 5)
-	var lb: int = rng.ri(2, 5)
+	# Corner. Arm width 3 (GEN_VERSION 4), arm lengths 4..6.
+	var a: int = WALK_W
+	var la: int = rng.ri(4, 6)
+	var lb: int = rng.ri(4, 6)
 	var tiles: Array = []
 	for x in range(la):
 		for z in range(lb):
@@ -302,9 +307,10 @@ static func plat_ell(rng, _t: int, _gentle: bool) -> Array:
 
 static func plat_terrace(rng, _t: int, gentle: bool) -> Array:
 	# Two-level platform: the upper band is one step up (1 HU when gentle, else 2 HU).
-	var w: int = rng.ri(3, 6)
-	var d1: int = rng.ri(2, 3)
-	var d2: int = rng.ri(2, 3)
+	# GEN_VERSION 4: each band is at least 3 deep and every socket is centred on a 3-cell face.
+	var w: int = rng.ri(3, 5)
+	var d1: int = rng.ri(3, 4)
+	var d2: int = rng.ri(3, 7 - d1)
 	var up: int = 1 if gentle else 2
 	var tiles: Array = []
 	for x in range(w):
@@ -312,16 +318,16 @@ static func plat_terrace(rng, _t: int, gentle: bool) -> Array:
 			tiles.append([x, z, 0, 0])
 		for z in range(d1, d1 + d2):
 			tiles.append([x, z, up, 0])
-	var r0: int = rng.ri(0, w - 1)
-	var socks: Array = [[w - 1, 0, 0, 0, 2], [0, 0, 2, 0, 2],
-		[r0, d1 + d2 - 1, 1, up, 2], [w - 1, d1, 0, up, 2]]
+	var r0: int = rng.ri(1, w - 2)
+	var socks: Array = [[w - 1, 1, 0, 0, WALK_W], [0, 1, 2, 0, WALK_W],
+		[r0, d1 + d2 - 1, 1, up, WALK_W], [w - 1, d1 + 1, 0, up, WALK_W]]
 	return [tiles, socks, [], []]
 
 
 @warning_ignore("integer_division")
 static func plat_nook(rng, _t: int, _gentle: bool) -> Array:
 	# Walled on three sides, ONE socket: a guaranteed dead end.
-	var s: int = rng.ri(4, 6)
+	var s: int = rng.ri(5, 6)  # GEN_VERSION 4: the walled interior is at least 3 cells wide
 	var tiles: Array = []
 	var props: Array = []
 	for x in range(s):
@@ -329,7 +335,7 @@ static func plat_nook(rng, _t: int, _gentle: bool) -> Array:
 			tiles.append([x, z, 0, 0])
 			if x >= 1 and (x == s - 1 or z == 0 or z == s - 1):
 				props.append([x, z, 0, 6, PROP_WALL])
-	var socks: Array = [[0, s / 2, 2, 0, 2]]
+	var socks: Array = [[0, s / 2, 2, 0, WALK_W]]
 	return [tiles, socks, props, [[AN_NOOK, s / 2, s / 2, 0]]]
 
 
@@ -342,19 +348,19 @@ static func plat_spire(rng, _t: int, _gentle: bool) -> Array:
 		for x in range(3):
 			for z in range(3):
 				tiles.append([qv.x + x, qv.y + z, 3 * k, 0])
-	var socks: Array = [[0, 1, 2, 0, 2], [1, 0, 3, 0, 2]]
+	var socks: Array = [[0, 1, 2, 0, WALK_W], [1, 0, 3, 0, WALK_W]]
 	var kq: int = (n - 1) % 4
 	var q: Vector2i = SPIRE_Q[kq]
 	var od: int = SPIRE_OUT[kq][rng.urange(2)]
 	var top: int = 3 * (n - 1)
 	if od == 0:
-		socks.append([q.x + 2, q.y + 1, 0, top, 2])
+		socks.append([q.x + 2, q.y + 1, 0, top, WALK_W])
 	elif od == 1:
-		socks.append([q.x + 1, q.y + 2, 1, top, 2])
+		socks.append([q.x + 1, q.y + 2, 1, top, WALK_W])
 	elif od == 2:
-		socks.append([q.x, q.y + 1, 2, top, 2])
+		socks.append([q.x, q.y + 1, 2, top, WALK_W])
 	else:
-		socks.append([q.x + 1, q.y, 3, top, 2])
+		socks.append([q.x + 1, q.y, 3, top, WALK_W])
 	var anchors: Array = [[AN_PERCH, q.x + 1, q.y + 1, top]]
 	return [tiles, socks, [], anchors]
 
@@ -373,7 +379,8 @@ static func plat_bastion(rng, _t: int, _gentle: bool) -> Array:
 	var r1: int = rng.ri(1, s - 2)
 	var r2: int = rng.ri(1, s - 2)
 	var r3: int = rng.ri(1, s - 2)
-	var socks: Array = [[s - 1, r0, 0, 0, 2], [r1, s - 1, 1, 0, 2], [0, r2, 2, 0, 2], [r3, 0, 3, 0, 2]]
+	var socks: Array = [[s - 1, r0, 0, 0, WALK_W], [r1, s - 1, 1, 0, WALK_W], [0, r2, 2, 0, WALK_W],
+		[r3, 0, 3, 0, WALK_W]]
 	return [tiles, socks, [], [[AN_PERCH, c, c, 4]]]
 
 
@@ -596,7 +603,8 @@ static func build_hub(W: World) -> Array:
 				W.add_tile(DX[d] * i + DX[lat] * o, DZ[d] * i + DZ[lat] * o, 0, 0, pid)
 	for c in [[6, 6], [-6, 6], [-6, -6], [6, -6]]:
 		W.add_prop(c[0], c[1], 0, 10, PROP_PILLAR, pid)
-	return [pid, [[9, 0, 0, 0, pid, 2, 0], [0, 9, 1, 0, pid, 2, 0], [-9, 0, 2, 0, pid, 2, 0], [0, -9, 3, 0, pid, 2, 0]]]
+	return [pid, [[9, 0, 0, 0, pid, WALK_W, 0], [0, 9, 1, 0, pid, WALK_W, 0],
+		[-9, 0, 2, 0, pid, WALK_W, 0], [0, -9, 3, 0, pid, WALK_W, 0]]]
 
 
 @warning_ignore("integer_division")
@@ -609,7 +617,6 @@ static func try_grow(W: World, rng, sock: Array, arm: int, trait_name: String, t
 	var d: int = sock[2]
 	var y: int = sock[3]
 	var pid: int = sock[4]
-	var wmax: int = sock[5]
 	var lat: int = (d + 1) % 4
 	var parent: Dictionary = W.pieces[pid]
 	var t: int = tn["t"]
@@ -623,19 +630,8 @@ static func try_grow(W: World, rng, sock: Array, arm: int, trait_name: String, t
 			wv = 0  # paths near the hub are walkable on early levels (D8 gentle start)
 		lw.append(wv)
 	var larch: String = rng.wpick(WALKS, lw)
-	# width: 1 or 2 cells, never wider (TERRAIN_SPEC section 1A rule 2)
-	var hi: int = wmax if wmax < 2 else 2
-	var w: int = hi
-	if not gentle:
-		w = 1 if rng.chance(tn["w1_pct"], 100) else 2
-		if w > hi:
-			w = hi
-	if trait_name == "thin":
-		w = 1
-	elif trait_name == "grand":
-		w = hi
-	if w > hi:
-		w = hi
+	# width: exactly WALK_W = 3 cells (GEN_VERSION 4, TERRAIN_SPEC section 1A rule 2). No RNG draw.
+	var w: int = WALK_W
 	var up_pct: int = TRAIT_UP_PCT[trait_name] + 22 * drift
 	if up_pct < 5:
 		up_pct = 5
@@ -686,19 +682,24 @@ static func try_grow(W: World, rng, sock: Array, arm: int, trait_name: String, t
 			if c[4]:
 				lp["center"].append(ti)
 		if (larch == "step" or larch == "flat") and n >= 8:
-			var m: Array = cells[(n / 2) * offs_for(w).size()]
+			var m: Array = cells[(n / 2) * offs_for(w).size() + offs_for(w).size() / 2]
 			W.anchors.append([AN_LANE, m[0], m[1], m[2], lid])
 		W.add_edge(pid, lid, EDGE_TREE)
 		state["since"] += 1
 		var turn: int = rng.urange(2)
 		var do_turn: bool = rng.chance(tn["turn_pct"], 100)
-		if do_turn:
-			# the socket sits on the last row's outer tile on the chosen side and points sideways
+		if do_turn and n >= 4:
+			# the socket sits on the outer tile of row n-2 on the chosen side and points sideways,
+			# so the 3-wide walkway that grows from it covers rows n-3..n-1 flush (a clean L corner).
+			# n >= 4 keeps the new walkway's 8-neighbour ring (rows n-4..n) off this walkway's parent.
 			var sd: int = lat if turn == 0 else (lat + 2) % 4
-			var so: int = w - 1 if turn == 0 else 0
-			var sx: int = x + DX[d] * n + DX[lat] * so
-			var sz: int = z + DZ[d] * n + DZ[lat] * so
-			return [[sx, sz, sd, y1, lid, w, 0]]
+			var so: int = 1 if turn == 0 else -1
+			var sx: int = x + DX[d] * (n - 1) + DX[lat] * so
+			var sz: int = z + DZ[d] * (n - 1) + DZ[lat] * so
+			var sy: int = cells[(n - 2) * WALK_W][2]
+			# the straight-ahead socket stays open too: it is grown when the turn fails, and a
+			# random pick may grow it as well, which makes a T junction (GEN_VERSION 4)
+			return [[px - DX[d], pz - DZ[d], d, y1, lid, w, 1], [sx, sz, sd, sy, lid, w, 0]]
 		return [[px - DX[d], pz - DZ[d], d, y1, lid, w, 1]]
 	# platform archetype
 	var rw: Array = []
@@ -804,7 +805,7 @@ static func try_grow(W: World, rng, sock: Array, arm: int, trait_name: String, t
 		var av: Vector2i = xform(a2[1], a2[2], mir, rot)
 		W.anchors.append([a2[0], av.x + ox, av.y + oz, a2[3] + oy, rid])
 	if (larch == "step" or larch == "flat") and n >= 8:
-		var m2: Array = cells[(n / 2) * offs_for(w).size()]
+		var m2: Array = cells[(n / 2) * offs_for(w).size() + offs_for(w).size() / 2]
 		W.anchors.append([AN_LANE, m2[0], m2[1], m2[2], lid2])
 	W.add_edge(pid, lid2, EDGE_TREE)
 	W.add_edge(lid2, rid, EDGE_TREE)
@@ -847,7 +848,6 @@ static func try_loop(W: World, rng, sock: Array, tn: Dictionary, counts: Array, 
 	var d: int = sock[2]
 	var y: int = sock[3]
 	var pid: int = sock[4]
-	var wmax: int = sock[5]
 	if ray < 0:
 		ray = tn["ray_len"]
 	var T: Array = W.tiles
@@ -885,12 +885,12 @@ static func try_loop(W: World, rng, sock: Array, tn: Dictionary, counts: Array, 
 			return false
 		var ady: int = dy2 if dy2 >= 0 else -dy2
 		var sgn: int = 1 if dy2 > 0 else -1
-		var widths: Array = [2, 1] if wmax >= 2 else [1]
+		var widths: Array = [WALK_W]
 		for w in widths:
 			var cells: Array = []
 			for k in range(n):
 				var yy: int = y + 1 + sgn * ((ady * (k + 1)) / n)  # |dy| single-HU steps over n rows
-				for o in range(w):
+				for o in offs_for(w):
 					cells.append([x + DX[d] * (k + 1) + DX[lat] * o, z + DZ[d] * (k + 1) + DZ[lat] * o, yy, 0, 1 if o == 0 else 0])
 			if W.fits(cells, [pid, q]):
 				var lid: int = W.add_piece(1, "bridge", pid, src["depth"], src["arm"], ROLE_LOOP, y)
@@ -907,10 +907,10 @@ static func try_loop(W: World, rng, sock: Array, tn: Dictionary, counts: Array, 
 	if -DROP_MAX / 2 <= dy2 and dy2 <= -5 and n >= 1 and counts[1] < tn["drops_max"]:
 		if W.graph_dist(pid, q, 3) < 3:
 			return false
-		var w2: int = 2 if wmax >= 2 else 1
+		var w2: int = WALK_W
 		var cells2: Array = []
 		for k in range(n):
-			for o in range(w2):
+			for o in offs_for(w2):
 				cells2.append([x + DX[d] * (k + 1) + DX[lat] * o, z + DZ[d] * (k + 1) + DZ[lat] * o, y + 1, 0, 1 if o == 0 else 0])
 		if not W.fits(cells2, [pid, q]):
 			return false
@@ -1086,6 +1086,38 @@ static func _gift_take(T: Array, chosen: Array, taken: Dictionary, pid: int, i: 
 
 
 @warning_ignore("integer_division")
+## True when column (x, z) holds a walkable (prop-free) tile on the same layer as height y,
+## i.e. within CLEAR of it. A tile a full layer above or below is a different floor.
+static func lane_cell(W: World, x: int, z: int, y: int) -> bool:
+	var lst: Variant = W.col.get(Vector2i(x, z))
+	if lst == null:
+		return false
+	for j in lst:
+		var tj: Array = W.tiles[j]
+		if absi(tj[2] - y) < CLEAR and not has_prop(W, x, z, tj[2]):
+			return true
+	return false
+
+
+## TERRAIN_SPEC section 6.7 (GEN_VERSION 4): tile i is on a centre lane when all four neighbour
+## columns hold a walkable tile on its layer (it is not on an edge) and, along at least one axis,
+## there is exactly one walkable tile on each side of it (the cell two away is empty on both
+## sides). On a 3-wide walkway that is the middle lane.
+static func centre_lane(W: World, i: int) -> bool:
+	var t: Array = W.tiles[i]
+	var x: int = t[0]
+	var z: int = t[1]
+	var y: int = t[2]
+	for d in range(4):
+		if not lane_cell(W, x + DX[d], z + DZ[d], y):
+			return false
+	for a in range(2):
+		if not lane_cell(W, x + 2 * DX[a], z + 2 * DZ[a], y) \
+				and not lane_cell(W, x - 2 * DX[a], z - 2 * DZ[a], y):
+			return true
+	return false
+
+
 static func place_gifts(W: World, rng, tn: Dictionary, rt: Array) -> Variant:
 	# rt[i] = tile i is round-trip reachable. Returns Array of slots [tile_index, pid] or null.
 	var T: Array = W.tiles
@@ -1105,6 +1137,8 @@ static func place_gifts(W: World, rng, tn: Dictionary, rt: Array) -> Variant:
 			continue  # beacon dais stays clean
 		if padset.has(Vector3i(t[0], t[1], t[2])):
 			continue
+		if not centre_lane(W, i):
+			continue  # a gift sits on a centre lane, never on an edge (GEN_VERSION 4)
 		cands[t[4]].append(i)
 	var weights: Array = []
 	var tot: int = 0

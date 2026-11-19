@@ -29,7 +29,7 @@ def main():
     assert slot_target(99, 1) == 160
 
     # planted-defect selftest
-    assert validate.run_selftest(), "selftest did not reach 15/15"
+    assert validate.run_selftest(), "selftest did not reach 18/18"
 
     # tripmine bypass (TERRAIN_SPEC 6.8): the contact test is integer-only and symmetric
     assert validate.seg_hits_mine(0, 0, 2, 0, 1, 0), "a mine on the segment is not detected"

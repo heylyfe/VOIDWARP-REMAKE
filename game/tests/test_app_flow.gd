@@ -20,12 +20,16 @@ extends RefCounted
 
 const AppScript := preload("res://app/app.gd")
 const MenuScript := preload("res://app/menu.gd")   # preload keeps the type check meaningful
+const RUN_SEED := 1   # J1: Play draws a fresh seed per run; this test pins one so it is deterministic
 
 
 func run() -> Array[String]:
 	var failures: Array[String] = []
 
 	var app = AppScript.new()
+	# Before _ready there is no menu, so start_run only stores the seed: step 2 still starts the
+	# run through the real play_requested path, on a fixed level.
+	app.start_run(RUN_SEED)
 	app._ready()   # the engine would call this on tree entry; the tree is unavailable here
 
 	# ---- 1. starts in MENU --------------------------------------------------------------
@@ -49,6 +53,8 @@ func run() -> Array[String]:
 		menu.play_requested.emit()
 	if app.state() != "LOADING":
 		failures.append("play_requested moved app to %s, want LOADING" % app.state())
+	if app.run_seed() != RUN_SEED:
+		failures.append("the run used seed %d, want the pinned %d" % [app.run_seed(), RUN_SEED])
 	if menu != null and menu.visible:
 		failures.append("menu still visible in LOADING state")
 	var loading = app._loading

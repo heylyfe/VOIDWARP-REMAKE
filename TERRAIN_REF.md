@@ -25,7 +25,7 @@ construction. Two implementations from one spec that agree on 5,000 levels is ev
 
 ```powershell
 python terrain_ref\test_validate.py                 # unit tests -> "TESTS OK"
-python terrain_ref\validate.py --selftest           # 15 planted defects must each be caught -> "SELFTEST 15/15"
+python terrain_ref\validate.py --selftest           # 18 planted defects must each be caught -> "SELFTEST 18/18"
 python terrain_ref\gallery.py --check               # -> "GALLERY 16/16 OK"
 python terrain_ref\validate.py --seeds 0:5000       # all H and D checks over 5,000 seeds, ~3 min
 tools\godot\godot.exe --headless --path game --script res://tests/test_terrain_parity.gd -- "$PWD\terrain_ref\gallery.json"   # -> "PARITY 56/56 OK"
@@ -46,38 +46,54 @@ tripmines, grey = props, white/red square = beacon. Brighter = higher.
 
 ## 3. Status and measured results
 
-STATUS (updated 2026-11-16, shape-contract session — see the Handover log in DECISIONS.md for the
+STATUS (updated 2026-11-19, job J1 — GEN_VERSION 4; see the Handover log in DECISIONS.md for the
 latest line; if the two disagree, the Handover log wins):
 
 <!-- STATUS-BEGIN -->
-- `voidgen.py`: FROZEN at GEN_VERSION 3 (shape contract §1A + tripmine bypass §6.8, D-026). Gallery 16/16.
-- `validate.py`: `TESTS OK`, selftest 15/15 (one planted defect per hard check, H3–H23).
-- OFFICIAL HARNESS, 5,000 seeds (levels 1–30), run after the last generator edit, exit 0:
-  H1–H23 all `failures=0/5000`. D1 max deviation 0.58 pp (limit 1.0) · D2 300/300 at
-  `min(S // 5, eligible)` · D3 5,000 distinct hashes · D4 p99 0.394, 0 pairs ≥ 0.60 — anchored to the
-  spawn root with all 8 symmetries (D-022 FINAL) · D5 0 identical recipes · D6 1.79% (limit 10%) ·
-  D7 bucket means 80.5 < 151.6 < 183.6 < 195.5 < 209.2 < 215.6 · D8 level-1 J mean 10.4 (limit 50),
-  max 75.0 (limit 80) · D9 55 ms mean, 191 ms max. 186 s wall time on 8 jobs.
-  Full per-bucket table: `terrain_ref/out/r5000.json`.
-- Shape metrics over the same 5,000 seeds (bucket means, min/max): path share 0.85 (min 0.78, floor
-  0.70) · path tile share 0.67–0.75 (min 0.51, floor 0.50) · flat share 0.02–0.03 (max 0.18, cap 0.35) ·
-  ramp share 0.01–0.02 (max 0.09, cap 0.10) · elevation sd 9.9 → 13.9 HU (min 3.01 at L1, floor 3) ·
-  junction step share 99.0–99.7% (min 71.4%, floor 50%) · platforms 4.1 → 11.5 per level ·
-  walkways 21.8 → 63.5 per level.
+- `voidgen.py`: GEN_VERSION 4 (job J1, out/decisions/J1.md D-J1-1): every walkway exactly 3 cells wide,
+  every walkable piece at least 3 wide, every gift slot on a centre lane, the `w1_pct` ramp removed.
+  Built on GEN_VERSION 3 (shape contract §1A + tripmine bypass §6.8, D-026). Gallery 16/16, regenerated.
+- `validate.py`: `TESTS OK`, selftest 18/18 (one planted defect per hard check H3–H25, two for H17
+  — too narrow and too wide — and three for H23). H17 is now "every walkway row exactly 3"; H24
+  (min width 3 everywhere) and H25 (gift on a centre lane) are new (D-J1-2).
+- OFFICIAL HARNESS, 5,000 seeds (levels 1–30), GEN_VERSION 4, exit 0, **34 PASS / 0 FAIL**:
+  H1–H25 all `failures=0/5000`. D1 max deviation 0.39 pp (limit 1.0) · D2 300/300 at
+  `min(S // 5, eligible)` · D3 5,000 distinct hashes · D4 p99 0.436, 0 pairs ≥ 0.60 — anchored to the
+  spawn root with all 8 symmetries (D-022 FINAL) · D5 0 identical recipes · D6 0.59% (limit 10%) ·
+  D7 bucket means 62.5 < 124.9 < 151.9 < 163.8 < 174.8 < 179.9 · D8 level-1 J mean 8.2 (limit 50),
+  max 65.0 (limit 80) · D9 122 ms mean, 336 ms max. 779 s wall time on 4 jobs (machine shared).
+  (GEN_VERSION 3, for comparison: 32 PASS, D9 55 ms mean / 191 ms max, D7 80.5 → 215.6 — D fell
+  because the metric N, the width-1 share, is now 0 by construction, TERRAIN_SPEC §10.4.)
+- Shape metrics over the same 5,000 seeds (bucket means, min/max): path share 0.83–0.85 (min 0.77,
+  floor 0.70) · path tile share 0.78–0.80 (min 0.69, floor 0.50) · flat share 0.01–0.03 (max 0.21,
+  cap 0.35) · ramp share 0.01–0.02 (max 0.08, cap 0.10) · elevation sd 9.7 → 13.7 HU (min 3.18 at L1,
+  floor 3) · junction step share 99.8–99.9% (min 75%, floor 50%) · platforms 4.1 → 11.5 per level ·
+  walkways 21.8 → 61.8 per level.
+- Level-1 variety (J1): 200 level-1 seeds → 200 unique layouts (tile set + gift slots), 192 unique
+  recipes. The app now draws a fresh run seed per run; start_run(seed) still reproduces exactly.
 - Tripmines (D-026): every mine sits on a slot with a walkable bypass and the joint rule holds on every
   level (H23 0/5000). A bypass must stay outside the mine's 0.9 u trigger cylinder, so the bypass graph
   drops the mine tile **and every other tile in its column** plus every walk/jump/drop/pad edge whose
   segment passes within 0.9 u of a mine centre. Modelling assumption: the player's centre runs along
-  tile-centre segments, so the adjacent lane of a 2-wide walkway keeps 1.0 u — a **0.1 u margin**
-  (flagged [CONTESTABLE] in D-026; a 1.4 u radius would remove a further 19–31% of mines).
+  tile-centre segments, so an edge lane of a 3-wide walkway (the mine sits on the centre lane) keeps
+  1.0 u — a **0.1 u margin** (flagged [CONTESTABLE] in D-026; a 1.4 u radius would remove mines).
+  **GEN_VERSION 4:** nearly every slot is now eligible (every centre-lane slot on a 3-wide path has a
+  bypass), so mines per level rose toward the unchanged canon curve: measured over 1,500 seeds,
+  L1–5 0.56 → 0.64, L6–10 3.54 → 3.92, L11–15 5.38 → 6.10, L16–20 7.76 → 9.11, L21–25 10.47 → 12.16,
+  L26–30 12.53 → 14.68 per level (8.46% → 9.92% of slots). The GEN_VERSION 3 figures that follow are
+  kept as history.
+- GEN_VERSION 3 history:
   Mines per level 0.52 (L1–5) → 12.61 (L26–30); as a share of all slots 1.09% → 8.52%, because
   6.3% of slots are ineligible at level 5 and 13.6% at levels 26–30. Count band, GEN_VERSION 2 → 3 (mean/min/max per level):
   1–5 0.55/0/8 → 0.52/0/8 · 6–10 3.93/0/13 → 3.51/0/10 · 11–15 6.10/0/14 → 5.36/0/14 ·
   16–20 9.09/2/19 → 7.71/1/16 · 21–25 12.12/3/26 → 10.34/2/21 · 26–30 15.06/3/31 → 12.61/2/27.
-- GDScript port: DONE. `PARITY 56/56 OK`, gallery pins 16/16, 142 ms per level (Godot 4.7.2 headless).
+- GDScript port: DONE for GEN_VERSION 4. `PARITY 56/56 OK`, gallery pins 16/16, 343 ms per level
+  (Godot 4.7.2 headless, measured on a shared machine; it was 142 ms at GEN_VERSION 3).
 <!-- STATUS-END -->
 
-Measured on the official harness (5,000 seeds, levels 1–30, GEN_VERSION 3):
+**History — GEN_VERSION 3.** The table below was measured on the official harness (5,000 seeds,
+levels 1–30) at GEN_VERSION 3 and is kept as the record of that version. The GEN_VERSION 4 numbers
+are in the STATUS block above; GEN_VERSION 4 re-measured every hard and distribution check.
 
 | what | measured | limit |
 |---|---|---|
@@ -112,22 +128,26 @@ Checks that failed on first measurement were fixed IN THE GENERATOR (D-018, D-01
 two metric definitions were corrected with their reasoning and numbers on record (D-022, D-026). No
 threshold was moved after measurement (D-030).
 
-## 4. Pinned gallery (GEN_VERSION 3) — `terrain_ref/gallery.json` is authoritative
+## 4. Pinned gallery (GEN_VERSION 4) — `terrain_ref/gallery.json` is authoritative
 
 | # | seed | level | attempt | platforms | tiles | slots | mines | bridges | drops | pads | dead ends | arms | hash (first 12) |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 1 | 1 | 1 | 0 | 4 | 501 | 40 | 0 | 0 | 2 | 0 | 3 | ascent, maze, thin | `e9b73461c0e7` |
-| 2 | 2 | 1 | 1 | 3 | 455 | 40 | 0 | 1 | 0 | 0 | 2 | grand, ascent, maze | `58e83a9f117a` |
-| 3 | 3 | 1 | 1 | 4 | 588 | 40 | 0 | 2 | 0 | 0 | 3 | grand, ascent, maze | `e1cc8a9b2f91` |
-| 4 | 1001 | 2 | 4 | 3 | 460 | 44 | 0 | 1 | 1 | 0 | 3 | grand, grand, descent | `cf0918e1c4f5` |
-| 5 | 1002 | 3 | 1 | 4 | 449 | 48 | 0 | 0 | 1 | 1 | 3 | maze, descent, ascent | `9e5f851f10d6` |
-| 6 | 1003 | 4 | 2 | 4 | 522 | 52 | 0 | 1 | 1 | 0 | 2 | grand, ascent | `7a34f8853137` |
-| 7 | 1004 | 5 | 1 | 4 | 577 | 56 | 2 | 1 | 0 | 0 | 4 | descent, ascent, ascent, grand | `7deb757b5db4` |
-| 8 | 1005 | 8 | 2 | 6 | 573 | 68 | 3 | 1 | 1 | 0 | 3 | hop, thin, ascent | `9e6939320759` |
-| 9 | 1006 | 10 | 0 | 6 | 628 | 76 | 3 | 3 | 2 | 0 | 4 | thin, ascent, thin, descent | `6f7d28cc9b9a` |
-| 10 | 1007 | 12 | 0 | 8 | 646 | 84 | 7 | 1 | 0 | 0 | 4 | descent, maze, grand | `9965805c2920` |
-| 11 | 7 | 12 | 1 | 7 | 725 | 84 | 6 | 1 | 1 | 0 | 3 | grand, maze, thin | `b8b1f49f09ba` |
-| 12 | 1008 | 16 | 3 | 9 | 868 | 100 | 5 | 2 | 1 | 0 | 4 | ascent, hop, maze, maze | `f17d772c6378` |
+| 1 | 1 | 1 | 0 | 4 | 720 | 40 | 0 | 1 | 0 | 0 | 2 | ascent, maze | `d631717c7ae4` |
+| 2 | 2 | 1 | 1 | 4 | 841 | 40 | 0 | 1 | 0 | 0 | 3 | maze, ascent, descent | `887ce0e207ce` |
+| 3 | 3 | 1 | 3 | 4 | 752 | 40 | 0 | 0 | 2 | 0 | 3 | maze, ascent, ascent | `687604848abb` |
+| 4 | 1001 | 2 | 9 | 4 | 762 | 44 | 0 | 0 | 1 | 1 | 3 | thin, descent, grand | `0c43fbfb4ddd` |
+| 5 | 1002 | 3 | 4 | 5 | 887 | 48 | 0 | 1 | 1 | 0 | 3 | descent, thin | `2d490d662082` |
+| 6 | 1003 | 4 | 2 | 4 | 643 | 52 | 0 | 0 | 1 | 0 | 4 | ascent, maze, thin, ascent | `c491339b8d33` |
+| 7 | 1004 | 5 | 0 | 5 | 944 | 56 | 3 | 2 | 0 | 0 | 4 | thin, grand, hop, descent | `95515bc3d709` |
+| 8 | 1005 | 8 | 0 | 5 | 849 | 68 | 4 | 1 | 0 | 0 | 3 | maze, grand, descent | `0a782a3e6b0d` |
+| 9 | 1006 | 10 | 0 | 7 | 933 | 76 | 7 | 1 | 0 | 0 | 3 | hop, ascent | `1f1b21d9259a` |
+| 10 | 1007 | 12 | 0 | 7 | 1069 | 84 | 7 | 1 | 3 | 0 | 4 | ascent, hop, thin, hop | `e8d9d9c52a2f` |
+| 11 | 7 | 12 | 2 | 8 | 1167 | 84 | 3 | 1 | 0 | 0 | 6 | maze, thin, grand, hop | `1463bc45c1e5` |
+| 12 | 1008 | 16 | 0 | 9 | 1376 | 100 | 9 | 0 | 1 | 0 | 4 | ascent, ascent, maze, grand | `a0fca152303f` |
+| 13 | 1009 | 20 | 2 | 10 | 1242 | 116 | 8 | 1 | 0 | 0 | 5 | hop, descent | `9910d240f73a` |
+| 14 | 1010 | 25 | 0 | 11 | 1752 | 136 | 21 | 3 | 2 | 0 | 5 | descent, maze, hop, grand | `838ee9b5e7d7` |
+| 15 | 7 | 30 | 2 | 12 | 1610 | 156 | 16 | 3 | 1 | 0 | 6 | grand, thin, hop, ascent | `de796dcf1a35` |
+| 16 | 1011 | 40 | 0 | 12 | 1770 | 160 | 21 | 0 | 1 | 0 | 3 | maze, thin, grand | `6deee4baa4ea` |
 | 13 | 1009 | 20 | 0 | 9 | 805 | 116 | 8 | 3 | 3 | 0 | 5 | grand, maze, thin | `e8b7f8208812` |
 | 14 | 1010 | 25 | 0 | 11 | 823 | 136 | 11 | 3 | 1 | 0 | 4 | descent, maze, descent, thin | `f95f7250554b` |
 | 15 | 7 | 30 | 0 | 11 | 807 | 156 | 17 | 0 | 1 | 0 | 5 | grand, maze, maze, ascent | `2c67cc08155e` |
@@ -138,8 +158,10 @@ mines are 0 below level 5 and never above `slots // 5`; every entry has at least
 platforms grow with level and never exceed `min(12, 4 + level // 3)`; the arms column is the sorted
 trait list. The gallery pairs draw only a handful of distinct trait pairs, which is why D5 counts the
 walkway-archetype multiset as well as the platform one. Since GEN_VERSION 3 a mine also needs a
-walkable bypass (TERRAIN_SPEC §6.8, H23), so the mine column is a lower fraction of the slots than
-the raw per-slot chance suggests: 4.7% of all slots at L5 rising to 8.7% at L30 (D-026).
+walkable bypass (TERRAIN_SPEC §6.8, H23). At GEN_VERSION 3 that made the mine column a lower fraction
+of the slots than the raw per-slot chance suggested (4.7% of all slots at L5 rising to 8.7% at L30,
+D-026); at GEN_VERSION 4 nearly every slot is eligible, so the mine column follows the per-slot chance
+closely (STATUS block).
 
 ## 5. Port guide (Python → engine)
 
@@ -193,6 +215,12 @@ Hit during the GEN_VERSION 3 port (tripmine bypass, D-026) — result: PARITY 56
 - The trigger cylinder blocks **every tile in the mine's column**, not just the mine tile. `ctx["col"]` maps a packed `(x, z)` to the tile indices on that cell, and `mine_block` scans the 3×3 cell neighbourhood with `dx*dx + dz*dz <= 81` in ×10 coordinates. Blocking only the mine tile is the bug that lets a mine sit under a gift on the tile above it.
 - The edge index must hold **all** edges, walk included (`ctx["edges"]`, which replaced the old non-walk-only `ctx["nw"]`). A walk edge between 4-adjacent centres is 1.0 u long, so the 0.9 u test never removes one in practice — but it is computed, never assumed, and the validator computes it too.
 - `mine_keeps_rt` has a guard the pure reachability test does not: it returns `false` when the cylinder holds the beacon or another slot tile (a gift inside the cylinder is uncollectable), and `need` counts only the round-trip tiles that are **not** blocked. Both ports must keep the guard and the `need` count, or a mine can swallow a gift and still pass.
+
+Hit during the GEN_VERSION 4 port (J1: width 3, centre-lane gifts) — result: PARITY 56/56 first time, 343 ms per level:
+- The walkway lane anchor indexes the CENTRE of the middle row: `cells[(n / 2) * offs_for(w).size() + offs_for(w).size() / 2]`. With width 3 the first cell of a row is lateral −1, an edge lane; the old index (`... * size()` alone) only happened to be the centre at width 2.
+- The turn socket reads its height from row n−2's first cell, `cells[(n - 2) * WALK_W][2]`; rows are uniform in height so any cell of the row works, but both ports must pick the same one.
+- `try_loop` no longer reads the socket's `wmax` (every bridge and ledge is 3 wide): drop the local in GDScript too, or the unused-variable warning trips the project's warnings-as-errors setting.
+- `centre_lane` calls `has_prop` per neighbour column: keep it a static function taking `W`, like `has_prop`, so the inner `World` class is not needed.
 <!-- PORT-PITFALLS-END -->
 
 Change procedure for ANY generator edit (binding): edit `voidgen.py` → `validate.py --seeds 0:5000`
@@ -203,8 +231,8 @@ green → bump `GEN_VERSION` → `gallery.py --write` → update TERRAIN_SPEC �
 
 | to add | where | cost |
 |---|---|---|
-| a platform archetype | a `plat_<name>(rng, t, gentle)` function + `_plat` dispatch + `PLATS` + a `plat_w` weight (+ trait multipliers). Contract: return `(tiles, socks, props, anchors)`; bbox ≤ 7×7 and ≤ 40 tiles (H18); sockets on extreme tiles; every internal height step ≤ AUTH envelope both ways or optional (like the spire overlook); props only via `scatter` or on perimeter tiles | GEN_VERSION bump |
-| a walkway archetype | a branch in `build_walkway` + `WALKS` + `walk_w` + trait multipliers. Contract: width 1 or 2 only (H17), straight, two-way inside the AUTH envelope, and it must change height by a step at each end (H22) | GEN_VERSION bump |
+| a platform archetype | a `plat_<name>(rng, t, gentle)` function + `_plat` dispatch + `PLATS` + a `plat_w` weight (+ trait multipliers). Contract: return `(tiles, socks, props, anchors)`; bbox ≤ 7×7 and ≤ 40 tiles (H18); every tile inside a full 3×3 square of the piece (H24); sockets on extreme tiles, centred on a face at least 3 cells wide (never a corner) with max link width `WALK_W`; every internal height step ≤ AUTH envelope both ways or optional (like the spire overlook); props only via `scatter` or on perimeter tiles | GEN_VERSION bump |
+| a walkway archetype | a branch in `build_walkway` + `WALKS` + `walk_w` + trait multipliers. Contract: exactly 3 wide, lateral offsets −1/0/+1 (H17), straight, two-way inside the AUTH envelope, and it must change height by a step at each end (H22) | GEN_VERSION bump |
 | an arm trait | `TRAITS` + the three trait tables (`TRAIT_LINK`, `TRAIT_ROOM`, `TRAIT_UP_PCT`) | GEN_VERSION bump |
 | a slot-replacing hazard | a new `occ` value rolled in `roll_mines` (rename to `roll_hazards`) under the SAME 20% total cap. A hazard that kills on contact must also pass the bypass rule (§6.8, H23) — reuse `MineCtx` / `MineJudge` rather than inventing a second graph | GEN_VERSION bump; H5 and H23 extended |
 | a terrain-affecting modifier | new trailing int parameter of `generate` with default 0 that reproduces today's hash | goldens unchanged when 0 |

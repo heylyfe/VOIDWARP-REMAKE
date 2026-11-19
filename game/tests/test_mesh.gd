@@ -5,8 +5,10 @@ extends RefCounted
 #   2. seed 7 level 30 meshes in <= 600 ms (logged per build, wall clock of MesherScript.build only);
 #   3. greedy merge coverer: every flat top tile is covered exactly once by a merged rectangle;
 #   4. build determinism: two builds of the same Level produce identical vertex/index data;
-#   5. support spikes (section 12.4): role-1/2 pieces with bbox <= 7x7 only, never inside the
-#      hub bbox, never where any of the 9 centre columns holds a tile below the platform;
+#   5. support spikes (section 12.4): role-1/2 pieces with bbox <= 7x7 only, never hanging on the
+#      hub (centre inside the hub bbox AND the spike's vertical span within CLEAR = 12 HU of the
+#      hub slab - the section 4 distance at which two pieces read as one; out/decisions/J1.md
+#      D-J1-4), never where any of the 9 centre columns holds a tile below the platform;
 #   6. the grain factor reference stays inside [0.94, 1.06] over a big coordinate sweep.
 # extends RefCounted, preload-by-path only (D-T001-1); a global class_name does not resolve
 # under --headless --script.
@@ -17,10 +19,12 @@ const MesherScript := preload("res://view/level_mesher.gd")
 const MAX_TRIS_L30 := 30000
 const MAX_MS := 600
 const CASES := [[1, 1], [7, 12], [7, 30]]
+const CLEAR_HU := 12   # TERRAIN_SPEC section 4: pieces closer than this vertically read as one
 
 
 func run() -> Array[String]:
 	var failures: Array[String] = []
+	failures.append_array(_hub_spike_rule_unit())
 	for case in CASES:
 		failures.append_array(_one(int(case[0]), int(case[1])))
 	failures.append_array(_determinism())
@@ -49,14 +53,26 @@ func _one(seed: int, level: int) -> Array[String]:
 	print("MESH seed=%d level=%d tiles=%d flat=%d ramps=%d props=%d pads=%d spikes=%d tris=%d build_ms=%d" % [
 		seed, level, L["tiles"].size(), n_flat, int(r["ramps"]), int(r["props"]), int(r["pads"]),
 		(r["spikes"] as Array).size(), int(r["triangles"]), int(r["ms"])])
-	# hub excluded from spikes: no spike centre may fall inside the hub bbox
+	# Under the HUB: nothing (section 12.4). The role filter keeps the hub itself spike-free; this
+	# asserts no OTHER platform's spike hangs on the hub either: a spike whose centre is inside the
+	# hub bbox and whose vertical span comes within CLEAR of the hub slab reads as attached to it.
+	# A spike under a platform a full layer (>= CLEAR) away is a different floor and legal
+	# (D-J1-4: the old blanket bbox ban at any height was stricter than the spec).
 	var hub := _piece_bbox(L, 0)
 	if not hub.is_empty():
+		var hy := _piece_y_range(L, _piece_id(L, 0))
+		var plat_y := _piece_min_y(L)
+		var by_center := _small_platform_by_center(L)
 		for cell in r["spikes"]:
 			var cx: int = int(cell[0])
 			var cz: int = int(cell[1])
-			if cx >= int(hub[0]) and cx <= int(hub[2]) and cz >= int(hub[1]) and cz <= int(hub[3]):
-				failures.append("seed %d level %d: spike under hub column %d,%d" % [seed, level, cx, cz])
+			var key := "%d,%d" % [cx, cz]
+			if not by_center.has(key):
+				continue   # _spike_columns below reports a spike that is not a platform centre
+			var py: int = int(plat_y[int(by_center[key])])
+			if _spike_hangs_on_hub(hub, hy[0], hy[1], cx, cz, py):
+				failures.append("seed %d level %d: spike at %d,%d (platform bottom y=%d HU) hangs on the hub"
+						% [seed, level, cx, cz, py])
 	# every spike must sit under a small platform and none of its 9 columns may hold a tile below
 	failures.append_array(_spike_columns(L, r))
 	var expected_mats := ["platform_top", "walkway_top"]
@@ -70,6 +86,93 @@ func _piece_bbox(L: Dictionary, role: int) -> Array:
 		if int(p["role"]) == role:
 			return p["bbox"]
 	return []
+
+
+func _piece_id(L: Dictionary, role: int) -> int:
+	for p in L["pieces"]:
+		if int(p["role"]) == role:
+			return int(p["id"])
+	return -1
+
+
+## [min tile y, max tile y] of a piece, in HU.
+func _piece_y_range(L: Dictionary, pid: int) -> Array:
+	var lo := 1 << 30
+	var hi := -(1 << 30)
+	for t in L["tiles"]:
+		if int(t[4]) == pid:
+			lo = mini(lo, int(t[2]))
+			hi = maxi(hi, int(t[2]))
+	return [lo, hi]
+
+
+## piece id -> lowest tile y (HU): the height the mesher hangs a spike from.
+func _piece_min_y(L: Dictionary) -> Dictionary:
+	var out := {}
+	for t in L["tiles"]:
+		var pid := int(t[4])
+		if not out.has(pid) or int(t[2]) < int(out[pid]):
+			out[pid] = int(t[2])
+	return out
+
+
+## "cx,cz" bbox centre -> piece id, for the role-1/2 pieces small enough to get a spike.
+func _small_platform_by_center(L: Dictionary) -> Dictionary:
+	var out := {}
+	for p in L["pieces"]:
+		if int(p["role"]) != 1 and int(p["role"]) != 2:
+			continue
+		var bb: Array = p["bbox"]
+		if (int(bb[2]) - int(bb[0]) + 1) > MesherScript.SPIKE_MAX_BBOX or (int(bb[3]) - int(bb[1]) + 1) > MesherScript.SPIKE_MAX_BBOX:
+			continue
+		@warning_ignore("integer_division")
+		out["%d,%d" % [(int(bb[0]) + int(bb[2])) / 2, (int(bb[1]) + int(bb[3])) / 2]] = int(p["id"])
+	return out
+
+
+## True when a spike at centre cell (cx, cz), hung from a platform whose lowest tile is at
+## plat_min_y (HU), would read as attached to the hub: its centre is inside the hub bbox AND its
+## vertical span (slab bottom down the spike's full length, both from the mesher's own constants)
+## comes within CLEAR of the hub slab (hub_ymin - slab .. hub_ymax).
+func _spike_hangs_on_hub(hub_bbox: Array, hub_ymin: int, hub_ymax: int, cx: int, cz: int, plat_min_y: int) -> bool:
+	if cx < int(hub_bbox[0]) or cx > int(hub_bbox[2]) or cz < int(hub_bbox[1]) or cz > int(hub_bbox[3]):
+		return false
+	var slab_hu: int = roundi(MesherScript.SLAB / MesherScript.HU)
+	var len_u := 0.0
+	for seg in MesherScript.SPIKE_STEPS:
+		len_u += float(seg[1])
+	var spike_hu: int = roundi(len_u / MesherScript.HU)
+	var s_top: int = plat_min_y - slab_hu
+	var s_bot: int = s_top - spike_hu
+	var h_top: int = hub_ymax
+	var h_bot: int = hub_ymin - slab_hu
+	var gap := 0
+	if s_bot > h_top:
+		gap = s_bot - h_top
+	elif s_top < h_bot:
+		gap = h_bot - s_top
+	return gap < CLEAR_HU
+
+
+## The hub-spike rule must still fire: a spike in the hub bbox hung from a platform at the hub's
+## own height is a violation; one a full layer (>= CLEAR) below is legal. Hub = bbox [-9,-9,9,9],
+## tiles at y 0..1 HU, slab 2 HU, spike 8 HU (the GEN_VERSION 4 hub, TERRAIN_SPEC 6.1).
+func _hub_spike_rule_unit() -> Array[String]:
+	var f: Array[String] = []
+	var hub := [-9, -9, 9, 9]
+	var cases := [
+		# [cx, cz, platform bottom y, must be a violation, why]
+		[-5, -9, 0, true, "platform at hub level in the corner beside the plaza"],
+		[-5, -9, -11, true, "platform 11 HU down: spike within CLEAR of the hub slab"],
+		[-5, -9, -12, false, "platform 12 HU down: spike a full CLEAR below the hub slab"],
+		[-5, -9, -28, false, "seed 7 level 30's dead-end disc, 14 u below the hub"],
+		[20, 20, 0, false, "platform at hub level but outside the hub bbox"],
+	]
+	for c in cases:
+		var got := _spike_hangs_on_hub(hub, 0, 1, int(c[0]), int(c[1]), int(c[2]))
+		if got != bool(c[3]):
+			f.append("hub-spike rule: %s -> violation=%s, want %s" % [c[4], got, c[3]])
+	return f
 
 
 func _spike_columns(L: Dictionary, r: Dictionary) -> Array[String]:

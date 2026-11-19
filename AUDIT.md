@@ -11,6 +11,14 @@ Date of run: 2026-11-17. Machine: a 6-core AMD CPU, a discrete AMD GPU, Windows 
 data file was edited. Every number below comes from a command run in this session; the logs are in
 `out/` (gitignored). Where something could not be measured, the text says so and says why.
 
+> **Superseded numbers — note added 2026-11-19 (job J1, GEN_VERSION 4).** This audit measured commit
+> `64e3332` at terrain GEN_VERSION 3, and its numbers stay as recorded. Since J1 the generator is at
+> **GEN_VERSION 4** (every walkway exactly 3 wide, every piece at least 3 wide, gifts on centre lanes;
+> TERRAIN_SPEC §1A, out/decisions/J1.md). The terrain expectations a re-run must now see are:
+> `SELFTEST 18/18` (was 15/15: H17 re-pointed, H24 and H25 added), `TESTS OK`, `GALLERY 16/16 OK`
+> (regenerated), `PARITY 56/56 OK`, and **34 `PASS` / 0 `FAIL`** from `validate.py --seeds 0:5000`
+> (was 32: H24 and H25 added). Each stale figure below is marked "(GEN_VERSION 3)".
+
 **FIX-A3 (the bot-competence fix) is NOT on `main` and was not touched.** A3 is measured against what
 `main` holds.
 
@@ -39,10 +47,10 @@ still went green on the first try, so no re-run was needed.
 |---|---|---|---|
 | 1 | `godot --headless --path game --script res://tests/run_all.gd` | `TESTS 58 passed 0 failed` (214 s wall) | 0 |
 | 2 | `godot --headless --path game --script res://tests/test_terrain_parity.gd -- <abs>\terrain_ref\gallery.json` | `PARITY 56/56 OK` (line above: `GALLERY_PIN 16/16 pinned-gallery records match`) | 0 |
-| 3 | `python terrain_ref/test_validate.py` | `SELFTEST 15/15` then `TESTS OK` | 0 |
+| 3 | `python terrain_ref/test_validate.py` | `SELFTEST 15/15` then `TESTS OK` (GEN_VERSION 3; 18/18 since J1) | 0 |
 | 4 | `python terrain_ref/gallery.py --check` | `GALLERY 16/16 OK` | 0 |
-| 5 | `python terrain_ref/validate.py --selftest` | `SELFTEST 15/15` | 0 |
-| 6 | `python terrain_ref/validate.py --seeds 0:5000` | `total wall time 194.9 s` (32 `PASS` / 0 `FAIL` lines above it) | 0 |
+| 5 | `python terrain_ref/validate.py --selftest` | `SELFTEST 15/15` (GEN_VERSION 3; 18/18 since J1) | 0 |
+| 6 | `python terrain_ref/validate.py --seeds 0:5000` | `total wall time 194.9 s` (32 `PASS` / 0 `FAIL` lines above it; GEN_VERSION 3 — 34 `PASS` since J1) | 0 |
 | 7 | `godot --headless --path game --script res://tools/bot_run.gd -- --dodge --runs 100 --seed-base 0 --max-level 2` (the working form of §4's bot line, at A3's 100 seeds — D1) | `BOT_RUN OK (100 runs, deterministic seed set seed_base=0..99)` (2,097 s wall) | 0 |
 | 8 | `mkdir -p build` then `godot --headless --path game --export-release "Windows Desktop" ../build/voidwrap_run.exe` | `[ DONE ] savepack` | 0 |
 | 9 | `powershell -NoProfile -File tools/gate.ps1 > out/gate1.log` | `GATE OK (9 ran, 0 skipped, 377 s)` | 0 |
@@ -50,7 +58,7 @@ still went green on the first try, so no re-run was needed.
 Notes on the numbers:
 
 - **The gate: `GATE OK (9 ran, 0 skipped, 377 s)`, TESTS line `TESTS 58 passed 0 failed`.** Summary block:
-  `OK python oracle checks (TESTS OK, SELFTEST 15/15, GALLERY 16/16 OK)`, `OK terrain parity (PARITY 56/56 OK)`,
+  `OK python oracle checks (TESTS OK, SELFTEST 15/15, GALLERY 16/16 OK)` (GEN_VERSION 3; SELFTEST 18/18 since J1), `OK terrain parity (PARITY 56/56 OK)`,
   `OK run_all (TESTS 58 passed 0 failed)`, `OK boundary scan`, `OK content schema`, `OK drop-in fixture`,
   `OK replay determinism`, `OK sprite validator` (`SPRITES OK 515 checks over 12 sprites.json`),
   `OK fog readability` (`FOGCHECK OK (550 checks over 5 biomes)`). 377 s includes the cold `--import` of a
@@ -61,6 +69,7 @@ Notes on the numbers:
   320 s under contention, and D-FIX-A4-1 shortened A4's recorded runs to 1,000 ticks so that `run_all`
   would fit the timeout (§9.1).
 - **The 5,000-seed harness: 32 PASS / 0 FAIL, 194.9 s.** `grep -c '^PASS '` = 32, `grep -c '^FAIL '` = 0.
+  (GEN_VERSION 3. Since J1, GEN_VERSION 4: 34 PASS / 0 FAIL.)
 - **`run_all` prints `TESTS 58 passed 0 failed`** (55 at the first audit; the 3 new files are
   `test_curse_requires.gd`, `test_app_flow.gd`, `test_menu.gd`). Engine teardown still prints
   `WARNING: 31 ObjectDB instances were leaked at exit` and `ERROR: 8 resources still in use at exit`; the
@@ -112,7 +121,8 @@ behaviour exists and is tested, but the criterion's stated number, scope or proo
 
 ### A2 — terrain: 5,000-seed harness + GDScript parity — **PASS** (unchanged)
 
-- `python terrain_ref/validate.py --seeds 0:5000` → **32 PASS / 0 FAIL**, `total wall time 194.9 s`, exit **0**.
+- `python terrain_ref/validate.py --seeds 0:5000` → **32 PASS / 0 FAIL**, `total wall time 194.9 s`, exit **0**
+  (GEN_VERSION 3; since J1 the harness has H24 and H25 and prints 34 PASS / 0 FAIL).
   Every H check `failures=0/5000` (H1–H23); D1 max dev 0.00576 ≤ 0.01000; D2 300/300; D3 5000; D4 0.3935 ≤ 0.5
   and 0 ≤ 4; D5 0 ≤ 4; D6 0.0179 ≤ 0.1; D7 bucket means strictly increasing (80.53 → 215.555); D8 10.374 ≤ 50 and
   75.0 ≤ 80; D9 83.0 ≤ 250 and 350.5 ≤ 2000.
@@ -684,7 +694,7 @@ The exe's ~5.8 s start-up before the menu appears is not a DESIGN §2 row. It is
 
 ### 9.3 Is a gift inside geometry? — **No.**
 
-The generator's invariant (`terrain_ref/validate.py`) and the 5,000-seed harness (32/32 PASS, every H check
+The generator's invariant (`terrain_ref/validate.py`) and the 5,000-seed harness (32/32 PASS at GEN_VERSION 3, 34/34 since J1, every H check
 0/5000) still hold; the bucket 26-30 reachability row is unchanged (first_gift 215.56, starve_p95 142.30,
 starve_max 246.73).
 

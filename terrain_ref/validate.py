@@ -19,9 +19,15 @@ Ambiguity resolutions (stricter readings, see final report):
     the generator's own candidate filter.
   * H3 "distinct existing tile": no two slots may share a column (x,z),
     matching the generator's spacing key, which is the stricter reading.
-  * chokepoints: literal reading - link pieces (kind 1) with w <= 2 whose
-    REMOVAL disconnects the undirected piece graph built from Level["edges"],
-    i.e. articulation points, not cut edges.
+  * chokepoints: walkway pieces (kind 1) whose REMOVAL disconnects the
+    undirected piece graph built from Level["edges"], i.e. articulation points,
+    not cut edges. (Until GEN_VERSION 3 the filter was "w <= 2", which every
+    walkway met; since GEN_VERSION 4 every walkway is 3 wide, so the width
+    filter would count nothing and was dropped to keep the metric's meaning.)
+  * walkway travel axis (H17, H20): the axis along which the walkway's tiles
+    touch its parent piece's tiles. The bbox's long axis is wrong for a
+    3-wide walkway of 1 or 2 rows; it is only the fallback when the contact
+    votes tie.
   * "pads" metric counts Level["pads"] (launch pads), as instructed.
   * p99 (D4) uses the same index convention as the p95 of H11:
     floor(0.99*(n-1)) of the sorted list.
@@ -66,7 +72,7 @@ BIG = 9999.0        # sentinel reported for unreachable-ish distances
 
 HARD_CHECKS = ("H2", "H3", "H4", "H5", "H6", "H7", "H8", "H9", "H10",
                "H11", "H12", "H13", "H14", "H16", "H17", "H18", "H19",
-               "H20", "H21", "H22", "H23")
+               "H20", "H21", "H22", "H23", "H24", "H25")
 HARNESS_CHECKS = ("H1",) + HARD_CHECKS + ("H15",)
 METRIC_NAMES = ("walkable", "playable_pct", "platforms", "walkways", "dead_ends",
                 "max_depth", "arms", "loops", "drops", "pads", "chokepoints",
@@ -78,7 +84,8 @@ METRIC_NAMES = ("walkable", "playable_pct", "platforms", "walkways", "dead_ends"
 # ---- shape contract constants (TERRAIN_SPEC section 1A) ----
 HUB_TILES = 205            # hub piece tile count
 HUB_DAIS = 25              # dais tiles at y=1
-MAX_WALK_W = 2             # max walkway width in cells
+WALK_W = 3                 # every walkway row is exactly this many cells (GEN_VERSION 4, J1)
+MIN_PIECE_W = 3            # every walkable tile lies in a full 3x3 square of its piece (H24)
 MAX_PLAT_DIM = 7           # max platform bbox dimension in cells
 MAX_PLAT_TILES = 40        # max platform tile count
 PLAT_MIN = 3               # min platforms per level
@@ -576,12 +583,42 @@ def bbox_of(tiles, idxs):
     return x0, z0, x1, z1
 
 
-def walkway_rows(tiles, idxs):
-    """Rows of a straight walkway along its dominant axis.
+def walkway_axis(L, col, idxs, parent):
+    """Travel axis of a walkway (0 = rows indexed by x, 1 = by z): the axis along which its tiles
+    touch the tiles of its parent piece. Falls back to the bbox's long axis when the votes tie."""
+    tiles = L["tiles"]
+    votes = [0, 0]
+    for i in idxs:
+        t = tiles[i]
+        for d in range(4):
+            for j in col.get((t[0] + DX[d], t[1] + DZ[d]), ()):
+                u = tiles[j]
+                if u[4] == parent and abs(u[2] - t[2]) < CLEAR:
+                    votes[d % 2] += 1
+                    break
+    if votes[0] != votes[1]:
+        return 0 if votes[0] > votes[1] else 1
+    x0, z0, x1, z1 = bbox_of(tiles, idxs)
+    return 0 if (x1 - x0) >= (z1 - z0) else 1
+
+
+def row_counts(tiles, idxs, axis):
+    """coord along the travel axis -> number of tiles in that row."""
+    out = {}
+    for i in idxs:
+        t = tiles[i]
+        c = t[0] if axis == 0 else t[1]
+        out[c] = out.get(c, 0) + 1
+    return out
+
+
+def walkway_rows(tiles, idxs, axis=None):
+    """Rows of a straight walkway along its travel axis (bbox long axis when not given).
     Returns (rows, width): rows = [(coord, y, has_ramp)] sorted by coord,
     width = most tiles sharing one row."""
-    x0, z0, x1, z1 = bbox_of(tiles, idxs)
-    axis = 0 if (x1 - x0) >= (z1 - z0) else 1
+    if axis is None:
+        x0, z0, x1, z1 = bbox_of(tiles, idxs)
+        axis = 0 if (x1 - x0) >= (z1 - z0) else 1
     groups = {}
     for i in idxs:
         t = tiles[i]
@@ -765,19 +802,110 @@ def shape_checks(L, base, hub_pid):
         fails.append("H16: piece %d is %d cells wide, spawn platform is %d"
                      % (widest_pid, widest, hub_dim))
 
-    # ---- H17: max walkway width ----
+    # ---- H17: walkway width is exactly WALK_W (GEN_VERSION 4: min 3, and max 3 so a centre lane
+    # with exactly one tile on each side exists and the hub stays the widest piece) ----
     maxw = 0
-    maxw_pid = -1
+    minw = 1 << 30
+    bad17 = None
     walk_rows = {}
+    col = base["col"]
     for pid in walk_ids:
-        rows, w = walkway_rows(tiles, pt[pid])
+        axis = walkway_axis(L, col, pt[pid], pieces[pid]["parent"])
+        rows, w = walkway_rows(tiles, pt[pid], axis)
         walk_rows[pid] = rows
-        if w > maxw:
-            maxw = w
-            maxw_pid = pid
-    if maxw > MAX_WALK_W:
-        fails.append("H17: walkway %d is %d cells wide (max %d)"
-                     % (maxw_pid, maxw, MAX_WALK_W))
+        rc = row_counts(tiles, pt[pid], axis)
+        lo = min(rc.values())
+        hi = max(rc.values())
+        if hi > maxw:
+            maxw = hi
+        if lo < minw:
+            minw = lo
+        if (lo != WALK_W or hi != WALK_W) and bad17 is None:
+            bad17 = (pid, lo, hi)
+    if bad17 is not None:
+        fails.append("H17: walkway %d has rows %d..%d cells wide (every row must be exactly %d)"
+                     % (bad17[0], bad17[1], bad17[2], WALK_W))
+    if minw == 1 << 30:
+        minw = 0
+
+    # ---- H24: every walkable piece is at least 3 cells wide (GEN_VERSION 4) ----
+    # Every tile lies inside a full 3x3 square of cells, each holding a tile of the same piece or of
+    # a piece joined to it by an edge (so a walkway's first row may lean on its parent). Footprint
+    # only: props and heights do not narrow a piece (a stepped path is still 3 wide).
+    joined = {}
+    for p in pieces:
+        joined[p["id"]] = {p["id"]}
+    for e in L["edges"]:
+        if e[0] in joined and e[1] in joined:
+            joined[e[0]].add(e[1])
+            joined[e[1]].add(e[0])
+    colp = {}
+    for t in tiles:
+        colp.setdefault((t[0], t[1]), set()).add(t[4])
+    bad24 = 0
+    ex24 = None
+    for t in tiles:
+        jp = joined.get(t[4], {t[4]})
+        ok24 = False
+        for ox in (-2, -1, 0):
+            for oz in (-2, -1, 0):
+                full = True
+                for a in range(3):
+                    for b in range(3):
+                        s = colp.get((t[0] + ox + a, t[1] + oz + b))
+                        if s is None or not (s & jp):
+                            full = False
+                            break
+                    if not full:
+                        break
+                if full:
+                    ok24 = True
+                    break
+            if ok24:
+                break
+        if not ok24:
+            bad24 += 1
+            if ex24 is None:
+                ex24 = t
+    if bad24:
+        fails.append("H24: %d tiles are on a part narrower than %d cells (first (%d,%d,%d) piece %d)"
+                     % (bad24, MIN_PIECE_W, ex24[0], ex24[1], ex24[2], ex24[4]))
+
+    # ---- H25: every gift slot is on a centre lane (GEN_VERSION 4) ----
+    # All four neighbour columns hold a walkable tile on the slot's layer (within CLEAR), and along
+    # at least one axis the column two away is empty on both sides: exactly one walkable tile on
+    # each side of the gift.
+    walkable = base["walkable"]
+
+    def lane(x, z, y):
+        for j in col.get((x, z), ()):
+            if walkable[j] and abs(tiles[j][2] - y) < CLEAR:
+                return True
+        return False
+
+    bad25 = 0
+    ex25 = None
+    for g in L["gifts"]:
+        gx, gz, gy = g["x"], g["z"], g["y"]
+        ok25 = True
+        for d in range(4):
+            if not lane(gx + DX[d], gz + DZ[d], gy):
+                ok25 = False
+                break
+        if ok25:
+            ok25 = False
+            for a in range(2):
+                if not lane(gx + 2 * DX[a], gz + 2 * DZ[a], gy) and \
+                        not lane(gx - 2 * DX[a], gz - 2 * DZ[a], gy):
+                    ok25 = True
+                    break
+        if not ok25:
+            bad25 += 1
+            if ex25 is None:
+                ex25 = g
+    if bad25:
+        fails.append("H25: %d gift slots are not on a centre lane (first id=%d at (%d,%d,%d))"
+                     % (bad25, ex25["id"], ex25["x"], ex25["z"], ex25["y"]))
 
     # ---- H18: platform size and count bounds ----
     pm = plat_max(level)
@@ -895,6 +1023,7 @@ def shape_checks(L, base, hub_pid):
     m["hub_dim"] = hub_dim
     m["hub_flat"] = hub_flat
     m["max_walk_w"] = maxw
+    m["min_walk_w"] = minw
     m["tread_dy_hist"] = tread_hist
     m["junction_dy_hist"] = jhist
     return fails, m
@@ -1230,7 +1359,7 @@ def check_level(L):
     aps = articulation_points(list(pg.keys()), pg)
     for pid in aps:
         p = pieces[pid]
-        if p["kind"] == 1 and p["w"] <= 2:
+        if p["kind"] == 1:
             chokepoints += 1
     link_pieces = [p for p in pieces if p["kind"] == 1]
 
@@ -1395,30 +1524,82 @@ def _defect_second_hub(L):
             L["tiles"].append([t[0] + 200, t[1] + 200, t[2], t[3], pid])
 
 
-def _defect_wide_walkway(L):
-    """H17: a walkway three cells wide."""
+def _tile_cols(L):
+    col = {}
+    for i, t in enumerate(L["tiles"]):
+        col.setdefault((t[0], t[1]), []).append(i)
+    return col
+
+
+def _long_walkway(L, min_rows):
+    """(piece, tile indices, travel axis) of the first tree walkway with at least min_rows rows."""
     pt = piece_tiles(L)
+    col = _tile_cols(L)
     for p in L["pieces"]:
-        if p["kind"] != 1:
+        if p["kind"] != 1 or p["role"] != 3:
             continue
         idxs = pt[p["id"]]
-        rows, w = walkway_rows(L["tiles"], idxs)
-        if w != 1 or len(rows) < 3:
+        axis = walkway_axis(L, col, idxs, p["parent"])
+        if len(row_counts(L["tiles"], idxs, axis)) >= min_rows:
+            return p, idxs, axis
+    raise RuntimeError("selftest defect: no walkway with %d rows" % min_rows)
+
+
+def _defect_narrow_walkway(L):
+    """H17: a walkway only two cells wide (one edge lane removed along its whole length).
+    Since GEN_VERSION 4 a walkway is exactly 3 cells wide, so 2 is the too-narrow violation."""
+    p, idxs, axis = _long_walkway(L, 3)
+    lat = 1 - axis
+    edge = max(L["tiles"][i][lat] for i in idxs)
+    drop = set(i for i in idxs if L["tiles"][i][lat] == edge)
+    L["tiles"][:] = [t for i, t in enumerate(L["tiles"]) if i not in drop]
+
+
+def _defect_wide_walkway(L):
+    """H17: a walkway four cells wide (one lane added along its whole length): the max side of
+    "exactly 3"."""
+    p, idxs, axis = _long_walkway(L, 3)
+    lat = 1 - axis
+    edge = max(L["tiles"][i][lat] for i in idxs)
+    for i in list(idxs):
+        t = L["tiles"][i]
+        if t[lat] == edge:
+            nt = [t[0], t[1], t[2], t[3], t[4]]
+            nt[lat] += 1
+            L["tiles"].append(nt)
+
+
+def _defect_one_wide_spur(L):
+    """H24: a one-cell-wide strip of five tiles (a part narrower than 3 cells)."""
+    pid = len(L["pieces"])
+    L["pieces"].append({"id": pid, "kind": 0, "arch": "pad", "parent": 0, "depth": 1,
+                        "arm": 0, "role": 1, "y": 0, "center": [], "jumps": 0, "w": 0})
+    for x in range(5):
+        L["tiles"].append([200 + x, 200, 0, 0, pid])
+
+
+def _defect_gift_off_centre(L):
+    """H25: a gift moved from the centre lane of a walkway onto the edge lane beside it (a valid,
+    reachable, flat tile, so only the centre-lane rule catches it)."""
+    pt = piece_tiles(L)
+    col = _tile_cols(L)
+    tiles = L["tiles"]
+    slot_cols = set((g["x"], g["z"]) for g in L["gifts"])
+    for g in L["gifts"]:
+        p = L["pieces"][g["piece"]]
+        if p["kind"] != 1:
             continue
-        x0, z0, x1, z1 = bbox_of(L["tiles"], idxs)
-        axis = 0 if (x1 - x0) >= (z1 - z0) else 1
-        mid = rows[len(rows) // 2]
-        for i in idxs:
-            t = L["tiles"][i]
-            c = t[0] if axis == 0 else t[1]
-            if c != mid[0]:
+        axis = walkway_axis(L, col, pt[p["id"]], p["parent"])
+        for s in (1, -1):
+            nx = g["x"] + (s if axis == 1 else 0)
+            nz = g["z"] + (s if axis == 0 else 0)
+            if (nx, nz) in slot_cols:
                 continue
-            lat = 1 if axis == 0 else 0
-            for o in (1, 2):
-                nx = t[0] + (o if lat == 0 else 0)
-                nz = t[1] + (o if lat == 1 else 0)
-                L["tiles"].append([nx, nz, t[2], 0, p["id"]])
-            return
+            for j in col.get((nx, nz), ()):
+                if tiles[j][2] == g["y"] and tiles[j][3] == 0 and tiles[j][4] == p["id"]:
+                    g["x"], g["z"] = nx, nz
+                    return
+    raise RuntimeError("selftest defect: no walkway gift with a free edge-lane tile beside it")
 
 
 def _defect_big_platform(L):
@@ -1500,7 +1681,11 @@ def _defect_flush_junctions(L):
 
 
 def _defect_mine_no_bypass(L):
-    """H23: flip occ to 1 on a slot whose tile has no walkable bypass (a 1-wide walkway tile)."""
+    """H23: flip occ to 1 on a slot whose tile has no walkable bypass. Since GEN_VERSION 4 every
+    slot is on the centre lane of a 3-wide part, so a slot without a bypass rarely exists: when none
+    does, the side lanes of a walkway are carved away for k rows on both sides of a walkway slot
+    (the path narrows to the single centre lane there, too long to jump around) until the slot has
+    no bypass, and the mine goes there."""
     base = walk_layer(L)
     adj = build_adj(L, base, VALIDATOR_GAP)
     judge = MineJudge(base, adj, [t for t in slot_tiles_of(L, base) if t >= 0])
@@ -1513,7 +1698,35 @@ def _defect_mine_no_bypass(L):
             target = gi
             break
     if target < 0:
-        raise RuntimeError("selftest defect: no ineligible slot in the level")
+        pt = piece_tiles(L)
+        col = _tile_cols(L)
+        tiles = L["tiles"]
+        for gi, g in enumerate(L["gifts"]):
+            p = L["pieces"][g["piece"]]
+            if p["kind"] != 1 or p["role"] != 3:
+                continue
+            idxs = pt[p["id"]]
+            axis = walkway_axis(L, col, idxs, p["parent"])
+            lat = 1 - axis
+            gc = (g["x"], g["z"])[axis]
+            gl = (g["x"], g["z"])[lat]
+            for k in (3, 4, 5, 6):
+                drop = set(i for i in idxs
+                           if abs(tiles[i][axis] - gc) <= k and tiles[i][lat] != gl)
+                Lc = copy.deepcopy(L)
+                Lc["tiles"] = [t for i, t in enumerate(tiles) if i not in drop]
+                bc = walk_layer(Lc)
+                jc = MineJudge(bc, build_adj(Lc, bc, VALIDATOR_GAP),
+                               [t for t in slot_tiles_of(Lc, bc) if t >= 0])
+                t = find_tile(bc, g["x"], g["z"], g["y"])
+                if t >= 0 and not jc.eligible(t):
+                    L["tiles"][:] = Lc["tiles"]
+                    target = gi
+                    break
+            if target >= 0:
+                break
+    if target < 0:
+        raise RuntimeError("selftest defect: no slot could be left without a bypass")
     mines = sum(1 for g in L["gifts"] if g["occ"])
     i = S - 1
     while mines >= cap and i >= 0:
@@ -1552,6 +1765,17 @@ def _defect_mine_cylinder_swallows_gift(L):
         if target >= 0:
             break
     if target < 0:
+        # GEN_VERSION 4: gifts sit on centre lanes, which rarely lie under another floor. Plant a
+        # tile exactly CLEAR above the first eligible slot (legal headroom, H7 still holds) so the
+        # cylinder has a second tile in it to swallow.
+        for gi in range(S):
+            t = st[gi]
+            if t >= 0 and judge.eligible(t):
+                target = gi
+                L["tiles"].append([tiles[t][0], tiles[t][1], tiles[t][2] + CLEAR, 0, tiles[t][4]])
+                above = len(L["tiles"]) - 1
+                break
+    if target < 0:
         raise RuntimeError("selftest defect: no eligible slot with another tile in its column")
     mover = S - 1
     while mover == target:
@@ -1570,10 +1794,11 @@ def _defect_mine_cylinder_swallows_gift(L):
     L["gifts"][mover]["occ"] = 1
 
 
-def _defect_two_mines_seal(L):
-    """H23 (joint rule): two mines side by side seal a 2-wide walkway. Each is eligible alone.
-    Gift slots are never 4-adjacent (placement keeps them 2 apart), so the defect moves the
-    highest-id slot onto the tile beside another slot before flipping both to occ = 1."""
+def _defect_three_mines_seal(L):
+    """H23 (joint rule): three mines side by side seal a 3-wide walkway (GEN_VERSION 4; before it,
+    two mines sealed a 2-wide one). Each is eligible alone. Gift slots sit only on centre lanes, so
+    the defect moves the two highest-id slots onto the two edge-lane tiles beside a centre slot
+    before flipping all three to occ = 1."""
     base = walk_layer(L)
     adj = build_adj(L, base, VALIDATOR_GAP)
     judge = MineJudge(base, adj, [t for t in slot_tiles_of(L, base) if t >= 0])
@@ -1589,50 +1814,59 @@ def _defect_two_mines_seal(L):
         if p["role"] == 0:
             hub = p["id"]
             break
-    pair = None
+
+    def side_ok(u):
+        if u < 0 or not rt[u] or not base["walkable"][u]:
+            return False
+        tu = tiles[u]
+        if tu[3] != 0 or (tu[0], tu[1]) in slot_cols:
+            return False
+        if (tu[0], tu[1], tu[2]) in padset or (tu[0], tu[1], tu[2]) in prop_at:
+            return False
+        if tu[4] == hub and tu[2] == 1:
+            return False
+        return judge.eligible(u)
+
+    trio = None
     for gi, g in enumerate(L["gifts"]):
         t = find_tile(base, g["x"], g["z"], g["y"])
         if t < 0 or not judge.eligible(t):
             continue
-        for d in range(4):
-            u = find_tile(base, tiles[t][0] + DX[d], tiles[t][1] + DZ[d], tiles[t][2])
-            if u < 0 or not rt[u] or not base["walkable"][u]:
+        for a in range(2):
+            u1 = find_tile(base, tiles[t][0] + DX[a], tiles[t][1] + DZ[a], tiles[t][2])
+            u2 = find_tile(base, tiles[t][0] - DX[a], tiles[t][1] - DZ[a], tiles[t][2])
+            if not side_ok(u1) or not side_ok(u2):
                 continue
-            tu = tiles[u]
-            if tu[3] != 0 or (tu[0], tu[1]) in slot_cols:
-                continue
-            if (tu[0], tu[1], tu[2]) in padset or (tu[0], tu[1], tu[2]) in prop_at:
-                continue
-            if tu[4] == hub and tu[2] == 1:
-                continue
-            if not judge.eligible(u):
-                continue
-            if not judge.keeps_rt([t, u]):
-                pair = (gi, u)
+            if not judge.keeps_rt([t, u1, u2]):
+                trio = (gi, u1, u2)
                 break
-        if pair is not None:
+        if trio is not None:
             break
-    if pair is None:
-        raise RuntimeError("selftest defect: no adjacent slot pair breaks the joint rule")
-    gi, u = pair
-    # move the highest-id slot that is not `gi` onto tile u, then flip both to occ = 1
-    mover = S - 1
-    while mover == gi:
-        mover -= 1
-    tu = tiles[u]
-    L["gifts"][mover]["x"] = tu[0]
-    L["gifts"][mover]["z"] = tu[1]
-    L["gifts"][mover]["y"] = tu[2]
-    L["gifts"][mover]["piece"] = tu[4]
+    if trio is None:
+        raise RuntimeError("selftest defect: no slot trio across a walkway breaks the joint rule")
+    gi, u1, u2 = trio
+    movers = []
+    k = S - 1
+    while len(movers) < 2:
+        if k != gi:
+            movers.append(k)
+        k -= 1
+    for mv, u in zip(movers, (u1, u2)):
+        tu = tiles[u]
+        L["gifts"][mv]["x"] = tu[0]
+        L["gifts"][mv]["z"] = tu[1]
+        L["gifts"][mv]["y"] = tu[2]
+        L["gifts"][mv]["piece"] = tu[4]
+    keep = (gi, movers[0], movers[1])
     mines = sum(1 for g in L["gifts"] if g["occ"])
     i = S - 1
-    while mines >= cap and i >= 0:
-        if L["gifts"][i]["occ"] and i not in (gi, mover):
+    while mines + 3 > cap and i >= 0:
+        if L["gifts"][i]["occ"] and i not in keep:
             L["gifts"][i]["occ"] = 0
             mines -= 1
         i -= 1
-    L["gifts"][gi]["occ"] = 1
-    L["gifts"][mover]["occ"] = 1
+    for i in keep:
+        L["gifts"][i]["occ"] = 1
 
 
 def run_selftest():
@@ -1644,15 +1878,18 @@ def run_selftest():
         ("mine cap exceeded", _defect_too_many_mines, "H5"),
         ("drop-only ledge group", _defect_drop_only_ledge, "H6"),
         ("second area as large as the hub", _defect_second_hub, "H16"),
-        ("walkway three cells wide", _defect_wide_walkway, "H17"),
+        ("walkway two cells wide", _defect_narrow_walkway, "H17"),
+        ("walkway four cells wide", _defect_wide_walkway, "H17"),
         ("9x9 platform", _defect_big_platform, "H18"),
         ("no walkways left", _defect_no_paths, "H19"),
         ("every path flattened", _defect_flat_paths, "H20"),
         ("every non-hub tile at one height", _defect_flat_level, "H21"),
         ("every platform flush with its path", _defect_flush_junctions, "H22"),
         ("mine on a tile with no walkable bypass", _defect_mine_no_bypass, "H23"),
-        ("two mines sealing a 2-wide walkway", _defect_two_mines_seal, "H23"),
+        ("three mines sealing a 3-wide walkway", _defect_three_mines_seal, "H23"),
         ("mine whose cylinder swallows another gift", _defect_mine_cylinder_swallows_gift, "H23"),
+        ("one-cell-wide strip", _defect_one_wide_spur, "H24"),
+        ("gift on an edge lane", _defect_gift_off_centre, "H25"),
     )
     ok = 0
     for name, fn, hid in defects:

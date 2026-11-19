@@ -47,7 +47,7 @@ the report format. Tell it explicitly not to weaken checks. Workers start with z
 
 | path | what | state |
 |---|---|---|
-| `TERRAIN_SPEC.md`, `TERRAIN_REF.md` | terrain spec + reference guide | final for GEN_VERSION 1 |
+| `TERRAIN_SPEC.md`, `TERRAIN_REF.md` | terrain spec + reference guide | current for GEN_VERSION 4 (job J1, 2026-11-19) |
 | `terrain_ref/voidgen.py` | Python generator — THE ORACLE | working, hash-pinned |
 | `terrain_ref/validate.py`, `test_validate.py` | independent validator + 5,000-seed harness | see TERRAIN_REF.md status |
 | `terrain_ref/gallery.py`, `gallery.json`, `render.py` | 16 pinned levels, PNG map renderer | working |
@@ -272,7 +272,7 @@ Done-when: `tests/test_hud.gd` — counter shows `collected / REAL total` (mines
 **T-026 — Walker bot and playthrough harness**
 THE OWNER'S SPEC: "Target: runs overnight via multi-agent fleet, so every instruction must be executable without human decisions." (Retro: "the bot … is the only end-to-end proof the game works".)
 Assignment: spawn (model:acpRegistry_mistral_vibe/zai-glm-5-3-flash)
-Read: TERRAIN_SPEC.md §5 (use the SAME movement graph — port the validator's graph builder into `game/tools/bot/graph.gd`; jump envelope = VALIDATOR limits, never narrower: retro §4e). Also TERRAIN_SPEC.md §1A: walkways are 1–2 cells wide and step by 1–2 HU, so the bot must handle 1-wide corridors and 1-HU walk edges.
+Read: TERRAIN_SPEC.md §5 (use the SAME movement graph — port the validator's graph builder into `game/tools/bot/graph.gd`; jump envelope = VALIDATOR limits, never narrower: retro §4e). Also TERRAIN_SPEC.md §1A: walkways are exactly 3 cells wide (GEN_VERSION 4, job J1; they were 1–2 wide when this ticket ran) and step by 1–2 HU, so the bot must handle 1-HU walk edges.
 Do: `tools/bot_run.gd`: nearest-real-gift routing over the movement graph, executes walk/jump/drop/pad edges through real `PlayerInput`s into the real sim at max speed; CLI `--seeds A:B` (runs seeds A..B−1), `--dodge` (reacts to telegraph events after 15 ticks; off by default), `--enemy <id>` (pins the level-1 starter enemy; default = the pre-run vote), `--class <id>`; every run starts with Last Light unspent and 2 void charges held (A3's state); returns to the beacon; records inputs for replays (feeds A4); prints `BOT seed level result ticks gifts deaths killer`.
 Done-when: A3 green with `bot_run.gd --seeds 0:100 --dodge --enemy kiwi_cat`; A4 green.
 
@@ -396,8 +396,10 @@ Enemy-system reasoning is in research/fable-enemies.md; fun signals in research/
   for tonight (§10, rule R2) says an Inkling ticket never goes to GLM. §10 wins tonight.
 - §7 lists the merge order without the tickets below; §10 gives the complete order.
 - T-001 says "first commit on main". Two commits already exist (ab471d8, 14be164); T-001 commits on top.
-- §9 says "terrain archetype pack 2 (GEN_VERSION 2 …)". The generator is already at version 3.
-- §2's table says the selftest is 5/5 in places written before the terrain changes; it is 15/15.
+- §9 says "terrain archetype pack 2 (GEN_VERSION 2 …)". The generator is at version 4 (job J1; it was 3
+  when this pass ran).
+- §2's table says the selftest is 5/5 in places written before the terrain changes; it is 18/18 since
+  job J1 (15/15 at GEN_VERSION 3).
 
 | ticket | title | assignment | spec |
 |---|---|---|---|
@@ -510,8 +512,9 @@ R16. THE GATE EXISTS. `tools/gate.ps1` is in the repository (written ahead of T-
      gate from the first merge). T-001 keeps it and still owes everything else in its Do list;
      `run_all.gd` must print `TESTS n passed m failed` (the gate reads that line) and must not try to
      load `test_terrain_parity.gd`, which is a standalone script the gate runs as its own step.
-R17. STALE COUNT IN T-002. Its Done-when says "selftest 12/12"; the validator has had 15 planted
-     defects since generator version 3. Dispatch T-002 with the addendum "selftest 15/15 (not 12/12)".
+R17. STALE COUNT IN T-002. Its Done-when says "selftest 12/12"; the validator had 15 planted
+     defects at generator version 3 and has 18 since version 4 (job J1). Dispatch T-002 with the
+     addendum "selftest 18/18 (not 12/12 or 15/15)".
 
 R18. GODOT FACTS EVERY CODE BRIEF CARRIES (each one already cost a worker time on this project):
      "(a) A global class_name does not resolve when a script is run with --headless --script: refer to
@@ -625,7 +628,7 @@ owns the failing area, merge it under R6, and run step e again from the top.
     python terrain_ref\validate.py --seeds 0:5000
     tools\godot\godot.exe --headless --path game --script res://tests/test_terrain_parity.gd -- "<repo>\terrain_ref\gallery.json"
     powershell -File tools\gate.ps1
-Expected final lines: TESTS OK · SELFTEST 15/15 · GALLERY 16/16 OK · 32 PASS lines and exit 0 ·
+Expected final lines: TESTS OK · SELFTEST 18/18 · GALLERY 16/16 OK · 34 PASS lines and exit 0 ·
 PARITY 56/56 OK · gate exit 0.
 
 STEP f — final audit (the last mandatory ticket; it is part of step b's list and runs here)

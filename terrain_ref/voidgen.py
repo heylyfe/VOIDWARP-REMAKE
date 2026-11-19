@@ -13,7 +13,7 @@ import hashlib
 import json
 import sys
 
-GEN_VERSION = 3
+GEN_VERSION = 4
 M32 = 0xFFFFFFFF
 
 # ---- units ---------------------------------------------------------------
@@ -36,8 +36,11 @@ AUTH_GAP = (4, 3, 2)
 ROLE_HUB, ROLE_ROOM, ROLE_DEADEND, ROLE_LINK, ROLE_LOOP, ROLE_DROP = 0, 1, 2, 3, 4, 5
 EDGE_TREE, EDGE_LOOP, EDGE_DROP, EDGE_PAD = 0, 1, 2, 3
 
-# GEN_VERSION 2 vocabulary (TERRAIN_SPEC section 1A): walkways are 1-2 cells wide and stepped,
-# platforms are small (bbox <= 7x7, <= 40 tiles). The hub is the only large area.
+# GEN_VERSION 2 vocabulary (TERRAIN_SPEC section 1A): walkways are stepped, platforms are small
+# (bbox <= 7x7, <= 40 tiles). The hub is the only large area.
+# GEN_VERSION 4 (owner override, out/decisions/J1.md): every walkway is exactly WALK_W = 3 cells
+# wide, every walkable piece is at least 3 cells wide, and every gift slot sits on a centre lane.
+WALK_W = 3
 WALKS = ("step", "stair", "ledge", "flat", "ramp")
 PLATS = ("pad", "disc", "cross", "ell", "terrace", "nook", "spire", "bastion")
 TRAITS = ("grand", "ascent", "descent", "hop", "maze", "thin")
@@ -82,7 +85,6 @@ def tuning(level, players):
             "pad": 10, "disc": 7, "cross": 10, "ell": 8, "terrace": 8,
             "nook": 5, "spire": 3 + t // 5, "bastion": 5,
         },
-        "w1_pct": 20 + 40 * (t - 1) // 29,
         "plat_pct": 40,
         "term_pct": 35,
         "jump_min_depth": max(1, 10 - t),
@@ -260,11 +262,13 @@ def plat_pad(rng, t, gentle):
     for x in range(w):
         for z in range(d):
             tiles.append([x, z, 0, 0])
-    jx = rng.ri(0, w - 1)
-    jz = rng.ri(0, d - 1)
-    jx2 = rng.ri(0, w - 1)
-    jz2 = rng.ri(0, d - 1)
-    socks = [[w - 1, jz, 0, 0, 2], [jx, d - 1, 1, 0, 2], [0, jz2, 2, 0, 2], [jx2, 0, 3, 0, 2]]
+    # a socket is never on a corner: the 3-wide walkway leaving it meets 3 platform tiles
+    jx = rng.ri(1, w - 2)
+    jz = rng.ri(1, d - 2)
+    jx2 = rng.ri(1, w - 2)
+    jz2 = rng.ri(1, d - 2)
+    socks = [[w - 1, jz, 0, 0, WALK_W], [jx, d - 1, 1, 0, WALK_W], [0, jz2, 2, 0, WALK_W],
+             [jx2, 0, 3, 0, WALK_W]]
     props = []
     scatter(rng, tiles, socks, rng.ri(0, 2), props)
     anchors = [[AN_OPEN, w // 2, d // 2, 0]] if w * d >= 25 else []
@@ -279,7 +283,7 @@ def plat_disc(rng, t, gentle):
         for z in range(-r, r + 1):
             if x * x + z * z <= r * r + r:
                 tiles.append([x, z, 0, 0])
-    socks = [[r, 0, 0, 0, 2], [0, r, 1, 0, 2], [-r, 0, 2, 0, 2], [0, -r, 3, 0, 2]]
+    socks = [[r, 0, 0, 0, WALK_W], [0, r, 1, 0, WALK_W], [-r, 0, 2, 0, WALK_W], [0, -r, 3, 0, WALK_W]]
     props = []
     scatter(rng, tiles, socks, rng.ri(0, 1), props)
     anchors = [[AN_OPEN, 0, 0, 0]] if r >= 3 else []
@@ -287,8 +291,8 @@ def plat_disc(rng, t, gentle):
 
 
 def plat_cross(rng, t, gentle):
-    """Four-way junction. Arm width 1..2, arm lengths 1..3, bbox <= 7x7."""
-    a = rng.ri(1, 2)
+    """Four-way junction. Arm width 3 (GEN_VERSION 4), arm lengths 1..3, bbox <= 7x7."""
+    a = WALK_W
     rem = 7 - a
     l0 = rng.ri(1, 3)
     if l0 > rem - 1:
@@ -316,10 +320,10 @@ def plat_cross(rng, t, gentle):
 
 
 def plat_ell(rng, t, gentle):
-    """Corner. Arm width 1..2, arm lengths 2..5."""
-    a = rng.ri(1, 2)
-    la = rng.ri(2, 5)
-    lb = rng.ri(2, 5)
+    """Corner. Arm width 3 (GEN_VERSION 4), arm lengths 4..6."""
+    a = WALK_W
+    la = rng.ri(4, 6)
+    lb = rng.ri(4, 6)
     tiles = []
     for x in range(la):
         for z in range(lb):
@@ -334,10 +338,11 @@ def plat_ell(rng, t, gentle):
 
 
 def plat_terrace(rng, t, gentle):
-    """Two-level platform: the upper band is one step up (1 HU when gentle, else 2 HU)."""
-    w = rng.ri(3, 6)
-    d1 = rng.ri(2, 3)
-    d2 = rng.ri(2, 3)
+    """Two-level platform: the upper band is one step up (1 HU when gentle, else 2 HU).
+    GEN_VERSION 4: each band is at least 3 deep and every socket is centred on a 3-cell face."""
+    w = rng.ri(3, 5)
+    d1 = rng.ri(3, 4)
+    d2 = rng.ri(3, 7 - d1)
     up = 1 if gentle else 2
     tiles = []
     for x in range(w):
@@ -345,15 +350,15 @@ def plat_terrace(rng, t, gentle):
             tiles.append([x, z, 0, 0])
         for z in range(d1, d1 + d2):
             tiles.append([x, z, up, 0])
-    socks = [[w - 1, 0, 0, 0, 2], [0, 0, 2, 0, 2],
-             [rng.ri(0, w - 1), d1 + d2 - 1, 1, up, 2],
-             [w - 1, d1, 0, up, 2]]
+    socks = [[w - 1, 1, 0, 0, WALK_W], [0, 1, 2, 0, WALK_W],
+             [rng.ri(1, w - 2), d1 + d2 - 1, 1, up, WALK_W],
+             [w - 1, d1 + 1, 0, up, WALK_W]]
     return tiles, socks, [], []
 
 
 def plat_nook(rng, t, gentle):
     """Walled on three sides, ONE socket: a guaranteed dead end."""
-    s = rng.ri(4, 6)
+    s = rng.ri(5, 6)   # GEN_VERSION 4: the walled interior is at least 3 cells wide
     tiles = []
     props = []
     for x in range(s):
@@ -361,7 +366,7 @@ def plat_nook(rng, t, gentle):
             tiles.append([x, z, 0, 0])
             if x >= 1 and (x == s - 1 or z == 0 or z == s - 1):
                 props.append([x, z, 0, 6, PROP_WALL])
-    socks = [[0, s // 2, 2, 0, 2]]
+    socks = [[0, s // 2, 2, 0, WALK_W]]
     return tiles, socks, props, [[AN_NOOK, s // 2, s // 2, 0]]
 
 
@@ -378,19 +383,19 @@ def plat_spire(rng, t, gentle):
         for x in range(3):
             for z in range(3):
                 tiles.append([q[0] + x, q[1] + z, 3 * k, 0])
-    socks = [[0, 1, 2, 0, 2], [1, 0, 3, 0, 2]]
+    socks = [[0, 1, 2, 0, WALK_W], [1, 0, 3, 0, WALK_W]]
     kq = (n - 1) % 4
     q = SPIRE_Q[kq]
     od = SPIRE_OUT[kq][rng.range(2)]
     top = 3 * (n - 1)
     if od == 0:
-        socks.append([q[0] + 2, q[1] + 1, 0, top, 2])
+        socks.append([q[0] + 2, q[1] + 1, 0, top, WALK_W])
     elif od == 1:
-        socks.append([q[0] + 1, q[1] + 2, 1, top, 2])
+        socks.append([q[0] + 1, q[1] + 2, 1, top, WALK_W])
     elif od == 2:
-        socks.append([q[0], q[1] + 1, 2, top, 2])
+        socks.append([q[0], q[1] + 1, 2, top, WALK_W])
     else:
-        socks.append([q[0] + 1, q[1], 3, top, 2])
+        socks.append([q[0] + 1, q[1], 3, top, WALK_W])
     anchors = [[AN_PERCH, q[0] + 1, q[1] + 1, top]]
     return tiles, socks, [], anchors
 
@@ -404,8 +409,8 @@ def plat_bastion(rng, t, gentle):
         for z in range(s):
             tower = abs(x - c) <= 1 and abs(z - c) <= 1   # optional high ground, never on a route
             tiles.append([x, z, 4 if tower else 0, 0])
-    socks = [[s - 1, rng.ri(1, s - 2), 0, 0, 2], [rng.ri(1, s - 2), s - 1, 1, 0, 2],
-             [0, rng.ri(1, s - 2), 2, 0, 2], [rng.ri(1, s - 2), 0, 3, 0, 2]]
+    socks = [[s - 1, rng.ri(1, s - 2), 0, 0, WALK_W], [rng.ri(1, s - 2), s - 1, 1, 0, WALK_W],
+             [0, rng.ri(1, s - 2), 2, 0, WALK_W], [rng.ri(1, s - 2), 0, 3, 0, WALK_W]]
     return tiles, socks, [], [[AN_PERCH, c, c, 4]]
 
 
@@ -612,7 +617,8 @@ def build_hub(W):
                 W.add_tile(DX[d] * i + DX[lat] * o, DZ[d] * i + DZ[lat] * o, 0, 0, pid)
     for c in ((6, 6), (-6, 6), (-6, -6), (6, -6)):
         W.add_prop(c[0], c[1], 0, 10, PROP_PILLAR, pid)
-    return pid, [[9, 0, 0, 0, pid, 2, 0], [0, 9, 1, 0, pid, 2, 0], [-9, 0, 2, 0, pid, 2, 0], [0, -9, 3, 0, pid, 2, 0]]
+    return pid, [[9, 0, 0, 0, pid, WALK_W, 0], [0, 9, 1, 0, pid, WALK_W, 0],
+                 [-9, 0, 2, 0, pid, WALK_W, 0], [0, -9, 3, 0, pid, WALK_W, 0]]
 
 
 SPAWNS = ((1, 1), (-1, -1), (-1, 1), (1, -1), (2, 0), (-2, 0), (0, 2), (0, -2))
@@ -636,20 +642,8 @@ def try_grow(W, rng, sock, arm, trait, tn, arch_count, state, drift):
             w = 0          # paths near the hub are walkable on early levels (D8 gentle start)
         lw.append(w)
     larch = rng.wpick(WALKS, lw)
-    # width: 1 or 2 cells, never more (TERRAIN_SPEC section 1A rule 2)
-    hi = wmax if wmax < 2 else 2
-    if gentle:
-        w = hi
-    else:
-        w = 1 if rng.chance(tn["w1_pct"], 100) else 2
-        if w > hi:
-            w = hi
-    if trait == "thin":
-        w = 1
-    elif trait == "grand":
-        w = hi
-    if w > hi:
-        w = hi
+    # width: exactly WALK_W = 3 cells (GEN_VERSION 4, TERRAIN_SPEC section 1A rule 2). No RNG draw.
+    w = WALK_W
     up_pct = TRAIT_UP_PCT[trait] + 22 * drift
     if up_pct < 5:
         up_pct = 5
@@ -697,19 +691,24 @@ def try_grow(W, rng, sock, arm, trait, tn, arch_count, state, drift):
             if c[4]:
                 lp["center"].append(i)
         if larch in ("step", "flat") and n >= 8:
-            m = cells[(n // 2) * len(offs_for(w))]
+            m = cells[(n // 2) * len(offs_for(w)) + len(offs_for(w)) // 2]
             W.anchors.append([AN_LANE, m[0], m[1], m[2], lid])
         W.add_edge(pid, lid, EDGE_TREE)
         state["since"] += 1
         turn = rng.range(2)
         do_turn = rng.chance(tn["turn_pct"], 100)
-        if do_turn:
-            # the socket sits on the last row's outer tile on the chosen side and points sideways
+        if do_turn and n >= 4:
+            # the socket sits on the outer tile of row n-2 on the chosen side and points sideways,
+            # so the 3-wide walkway that grows from it covers rows n-3..n-1 flush (a clean L corner).
+            # n >= 4 keeps the new walkway's 8-neighbour ring (rows n-4..n) off this walkway's parent.
             sd = lat if turn == 0 else (lat + 2) % 4
-            so = w - 1 if turn == 0 else 0
-            sx = x + DX[d] * n + DX[lat] * so
-            sz = z + DZ[d] * n + DZ[lat] * so
-            return [[sx, sz, sd, y1, lid, w, 0]]
+            so = 1 if turn == 0 else -1
+            sx = x + DX[d] * (n - 1) + DX[lat] * so
+            sz = z + DZ[d] * (n - 1) + DZ[lat] * so
+            sy = cells[(n - 2) * WALK_W][2]
+            # the straight-ahead socket stays open too: it is grown when the turn fails, and a
+            # random pick may grow it as well, which makes a T junction (GEN_VERSION 4)
+            return [[px - DX[d], pz - DZ[d], d, y1, lid, w, 1], [sx, sz, sd, sy, lid, w, 0]]
         return [[px - DX[d], pz - DZ[d], d, y1, lid, w, 1]]
     # platform archetype
     rw = []
@@ -799,7 +798,7 @@ def try_grow(W, rng, sock, arm, trait, tn, arch_count, state, drift):
         tx, tz = xform(a[1], a[2], mir, rot)
         W.anchors.append([a[0], tx + ox, tz + oz, a[3] + oy, rid])
     if larch in ("step", "flat") and n >= 8:
-        m = cells[(n // 2) * len(offs_for(w))]
+        m = cells[(n // 2) * len(offs_for(w)) + len(offs_for(w)) // 2]
         W.anchors.append([AN_LANE, m[0], m[1], m[2], lid])
     W.add_edge(pid, lid, EDGE_TREE)
     W.add_edge(lid, rid, EDGE_TREE)
@@ -875,11 +874,11 @@ def try_loop(W, rng, sock, tn, counts, ray=None):
             return False
         ady = dy if dy >= 0 else -dy
         sgn = 1 if dy > 0 else -1
-        for w in ((2, 1) if wmax >= 2 else (1,)):
+        for w in (WALK_W,):
             cells = []
             for k in range(n):
                 yy = y + 1 + sgn * ((ady * (k + 1)) // n)   # |dy| single-HU steps spread over n rows
-                for o in range(w):
+                for o in offs_for(w):
                     cells.append([x + DX[d] * (k + 1) + DX[lat] * o, z + DZ[d] * (k + 1) + DZ[lat] * o, yy, 0, 1 if o == 0 else 0])
             if W.fits(cells, (pid, q)):
                 lid = W.add_piece(1, "bridge", pid, src["depth"], src["arm"], ROLE_LOOP, y)
@@ -896,10 +895,10 @@ def try_loop(W, rng, sock, tn, counts, ray=None):
     if -DROP_MAX // 2 <= dy <= -5 and n >= 1 and counts[1] < tn["drops_max"]:
         if W.graph_dist(pid, q, 3) < 3:
             return False
-        w = 2 if wmax >= 2 else 1
+        w = WALK_W
         cells = []
         for k in range(n):
-            for o in range(w):
+            for o in offs_for(w):
                 cells.append([x + DX[d] * (k + 1) + DX[lat] * o, z + DZ[d] * (k + 1) + DZ[lat] * o, y + 1, 0, 1 if o == 0 else 0])
         if not W.fits(cells, (pid, q)):
             return False
@@ -1044,6 +1043,36 @@ def bfs(adj, start):
 
 
 # ---- gifts ---------------------------------------------------------------------
+def lane_cell(W, x, z, y):
+    """True when column (x, z) holds a walkable (prop-free) tile on the same layer as height y,
+    i.e. within CLEAR of it. A tile a full layer above or below is a different floor."""
+    lst = W.col.get((x, z))
+    if lst is None:
+        return False
+    for j in lst:
+        tj = W.tiles[j]
+        if abs(tj[2] - y) < CLEAR and not has_prop(W, x, z, tj[2]):
+            return True
+    return False
+
+
+def centre_lane(W, i):
+    """TERRAIN_SPEC section 6.7 (GEN_VERSION 4): tile i is on a centre lane when all four neighbour
+    columns hold a walkable tile on its layer (it is not on an edge) and, along at least one axis,
+    there is exactly one walkable tile on each side of it (the cell two away is empty on both sides).
+    On a 3-wide walkway that is the middle lane."""
+    t = W.tiles[i]
+    x, z, y = t[0], t[1], t[2]
+    for d in range(4):
+        if not lane_cell(W, x + DX[d], z + DZ[d], y):
+            return False
+    for a in range(2):
+        if not lane_cell(W, x + 2 * DX[a], z + 2 * DZ[a], y) and \
+                not lane_cell(W, x - 2 * DX[a], z - 2 * DZ[a], y):
+            return True
+    return False
+
+
 def place_gifts(W, rng, tn, rt):
     """rt[i] = tile i is round-trip reachable. Returns list of slots [tile_index, pid] or None."""
     T = W.tiles
@@ -1060,6 +1089,8 @@ def place_gifts(W, rng, tn, rt):
             continue  # beacon dais stays clean
         if (t[0], t[1], t[2]) in padset:
             continue
+        if not centre_lane(W, i):
+            continue  # a gift sits on a centre lane, never on an edge (GEN_VERSION 4)
         cands[t[4]].append(i)
     weights = []
     tot = 0

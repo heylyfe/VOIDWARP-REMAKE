@@ -179,12 +179,18 @@ func _screen_leg(f: Array[String], world) -> void:
 ## Leg C: the shipped app's own wiring, MENU -> LOADING -> WORLD -> RUN_OVER -> MENU.
 func _leg_c_app(f: Array[String]) -> void:
 	var app = AppScript.new()
+	# J1: Play draws a fresh seed per run; pin seed 1 (this leg's documented input) so the suite
+	# is deterministic. Before _ready there is no menu, so start_run only stores the seed and the
+	# run below still goes through the real play_requested path.
+	app.start_run(SEED_A)
 	app._ready()   # the tree is unavailable under --headless --script (test_app_flow)
 	if app._menu == null:
 		f.append("leg C: the app created no menu")
 		app.free()
 		return
 	app._menu.play_requested.emit()
+	if app.run_seed() != SEED_A:
+		f.append("leg C: the run used seed %d, want the pinned %d" % [app.run_seed(), SEED_A])
 	var loading = app._loading
 	var guard := 0
 	while app.state() == "LOADING" and loading != null and guard < 400:
