@@ -6959,3 +6959,39 @@ WHY: honest coverage of the loop at a cost the gate can afford; the bot owns end
       compensating hack, not the palette.
 
 - 2026-11-19 DOCS (this session, the wave-3 docs ticket): PARKED.md row 16 corrected - the 14:10Z "RESOLVED" note was false on every point (c29ae7f merged groups 1-3, the other 12; check_mine_cap.gd lives only on the never-merge branch t3/scripted-curses-groups-4-6, 047f974; 3ae41b2 did not cover all 24 ids). main (aecc5c2) still holds 23 of 35 scripted curses (12 of 24 enemy-linked); the 12 remaining enemy-linked modules are NOT on main; Zoomies retired (fbe86ab); 11 fresh reimplementations sat uncommitted in the working tree at verification time. The 20% mine-cap done-when is unproven on main. PARKED.md row 17 closed: AUDIT.md section 10 now carries the full T-081 fun-risk report verbatim (all eight blocks). Docs only - no code, test, content, threshold or ENEMIES.md touched; nothing committed.
+
+- 2026-11-19 THE DIFFICULTY BANDS ARE A BOT ARTIFACT, NOT A GAME DEFECT (lead ruling, from the
+  wave-4 diagnosis). DESIGN.md section 9's bands are FROZEN and were measured at level 6 = 4/100
+  against a bar of >=80%, level 12 = 0% against 40-60%, level 18 = 0% against 15-30%. The
+  temptation was to tune enemy data until the numbers moved. That would have been tuning against a
+  broken ruler. The death histogram says why: D-MINE 37 of 99 deaths, and at level 5 it is 34 of 39
+  (87%) - while the bot had NO MINE MODEL AT ALL. It advanced the sim through `MinesScript.tick()`
+  and never read a mine position, so it walked into tripmines it could not see. Three more tool
+  gaps compounded it: it dodged the rumble instead of the ring (the ring outlives its telegraph by
+  94 ticks), it used a 1.5 u vertical contact band against the game's 1.8 u body, and it keyed
+  enemy velocity by content id so two copies of one enemy corrupted each other.
+  RULING: fix the probe first, then re-measure, and only tune enemy data if the bands still fail
+  with a probe that can see the game. No enemy data was changed and no band was moved. The bot now
+  models mines as lethal ground, dodges the ring, uses the real body band, and keys velocity per
+  instance. The re-measurement is the next number to look at, and until it lands the bands are
+  recorded as UNMEASURED rather than as a failure.
+
+- 2026-11-19 A CONSUMER WITH NO CALLER IS NOT A FEATURE (lead ruling, from the fresh-eyes review).
+  Waves 1-4 shipped ten stat consumers that were each correct, each green in their own test, and
+  each called by NOTHING in the shipped game. The tests passed because they called the consumer
+  directly; the game never did. Defuse Kit, Long Reach, Rush Hour, Early Warning, Hasty, Bargain,
+  Inflation, Thick Fog, Lights Out and Field Dressing all changed nothing in play while their
+  commit messages said they worked.
+  RULING: a stat is DONE only when a test proves it moves a number THROUGH `world.build()` and
+  `world.step()`, not through a direct consumer call. `test_world_stat_wiring.gd` is that test.
+  The general form, for every future wave: a green unit test on a consumer proves the consumer, not
+  the feature. The integration path needs its own proof, and the reviewer who reads the diff cold
+  will find the gap faster than the author who wrote it.
+
+- 2026-11-19 THE GATE'S RUNNER BUDGET IS NOT A TEST THRESHOLD (lead ruling). `tools/gate.ps1` had
+  `$StepTimeoutSec = 300`; the suite now takes ~352 s because it grew from 71 tests to 92 and the
+  bot probe models tripmines as lethal ground. Raised to 900 s. This is deliberately distinguished
+  from the standing rule "do not move a test threshold to dodge a failure": no assertion depends on
+  the budget, nothing was weakened, and a step that genuinely hangs still fails - it just takes
+  longer to say so. The measurement was taken BEFORE the change (`SUITE_SECONDS=352`,
+  `TESTS 92 passed 0 failed`) so the new number is justified by evidence rather than by convenience.
