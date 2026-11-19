@@ -7,7 +7,8 @@ extends Node3D
 #
 # Wired to the anim block (sprites.json -> anim):
 #   spawn       30-tick fade: alpha 0 -> 1, scale 0.8 -> 1.0, spawn frame (materialize lift)
-#   idle_chase  bob +-0.08 u at 1.0 Hz (the breathing idle_chase frame loops)
+#   idle_chase  bob +-0.08 u at 0.5 Hz (the base 1.0 Hz halved with the J6 speed cut - the
+#               breathing idle_chase frame loops)
 #   telegraph   "meow": scale pulse 1.0 -> 1.12 -> 1.0 across the 12-tick cue
 #               (the danger-red telegraph frame shows for the cue's duration)
 #   attack      none - contact kills on the tick the cylinders overlap; no wind-up exists
@@ -18,6 +19,10 @@ const BillboardScript := preload("res://view/billboard.gd")
 
 const TICKS_PER_SECOND := 60.0
 const TAU := 6.283185307179586
+## J6: the cat moves at half its old speed (3.0 -> 1.5 u/s), so the idle_chase bob - the
+## walk-cycle stand-in for the 1-frame cat - runs at half rate too, or the feet glide.
+## sprites.json carries the base hz (1.0) and is owner data; the halving lives here.
+const WALK_ANIM_SCALE := 0.5
 
 var billboard: Sprite3D = null
 var anim: Dictionary = {}
@@ -86,7 +91,7 @@ func step(dt_ticks: int = 1) -> void:
 	# bob: +- amplitude at hz, phase 0 at spawn
 	var idle: Dictionary = ((anim.get("states", {})).get("idle_chase", {})).get("effect", {})
 	var bob_amp := float((idle.get("params", {})).get("amplitude_u", 0.08))
-	var bob_hz := float((idle.get("params", {})).get("hz", 1.0))
+	var bob_hz := float((idle.get("params", {})).get("hz", 1.0)) * WALK_ANIM_SCALE
 	billboard.position.y = bob_amp * sin(_bob_t * TAU * bob_hz)
 	# spawn fade: alpha 0 -> 1, scale 0.8 -> 1.0 over the first _spawn_total ticks
 	var fade := 1.0

@@ -2,27 +2,30 @@ extends RefCounted
 #
 # litter.gd - script curse (ticket T-051; DESIGN.md section 7.1 row "litter").
 # Rule sentence (spec, verbatim): "each cat is followed by a kitten (60% size,
-# 2.4 u/s, kills on contact) 6 u behind".
+# 1.2 u/s, kills on contact) 6 u behind".
 
-# Counter-play: "a kitten's ceiling is 0.30 (2.7 u/s, SR-5) - it always trails its
+# Counter-play: "a kitten's ceiling is 0.15 (1.35 u/s, SR-5) - it always trails its
 # cat: hurdle cat then kitten in one rhythm, or kite them into a line and cross".
 #
-# Reading (recorded in DECISIONS.md, D-KIWI-SLOW-1 owner ruling 2026-11-17): the kitten is a real kiwi_cat row, spawned
+# Reading (recorded in DECISIONS.md, D-KIWI-SLOW-1 owner ruling 2026-11-17; J6 owner
+# ruling 2026-11-18): the kitten is a real kiwi_cat row, spawned
 # through api.spawn_enemy (guarded - a stubbed harness schedules it for the next
-# tick instead of failing) with a scaled cfg: 60% of the cat's body, base 2.4 u/s,
-# pursuit ceiling 0.30 (2.7 u/s, the counter-play's own number, SR-5), contact kill
+# tick instead of failing) with a scaled cfg: 60% of the cat's body, base 1.2 u/s,
+# pursuit ceiling 0.15 (1.35 u/s, SR-5), contact kill
 # on, death code D-KIWI (it is still a cat). It is placed 6 u BEHIND its cat -
 # farther from the nearest player along the cat->player line, so it always trails
 # (the "kite them into a line and cross" geometry). One kitten per cat; the spawn
 # marker lives in state["curse_st"], never a global. A kitten is never faster than
-# its cat: 2.4 < 3.0 base, 2.7 < 3.6 cap.
+# its cat: 1.2 < 1.5 base, 1.35 < 1.8 cap. J6: the kittens ARE kiwi cats, so "twice
+# as slow" applies to them (0.8x the cat's 1.5 u/s base, keeping the D-KIWI-SLOW-1
+# 0.8 ratio; ceiling 0.15 x 9.0 = 1.35 u/s, below the cat's 1.8 u/s cap).
 
 const CURSE_ID := "litter"
 
 const KIWI_ID := "kiwi_cat"       # the enemy the curse attaches to (content names content)
 const KITTEN_SIZE := 0.6          # 60% of the cat's size (the rule sentence)
-const KITTEN_SPEED := 2.4         # u/s (the rule sentence; D-KIWI-SLOW-1: 0.8x the cat's 3.0)
-const KITTEN_CEILING := 0.30      # SR-5 pursuit ceiling, 2.7 u/s - never faster than its cat
+const KITTEN_SPEED := 1.2         # u/s (J6: 0.8x the cat's 1.5; kittens are kiwi cats too, D-KIWI-SLOW-1)
+const KITTEN_CEILING := 0.15      # SR-5 pursuit ceiling, 1.35 u/s - never faster than its cat (J6: 0.8x-base logic, below the cat's 0.20)
 const TRAIL_U := 6.0              # u behind the cat (the rule sentence)
 const SPAWN_FADE_TICKS := 30      # the common fade (same anim spawn row, D-056)
 const DEATH_CODE := "D-KIWI"      # a kitten is still a kiwi cat

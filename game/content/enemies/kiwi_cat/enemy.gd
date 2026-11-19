@@ -1,14 +1,19 @@
 extends RefCounted
 #
 # kiwi cat behavior module (ticket T-030; owner ruling 2026-11-17, D-KIWI-SLOW-1: the cat is
-# SLOW - a lazy follower, not a predator). The LEVEL-1 STARTER enemy: slowly follows the
-# player; death on contact. Numbers (DESIGN.md section 5.1, FINAL via SR-2/SR-5; D-KIWI-SLOW-1):
-#   - base pursuit speed 3.0 u/s (33% of run speed), pursuit ceiling 0.40 -> never above
-#     3.6 u/s after ALL multipliers (SR-5; overflow becomes tempo, FloatBody's job);
+# SLOW - a lazy follower, not a predator; J6 owner ruling 2026-11-18: half again - 1.5 u/s,
+# never dashes). The LEVEL-1 STARTER enemy: slowly follows the
+# player; death on contact. Numbers (DESIGN.md section 5.1, FINAL via SR-2/SR-5; D-KIWI-SLOW-1;
+# D-KIWI-J6-1):
+#   - base pursuit speed 1.5 u/s (17% of run speed), pursuit ceiling 0.20 -> never above
+#     1.8 u/s after ALL multipliers (SR-5; overflow becomes tempo, FloatBody's job);
 #   - body 1.0 u tall, hit diameter 0.9 u (SR-2; hurdle-able - a jump clears its 1.5 u reach);
 #   - feet ease toward the target's feet at 2.0 u/s (SR-1, NEVER multiplied);
 #   - Contact = kill (the framework checks the cylinder every tick);
-#   - meow every 3.0 s (180 ticks) while within 14 u - ENEMIES.md "cat meow when near player".
+#   - meow every 3.0 s (180 ticks) while within 14 u - ENEMIES.md "cat meow when near player";
+#   - the Zoomies burst does NOT exist for the cat: no multiplier ever makes it sprint or lunge
+#     (J6). The behavior cancels any active burst on its FloatBody every tick, and the cfg
+#     burst ceiling sits at the pursuit ceiling anyway (belt and braces).
 #
 # Content id lives here, never under sim/ (DESIGN.md section 12). The row dict is the only
 # state; the behavior only touches its own row through the api. The frame/anim wiring lives
@@ -17,10 +22,12 @@ extends RefCounted
 const RT := preload("res://sim/enemy_runtime.gd")
 
 ## Roster numbers (DESIGN.md section 5.1 / SR-2 / SR-5; D-KIWI-SLOW-1 owner ruling 2026-11-17;
-## the runtime constants match).
-const BASE_SPEED := 3.0            # owner ruling: a lazy follower, ~1/3 of base run speed
-const PURSUIT_CEILING := 0.4       # SR-5: never above 3.6 u/s (0.40 x 9.0) after multipliers
-const BURST_CEILING := 0.55        # Zoomies (script curse): 0.55 x base run = 4.95 u/s, <= 3.0 s
+## J6 owner ruling 2026-11-18; the runtime constants match).
+const BASE_SPEED := 1.5            # J6: twice as slow - a lazy follower, ~1/6 of base run speed
+const PURSUIT_CEILING := 0.2       # SR-5: never above 1.8 u/s (0.20 x 9.0) after multipliers
+const BURST_CEILING := 0.2         # J6: the Zoomies burst has NO effect on the cat; kept at the
+                                   # pursuit ceiling so the data path can never bound a sprint
+                                   # (the behavior cancels any active burst outright)
 const BODY_HEIGHT := 1.0
 const HIT_DIAMETER := 0.9
 const CLIMB := 2.0                   # SR-1 vertical easing, u/s, never multiplied
@@ -59,8 +66,9 @@ static func cfg() -> Dictionary:
 	}
 
 
-## The behavior. Every tick: float at the nearest player (3.0 u/s, SR-5 ceiling via the
-## runtime's FloatBody), then the meow - one 12-tick "meow" telegraph every 180 ticks while
+## The behavior. Every tick: float at the nearest player (1.5 u/s, SR-5 ceiling via the
+## runtime's FloatBody; any active Zoomies burst is cancelled first - J6: the cat never
+## dashes), then the meow - one 12-tick "meow" telegraph every 180 ticks while
 ## the nearest player is within 14 u (D-T030-3/D-T030-5: the telegraph is the cue channel
 ## the view renders as the scale pulse and the audio layer renders as the meow; the
 ## zero-radius circle never registers as a targeted footprint for SR-4).
@@ -80,6 +88,10 @@ class KiwiCatBehavior:
 		if fb == null:
 			fb = RT.FloatBody.from_cfg(row["cfg"])
 			row["float"] = fb
+		# J6: the Zoomies burst does not exist for the cat - cancel any active burst so no
+		# curse (or test) can make it dash or lunge; it always rides the pursuit path
+		fb.burst_ticks_left = 0
+		fb.burst_mult = 1.0
 		fb.step(row, api, dt_ticks, float(near["x"]), float(near["z"]))
 		var dist := float(near["dist"])
 		if dist <= MEOW_RANGE_U:
