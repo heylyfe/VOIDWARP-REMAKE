@@ -7228,3 +7228,61 @@ justifies, and doing it silently would be worse than recording it.
 **Consequence.** One class gets nothing from one upgrade. This is a known gap, stated in the
 module header, and it is the kind of thing that should be closed by a stat-pipeline change
 rather than a special case.
+
+## D-C2-6: the final state of cycle 2 gets its own tag, v0.1.5-alpha.3
+
+**Ruling.** v0.1.4-alpha.3 was cut and published at 17:09Z from `f83904e`. Four commits landed
+after it. The final state of the cycle is tagged v0.1.5-alpha.3 from `305a263`. v0.1.4 is left
+exactly as published.
+
+**Why.** Tags are never moved and releases are never deleted - both are hard limits, and both are
+right. A published tag is a promise about what a specific commit contained; rewriting it to point
+at later work would make every existing download a lie about its own provenance. The owner asked
+for v0.1.4 not knowing it already existed, so the honest resolution is a new tag rather than a
+moved one, and the owner was told rather than left to discover it.
+
+**Consequence.** Two pre-releases exist for one cycle. v0.1.4 is a real, working build that is
+missing the hitch fix, the CI fix, the store fix and the nine-upgrade wiring; v0.1.5 is the
+complete one. Anyone reading the release list should take the highest tag as current. The version
+string in `game/app/menu.gd` is bumped in the same commit as the tag, so the menu and the release
+cannot disagree.
+
+## D-C2-7: the profile name in old git history is accepted, and the tree stays clean
+
+**Ruling.** The owner has accepted the profile name present in old commits. No history rewrite, no
+force-push, no private repository. No further work is spent on it. The working tree and every
+commit from this point forward contain no personal information.
+
+**Why.** The owner made the call, and it is theirs to make. A history rewrite would have been the
+single most destructive operation available in this repository - it invalidates every clone, every
+tag and every published asset - to remove a string that is already public. The cost was real and
+the benefit was not.
+
+**Consequence.** The leak is permanent and documented rather than fixed. The forward-looking rule
+is unchanged and enforced: no secrets, no personal information, no network calls, nothing personal
+in any tracked file or release asset. A final review of the cycle diff confirmed the tree is clean.
+
+## D-C2-8: what cycle 2 ships, and what it parks
+
+**Ruling.** Cycle 2 ships in v0.1.5-alpha.3 with five parked items, each recorded with the reason
+it is parked rather than done.
+
+**Shipped.** All 36 upgrades now have a shipped call site except `quick_recovery`'s Athletic branch
+(D-C2-5). The spawn-tick hitch is 261 ms to 86 ms. Saves that rewrite a whole file publish
+atomically; the run log does not, because it is append-only and read while written (D-C2-3). The
+release workflow derives `--prerelease` from the tag. The tripmine needs no tuning (D-C2-2).
+
+**Parked.** (1) The 30-level run proof - the app cannot be driven headless because `Input`
+delivers no key state without a window, and the direct level-loop driver crashes the engine
+structurally; the seam is proven sound and the crash is in the driver's own loop. (2) The
+remaining 86 ms spawn hitch - one cost, not a recurring one, and closing it is a sim change.
+(3) The radar's per-frame Label churn - no measured player impact. (4) `quick_recovery`'s Athletic
+branch. (5) The accepted history leak (D-C2-7).
+
+**Why.** Each parked item is either blocked on something outside this cycle's reach, or is a
+change whose risk exceeds its benefit right now. None of them is parked because it was hard to
+find; all five are written down so the next cycle starts from a list rather than from a rumour.
+
+**Consequence.** The README's known gaps and this section must agree, and they do. The next cycle's
+first three items are the 30-level proof done one level at a time, the spawn spread, and the
+per-upgrade run-speed contribution that closes D-C2-5.
