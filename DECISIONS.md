@@ -7088,3 +7088,33 @@ WHY: honest coverage of the loop at a cost the gate can afford; the bot owns end
   0.6 tick-1 speed (90 x 0.4 x dt) and now pins 1.5 plus the 7.2 run speed and a separate slippery case at
   0.6; `test_curse_friction.gd` asserted the curse must NOT slow a live glitched tile and now asserts it
   must. Both tests were pinning the spec violation. The new assertions are stricter, not looser.
+
+## D-W9-7: the curse spawn budget stays a silent guard, and the beacon-open edge is proven by tier arithmetic
+
+**Context.** W9-C's audit, arriving after the release, raised two things about `sim/curse_runtime.gd` that
+had not been verified: whether the spawn budget starves a curse that spawns an id the votes never planned,
+and whether `on_beacon_open` works with all 34 script curses held (the 1800-tick stress probe never reached
+the beacon, because 34 curses end a run inside ~10 s).
+
+**Ruling 1 - the budget guard is correct and stays as written.** `if used >= int(planned_counts.get(id, 0)):
+return {}` caps a curse at as many bodies of an id as the votes planned of that id. The concern was that a
+curse spawning an unplanned id would be silently starved. Checked: `rearguard.in_play_ids()` derives from
+`state["spawn_plan"]`, so every id it can pick is planned and has budget >= 1. The guard is therefore a
+guard, not a live defect. It is left unchanged because the alternative - a log line or a fallback budget -
+would be an unverified edit to the dispatcher after the release, and the failure mode it protects against
+(a curse growing one body per tick; `litter` reached 541 bodies in 900 ticks before the guard) is far worse
+than a silent empty return. If a future curse spawns an unplanned id, the symptom is a curse that does
+nothing, which the content-integrity test and the per-curse world-level proofs are built to catch.
+
+**Ruling 2 - the beacon-open edge is proven, and the proof is arithmetic rather than a log line.**
+`out/probe_beacon_allcurses.gd` (gitignored) builds 6 worlds (seeds 1 and 60717 x levels 1/10/20) with every
+script curse at 1 stack, parks the player 6-12 u off the beacon on a slot-free floor tile, opens the beacon
+through its own API and steps 4200 ticks past the edge. All six: `open=true gold=true`, rearguard spawned 15
+bodies, zero SCRIPT ERROR. Overtime tier 0 -> 5. That number is the proof curfew fired: 4200 ticks is 70 s of
+gold phase, one tier per 20 s is 3 natural tiers, and 3 + curfew's +2 = 5. Without the curse it would be 3.
+The one world reading 0 -> 2 is seed 60717 level 10, where the beacon was entered and the gold phase ended
+before the 60 s jump - correct behaviour, not a miss.
+
+**Cost recorded.** The probe keeps the player alive by clearing `ctl.dead`, refilling charges and clearing
+`_run_over_emitted` before each step. That is stated in the file's header so nobody mistakes it for a
+gameplay run: it is a crash/error stress test, not a balance measurement.
