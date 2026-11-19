@@ -743,26 +743,114 @@ distinct colours) are posterised from `glitchedground.jpeg`, whose own dominant 
 
 ## 10. Appendix — T-081's fun-risk report (information only, not gated)
 
-Pasted unchanged from the first audit; source `tickets/T-081.response.md`. **It predates FIX-BILLBOARD and
-KIWI-SLOW** (5.6 u/s cat) and was not re-run by this audit (it is not an A-criterion, and FLEET_PACK §0.7
-forbids building more measurement than §5 lists).
+Source: `tickets/T-081.response.md` (branch `t3/fun-risk-signals-report`, merged to main at
+`fa8d18a`), the output of `game/tools/run_report.gd` over the 100 bot logs (seeds 0-99,
+`tools/run_batch.ps1`), tee'd to `out/run_report.txt`. **Pasted verbatim 2026-11-19** (docs wave);
+this section previously carried only the overall rows. **It predates FIX-BILLBOARD and
+KIWI-SLOW** (the cat is 3.0 u/s by the FINAL ruling, `ba02e84`, not the 5.6 u/s this report was
+measured against) and was not re-run by this audit (it is not an A-criterion, and FLEET_PACK §0.7
+forbids building more measurement than §5 lists). INFORMATION ONLY: no pass/fail, no threshold.
+Levels reached top out at 3; the zero rows are real zeros (T-060's merged finding: the bot cannot
+clear level 1 reliably).
 
 ```
 FUN-RISK REPORT (T-081, research/fable-funrisks.md; INFORMATION ONLY - no pass/fail, no threshold)
 runs: 100
 1. terrain vs enemy (risk 3)
+  1-5       charges spent    176 | terrain-caused   175 ( 99.4%) | enemy-caused     1 (  0.6%)
+  1-5       deaths           99 | terrain-caused    59 ( 59.6%) | every other code    40 ( 40.4%)
+  6-10      charges spent      0 | terrain-caused     0 (  0.0%) | enemy-caused     0 (100.0%)
+  6-10      deaths            0 | terrain-caused     0 (  0.0%) | every other code     0 (100.0%)
+  11-15     charges spent      0 | terrain-caused     0 (  0.0%) | enemy-caused     0 (100.0%)
+  11-15     deaths            0 | terrain-caused     0 (  0.0%) | every other code     0 (100.0%)
+  16-20     charges spent      0 | terrain-caused     0 (  0.0%) | enemy-caused     0 (100.0%)
+  16-20     deaths            0 | terrain-caused     0 (  0.0%) | every other code     0 (100.0%)
+  21-25     charges spent      0 | terrain-caused     0 (  0.0%) | enemy-caused     0 (100.0%)
+  21-25     deaths            0 | terrain-caused     0 (  0.0%) | every other code     0 (100.0%)
+  26-30     charges spent      0 | terrain-caused     0 (  0.0%) | enemy-caused     0 (100.0%)
+  26-30     deaths            0 | terrain-caused     0 (  0.0%) | every other code     0 (100.0%)
   overall   charges spent    176 | terrain-caused   175 ( 99.4%) | enemy-caused     1 (  0.6%)
   overall   deaths           99 | terrain-caused    59 ( 59.6%) | every other code    40 ( 40.4%)
+2. restart time (risk 1)
+  1-5       deaths ending a run 99
+  6-10      deaths ending a run 0
+  11-15     deaths ending a run 0
+  16-20     deaths ending a run 0
+  21-25     deaths ending a run 0
+  26-30     deaths ending a run 0
+  overall   deaths ending a run 99
+  not measurable from the current records: death.t and the next run's first controllable
+  level-1 tick live in two different run clocks; T-080 records carry sim ticks only (no
+  wall-clock time) and the loading screen + lobby walk consume no sim ticks
 3. unseen deaths (risk 2)
+  1-5       deaths     99 | killer on screen = no    59 ( 59.6%)
+  6-10      deaths      0 | killer on screen = no     0 (  0.0%)
+  11-15     deaths      0 | killer on screen = no     0 (  0.0%)
+  16-20     deaths      0 | killer on screen = no     0 (  0.0%)
+  21-25     deaths      0 | killer on screen = no     0 (  0.0%)
+  26-30     deaths      0 | killer on screen = no     0 (  0.0%)
   overall   deaths     99 | killer on screen = no    59 ( 59.6%)
 4. level length and pressure (risk 4)
-  1-5       black-phase median   36.9 s (n=14) | gold-phase median    3.6 s (n=14)
-  6-10 .. 26-30   n=0 (no run reached level 6)
+  1-5       black-phase median   36.9 s (n=14) | gold-phase median    3.6 s (n=14) | overtime tier at beacon entry median 0 (n=14)
+  6-10      black-phase median    0.0 s (n=0) | gold-phase median    0.0 s (n=0) | overtime tier at beacon entry median 0 (n=0)
+  11-15     black-phase median    0.0 s (n=0) | gold-phase median    0.0 s (n=0) | overtime tier at beacon entry median 0 (n=0)
+  16-20     black-phase median    0.0 s (n=0) | gold-phase median    0.0 s (n=0) | overtime tier at beacon entry median 0 (n=0)
+  21-25     black-phase median    0.0 s (n=0) | gold-phase median    0.0 s (n=0) | overtime tier at beacon entry median 0 (n=0)
+  26-30     black-phase median    0.0 s (n=0) | gold-phase median    0.0 s (n=0) | overtime tier at beacon entry median 0 (n=0)
+  overall   black-phase median   36.9 s (n=14) | gold-phase median    3.6 s (n=14) | overtime tier at beacon entry median 0 (n=14)
+5. stair rate (risk 5)
+  1-5       median jumps/min  124.7 (n=14 levels, 1208 jumps) | median step-ups/min   18.4 (n=14, 202 step-ups)
+  6-10      median jumps/min    0.0 (n=0 levels, 0 jumps) | median step-ups/min    0.0 (n=0, 0 step-ups)
+  11-15     median jumps/min    0.0 (n=0 levels, 0 jumps) | median step-ups/min    0.0 (n=0, 0 step-ups)
+  16-20     median jumps/min    0.0 (n=0 levels, 0 jumps) | median step-ups/min    0.0 (n=0, 0 step-ups)
+  21-25     median jumps/min    0.0 (n=0 levels, 0 jumps) | median step-ups/min    0.0 (n=0, 0 step-ups)
+  26-30     median jumps/min    0.0 (n=0 levels, 0 jumps) | median step-ups/min    0.0 (n=0, 0 step-ups)
+  overall   median jumps/min  124.7 (n=14 levels, 1208 jumps) | median step-ups/min   18.4 (n=14, 202 step-ups)
+6. lobby time (risk 7)
+  1-5       lobbies  114 | by offered bays: C 2, E 100, E+U 12
+  6-10      lobbies    0 | by offered bays: none offered
+  11-15     lobbies    0 | by offered bays: none offered
+  16-20     lobbies    0 | by offered bays: none offered
+  21-25     lobbies    0 | by offered bays: none offered
+  26-30     lobbies    0 | by offered bays: none offered
+  overall   lobbies  114 | by offered bays: C 2, E 100, E+U 12
+  not measurable from the current records: the lobby consumes no sim ticks (the hall
+  walk and the hold-F confirm are real time, never simulated), so beacon_enter ->
+  level_start carries only the 0-2 gold-phase tail ticks
+7. mine margin (risk 8)
+  1-5       mine_pass    0 + mine_contact   0 =    0 | mine deaths   0 | deaths per 100 (pass+contact)   0.0
+  1-5       chain <  x1.50: events    0, deaths   0, deaths per 100 (pass+contact)   0.0 | at-or-above: events    0, deaths   0,   0.0
+  6-10      mine_pass    0 + mine_contact   0 =    0 | mine deaths   0 | deaths per 100 (pass+contact)   0.0
+  6-10      chain <  x1.50: events    0, deaths   0, deaths per 100 (pass+contact)   0.0 | at-or-above: events    0, deaths   0,   0.0
+  11-15     mine_pass    0 + mine_contact   0 =    0 | mine deaths   0 | deaths per 100 (pass+contact)   0.0
+  11-15     chain <  x1.50: events    0, deaths   0, deaths per 100 (pass+contact)   0.0 | at-or-above: events    0, deaths   0,   0.0
+  16-20     mine_pass    0 + mine_contact   0 =    0 | mine deaths   0 | deaths per 100 (pass+contact)   0.0
+  16-20     chain <  x1.50: events    0, deaths   0, deaths per 100 (pass+contact)   0.0 | at-or-above: events    0, deaths   0,   0.0
+  21-25     mine_pass    0 + mine_contact   0 =    0 | mine deaths   0 | deaths per 100 (pass+contact)   0.0
+  21-25     chain <  x1.50: events    0, deaths   0, deaths per 100 (pass+contact)   0.0 | at-or-above: events    0, deaths   0,   0.0
+  26-30     mine_pass    0 + mine_contact   0 =    0 | mine deaths   0 | deaths per 100 (pass+contact)   0.0
+  26-30     chain <  x1.50: events    0, deaths   0, deaths per 100 (pass+contact)   0.0 | at-or-above: events    0, deaths   0,   0.0
+  overall   mine_pass    0 + mine_contact   0 =    0 | mine deaths   0 | deaths per 100 (pass+contact)   0.0
+  overall   chain <  x1.50: events    0, deaths   0, deaths per 100 (pass+contact)   0.0 | at-or-above: events    0, deaths   0,   0.0
+  not measurable from the current records: walkway width 1 / 2 / platform (no slot width
+  in the records - level_start would need the mine slots' widths)
+8. content health (risk 10)
+  runs 100 | level reached: median 1, maximum 3
+  curse picks (picks / offers shown, all lobbies; rate = picks / offers):
+      brittle [harsh]: 1 picks / 1 offers (100.0%)
+      tarnish [mild]: 0 picks / 3 offers (0.0%)
+      thick_fog [mild]: 1 picks / 2 offers (50.0%)
+  upgrade purchases (picks / offers shown; the T-060 bot buys nothing - zeros expected):
+      more: 0 picks / 12 offers (0.0%)
+      paycheck: 0 picks / 12 offers (0.0%)
+      yearn_for_speed: 0 picks / 12 offers (0.0%)
+  runs ending within two levels of a Brutal pick: 0/100 (0.0%)
 ```
 
-The first audit's reading still stands as history: of 176 charges spent across 100 bot runs, 175 (99.4%)
-were terrain-caused; 59 of 99 deaths were `D-VOID`; no run reached level 6. For the current-main picture of
-level 1, see §2 A3.
+The reading of it still stands as history: of 176 charges spent across 100 bot runs, 175 (99.4%)
+were terrain-caused; 59 of 99 deaths were `D-VOID`; no run reached level 6. For the current-main
+picture of level 1, see §2 A3 (19/100 on the audited tree, 82/100 after FIX-A3 `b9c6470`); for what
+GEN_VERSION 4 and KIWI-SLOW change, see the banner at the top of this file.
 
 ---
 

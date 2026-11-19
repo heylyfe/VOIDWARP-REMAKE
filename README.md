@@ -74,18 +74,20 @@ Gamepad works too. The menu's **HOW TO PLAY** panel shows the live bindings, rea
   the tripmines and the beacon's light column are drawn in the level itself.
 - **12 enemies**, each with its own telegraph, attack, and death. They are the joke; the void is not.
 - **Economy** — gifts, gold, void charges, tripmines, the beacon's charge refund.
-- **After a level** — the world tears down and the app returns to the menu.
+- **After a level** — the world tears down and the app opens the Antechamber (the lobby); the next
+  level is built from the lobby's ledger.
 
 Known gaps, stated plainly:
 
-- **The bot completes level 1 in 84 of 100 seeds** (seed base 60717, the pinned 4.7.2 engine,
-  re-measured on this tree in five 20-seed chunks: 16 + 16 + 18 + 16 + 18; median sim time 36.6–41.3 s
-  against the 120 s criterion). The acceptance bar is 95. The gap is bot competence, not a crash — a
-  human can finish the level. The probe crashes with a Godot `Unreferenced static string` error at
-  around 30 runs in one process, which is why it is measured in chunks; seeds are independent, so
-  the splice loses nothing.
-- **No 30-level run yet.** The intermission lobby exists as a scene but is not wired into the app
-  loop, so a completed level returns to the menu instead of advancing.
+- **The bot completes level 1 in 98 of 100 seeds** (seed base 60717, the pinned 4.7.2 engine,
+  100 seeds re-measured on this tree). The acceptance bar is 95. The probe crashes with a Godot
+  `Unreferenced static string` error at around 30 runs in one process, so long runs are measured
+  in chunks; seeds are independent, so the splice loses nothing.
+- **No 30-level run yet.** The intermission lobby is wired into the app loop: a completed level
+  tears the world down and opens the Antechamber (`view/lobby/lobby_scene.gd`), and the next
+  level is built from the lobby's ledger (class, votes, curses, purchases) when the player walks
+  into the Descent Gate. What is still missing is a shipped, full-length run — one level at a
+  time is what exists today.
 - **Three of the five parked HIGH bugs are closed** ([`PARKED.md`](PARKED.md) rows 25–28): the
   Last Light body push now reaches the live enemy rows, ramp kinds 3 and 4 report the slope the
   mesh draws, and every enemy body mirror is refreshed each step so the safe-tile and SR-4 checks
@@ -101,7 +103,8 @@ Known gaps, stated plainly:
 4. **Fall** and you spend a charge. Fall with none left and the run ends.
 
 Between levels the design calls for a lobby: class choice, enemy votes, curses, upgrades. That is
-built and tested as a simulation; it is not yet reachable from the app.
+built, tested as a simulation, and wired into the app loop: completing a level opens the Antechamber,
+and the next level builds from the lobby's ledger.
 
 ## Where things are
 

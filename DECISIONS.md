@@ -6957,3 +6957,5 @@ WHY: honest coverage of the loop at a cost the gate can afford; the bot owns end
       APPEARANCE OF EVERY MODEL CHANGED - all darker and more saturated, matching the palette. That
       is the fix, not a regression. If a model ever looks wrong again, suspect fog or a remaining
       compensating hack, not the palette.
+
+- 2026-11-19 DOCS (this session, the wave-3 docs ticket): PARKED.md row 16 corrected - the 14:10Z "RESOLVED" note was false on every point (c29ae7f merged groups 1-3, the other 12; check_mine_cap.gd lives only on the never-merge branch t3/scripted-curses-groups-4-6, 047f974; 3ae41b2 did not cover all 24 ids). main (aecc5c2) still holds 23 of 35 scripted curses (12 of 24 enemy-linked); the 12 remaining enemy-linked modules are NOT on main; Zoomies retired (fbe86ab); 11 fresh reimplementations sat uncommitted in the working tree at verification time. The 20% mine-cap done-when is unproven on main. PARKED.md row 17 closed: AUDIT.md section 10 now carries the full T-081 fun-risk report verbatim (all eight blocks). Docs only - no code, test, content, threshold or ENEMIES.md touched; nothing committed.
