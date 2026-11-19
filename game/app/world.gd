@@ -116,6 +116,10 @@ const UpgradeRuntimeScript := preload("res://sim/upgrade_runtime.gd")
 # built the LevelState without them, so lstate.upgrades stayed null and every role-gated
 # feature (the radars, the footprint map, the 90% quota, the beacon channel) was dead.
 const UpgradeRolesScript := preload("res://content/upgrades/t053_roles.gd")
+# The scripted-upgrades engine itself (T-053): the radar queries and the footprint-map
+# memory the HUD feed reads. Roles and ranges come from the engine's own constants;
+# no upgrade id is named here (the id-to-role table lives in content).
+const UpgradesScript := preload("res://sim/upgrades.gd")
 # The bespoke per-enemy views (W11-A): nine view files existed, complete and tested, and
 # nothing instantiated them, so every enemy rendered as the generic billboard. The host
 # owns the per-view signatures (view/ may name content ids; this file may not) and is
@@ -213,6 +217,9 @@ var _roster: Array = []          # [{id, name, count}] built from the resolved v
 var _bindings: Dictionary = {}
 var _api: RefCounted = null
 var _ledger: Dictionary = {}     # the run's carried state (class / votes / curses / purse)
+var _gift_radar_range := UpgradesScript.GIFT_RADAR_RANGE   # this run's gift radar reach (40/80 u)
+var _facing := -PI / 2.0         # the footprint map's drawn heading (persists at rest)
+var _map_colours: Dictionary = {}     # the footprint map palette, resolved lazily, once per level
 var _curses: RefCounted = null   # sim/curse_runtime.gd, built per level in build()
 var _upgrades: RefCounted = null # sim/upgrade_runtime.gd, built per level in build()
 var _boost_on := false           # an upgrade run-speed boost touched the controller last tick
@@ -303,6 +310,9 @@ func build(seed_value: int, level: int, p_ledger: Dictionary = {}) -> bool:
 	# lstate.upgrades null exactly as before for an un-upgraded run.
 	lstate = LevelStateScript.build(lv, level, 1, seed_value,
 			UpgradeRolesScript.roles_for(plan.get("stacks", {}) as Dictionary))
+	_gift_radar_range = _gift_radar_range_for(plan.get("stacks", {}) as Dictionary)
+	_facing = -PI / 2.0
+	_map_colours = {}
 	var kit := str(plan.get("class", ""))
 	if kit == "":
 		kit = FALLBACK_CLASS   # D-APPFLOW-6
@@ -325,22 +335,16 @@ func build(seed_value: int, level: int, p_ledger: Dictionary = {}) -> bool:
 	# the lobby, so level start is the only grant point - no mid-level purchase exists).
 	ctl.apply_field_dressing(_free_fall_stacks(plan))
 	# The stack knobs the controller exposes but cannot compute itself (it never reads a
-	# ledger). Every value is the upgrade's own declared effect, read from its content file:
-	#   brace          push and eject -30% per stack (max 3)
-	#   featherfall    hold-jump fall cap, or +1.5 s glide energy for the glider
-	#   ledge_grace    coyote time +0.08 s per stack (max 2)
-	#   quick_recovery class cooldown -20% per stack (max 2)
-	# A knob left at its default reproduces the canon body exactly, so an un-upgraded run is
-	# byte-identical to before this wiring.
-	var owned: Dictionary = plan.get("stacks", {})
-	ctl.push_mul = maxf(0.0, 1.0 - 0.3 * float(int(owned.get("brace", 0))))
-	ctl.coyote_add = 0.08 * float(int(owned.get("ledge_grace", 0)))
-	ctl.cooldown_mul = maxf(0.0, 1.0 - 0.2 * float(int(owned.get("quick_recovery", 0))))
-	if int(owned.get("featherfall", 0)) > 0:
-		if kit == "glider":
-			ctl.glide_energy_bonus = 1.5
-		else:
-			ctl.feather_fall = true
+	# ledger). Each owning upgrade's module declares them (static knobs(stacks, kit)), so this
+	# file names no upgrade id - the boundary scan forbids a content id in app/ - and each
+	# number stays next to the rule sentence that states it. A knob left at its default
+	# reproduces the canon body exactly, so an un-upgraded run is byte-identical to before.
+	var knobs := _upgrade_knobs(plan, kit)
+	ctl.push_mul = float(knobs.get("push_mul", 1.0))
+	ctl.coyote_add = float(knobs.get("coyote_add", 0.0))
+	ctl.cooldown_mul = float(knobs.get("cooldown_mul", 1.0))
+	ctl.feather_fall = bool(knobs.get("feather_fall", false))
+	ctl.glide_energy_bonus = float(knobs.get("glide_energy_bonus", 0.0))
 
 	# The gold-phase economy: the gold phase's own stats (gold_value / chain_window /
 	# chain_cap / overtime_period / stipend_flat), tuned by data/economy.json through the
@@ -712,6 +716,28 @@ func _upgrade_speed_pass() -> void:
 	_boost_on = boosting
 
 
+## The controller knobs every owned upgrade module declares (static knobs(stacks, kit)).
+## A module that declares none, or an upgrade with no module, contributes nothing - so an
+## un-upgraded run reads every knob at its canon default. Later modules win on a shared key,
+## which is the same last-writer rule the stat pipeline uses.
+func _upgrade_knobs(plan: Dictionary, kit: String) -> Dictionary:
+	var out := {}
+	var stacks: Dictionary = plan.get("stacks", {})
+	for id in stacks.keys():
+		if int(stacks[id]) <= 0:
+			continue
+		var path := "res://content/upgrades/%s.gd" % str(id)
+		if not ResourceLoader.exists(path):
+			continue
+		var mod: Script = load(path)
+		if mod == null or not mod.has_method("knobs"):
+			continue
+		var d = mod.knobs(stacks, kit)
+		if d is Dictionary:
+			out.merge(d, true)
+	return out
+
+
 ## The owned stacks of every upgrade carrying the free-fall signature (FREE_FALL_HOOK).
 func _free_fall_stacks(plan: Dictionary) -> int:
 	var total := 0
@@ -841,6 +867,9 @@ func teardown() -> void:
 	w = {}
 	_level_number = 0
 	_ledger = {}
+	_gift_radar_range = UpgradesScript.GIFT_RADAR_RANGE
+	_facing = -PI / 2.0
+	_map_colours = {}
 
 
 func level_number() -> int:
@@ -1580,6 +1609,104 @@ func _eye_pos() -> Vector3:
 	return rig.position
 
 
+## The gift radar's reach for this run, resolved opaquely: iterate the ledger's stacks
+## and keep scripts whose declared role is the gift-radar role, so no upgrade id is
+## named here. 1 stack within the engine's base range, 2 stacks the wider one.
+func _gift_radar_range_for(stacks: Dictionary) -> float:
+	var best := 0
+	for id in stacks.keys():
+		var p := "res://content/upgrades/%s.gd" % str(id)
+		if not ResourceLoader.exists(p):
+			continue
+		var K = load(p)
+		if K == null:
+			continue
+		if str(K.get("ROLE")) == UpgradesScript.ROLE_GIFT_RADAR:
+			best = maxi(best, int(stacks[id]))
+	if best >= 2:
+		return UpgradesScript.GIFT_RADAR_RANGE_AT_2
+	return UpgradesScript.GIFT_RADAR_RANGE
+
+
+## The radar arrows' entry list: one row per target source this run owns a radar for,
+## from the engine's own queries. Angles are world-space atan2(dz, dx) straight onto
+## the screen (+x right, +z down) - the widget's documented contract. Empty when no
+## radar role is owned (the map is not built, nothing is drawn, nothing is paid).
+func _radar_entries() -> Array:
+	var out: Array = []
+	if lstate == null or ctl == null:
+		return out
+	var upg = lstate.upgrades
+	if upg == null:
+		return out
+	var px := float(ctl.x)
+	var pz := float(ctl.z)
+	if bool(upg.has(UpgradesScript.ROLE_MINE_RADAR)) and lstate.mines != null:
+		for slot in UpgradesScript.mine_outline_ids(lstate.mines, px, pz):
+			var c: Vector3 = lstate.mines.point(slot)
+			out.append(_radar_row(c.x - px, c.z - pz))
+	if bool(upg.has(UpgradesScript.ROLE_GIFT_RADAR)) and lstate.gifts != null:
+		var gift: Dictionary = UpgradesScript.nearest_real_gift(lstate, px, pz, _gift_radar_range)
+		if not gift.is_empty():
+			out.append(_radar_row(float(gift["x"]) - px, float(gift["z"]) - pz))
+	if bool(upg.has(UpgradesScript.ROLE_THREAT_RADAR)):
+		for marker in UpgradesScript.threat_markers(w.get("enemies", []), px, pz):
+			out.append(_radar_row(float(marker["x"]) - px, float(marker["z"]) - pz))
+	if bool(upg.has(UpgradesScript.ROLE_BEACON_COMPASS)):
+		var b: Dictionary = UpgradesScript.beacon_compass(lstate, px, pz)
+		if not b.is_empty():
+			out.append(_radar_row(float(b["dx"]), float(b["dz"])))
+	return out
+
+
+static func _radar_row(dx: float, dz: float) -> Dictionary:
+	return {"angle": atan2(dz, dx), "dist": sqrt(dx * dx + dz * dz)}
+
+
+## The footprint map's snapshot field. A run not owning the footprint role gets {}
+## (the map stays hidden and free); otherwise this tick's tile is noted before the
+## widget reveals, so the map sees the current position too. Colours ride the current
+## biome's resolved palette, cached here once per level (the map itself draws plain
+## Colors and loads no content).
+func _footprint_feed() -> Dictionary:
+	if lstate == null or ctl == null:
+		return {}
+	var upg = lstate.upgrades
+	if upg == null or not bool(upg.has(UpgradesScript.ROLE_CARTOGRAPHER)):
+		return {}
+	var px := float(ctl.x)
+	var pz := float(ctl.z)
+	upg.note_footprint(0, px, pz)
+	var vx := float(ctl.vx)
+	var vz := float(ctl.vz)
+	if vx * vx + vz * vz > 0.01:
+		_facing = atan2(vz, vx)
+	if _map_colours.is_empty():
+		_map_colours = _resolve_map_colours()
+	return {"visible": true, "lv": lstate, "p_index": 0, "scale_px": 2.75,
+			"colours": _map_colours, "facing": _facing}
+
+
+func _resolve_map_colours() -> Dictionary:
+	var pal: Dictionary = FogEnvScript.resolve_palette(
+			FogEnvScript.biome_id_for_level(_level_number), _level_number)
+	var roles: Dictionary = pal.get("roles", {})
+	return {
+		"platform": _role_hex(roles, "platform_light", "#2FB7B0"),
+		"walkway": _role_hex(roles, "walkway_light", "#3A74FF"),
+		"gift": _role_hex(roles, "black_gift_rim", "#7CFFF4"),
+		"mine": _role_hex(roles, "tripmine_particles", "#FF4FD8"),
+		"beacon": _role_hex(roles, "beacon_open", "#E8FFFF"),
+	}
+
+
+static func _role_hex(roles: Dictionary, role: String, fallback: String) -> Color:
+	var entry = roles.get(role, {})
+	if entry is Dictionary:
+		return Color(str((entry as Dictionary).get("hex", fallback)))
+	return Color(fallback)
+
+
 ## HUD snapshot. gifts / purse / chain come from the LevelState and the economy this
 ## node owns (gifts_collected = total_real - remaining(), the sim's own definition);
 ## the roster is the resolved vote plan (static for the level).
@@ -1611,6 +1738,8 @@ func _sync_hud() -> void:
 		"ability_total": _ability_total(),
 		"curses": _icon_items(_ledger.get("curses", {})),
 		"upgrades": _icon_items(_ledger.get("stacks", {})),
+		"radar_entries": _radar_entries(),
+		"footprint_map": _footprint_feed(),
 	})
 
 

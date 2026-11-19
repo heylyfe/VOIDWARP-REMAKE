@@ -46,7 +46,7 @@ func _init() -> void:
 ## facing: the player heading in radians (-PI/2 = up/north, the default).
 func sync(lv: RefCounted, p_index: int, scale_px: float, colours: Dictionary,
 		facing: float = -PI / 2.0) -> void:
-	if lv == null or lv.upgrades == null or not lv.upgrades.has("cartographer"):
+	if lv == null or lv.upgrades == null or not lv.upgrades.has(CartographerContent.ROLE):
 		_model = []
 		queue_redraw()
 		return

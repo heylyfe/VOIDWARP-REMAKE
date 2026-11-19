@@ -10,6 +10,10 @@ extends Control
 #   class ability cooldown  bottom-left (right of the pip cluster, D-T025-3)
 #   curse + upgrade icon rows  top (collapsible with Tab)
 #   enemy roster icons with counts  top-left
+#   radar arrows  screen edge     (T-053 addendum R4: chevrons + distance labels;
+#                  the caller builds the entry list from the sim radar queries)
+#   cartographer map  top-right   (T-053 addendum R4: the footprint minimap;
+#                  hidden unless the run owns the footprint map)
 #   screen_fx  full-screen void flash / Last Light bloom / death black-out (T-086);
 #              drawn topmost; re-emits blackout_finished for the app layer
 #
@@ -26,6 +30,9 @@ extends Control
 #   kit: String, ability_remaining: float, ability_total: float
 #   curses: Array[{id, stacks}], upgrades: Array[{id, stacks}]
 #   roster: Array[{id, name, count}]
+#   radar_entries: Array[{angle, dist}]   (world-space atan2(dz, dx), u)
+#   footprint_map: Dictionary  {visible, lv, p_index, scale_px, colours, facing}; an
+#                  absent or visible==false dict keeps the map hidden and cost-free
 #
 # The HUD never writes sim state.
 
@@ -36,6 +43,8 @@ const AbilityCooldownScript := preload("res://view/hud/ability_cooldown.gd")
 const IconRowsScript := preload("res://view/hud/icon_rows.gd")
 const EnemyRosterScript := preload("res://view/hud/enemy_roster.gd")
 const ScreenFxScript := preload("res://view/hud/screen_fx.gd")
+const RadarArrowsScript := preload("res://view/hud/radar_arrows.gd")
+const CartographerMapScript := preload("res://view/hud/cartographer_map.gd")
 
 var gift_counter: Control
 var purse_chain: Control
@@ -43,6 +52,8 @@ var void_pips: Control
 var ability_cooldown: Control
 var icon_rows: Control
 var enemy_roster: Control
+var radar_arrows: Control
+var cartographer_map: Control
 var screen_fx: Control   # T-086: full-screen void flash / white bloom / death black-out
 
 signal blackout_finished
@@ -63,6 +74,11 @@ func _init() -> void:
 	add_child(icon_rows)
 	enemy_roster = EnemyRosterScript.new()
 	add_child(enemy_roster)
+	radar_arrows = RadarArrowsScript.new()
+	add_child(radar_arrows)
+	cartographer_map = CartographerMapScript.new()
+	cartographer_map.visible = false   # until sync() says the run owns the footprint map
+	add_child(cartographer_map)
 	# T-086: the screen-wide effects draw over every other HUD element
 	screen_fx = ScreenFxScript.new()
 	add_child(screen_fx)
@@ -79,6 +95,18 @@ func sync(snapshot: Dictionary) -> void:
 	icon_rows.set_curses(snapshot.get("curses", []))
 	icon_rows.set_upgrades(snapshot.get("upgrades", []))
 	enemy_roster.set_roster(snapshot.get("roster", []))
+	radar_arrows.sync(snapshot.get("radar_entries", []))
+	# The footprint map draws only for a run that owns the footprint map; otherwise
+	# it stays hidden and clears itself (sync(null)) at zero cost.
+	var cart: Dictionary = snapshot.get("footprint_map", {})
+	var show_cart := bool(cart.get("visible", false))
+	cartographer_map.visible = show_cart
+	if show_cart:
+		cartographer_map.sync(cart.get("lv"), int(cart.get("p_index", 0)),
+				float(cart.get("scale_px", 2.75)), cart.get("colours", {}),
+				float(cart.get("facing", -PI / 2.0)))
+	else:
+		cartographer_map.sync(null, 0, 2.75, {}, -PI / 2.0)
 
 
 ## Begin the 18-tick death black-out (section 2.4); blackout_finished fires when it

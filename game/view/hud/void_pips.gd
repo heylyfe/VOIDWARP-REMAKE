@@ -20,9 +20,10 @@ extends Control
 #   pip_spend()       on the fall tick, AFTER set_charges with the post-spend count
 #   pip_restore()     on the beacon_enter event, BEFORE the next sync; self-corrects to
 #                     the pulse case (D-T086-5) when no hollow pip exists at call time
-#   pip_free_fall()   on a Field Dressing free fall (sim hook absent - PARKED.md row 3)
+#   pip_free_fall()   on a Field Dressing free fall (app/world.gd _fx_events forwards the
+#                     void_fall event's `free` flag; PARKED.md row 3 is closed)
 #   last_light_trigger()  on the Last Light save; the bloom lives in screen_fx.gd
-# Wiring to the app layer is not built yet (same status as T-025's death flow).
+# All four are wired by app/world.gd and pinned by tests/test_world_stat_wiring.gd.
 
 const HELD_COLOR := Color(0.486, 1.0, 0.957)    # #7CFFF4
 const SPENT_COLOR := Color(0.227, 0.290, 0.333) # #3A4A55
