@@ -17,10 +17,20 @@ extends Node3D
 # returns {"select": <altar_table index>} for the caller to feed into
 # IntermissionScript.step() - never a UI callback (DESIGN.md section 13 rule 2).
 #
+# J7 made the hall a place rather than a diorama: the description panel is HIDDEN until
+# the player stands at an altar and looks at it (one panel at a time, as the reference art
+# shows), a pick flares the bay's plinths and banner for FLASH_S, the banners are the
+# reference's two-line lockup (huge emissive title + italic subtitle), the gate carries a
+# sealed readout naming the bays still open, and the room carries the art's green back
+# arrow plus a cyan reroll ring over every reroll plinth. The props, the plinths and the
+# gate are the shipped T-015 .glb models when they are present (box fallbacks otherwise).
+# view/lobby/lobby_scene.gd is the node that walks a player through all of it.
+#
 # Headless-testable: build_all() does the whole build without the scene tree; the bob /
 # hold / sink animation runs only inside tick(dt, ...). When parented into a real scene,
 # _process() forwards to tick() (the caller sets player_pos / look each frame or pins
-# them once).
+# them once) - a caller that drives tick() itself must set_process(false) first, or the
+# hold would accrue twice per frame.
 
 const FogEnvScript := preload("res://view/fog_env.gd")
 const BillboardScript := preload("res://view/billboard.gd")
@@ -50,14 +60,35 @@ const LOOK_COS := 0.5                      # looking within 60 degrees of the al
 const SINK_S := 0.6                        # losing altars sink into the floor over 0.6 s
 const PLINTH_DX := 5.5                     # tithe (right) / reroll (left) plinth offset
 
-## Floating bay banners (display serif capitals; subtitle in italic below, DESIGN.md 11).
+## Floating bay banners (DESIGN.md section 11: display serif capitals, subtitle in italic
+## below). [title, subtitle] - the reference art's two-line lockup, not one dashed line.
 const BANNER_TEXT: Dictionary = {
-	"E": "ENEMIES - Choose an adversary.",
-	"C": "CURSES - Become accursed.",
-	"U": "UPGRADES - Arm yourself.",
-	"REST": "RESPITE - Catch your breath.",
-	"CLASS": "CLASSES - Choose who falls.",
+	"E": ["ENEMIES", "Choose an adversary."],
+	"C": ["CURSES", "Become accursed."],
+	"U": ["UPGRADES", "Arm yourself."],
+	"REST": ["RESPITE", "Catch your breath."],
+	"CLASS": ["CLASSES", "Choose who falls."],
 }
+
+## Banner lockup: a huge emissive title with the italic subtitle one line under it.
+const TITLE_FONT := 96
+const TITLE_PIXEL := 0.012
+const SUBTITLE_FONT := 40
+const SUBTITLE_PIXEL := 0.008
+const SUBTITLE_DY := -1.15
+
+## The pick flare: the picked bay's plinths and banner glow for FLASH_S, then fade.
+const GLOW_ENERGY := 3.2
+const FLASH_S := 0.45
+
+## The two room icons from the reference art: the green back arrow (left) and the cyan
+## reroll ring (right). The arrow's green has no palette role - it is the art's own colour.
+const BACK_ARROW_POS := Vector3(-11.5, 1.7, 6.0)
+const BACK_ARROW_HEX := "#7CFF3A"
+const REROLL_ICON_H := 0.9
+
+## The gate's unresolved-bay readout, floating over the lintel while the gate is sealed.
+const GATE_LABEL_Y := 5.4
 
 ## VERBATIM (FLEET_PACK.md T-001 spec, DESIGN.md section 14): the About plaque text.
 ## Byte-identical to the disclaimer sentence in README.md, em dash included. The label
@@ -82,6 +113,11 @@ var _pal: Dictionary = {}            # the resolved palette dict (emission facto
 var _biome_id: String = "" # the biome p_biome_id named at build_all time; "" = act-I biome from content
 var _level: int = 0                  # the level p_level named at build_all time
 var _sink: Array = []                # [{node: Node3D, t: float}] losing-altar sink runs
+var _sinking: Dictionary = {}        # instance_id -> true while the sink owns that node
+var _banners: Array = []             # [{bay_index, title, subtitle}] live banner labels
+var _flash_t: float = 0.0            # the pick flare's remaining time
+var _flash_bay: int = -1             # the bay the flare belongs to
+var _gate_label: Label3D = null      # the sealed-gate readout (unresolved bays)
 
 
 func _ready() -> void:
@@ -100,6 +136,7 @@ func build_all(p_api: RefCounted, p_lobby: RefCounted, p_biome_id: String = "",
 	_hall()
 	_props()
 	_plaque()
+	_icons()
 	_gate_build()
 	refresh(p_lobby)
 
@@ -109,7 +146,7 @@ func build_all(p_api: RefCounted, p_lobby: RefCounted, p_biome_id: String = "",
 func refresh(p_lobby: RefCounted) -> void:
 	lobby = p_lobby
 	for w in _altars:
-		if is_instance_valid(w["root"]):
+		if is_instance_valid(w["root"]) and not _is_sinking(w["root"]):
 			w["root"].free()
 	_altars = []
 	_holds = {}
@@ -260,8 +297,9 @@ func _lights() -> void:
 	add_child(fill_light)
 
 
-## Procedural props (no downloaded models): urns, barrels and tall jars along the
-## walls, at fixed offsets (deterministic script build, DESIGN.md section 11).
+## Procedural props (DESIGN.md section 11: urns, barrels and tall jars along the walls, at
+## fixed offsets - a deterministic script build). The shipped T-015 models are used when
+## they are present; the box fallback keeps a checkout without the imported assets working.
 func _props() -> void:
 	var Along: Array = [
 		[-12.0, 8.5], [-6.0, 9.0], [-1.5, 9.3], [3.0, 8.9], [12.0, 8.5], [6.0, 9.0],
@@ -270,17 +308,109 @@ func _props() -> void:
 	var kinds: Array = ["urn", "barrel", "jar"]
 	for i in Along.size():
 		var kind: String = kinds[i % kinds.size()]
-		var h: float = 1.0 if kind == "urn" else (1.2 if kind == "jar" else 0.9)
-		var r: float = 0.45 if kind == "barrel" else 0.35
-		var prop := MeshInstance3D.new()
-		var cyl := CylinderMesh.new()
-		cyl.top_radius = r * (0.6 if kind == "urn" else 1.0)
-		cyl.bottom_radius = r
-		cyl.height = h
-		prop.mesh = cyl
-		prop.material_override = _mat("prop_block" if kind != "barrel" else "prop_crate")
-		prop.position = Vector3(Along[i][0], h * 0.5, Along[i][1])
+		var model := "tall_jar" if kind == "jar" else kind
+		var size := Vector3(0.6, 1.0, 0.6) if kind == "urn" else (
+				Vector3(0.9, 0.9, 0.9) if kind == "barrel" else Vector3(0.7, 1.2, 0.7))
+		var prop := _model("res://assets/models/%s.glb" % model, size,
+				"prop_block" if kind != "barrel" else "prop_crate")
+		prop.position = Vector3(Along[i][0], 0.0, Along[i][1])
 		add_child(prop)
+
+
+## One shipped .glb prop, or a box of p_fallback_size when the model is not there. The
+## returned node's origin is the FLOOR under the prop, so callers place it at y = 0.
+func _model(p_path: String, p_fallback_size: Vector3, p_role: String) -> Node3D:
+	var holder := Node3D.new()
+	var ps: PackedScene = load(p_path) if ResourceLoader.exists(p_path) else null
+	if ps == null:
+		var mi := MeshInstance3D.new()
+		mi.mesh = _box_mesh(p_fallback_size)
+		mi.material_override = _mat(p_role)
+		mi.position = Vector3(0.0, p_fallback_size.y * 0.5, 0.0)
+		holder.add_child(mi)
+		return holder
+	var inst: Node3D = ps.instantiate()
+	_vertex_colour_pass(inst)
+	holder.add_child(inst)
+	return holder
+
+
+## The T-015 .glb models carry no material (export_materials="NONE", palette colours ride
+## the vertex colours): every surface needs the vertex-colour base pass or it renders
+## Godot's default white. Same pass view/gifts_view.gd applies to the gift models.
+static func _vertex_colour_pass(p_root: Node3D) -> void:
+	var mat := StandardMaterial3D.new()
+	mat.vertex_color_use_as_albedo = true
+	var stack: Array = [p_root]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		for c in n.get_children():
+			stack.push_back(c)
+		if n is MeshInstance3D and (n as MeshInstance3D).mesh != null:
+			var mi := n as MeshInstance3D
+			for s in mi.mesh.get_surface_count():
+				mi.set_surface_override_material(s, mat)
+
+
+## The room icons from the reference art. The green back arrow stands on the left of the
+## hall (the pause binding leaves the hall the same way); the cyan reroll ring is built
+## over each reroll plinth by _build_selectable, because the sim has one per bay.
+func _icons() -> void:
+	var arrow := Node3D.new()
+	arrow.name = "BackArrow"
+	arrow.position = BACK_ARROW_POS
+	add_child(arrow)
+	var green := Color(BACK_ARROW_HEX)
+	var shaft := MeshInstance3D.new()
+	shaft.mesh = _box_mesh(Vector3(0.9, 0.22, 0.08))
+	shaft.material_override = _flat(green)
+	shaft.position = Vector3(0.2, 0.0, 0.0)
+	arrow.add_child(shaft)
+	var head := MeshInstance3D.new()
+	head.mesh = _tri_mesh([Vector3(-0.55, 0.0, 0.0), Vector3(0.05, 0.42, 0.0),
+			Vector3(0.05, -0.42, 0.0)])
+	head.material_override = _flat(green)
+	arrow.add_child(head)
+
+
+## The reroll ring: a torus in the XY plane (facing the arriving player) with a small
+## arrowhead, in the reference art's cyan.
+func _reroll_icon(p_parent: Node3D) -> void:
+	var ring := MeshInstance3D.new()
+	var torus := TorusMesh.new()
+	torus.inner_radius = REROLL_ICON_H * 0.30
+	torus.outer_radius = REROLL_ICON_H * 0.46
+	torus.rings = 24
+	torus.ring_segments = 8
+	ring.mesh = torus
+	ring.material_override = _flat(_c("dead_end_light", Color(0.56, 0.91, 0.88)))
+	ring.rotation.x = PI / 2.0
+	p_parent.add_child(ring)
+	var tip := MeshInstance3D.new()
+	var r := REROLL_ICON_H * 0.46
+	tip.mesh = _tri_mesh([Vector3(r * 0.55, r * 0.95, 0.0), Vector3(r * 1.15, r * 0.35, 0.0),
+			Vector3(r * 0.15, r * 0.35, 0.0)])
+	tip.material_override = _flat(_c("dead_end_light", Color(0.56, 0.91, 0.88)))
+	p_parent.add_child(tip)
+
+
+## A flat triangle fan from p_pts (already in the XY plane, facing +z).
+func _tri_mesh(p_pts: Array) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for p in p_pts:
+		st.add_vertex(p)
+	return st.commit()
+
+
+## An unshaded emissive material in one colour (the icons and the pick flare).
+func _flat(p_colour: Color, p_emission: float = 1.0) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.albedo_color = p_colour
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.emission_enabled = p_emission > 0.0
+	m.emission = p_colour * p_emission
+	return m
 
 
 ## The About plaque on the south wall, readable up close, disclaimer VERBATIM (section 14).
@@ -300,14 +430,26 @@ func _plaque() -> void:
 	add_child(label)
 
 
-## The Descent Gate at (0, -9.5) in the north wall: two posts + a lintel + a fill
-## plane, dull (beacon_closed) until lobby.gate_open(), then white (beacon_open -
-## the beacon's visual language). No timers, no menus. Walk in -> next level.
+## The Descent Gate at (0, -9.5) in the north wall: the shipped descent_gate.glb (frame +
+## door slab as two named nodes) when it is there, else two posts + a lintel + a fill
+## plane. The DOOR is the state indicator: dull (beacon_closed) until lobby.gate_open(),
+## then white (beacon_open - the beacon's visual language). No timers, no menus. Walk in ->
+## next level.
 func _gate_build() -> void:
 	var g := Node3D.new()
 	g.name = "DescentGate"
 	g.position = GATE_POS + Vector3(0.0, 0.0, -0.6)
 	add_child(g)
+	var path := "res://assets/models/descent_gate.glb"
+	var ps: PackedScene = load(path) if ResourceLoader.exists(path) else null
+	if ps != null:
+		var inst: Node3D = ps.instantiate()
+		g.add_child(inst)
+		_vertex_colour_pass(inst)
+		var door := inst.find_child("descent_gate_door", true, false)
+		if door is MeshInstance3D:
+			gate_vfx = door
+			return
 	var lp := MeshInstance3D.new()
 	lp.mesh = _box_mesh(Vector3(0.6, 4.0, 0.6))
 	lp.material_override = _mat("prop_block")
@@ -332,13 +474,54 @@ func _gate_build() -> void:
 	gate_vfx = fill
 
 
-## Swap the gate fill between the dull and the open (white, beacon_open) material.
+## Swap the gate between the dull and the open (white, beacon_open) material, and show the
+## bays still sealing it (DESIGN.md section 11: the gate opens only when every mandatory
+## bay is resolved - the hall says which ones are not).
 func _gate_refresh() -> void:
-	if gate_vfx == null or lobby == null:
+	if lobby == null:
 		return
 	var open := bool(lobby.gate_open())
-	var role := "beacon_open" if open else "beacon_closed"
-	gate_vfx.material_override = _mat(role)
+	if gate_vfx != null:
+		gate_vfx.material_override = _mat("beacon_open" if open else "beacon_closed")
+	_gate_label_refresh(open)
+
+
+## The banner title for a bay kind ("ENEMIES", "CURSES", ...); the kind itself when the
+## schedule ever grows a bay this file does not name.
+static func _banner_title(p_kind: String) -> String:
+	var row: Array = BANNER_TEXT.get(p_kind, [])
+	return str(row[0]) if not row.is_empty() else p_kind
+
+
+## The sealed-gate readout over the lintel: the mandatory bays still open, or nothing once
+## the gate is open.
+func _gate_label_refresh(p_open: bool) -> void:
+	var open_kinds: Array = []
+	var has_class_bay := false
+	for bay in lobby.bays:
+		var kind := str(bay["kind"])
+		if kind == "CLASS":
+			has_class_bay = true
+		if (kind == "E" or kind == "C") and not bool(bay.get("resolved", false)):
+			open_kinds.append(_banner_title(kind))
+	# The CLASS bay gates only the pre-run lobby (sim/intermission.gd gate_open()).
+	if has_class_bay and str(lobby.class_chosen) == "":
+		open_kinds.append(_banner_title("CLASS"))
+	if p_open or open_kinds.is_empty():
+		if _gate_label != null and is_instance_valid(_gate_label):
+			_gate_label.visible = false
+		return
+	if _gate_label == null or not is_instance_valid(_gate_label):
+		_gate_label = Label3D.new()
+		_gate_label.set_meta("gate_label", true)
+		_gate_label.font_size = 34
+		_gate_label.pixel_size = 0.008
+		_gate_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_gate_label.position = Vector3(0.0, GATE_LABEL_Y, GATE_POS.z + 0.6)
+		_gate_label.modulate = _c("danger", Color(1.0, 0.16, 0.16))
+		add_child(_gate_label)
+	_gate_label.text = "THE GATE IS SEALED\n" + " · ".join(open_kinds)
+	_gate_label.visible = true
 
 
 func _box_mesh(p_size: Vector3) -> BoxMesh:
@@ -347,36 +530,55 @@ func _box_mesh(p_size: Vector3) -> BoxMesh:
 	return mesh
 
 
-## Bay banners: lit text for scheduled bays (driven by the state), nothing for the
-## dark empty slots.
+## Bay banners: the reference art's lockup - a huge emissive serif title with the italic
+## subtitle one line under it - for scheduled bays, nothing for the dark empty slots.
 func _banner_refresh(p_lobby: RefCounted) -> void:
-	# free previous banner labels (children tagged "bay_banner")
+	# free previous banner labels (children tagged "bay_banner" / "bay_subtitle")
 	for child in get_children():
-		if child is Label3D and child.has_meta("bay_banner"):
+		if child is Label3D and (child.has_meta("bay_banner") or child.has_meta("bay_subtitle")):
 			child.free()
+	_banners = []
 	if p_lobby == null:
 		return
 	var slots := _bay_slots(p_lobby)
 	for bi in (p_lobby.bays as Array).size():
 		var bay: Dictionary = p_lobby.bays[bi]
 		var kind := str(bay["kind"])
-		var text := str(BANNER_TEXT.get(kind, ""))
-		if text == "":
+		var text: Array = BANNER_TEXT.get(kind, [])
+		if text.is_empty():
 			continue
-		var label := Label3D.new()
-		label.set_meta("bay_banner", true)
-		label.text = text
-		label.font_size = 52
-		label.pixel_size = 0.008
-		label.position = Vector3(float(BAY_X[int(slots[bi])]), BANNER_Y, BAY_Z - 2.2)
-		label.modulate = _c("dead_end_light", Color(0.56, 0.91, 0.88))
-		add_child(label)
+		var x := float(BAY_X[int(slots[bi])])
+		var title := Label3D.new()
+		title.set_meta("bay_banner", true)
+		title.text = str(text[0])
+		title.font_size = TITLE_FONT
+		title.pixel_size = TITLE_PIXEL
+		title.position = Vector3(x, BANNER_Y, BAY_Z - 2.2)
+		title.modulate = _c("dead_end_light", Color(0.56, 0.91, 0.88))
+		title.outline_size = 12
+		title.outline_modulate = _c("walkway_light", Color(0.23, 0.45, 1.0))
+		add_child(title)
+		var subtitle := Label3D.new()
+		subtitle.set_meta("bay_subtitle", true)
+		subtitle.text = str(text[1])
+		subtitle.font_size = SUBTITLE_FONT
+		subtitle.pixel_size = SUBTITLE_PIXEL
+		subtitle.position = Vector3(x, BANNER_Y + SUBTITLE_DY, BAY_Z - 2.2)
+		subtitle.modulate = _c("dead_end_light", Color(0.56, 0.91, 0.88))
+		add_child(subtitle)
+		_banners.append({"bay_index": bi, "title": title, "subtitle": subtitle})
 
 
 # ---- altars --------------------------------------------------------------------
 
 ## One selectable altar (or extra plinth) for altar_table() index i. Returns the
-## wrapper {"root", "kind", "bay_index", "altar", "name", "x", "exhibit"}.
+## wrapper {"root", "kind", "bay_kind", "bay_index", "altar", "name", "index", "exhibit",
+## "plinth", "glow", "panel"}.
+##
+## "kind" is the altar_table() row kind ("offer" / "tithe" / "reroll"); "bay_kind" is the
+## BAY's kind ("E" / "C" / "U" / "REST" / "CLASS"). The exhibit and the panel both switch
+## on the BAY kind - passing the row kind there made every exhibit and every panel read
+## "TBD", which is what J7 found and fixed.
 func _build_selectable(p_lobby: RefCounted, p_index: int, p_bay_index: int, p_altar: int,
 		p_kind: String, p_slots: Array) -> Dictionary:
 	var kind := str(p_kind)
@@ -384,6 +586,7 @@ func _build_selectable(p_lobby: RefCounted, p_index: int, p_bay_index: int, p_al
 	add_child(root)
 	# offers sit at the bay's altar row; the extra plinths sit beside the bay
 	var bay: Dictionary = p_lobby.bays[p_bay_index]
+	var bay_kind := str(bay["kind"])
 	var slots := p_slots
 	var bx: float = float(BAY_X[int(slots[p_bay_index])])
 	var x: float = bx + float(ALTAR_DX[clampi(p_altar, 0, 2)])
@@ -393,30 +596,42 @@ func _build_selectable(p_lobby: RefCounted, p_index: int, p_bay_index: int, p_al
 		x = clampf(bx - PLINTH_DX, -HALL_X * 0.5 + 1.5, HALL_X * 0.5 - 1.5)
 	root.position = Vector3(x, 0.0, BAY_Z)
 
-	var plinth := MeshInstance3D.new()
-	plinth.mesh = _box_mesh(PLINTH_SIZE)
-	plinth.material_override = _mat("prop_block")
-	plinth.position = Vector3(0.0, PLINTH_SIZE.y * 0.5, 0.0)
+	var plinth: Node3D = _model("res://assets/models/altar_plinth.glb", PLINTH_SIZE, "prop_block")
 	root.add_child(plinth)
 
 	var anchor := Node3D.new()   # the bobbing exhibit anchor
 	anchor.position = Vector3(0.0, PLINTH_SIZE.y + EXHIBIT_LIFT, 0.0)
 	root.add_child(anchor)
 
-	var wrap := {"root": root, "kind": kind, "bay_index": p_bay_index, "altar": p_altar,
-			"name": "", "index": p_index, "exhibit": anchor, "flash": 0.0}
+	# The pick flare: an omni that only lights while this bay is the one just picked, so
+	# the altar visibly answers the F press even after the state rebuilds the plinths.
+	var glow := OmniLight3D.new()
+	glow.light_color = _c("dead_end_light", Color(0.56, 0.91, 0.88))
+	glow.light_energy = 0.0
+	glow.omni_range = 4.0
+	glow.position = Vector3(0.0, PLINTH_SIZE.y + 0.6, 0.0)
+	root.add_child(glow)
+
+	var wrap := {"root": root, "kind": kind, "bay_kind": bay_kind,
+			"bay_index": p_bay_index, "altar": p_altar,
+			"name": "", "index": p_index, "exhibit": anchor, "flash": 0.0,
+			"plinth": plinth, "glow": glow, "panel": null}
 	if kind != "tithe" and kind != "reroll":
 		var altar: Dictionary = {}
 		if p_altar >= 0 and p_altar < (bay["altars"] as Array).size():
 			altar = (bay["altars"] as Array)[p_altar]
 		wrap["name"] = _exhibit(wrap, anchor, altar)
-	_panel(wrap, altar_details(p_lobby, p_bay_index, p_altar, kind), root.position)
+	elif kind == "reroll":
+		_reroll_icon(anchor)
+	wrap["panel"] = _panel(wrap, altar_details(p_lobby, p_bay_index, p_altar, bay_kind),
+			root.position)
 	return wrap
 
 
 ## Builds the exhibit for one offer; returns the display name ("TBD" fallback included).
+## Switches on the BAY kind (see _build_selectable's note).
 func _exhibit(p_wrap: Dictionary, p_anchor: Node3D, p_altar: Dictionary) -> String:
-	var kind := str(p_wrap["kind"])
+	var kind := str(p_wrap.get("bay_kind", ""))
 	if kind == "E":
 		return _exhibit_enemy(p_anchor, p_altar)
 	if kind == "C":
@@ -539,7 +754,11 @@ func _enemy_doc(p_id: String) -> Dictionary:
 	return lobby.content.enemy(p_id)
 
 
-func _panel(p_wrap: Dictionary, p_lines: Array, _p_world: Vector3) -> void:
+## The description panel for one selectable (world-space, 2.4 u wide, above the exhibit).
+## It starts HIDDEN: the hall shows the panel of the altar the player is standing at and
+## looking at, and hides it again when they walk away (DESIGN.md section 11's interaction
+## rule - the reference art shows exactly one name at a time).
+func _panel(p_wrap: Dictionary, p_lines: Array, _p_world: Vector3) -> Label3D:
 	var label := Label3D.new()
 	var text := ""
 	for line in p_lines:
@@ -553,7 +772,9 @@ func _panel(p_wrap: Dictionary, p_lines: Array, _p_world: Vector3) -> void:
 	label.position = Vector3(0.0, PLINTH_SIZE.y + EXHIBIT_LIFT + 1.1, 0.0)
 	label.set_meta("panel", true)
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	label.visible = false
 	(p_wrap["root"] as Node3D).add_child(label)
+	return label
 
 
 # ---- interaction: prompt, F-hold, tick -----------------------------------------
@@ -577,9 +798,36 @@ func tick(p_dt: float, p_player_pos: Vector3, p_look_dir: Vector3,
 		if is_instance_valid(anchor):
 			anchor.position.y = PLINTH_SIZE.y + EXHIBIT_LIFT \
 					+ BOB_AMP * sin(TAU * BOB_HZ * _t)
+	_glow_pass(p_dt)
 	_sink_advance(p_dt)
 	_gate_refresh()
 	return out
+
+
+## The pick flare: the picked bay's plinths and banner glow for FLASH_S, then fade. Keyed
+## by BAY INDEX rather than by node, so it survives the state rebuild a pick triggers.
+func _glow_pass(p_dt: float) -> void:
+	if _flash_t > 0.0:
+		_flash_t = maxf(_flash_t - p_dt, 0.0)
+	var k: float = _flash_t / FLASH_S
+	for a in _altars:
+		var glow: OmniLight3D = a.get("glow")
+		if glow != null and is_instance_valid(glow):
+			glow.light_energy = GLOW_ENERGY * k if int(a["bay_index"]) == _flash_bay else 0.0
+	for b in _banners:
+		var title: Label3D = b["title"]
+		if title != null and is_instance_valid(title):
+			var lit: bool = int(b["bay_index"]) == _flash_bay and k > 0.0
+			title.modulate = Color(1.0, 1.0, 1.0) if lit \
+					else _c("dead_end_light", Color(0.56, 0.91, 0.88))
+
+
+## Only the prompted altar shows its description panel; every other one hides it.
+func _panel_pass(p_best: int) -> void:
+	for a in _altars:
+		var panel: Label3D = a.get("panel")
+		if panel != null and is_instance_valid(panel):
+			panel.visible = int(a["index"]) == p_best
 
 
 func _interaction(p_dt: float, p_player_pos: Vector3, p_look_dir: Vector3,
@@ -602,6 +850,7 @@ func _interaction(p_dt: float, p_player_pos: Vector3, p_look_dir: Vector3,
 		if d < best_d:
 			best_d = d
 			best = int(a["index"])
+	_panel_pass(best)
 	if best < 0:
 		return out
 	for a in _altars:
@@ -623,11 +872,13 @@ func _interaction(p_dt: float, p_player_pos: Vector3, p_look_dir: Vector3,
 	return out
 
 
-## On confirm: the altar flares; in a mandatory bay the other altars sink into the
-## floor over 0.6 s (an E x2 bay's state re-draws at once, so the new draw rises on
-## the next stamp refresh).
+## On confirm: the altar flares (the bay's plinths and banner glow for FLASH_S); in a
+## mandatory bay the other altars sink into the floor over 0.6 s (an E x2 bay's state
+## re-draws at once, so the new draw rises on the next stamp refresh).
 func _fire(p_wrap: Dictionary) -> void:
 	p_wrap["flash"] = 0.25
+	_flash_t = FLASH_S
+	_flash_bay = int(p_wrap["bay_index"])
 	var bay: Dictionary = lobby.bays[int(p_wrap["bay_index"])]
 	var kind := str(bay["kind"])
 	if kind == "E" or kind == "C" or kind == "CLASS":
@@ -635,18 +886,32 @@ func _fire(p_wrap: Dictionary) -> void:
 			if a != p_wrap and int(a["bay_index"]) == int(p_wrap["bay_index"]) \
 					and str(a["kind"]) == "offer":
 				_sink.append({"node": a["root"], "t": 0.0})
+				# The sink owns the node until it lands: refresh() must not free it out
+				# from under the animation (the pick bumps the stamp, so refresh() runs on
+				# the very next tick).
+				_sinking[(a["root"] as Node3D).get_instance_id()] = true
+
+
+## True while the sink animation owns p_node (refresh() leaves it alone).
+func _is_sinking(p_node: Node3D) -> bool:
+	return _sinking.has(p_node.get_instance_id())
 
 
 func _sink_advance(p_dt: float) -> void:
 	var keep: Array = []
 	for s in _sink:
-		var node: Node3D = s["node"]
+		var node_v: Variant = s["node"]
 		s["t"] = float(s["t"]) + p_dt
-		if node != null and is_instance_valid(node):
-			var k: float = clampf(float(s["t"]) / SINK_S, 0.0, 1.0)
-			node.position.y = -k * (PLINTH_SIZE.y + 0.6)
-		if float(s["t"]) < SINK_S:
-			keep.append(s)
+		if node_v == null or not is_instance_valid(node_v):
+			continue   # already gone: drop the run rather than touch a freed instance
+		var node: Node3D = node_v
+		var k: float = clampf(float(s["t"]) / SINK_S, 0.0, 1.0)
+		node.position.y = -k * (PLINTH_SIZE.y + 0.6)
+		if float(s["t"]) >= SINK_S:
+			_sinking.erase(node.get_instance_id())
+			node.free()
+			continue
+		keep.append(s)
 	_sink = keep
 
 

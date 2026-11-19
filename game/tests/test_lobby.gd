@@ -210,30 +210,41 @@ func _curse_bay(f: Array[String], api: RefCounted) -> void:
 				if str(a2["id"]) == "unmarked":
 					held_hit = "unmarked re-offered after pick (seed %d)" % seed_value
 	# stackable curses stay offerable below max and leave the pool exactly at max
-	# (zoomies: 2 stacks; enemy-linked -> needs its kiwi cat vote; min_level 3).
+	# (overwound: mild; 2 stacks; enemy-linked to coil -> needs its coil vote; min_level 2).
+	# zoomies used to fill this role but was retired (J9): it must never be offered now.
 	var stacked_seen := false
 	var maxed_seen := false
+	var retired_seen := false
 	for seed_value in range(60):
 		var lo: RefCounted = Intermission.create(api, 8, 0, 900 + seed_value,
-				{"kiwi_cat": 1}, {"zoomies": 1}, {})
+				{"coil": 1}, {"overwound": 1}, {})
 		var hi: RefCounted = Intermission.create(api, 8, 0, 900 + seed_value,
-				{"kiwi_cat": 1}, {"zoomies": 2}, {})
+				{"coil": 1}, {"overwound": 2}, {})
+		var ret: RefCounted = Intermission.create(api, 8, 0, 900 + seed_value,
+				{"kiwi_cat": 1}, {"zoomies": 1}, {})
 		for bay2 in lo.bays:
 			if str(bay2["kind"]) == "C":
 				for a2 in bay2["altars"]:
-					if str(a2["id"]) == "zoomies":
+					if str(a2["id"]) == "overwound":
 						stacked_seen = true
 		for bay2 in hi.bays:
 			if str(bay2["kind"]) == "C":
 				for a2 in bay2["altars"]:
-					if str(a2["id"]) == "zoomies":
+					if str(a2["id"]) == "overwound":
 						maxed_seen = true
+		for bay2 in ret.bays:
+			if str(bay2["kind"]) == "C":
+				for a2 in bay2["altars"]:
+					if str(a2["id"]) == "zoomies":
+						retired_seen = true
 	if held_hit != "":
 		f.append("curse: " + held_hit)
 	if not stacked_seen:
-		f.append("curse: Zoomies at 1/2 stacks never re-offered in 60 draws")
+		f.append("curse: overwound at 1/2 stacks never re-offered in 60 draws")
 	if maxed_seen:
-		f.append("curse: Zoomies at max stacks was re-offered")
+		f.append("curse: overwound at max stacks was re-offered")
+	if retired_seen:
+		f.append("curse: retired zoomies was offered in a C bay")
 	# pick a curse through the Select input: the bounty lands in the purse
 	var lb5: RefCounted = Intermission.create(api, 9, 100, 31)
 	var events: Array = []
