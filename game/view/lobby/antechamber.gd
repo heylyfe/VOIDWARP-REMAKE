@@ -53,7 +53,28 @@ const BOB_AMP := 0.1                       # exhibit bobs +-0.1 u
 const BOB_HZ := 0.5                        # at 0.5 Hz
 const ENEMY_BODY_H := 1.6                  # enemy exhibit: 1.6 u body height
 const ICON_H := 1.2                        # curse / upgrade icon billboard
-const PANEL_W := 2.4                       # world-space panel width
+## The prompt bar (the reference art's lockup: a wide dark-indigo slab, a LARGE white
+## capital F as the keybind glyph, the item's name beside it and its description one line
+## under the name, a faint silhouette at the right end). World-space, so it is sized for
+## the game's own camera distance (app/camera_rig.gd: DISTANCE 7, PIVOT_HEIGHT 2.5, FOV 75):
+## at ~9 u the name reads at ~22 px and the F at ~49 px on a 720-tall frame.
+const BAR_W := 6.0                         # the slab's width, world u
+const BAR_H := 1.9                         # the slab's height, world u
+const BAR_Z := 0.35                        # toward the player: the slab sits in FRONT of the exhibit
+const BAR_BG_HEX := "#2E2E4A"              # the reference's dark indigo
+const BAR_BG_ALPHA := 0.86                 # slightly translucent
+const BAR_EDGE_HEX := "#5A5A82"            # the subtle lighter top edge
+const BAR_EDGE_H := 0.035
+const BAR_PIXEL := 0.005                   # Label3D pixel_size for every glyph on the bar
+const BAR_FONT := 110                      # the name (fitted down when it would overflow)
+const BAR_FONT_DESC := 50                  # the description line
+const BAR_FONT_KEY := 280                  # the big F (the keybind glyph)
+const BAR_KEY_X := 0.80                    # the F's centre, from the slab's left edge
+const BAR_TEXT_X := 1.55                   # the name/description left edge, from the slab's left edge
+const BAR_RIGHT_PAD := 0.35                # the watermark's strip at the right end
+const BAR_NAME_DY := 0.36                  # the name's line, above the slab's centre
+const BAR_DESC_DY := -0.45                 # the description's line, below it
+const BAR_KEY_GROW := 0.22                 # the F's scale ramp at a full hold
 const SIGIL_R := 4.5                       # the 9 u star sigil (diameter)
 const HOLD_S := 0.35                       # hold F to confirm (radial fill)
 const PROMPT_R := 2.5                      # altar proximity for the prompt
@@ -106,7 +127,12 @@ var fill_light: OmniLight3D = null
 var prompt_text := ""
 var gate_vfx: Node3D = null          # the gate's fill plane; colour flips with the state
 var _altars: Array = []              # live altar wrappers, one per altar_table() entry
-var _holds: Dictionary = {}          # table index -> hold seconds this visit
+## Hold + latch state, keyed by the altar SLOT (_slot_key), never by the wrapper: a Select
+## bumps the state's stamp and refresh() rebuilds every wrapper, so a latch stored on the
+## wrapper is thrown away by the very pick it recorded - one continuous hold then confirmed
+## again every HOLD_S (a shop bay that never resolves sold its whole stock on one press).
+var _holds: Dictionary = {}          # slot key -> hold seconds this press
+var _fired: Dictionary = {}          # slot key -> 1 once this press has confirmed
 var _last_stamp: int = -1
 var _t: float = 0.0                  # seconds, for the bob
 var _colours: Dictionary = {}        # resolved role name -> Color
@@ -163,7 +189,6 @@ func refresh(p_lobby: RefCounted) -> void:
 		if is_instance_valid(w["root"]) and not _is_sinking(w["root"]):
 			w["root"].free()
 	_altars = []
-	_holds = {}
 	if lobby != null:
 		var table: Array = lobby.altar_table()
 		var slots := _bay_slots(lobby)
@@ -646,8 +671,11 @@ func _build_selectable(p_lobby: RefCounted, p_index: int, p_bay_index: int, p_al
 		wrap["name"] = _exhibit(wrap, anchor, altar)
 	elif kind == "reroll":
 		_reroll_icon(anchor)
-	wrap["panel"] = _panel(wrap, altar_details(p_lobby, p_bay_index, p_altar, bay_kind),
-			root.position)
+	# The bar's name is the DISPLAY name altar_details() resolves (an upgrade's name, not
+	# its id), so the prompt string and the bar agree on what the altar offers.
+	var lines: Array = altar_details(p_lobby, p_bay_index, p_altar, bay_kind, kind)
+	wrap["label"] = str(lines[0]) if not lines.is_empty() else str(wrap["name"])
+	_bar(wrap, lines)
 	# Sealed Deals (T-051): while the run holds the curse the reroll plinth never
 	# draws (reroll_plinth_visible() false, held_stacks 0 = neutral true). The panel is
 	# root's child, so one visible flag covers the whole plinth. The wrapper STAYS in
@@ -738,12 +766,16 @@ func _exhibit_class(p_anchor: Node3D, p_class: String) -> String:
 	return p_class
 
 
-## The panel text lines for one selectable (world-space, 2.4 u wide, above the exhibit).
+## The bar's text lines for one selectable: [name, description, ...detail]. p_kind is the
+## BAY kind ("E" / "C" / "U" / "REST" / "CLASS"); p_row_kind is the altar_table() row kind
+## ("offer" / "tithe" / "reroll"). The two extra plinths both arrive with p_altar < 0, so
+## only the ROW kind can tell them apart - testing the bay kind there made every tithe
+## plinth read "REROLL / Re-draw this bay." (the bay kind is never "tithe").
 func altar_details(p_lobby: RefCounted, p_bay_index: int, p_altar: int,
-		p_kind: String) -> Array:
+		p_kind: String, p_row_kind: String = "") -> Array:
 	var bay: Dictionary = p_lobby.bays[p_bay_index]
 	if p_altar < 0:
-		if p_kind == "tithe":
+		if p_row_kind == "tithe":
 			var cost: int = OffersSim.tithe_cost(int(p_lobby.tithes), p_lobby.content)
 			return ["PAY THE TITHE", "Walk past - no curse taken.", "Cost: %d g" % cost]
 		var rc: int = OffersSim.reroll_cost(int(bay.get("rerolls_used", 0)), p_lobby.content)
@@ -788,27 +820,149 @@ func _enemy_doc(p_id: String) -> Dictionary:
 	return lobby.content.enemy(p_id)
 
 
-## The description panel for one selectable (world-space, 2.4 u wide, above the exhibit).
-## It starts HIDDEN: the hall shows the panel of the altar the player is standing at and
-## looking at, and hides it again when they walk away (DESIGN.md section 11's interaction
-## rule - the reference art shows exactly one name at a time).
-func _panel(p_wrap: Dictionary, p_lines: Array, _p_world: Vector3) -> Label3D:
+## The prompt bar for one selectable: the reference art's lockup, built at the altar and
+## starting HIDDEN. The hall shows the bar of the altar the player stands at and looks at,
+## and hides it again when they walk away (DESIGN.md section 11's interaction rule - the
+## reference art shows exactly one name at a time).
+##
+## It CROSSES the exhibit body rather than floating above it (the owner's ask: the text
+## overlaps the enemy and the name still reads), the big F IS the keybind glyph, and the
+## name/description come from altar_details() - no new name source.
+func _bar(p_wrap: Dictionary, p_lines: Array) -> void:
+	var name := str(p_lines[0]) if not p_lines.is_empty() else str(p_wrap.get("name", ""))
+	var desc := str(p_lines[1]) if p_lines.size() > 1 else ""
+	var band: Vector2 = _body_band(p_wrap)
+	var base := Vector3(_bar_dx(p_wrap), (band.x + band.y) * 0.5, 0.0)
+	var bar := Node3D.new()
+	bar.set_meta("bar", true)
+	bar.set_meta("base", base)
+	bar.position = base
+	(p_wrap["root"] as Node3D).add_child(bar)
+	# the slab, its subtle lighter top edge, and the faint silhouette at the right end
+	_quad(bar, Vector2(BAR_W, BAR_H), Vector3(0.0, 0.0, 0.0), Color(BAR_BG_HEX, BAR_BG_ALPHA))
+	_quad(bar, Vector2(BAR_W, BAR_EDGE_H),
+			Vector3(0.0, BAR_H * 0.5 - BAR_EDGE_H * 0.5, 0.002), Color(BAR_EDGE_HEX, 0.9))
+	_quad(bar, Vector2(BAR_H * 0.62, BAR_H * 0.62),
+			Vector3(BAR_W * 0.5 - BAR_H * 0.55, 0.0, -0.002), Color(_accent(p_wrap), 0.16))
+	# the keybind glyph: a LARGE capital F, the reference's own keybind mark
+	var key := _bar_label(bar, "F", BAR_FONT_KEY, HORIZONTAL_ALIGNMENT_CENTER)
+	key.position = Vector3(-BAR_W * 0.5 + BAR_KEY_X, 0.0, 0.004)
+	# the name, then the description one line under it
+	var text_w: float = BAR_W - BAR_TEXT_X - BAR_RIGHT_PAD
+	var panel := _bar_label(bar, name, BAR_FONT, HORIZONTAL_ALIGNMENT_CENTER)
+	_bar_fit(panel, -BAR_W * 0.5 + BAR_TEXT_X, BAR_NAME_DY, text_w)
+	panel.set_meta("panel", true)
+	var sub := _bar_label(bar, _bar_clip(desc, BAR_FONT_DESC, text_w / BAR_PIXEL),
+			BAR_FONT_DESC, HORIZONTAL_ALIGNMENT_CENTER)
+	_bar_fit(sub, -BAR_W * 0.5 + BAR_TEXT_X, BAR_DESC_DY, text_w)
+	sub.modulate = Color(0.82, 0.84, 0.95)
+	bar.visible = false
+	panel.visible = false
+	p_wrap["bar"] = bar
+	p_wrap["key"] = key
+	p_wrap["panel"] = panel
+
+
+## One flat, unshaded, alpha-blended quad in the bar's local XY plane. The bar's own yaw
+## keeps the slab facing the player, so the slab needs no billboard mode of its own.
+func _quad(p_parent: Node3D, p_size: Vector2, p_pos: Vector3, p_colour: Color) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	var q := QuadMesh.new()
+	q.size = p_size
+	mi.mesh = q
+	var m := StandardMaterial3D.new()
+	m.albedo_color = p_colour
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mi.material_override = m
+	mi.position = p_pos
+	p_parent.add_child(mi)
+	return mi
+
+
+## One Label3D on the bar: billboarded so it always faces the camera, at a real font size
+## for the game's own camera distance (the ticket's readability rule).
+func _bar_label(p_parent: Node3D, p_text: String, p_font: int,
+		p_align: int) -> Label3D:
 	var label := Label3D.new()
-	var text := ""
-	for line in p_lines:
-		if str(line) != "":
-			text += ("" if text == "" else "\n") + str(line)
-	label.text = text
-	label.font_size = 26
-	label.pixel_size = 0.006
-	label.width = int(PANEL_W / 0.006)  # 2.4 u wide at this pixel_size
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.position = Vector3(0.0, PLINTH_SIZE.y + EXHIBIT_LIFT + 1.1, 0.0)
-	label.set_meta("panel", true)
+	label.text = p_text
+	label.font_size = p_font
+	label.pixel_size = BAR_PIXEL
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	label.visible = false
-	(p_wrap["root"] as Node3D).add_child(label)
+	label.horizontal_alignment = p_align
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	p_parent.add_child(label)
 	return label
+
+
+## Places a left-aligned label so its text starts at p_left (bar-local x). A Label3D with a
+## width centres its box on the node origin, so the origin sits half a box to the right.
+func _bar_left(p_label: Label3D, p_left: float, p_y: float, p_world_w: float) -> void:
+	p_label.width = maxi(int(p_world_w / BAR_PIXEL), 1)
+	p_label.position = Vector3(p_left + p_world_w * 0.5, p_y, 0.004)
+
+
+## Places a one-line label LEFT-aligned at p_left, scaled down when the text would run past
+## the bar's text box (the longest display name, "Radar Module: Threats", is 21 characters).
+## The box hugs the text (width 0), so the scale shrinks it about its own centre and the
+## origin is then moved so the scaled text still starts at p_left.
+func _bar_fit(p_label: Label3D, p_left: float, p_y: float, p_world_w: float) -> void:
+	var want: float = p_world_w / BAR_PIXEL
+	var px: float = ThemeDB.fallback_font.get_string_size(p_label.text,
+			HORIZONTAL_ALIGNMENT_LEFT, -1, p_label.font_size).x
+	var k: float = 1.0 if px <= want or px <= 0.0 else want / px
+	p_label.width = 0
+	p_label.scale = Vector3.ONE * k
+	p_label.position = Vector3(p_left + px * BAR_PIXEL * k * 0.5, p_y, 0.004)
+
+
+## The description cut to ONE line that fits the bar, at a word boundary, with an ellipsis -
+## the reference art shows a single description line, not a wrapped paragraph.
+static func _bar_clip(p_text: String, p_font: int, p_max_px: float) -> String:
+	var font: Font = ThemeDB.fallback_font
+	if font.get_string_size(p_text, HORIZONTAL_ALIGNMENT_LEFT, -1, p_font).x <= p_max_px:
+		return p_text
+	var out := ""
+	for w in p_text.split(" "):
+		var next: String = str(w) if out == "" else out + " " + str(w)
+		if font.get_string_size(next + "…", HORIZONTAL_ALIGNMENT_LEFT, -1, p_font).x > p_max_px:
+			break
+		out = next
+	return out + "…" if out != "" else ""
+
+
+## The world-Y band the exhibit's BODY occupies, so the bar can cross it instead of floating
+## above it. The enemy billboard's body bottom sits on the anchor (view/billboard.gd), the
+## curse and upgrade icons are centred on it, and the class capsule is 1.7 u tall about it.
+func _body_band(p_wrap: Dictionary) -> Vector2:
+	var ay: float = PLINTH_SIZE.y + EXHIBIT_LIFT
+	match str(p_wrap.get("bay_kind", "")):
+		"E":
+			return Vector2(ay, ay + ENEMY_BODY_H)
+		"CLASS":
+			return Vector2(ay - 0.85, ay + 0.85)
+	return Vector2(ay - ICON_H * 0.5, ay + ICON_H * 0.5)
+
+
+## The bar's local x: 0 unless the altar stands close enough to a side wall that a slab this
+## wide would cut into it (the outer altars sit 2 u from the wall).
+func _bar_dx(p_wrap: Dictionary) -> float:
+	var root: Node3D = p_wrap["root"]
+	var lo: float = -HALL_X * 0.5 + BAR_W * 0.5 + 0.2 - root.position.x
+	var hi: float = HALL_X * 0.5 - BAR_W * 0.5 - 0.2 - root.position.x
+	return clampf(0.0, lo, hi)
+
+
+## The watermark's colour: the item's own accent (the curse red, the upgrade aqua, the
+## hall's dead-end cyan for an enemy or a class).
+func _accent(p_wrap: Dictionary) -> Color:
+	match str(p_wrap.get("bay_kind", "")):
+		"C":
+			return _c("danger", Color(1.0, 0.16, 0.16))
+		"U", "REST":
+			return Color(0.1, 0.9, 0.85)
+	return _c("dead_end_light", Color(0.56, 0.91, 0.88))
 
 
 # ---- interaction: prompt, F-hold, tick -----------------------------------------
@@ -856,18 +1010,57 @@ func _glow_pass(p_dt: float) -> void:
 					else _c("dead_end_light", Color(0.56, 0.91, 0.88))
 
 
-## Only the prompted altar shows its description panel; every other one hides it.
-func _panel_pass(p_best: int) -> void:
+## The stable identity of an altar SLOT across a state rebuild: the bay, the altar row and
+## the row kind. The table index is NOT stable (a resolved bay drops out of altar_table()),
+## and the wrapper dict is rebuilt on every stamp bump, so the hold/latch state keys on this.
+static func _slot_key(p_wrap: Dictionary) -> String:
+	return "%d:%d:%s" % [int(p_wrap.get("bay_index", -1)), int(p_wrap.get("altar", -1)),
+			str(p_wrap.get("kind", ""))]
+
+
+## Only the prompted altar shows its bar; every other one hides it. p_h is the hold progress
+## in seconds, which ramps the F glyph so the confirm is visible before it lands.
+func _bar_pass(p_best: int, p_h: float, p_player_pos: Vector3) -> void:
+	var k: float = clampf(p_h / HOLD_S, 0.0, 1.0)
 	for a in _altars:
+		var bar: Node3D = a.get("bar")
 		var panel: Label3D = a.get("panel")
+		var on: bool = int(a["index"]) == p_best
+		if bar != null and is_instance_valid(bar):
+			bar.visible = on
 		if panel != null and is_instance_valid(panel):
-			panel.visible = int(a["index"]) == p_best
+			panel.visible = on
+		if not on or bar == null or not is_instance_valid(bar):
+			continue
+		# Face the player and sit just in front of the exhibit, so the slab crosses the body
+		# instead of z-fighting with it. The labels billboard on their own.
+		var root: Node3D = a["root"]
+		var to_p: Vector3 = p_player_pos - root.position
+		to_p.y = 0.0
+		var base: Vector3 = bar.get_meta("base", bar.position)
+		if to_p.length() > 1e-4:
+			var dir := to_p.normalized()
+			bar.rotation.y = atan2(dir.x, dir.z)
+			bar.position = base + dir * BAR_Z
+		else:
+			bar.position = base
+		var key: Label3D = a.get("key")
+		if key != null and is_instance_valid(key):
+			key.scale = Vector3.ONE * (1.0 + BAR_KEY_GROW * k)
+			key.modulate = Color(1.0, 1.0, 1.0).lerp(
+					_c("dead_end_light", Color(0.56, 0.91, 0.88)), k)
 
 
 func _interaction(p_dt: float, p_player_pos: Vector3, p_look_dir: Vector3,
 		p_interact_held: bool) -> Dictionary:
 	var out := {"select": NO_SELECT, "prompt": ""}
+	# A released F ends every hold: the latch is per PRESS, so the next press confirms again.
+	# Clearing it here - not only on the focused altar - is what stops a confirm from sticking
+	# to a slot the player walked away from and came back to.
+	if not p_interact_held:
+		_fired.clear()
 	var best := -1
+	var best_wrap: Dictionary = {}
 	var best_d: float = PROMPT_R
 	var look := p_look_dir.normalized()
 	for a in _altars:
@@ -875,34 +1068,29 @@ func _interaction(p_dt: float, p_player_pos: Vector3, p_look_dir: Vector3,
 		var to_a: Vector3 = root.position - p_player_pos
 		to_a.y = 0.0
 		var d := to_a.length()
-		if d > PROMPT_R or d < 1e-6:
-			_holds[int(a["index"])] = 0.0
-			continue
-		if to_a.normalized().dot(look) < LOOK_COS:
-			_holds[int(a["index"])] = 0.0
+		if d > PROMPT_R or d < 1e-6 or to_a.normalized().dot(look) < LOOK_COS:
+			_holds[_slot_key(a)] = 0.0
 			continue
 		if d < best_d:
 			best_d = d
 			best = int(a["index"])
-	_panel_pass(best)
-	if best < 0:
-		return out
-	for a in _altars:
-		if int(a["index"]) == best:
-			out["prompt"] = "[F] Choose - %s" % str(a.get("name", ""))
-			# the radial fill is the hold progress itself; the flare is the confirm
-			var h: float = float(_holds.get(best, 0.0))
-			if p_interact_held:
-				h += p_dt
-				if h >= HOLD_S and out["select"] == NO_SELECT and int(a.get("fired", 0)) == 0:
-					h = 0.0
-					a["fired"] = 1
-					out["select"] = best
-					_fire(a)
-			else:
+			best_wrap = a
+	var h := 0.0
+	if best >= 0:
+		var key := _slot_key(best_wrap)
+		h = float(_holds.get(key, 0.0))
+		if p_interact_held:
+			h += p_dt
+			if h >= HOLD_S and int(_fired.get(key, 0)) == 0:
 				h = 0.0
-				a["fired"] = 0
-			_holds[best] = h
+				_fired[key] = 1
+				out["select"] = best
+				_fire(best_wrap)
+		else:
+			h = 0.0
+		_holds[key] = h
+		out["prompt"] = "[F] Choose - %s" % str(best_wrap.get("label", ""))
+	_bar_pass(best, h, p_player_pos)
 	return out
 
 
