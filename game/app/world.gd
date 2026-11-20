@@ -61,6 +61,9 @@ extends Node3D
 const VoidGenScript := preload("res://terrain/voidgen.gd")
 const CollisionScript := preload("res://sim/collision.gd")
 const MesherScript := preload("res://view/level_mesher.gd")
+const CollapseScript := preload("res://sim/collapse.gd")          # platform collapse schedule
+const CollapseViewScript := preload("res://view/collapse_view.gd")  # its cracks + drop
+const GliderViewScript := preload("res://view/glider_view.gd")      # the glide wing on the figure
 const ControllerScript := preload("res://sim/controller.gd")
 const CameraRigScript := preload("res://app/camera_rig.gd")
 const EnemyRuntimeScript := preload("res://sim/enemy_runtime.gd")
@@ -172,6 +175,7 @@ var lstate: RefCounted = null   # the sim LevelState (gifts / mines / beacon); b
 var player_model: Node3D = null # the T-015 player figure, feet on the controller's position
 var _player_yaw := 0.0          # facing yaw, follows the camera's forward while captured
 var _player_light: OmniLight3D = null   # palette.json player_fill_light, rides the figure
+var glider_view: Node3D = null   # view/glider_view.gd, child of player_model; shown while gliding
 
 # --- J5: mouse-lock and the procedural figure pose (view side; sim is never touched) -----
 # MOUSE-LOOK (J5, supersedes D-T082-4's "no turn"): Ctrl toggles capture. Captured, the
@@ -201,6 +205,8 @@ const FREE_FALL_HOOK := "on_void_fall"
 const ANIM_PHASE_IDLE := 1.6     # rad/s idle sway rate
 const ANIM_PHASE_RUN := 10.5     # rad/s full-speed gait rate (per stride radian pair)
 var _limbs: Array = []           # LIMB_NAMES order -> limb nodes of player_model (or null)
+var _limb_rest: Array[Vector3] = []
+var _limb_mounts: Array[Vector3] = []
 var _pose := {}                  # currently blended pose, _pose_run()'s shape
 var _anim_phase := 0.0           # gait/sway phase (view-side clock, view-legal)
 var _run_speed := 9.0            # data/player.json shared_kit.run_speed (read in build())
@@ -245,6 +251,13 @@ const TILE_RETURNED := "tile_returned"
 var _tile_step_mods: Array = []
 var _tile_step_keys: Dictionary = {}
 var _tiles_dropped: Dictionary = {}
+# Platform collapse (sim/collapse.gd): every non-hub tile cracks on the beacon-open tick and
+# leaves collision 300 ticks (5 s) later; the hub never does. platform_collapse is a
+# setting (not reset by teardown) - false is the feature's negative control.
+var platform_collapse := true
+var _collapse: Dictionary = {}
+var collapse_view: Node3D = null
+var last_events: Array = []   # the last step's event list (read-only, for tests/probes)
 
 
 func _ready() -> void:
@@ -393,12 +406,23 @@ func build(seed_value: int, level: int, p_ledger: Dictionary = {}) -> bool:
 
 	# Level geometry. Built always (not only windowed, unlike the probe): this IS the
 	# playable scene; the headless gate builds it too (test_mesh.gd meshes headless).
-	var mesher: Dictionary = MesherScript.build(lv)
+	# With the collapse on, the hub is meshed on its own and everything else goes under
+	# the collapse view (the one node that cracks and drops); off, the level is one build.
+	_collapse = CollapseScript.create(lv)
+	_collapse["enabled"] = platform_collapse
+	var mesher: Dictionary = MesherScript.build(lv, {},
+			MesherScript.PART_HUB if platform_collapse else "")
 	for mn in mesher["meshes"]:
 		var mi := MeshInstance3D.new()
 		mi.mesh = mesher["meshes"][mn]
 		add_child(mi)
 		_mesh_instances.append(mi)
+	if platform_collapse:
+		collapse_view = CollapseViewScript.new()
+		add_child(collapse_view)
+		collapse_view.setup(lv, MesherScript.build(lv, {}, MesherScript.PART_REST)["meshes"],
+				_collapse)
+		_mesh_instances.append_array(collapse_view.mesh_instances())
 
 	# Fog / environment for the level's biome (act table; 31+ cycles, D-T014c-1).
 	fog = FogEnvScript.new()
@@ -440,6 +464,14 @@ func build(seed_value: int, level: int, p_ledger: Dictionary = {}) -> bool:
 		player_model.position = Vector3(float(ctl.x), float(ctl.y), float(ctl.z))
 		player_model.rotation.y = _player_yaw
 		add_child(player_model)
+		# The hang glider (owner request 2026-11-20): built once, parented to the figure so
+		# it follows for free, hidden until ctl.gliding (glider_view.sync in _player_pass).
+		glider_view = GliderViewScript.new()
+		if glider_view.build():
+			player_model.add_child(glider_view)
+		else:
+			glider_view.free()
+			glider_view = null
 	# The player fill light (palette.json roles.player_fill_light: omni #BFFFF8, range 18,
 	# energy 1.2). Nothing ever created it, so ALBEDO rendered near-black and only the light
 	# squares' emission showed - the reason the slabs read as untextured. Parented to the
@@ -470,9 +502,7 @@ func build(seed_value: int, level: int, p_ledger: Dictionary = {}) -> bool:
 
 	# J5 procedural pose: cache the limb nodes (part names from the .glb, see
 	# assets_src/blender/player_figure.py) and the run speed the gait rate normalises to.
-	_limbs = []
-	for nm in LIMB_NAMES:
-		_limbs.append(player_model.find_child(nm, true, false) if player_model != null else null)
+	_cache_player_limbs(player_model)
 	_pose = {}
 	_anim_phase = 0.0
 	var pstats: Variant = JSON.parse_string(
@@ -652,6 +682,13 @@ func step(dt: float) -> void:
 		if _economy != null:
 			_economy.begin_gold_phase()
 		_apply_phase_stats()   # `when: gold_phase` modifiers go live with the phase
+		var cev: Dictionary = CollapseScript.start(_collapse, int(lstate.tick))
+		if not cev.is_empty():
+			ev.append(cev)
+	# The collapse fall: on start + 300 the non-hub tiles leave collision. A key it removes is
+	# no longer this file's tile-schedule drop, so a later tile_returned cannot restore it.
+	for ck in CollapseScript.tick(_collapse, int(lstate.tick), w, ev):
+		_tiles_dropped.erase(ck)
 	if _economy != null and bool(_economy.gold_phase):
 		_economy.tick_gold(dt)
 	for e in rt.step(dt):
@@ -685,6 +722,7 @@ func step(dt: float) -> void:
 	if _upgrades != null:
 		_upgrades.dispatch_events(int(lstate.tick), ev)
 	_economy_pass(ev)
+	last_events = ev
 	_fx_events(ev)
 	if rig != null:
 		rig.update_rig(Vector3(float(ctl.x), float(ctl.y), float(ctl.z)), dt)
@@ -971,6 +1009,9 @@ func teardown() -> void:
 	gifts_view = null
 	tripmine_view = null
 	beacon_view = null
+	collapse_view = null
+	_collapse = {}
+	last_events = []
 	toucher_floor = null
 	telegraph_view = null
 	coil_view = null
@@ -980,6 +1021,7 @@ func teardown() -> void:
 	screen_blur = null
 	respawn_view = null
 	player_model = null
+	glider_view = null   # freed with player_model
 	_player_light = null
 	_player_yaw = 0.0
 	# J5: back to the menu = release the mouse, drop the pose/lock state.
@@ -988,6 +1030,8 @@ func teardown() -> void:
 	_prev_app_pause = false
 	Input.mouse_mode = CameraRigScript.mouse_mode_for(false)
 	_limbs = []
+	_limb_rest.clear()
+	_limb_mounts.clear()
 	_pose = {}
 	_anim_phase = 0.0
 	lstate = null
@@ -1454,6 +1498,11 @@ func _player_pass() -> void:
 	_player_yaw = deg_to_rad(float(rig.yaw_deg)) if rig != null else 0.0
 	player_model.rotation.y = _player_yaw
 	_anim_pass()
+	if glider_view != null:
+		# velocity in the figure's frame (x right, y up, z back): the bank reads x, the pitch y
+		var v_local := Vector3(float(ctl.vx), float(ctl.vy), float(ctl.vz)).rotated(
+				Vector3.UP, -_player_yaw)
+		glider_view.sync(bool(ctl.gliding), v_local)
 
 
 ## The figure's yaw follows the captured camera's forward (D-T082-4's character/camera
@@ -1559,6 +1608,16 @@ static func _pose_fall() -> Dictionary:
 	}
 
 
+static func _pose_dash() -> Dictionary:
+	return {"torso": -0.67, "head": 0.0, "arm_l": -1.25, "arm_r": -1.25,
+			"leg_l": -0.30, "leg_r": -0.85}
+
+
+static func _pose_glide() -> Dictionary:
+	return {"torso": -0.36, "head": 0.0, "arm_l": -0.38, "arm_r": -0.38,
+			"leg_l": -0.28, "leg_r": -0.28, "arm_spread": 1.20}
+
+
 ## The pose applier: pick the state from the sim body state (read ONLY here), advance the
 ## phase, blend the current pose toward the target, write the limb rotations. Pure in ->
 ## nodes out; nothing in the pose feeds back into the sim.
@@ -1569,7 +1628,11 @@ func _anim_pass() -> void:
 	var grounded := bool(ctl.grounded)
 	var vy := float(ctl.vy)
 	var target: Dictionary
-	if not grounded:
+	if ctl.dash_ticks > 0:
+		target = _pose_dash()
+	elif ctl.gliding:
+		target = _pose_glide()
+	elif not grounded:
 		target = _pose_jump() if vy >= -0.4 else _pose_fall()
 	else:
 		var amp := clampf(speed / maxf(_run_speed, 0.001), 0.0, 1.0)
@@ -1585,21 +1648,51 @@ func _anim_pass() -> void:
 	var k := 1.0 - exp(-1.0 / 60.0 / ANIM_BLEND_TIME)
 	if _pose.is_empty():
 		_pose = target.duplicate()
+		_pose["arm_spread"] = 0.0
 		k = 1.0
 	for key in _pose.keys():
 		_pose[key] = float(_pose[key]) + (float(target.get(key, 0.0)) - float(_pose[key])) * k
 	_apply_pose()
 
 
+func _cache_player_limbs(figure: Node3D) -> void:
+	_limbs.clear()
+	_limb_rest.clear()
+	_limb_mounts.clear()
+	for i in LIMB_NAMES.size():
+		var node := figure.find_child(LIMB_NAMES[i], true, false) as MeshInstance3D if figure != null else null
+		_limbs.append(node)
+		_limb_rest.append(node.position if node != null else Vector3.ZERO)
+		var mount := Vector3.ZERO
+		if node != null and i != 1:
+			var bounds := node.get_aabb()
+			mount = bounds.get_center()
+			mount.y = bounds.position.y if i == 0 else bounds.end.y
+		_limb_mounts.append(mount)
+
+
 func _apply_pose() -> void:
+	var body := Basis(Vector3.RIGHT, float(_pose["torso"]))
+	var waist := _limb_rest[0] + _limb_mounts[0]
 	for i in LIMB_NAMES.size():
 		var node = _limbs[i]
 		if node == null or not _pose.has(POSE_KEYS[i]):
 			continue
+		var angle := float(_pose[POSE_KEYS[i]])
+		var rotation := Basis(Vector3.RIGHT, angle)
 		if i == 1:   # Head: the sway rides Z, every other limb pitches about X
-			node.rotation = Vector3(0.0, 0.0, float(_pose[POSE_KEYS[i]]))
-		else:
-			node.rotation = Vector3(float(_pose[POSE_KEYS[i]]), 0.0, 0.0)
+			rotation = Basis(Vector3.BACK, angle)
+		elif i == 2 or i == 3:
+			var spread := float(_pose.get("arm_spread", 0.0))
+			rotation = Basis.from_euler(Vector3(angle, 0.0, -spread if i == 2 else spread))
+		# Carry the upper body with the torso and keep the visible mesh mounts
+		# together as the compact figure moves around its imported rest origins.
+		var mount := _limb_mounts[i]
+		var joint := _limb_rest[i] + mount
+		if i > 0 and i < 4:
+			joint = waist + body * (joint - waist)
+			rotation = body * rotation
+		node.transform = Transform3D(rotation, joint - rotation * mount)
 
 
 ## The enemy body pass: every live runtime row gets ONE body - its bespoke view host when
@@ -1732,6 +1825,8 @@ func _view_pass() -> void:
 		beacon_view.sync_from(lstate.beacon, lstate.gifts, lstate.tick)
 	if toucher_floor != null and rt != null:
 		toucher_floor.sync_floor_rows(rt.enemies)
+	if collapse_view != null:
+		collapse_view.sync(_collapse, int(lstate.tick))
 	_fx_pass()
 
 

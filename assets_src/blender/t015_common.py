@@ -17,6 +17,28 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 PALETTE_PATH = os.path.join(ROOT, "game", "data", "palette.json")
 
+# The player figure has its own monochrome palette and baked facet tones.
+PLAYER_ROLES = {
+    "player_cloth": "#353437",
+    "player_cloth_side": "#2A292C",
+    "player_cloth_light": "#444347",
+    "player_boot": "#0C0D10",
+    "player_boot_side": "#08090B",
+    "player_boot_light": "#151619",
+    "player_skin": "#C9C8CA",
+    "player_skin_side": "#AEADB0",
+    "player_skin_light": "#E0DFE1",
+    "player_hair": "#E3E2E4",
+    "player_hair_side": "#C0BFC2",
+    "player_hair_light": "#F1F0F2",
+    "player_hat": "#101013",
+    "player_hat_side": "#08080A",
+    "player_hat_light": "#222225",
+    "player_band": "#EFEDEF",
+    "player_band_side": "#BCBABD",
+    "player_ink": "#111114",
+}
+
 # The 6 faces of a box as corner-index quads, wound CCW seen from outside.
 # Order: 0:-Z (bottom)  1:+Z (top)  2:-Y  3:+X  4:+Y  5:-X
 QUADS = [
@@ -61,6 +83,8 @@ class Mesh:
         self.cols = []
 
     def col(self, role):
+        if role in PLAYER_ROLES:
+            return hex_rgba(PLAYER_ROLES[role])
         return hex_rgba(self.roles[role]["hex"])
 
     def colx(self, role, key):

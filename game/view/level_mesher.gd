@@ -685,8 +685,24 @@ static func _wedge(s_top: Surf, s_side: Surf, x: int, z: int, y: int, d: int, co
 ##   triangles:  total triangle count over every mesh
 ##   ms:         meshing wall time (Time.get_ticks_usec based, this call only)
 ##   tiles_top / tiles_flat / ramps / spikes / props / pads: counts for tests
-static func build(L: Dictionary, biome: Dictionary = {}) -> Dictionary:
+## part: "" (default) meshes the whole level exactly as before. PART_HUB meshes only the hub
+## piece (tiles, props and pads on it); PART_REST meshes everything else (the platform
+## collapse drops that set as one node). In a split build each part's hidden-face test sees
+## only its own tiles, so a seam face between the hub and a neighbour is kept on both sides
+## and neither part shows a hole once the other is gone.
+const PART_HUB := "hub"
+const PART_REST := "rest"
+
+
+static func build(L: Dictionary, biome: Dictionary = {}, part: String = "") -> Dictionary:
 	var t0 := Time.get_ticks_usec()
+	var split_hub := -1
+	for p in L.get("pieces", []):
+		if int(p["role"]) == ROLES_HUB:
+			split_hub = int(p["id"])
+			break
+	var want_hub := part == PART_HUB
+	var split := part == PART_HUB or part == PART_REST
 	var lvl := int(L.get("level", 1))
 	var bd: Dictionary = biome
 	if bd.is_empty():
@@ -698,6 +714,8 @@ static func build(L: Dictionary, biome: Dictionary = {}) -> Dictionary:
 
 	# Classification pass. cols: "x,z" -> { y(HU): tile kind }; piece_min_y: for the 12.4 rule.
 	var cols := {}
+	var cols_e := {}    # the part's own columns (== cols when part is ""): hidden-face test
+	var tile_piece := {}   # "x,z,y" -> piece id, to place pads in a split build
 	var role_of := {}
 	var piece_y := {}
 	var tops := {}      # top mat -> { y(HU) -> {"x,z": true} }
@@ -720,6 +738,12 @@ static func build(L: Dictionary, biome: Dictionary = {}) -> Dictionary:
 		(cols[kz] as Dictionary)[y] = kind
 		if not piece_y.has(pid) or y < int(piece_y[pid]):
 			piece_y[pid] = y
+		tile_piece["%d,%d,%d" % [x, z, y]] = pid
+		if split and ((pid == split_hub) != want_hub):
+			continue
+		if not cols_e.has(kz):
+			cols_e[kz] = {}
+		(cols_e[kz] as Dictionary)[y] = kind
 		var mat: String = _top_mat_name(int(role_of.get(pid, ROLES_ROOM)))
 		if kind == 0:
 			n_flat += 1
@@ -749,11 +773,13 @@ static func build(L: Dictionary, biome: Dictionary = {}) -> Dictionary:
 	for t in L.get("tiles", []):
 		if int(t[3]) != 0:
 			continue
+		if split and ((int(t[4]) == split_hub) != want_hub):
+			continue
 		var x: int = int(t[0])
 		var z: int = int(t[1])
 		var y: int = int(t[2])
 		for d in range(4):
-			if _edge_covered(cols, x, z, y, d):
+			if _edge_covered(cols_e, x, z, y, d):
 				continue
 			var key := "%d|%d|%d" % [y, d, _side_plane(x, z, d)]
 			if not side_faces.has(key):
@@ -778,12 +804,14 @@ static func build(L: Dictionary, biome: Dictionary = {}) -> Dictionary:
 	var n_ramps := 0
 	for mat in TOP_MATS:
 		for wr in ramps[mat]:
-			_wedge(surf[mat], surf["slab_side"], int(wr[0]), int(wr[1]), int(wr[2]), int(wr[3]), cols)
+			_wedge(surf[mat], surf["slab_side"], int(wr[0]), int(wr[1]), int(wr[2]), int(wr[3]), cols_e)
 			n_ramps += 1
 
 	# Props: boxes standing on their tile, top + 4 sides, side trim like slabs (kind 2 crate).
 	var props_meshed := 0
 	for p in L.get("props", []):
+		if split and ((int(p[5]) == split_hub) != want_hub):
+			continue
 		var px: float = float(p[0])
 		var pz: float = float(p[1])
 		var pbase: float = float(p[2]) * HU
@@ -800,6 +828,8 @@ static func build(L: Dictionary, biome: Dictionary = {}) -> Dictionary:
 	# Launch pads: 0.125 u plate on the tile top (section 12.2: pulsing emission 0.5-1.5 at 1 Hz).
 	var pads_meshed := 0
 	for p in L.get("pads", []):
+		if split and ((int(tile_piece.get("%d,%d,%d" % [int(p[0]), int(p[1]), int(p[2])], -2)) == split_hub) != want_hub):
+			continue
 		var px: float = float(p[0])
 		var pz: float = float(p[1])
 		var pbase: float = float(p[2]) * HU
@@ -846,7 +876,7 @@ static func build(L: Dictionary, biome: Dictionary = {}) -> Dictionary:
 	# any of the 9 columns around the centre column holds a tile below the platform. Never
 	# under the hub, and never on anything that reads as part of the hub (see above).
 	var spike_cells: Array = []    # [cx, cz] centre cell of each spike, for tests
-	for p in L.get("pieces", []):
+	for p in (L.get("pieces", []) if not want_hub else []):
 		var srole: int = int(p["role"])
 		if srole != ROLES_ROOM and srole != ROLES_DEADEND:
 			continue

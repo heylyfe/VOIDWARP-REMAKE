@@ -1,4 +1,4 @@
-# tools/build_models.ps1 - T-015: rebuild all 11 procedural models in one command.
+# tools/build_models.ps1 - T-015: rebuild all 12 procedural models in one command.
 #
 #   powershell -File tools\build_models.ps1
 #
@@ -34,8 +34,8 @@ $OutDir = Join-Path $Root 'game\assets\models'
 $Scripts = Get-ChildItem -Path $ScriptDir -Filter '*.py' |
     Where-Object { $_.Name -ne 't015_common.py' } |
     Sort-Object Name
-if ($Scripts.Count -ne 11) {
-    throw ("expected 11 model scripts in assets_src\blender, found " + $Scripts.Count)
+if ($Scripts.Count -ne 12) {
+    throw ("expected 12 model scripts in assets_src\blender, found " + $Scripts.Count)
 }
 
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
@@ -44,7 +44,7 @@ $env:T015_MODELS_OUT = $OutDir
 $i = 0
 foreach ($s in $Scripts) {
     $i++
-    Write-Host ("[{0}/11] {1}" -f $i, $s.Name)
+    Write-Host ("[{0}/12] {1}" -f $i, $s.Name)
     $out = & $Blender --background --python $s.FullName --python-exit-code 1 2>&1
     if ($LASTEXITCODE -ne 0) {
         $out | ForEach-Object { Write-Host $_ }
@@ -56,4 +56,4 @@ foreach ($s in $Scripts) {
 }
 
 Remove-Item Env:T015_MODELS_OUT -ErrorAction SilentlyContinue
-Write-Host 'BUILD OK (11/11 models)'
+Write-Host 'BUILD OK (12/12 models)'

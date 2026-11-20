@@ -31,6 +31,7 @@ func run() -> Array[String]:
 	_leg_glb_part_set(f)
 	_leg_pose_statics(f)
 	_leg_view_pass(f)
+	_leg_ability_poses(f)
 	_leg_materials(f)
 	return f
 
@@ -42,14 +43,34 @@ func _leg_glb_part_set(f: Array[String]) -> void:
 		f.append("leg A: res://assets/models/player_figure.glb failed to load (stale import?)")
 		return
 	var inst: Node = ps.instantiate()
-	for name in WorldScript.LIMB_NAMES:
+	var origins := [Vector3(0, 0.80, 0), Vector3(0, 1.40, 0),
+			Vector3(-0.34, 1.38, 0), Vector3(0.34, 1.38, 0),
+			Vector3(-0.16, 0.85, 0), Vector3(0.16, 0.85, 0)]
+	for i in WorldScript.LIMB_NAMES.size():
+		var name: String = WorldScript.LIMB_NAMES[i]
 		var n = inst.find_child(name, true, false)
 		if n == null:
 			f.append("leg A: no node named %s in the player .glb" % name)
 			continue
 		if not (n is MeshInstance3D):
 			f.append("leg A: node %s is a %s, expected MeshInstance3D" % [name, n.get_class()])
+		elif n.get_parent().name != &"PlayerBody" or not n.position.is_equal_approx(origins[i]):
+			f.append("leg A: %s must keep its authored joint origin under PlayerBody" % name)
+	_leg_silhouette(f, inst)
 	inst.free()
+
+
+func _leg_silhouette(f: Array[String], inst: Node) -> void:
+	var head := inst.find_child("Head", true, false)
+	if head == null:
+		return
+	for part in ["WitchHat", "HatBrim", "Antlers", "HairRuff", "Face"]:
+		var mesh := head.get_node_or_null(NodePath(part)) as MeshInstance3D
+		if mesh == null or mesh.mesh == null:
+			f.append("silhouette: Head must carry a %s mesh so it follows the neck pose" % part)
+		elif part == "WitchHat" and not is_equal_approx(
+				(head as Node3D).position.y + mesh.position.y + mesh.get_aabb().end.y, 1.80):
+			f.append("silhouette: the hat must top out at 1.80 u in the rest pose")
 
 
 ## Leg 2+3: the pure pose statics. Angles are radians; the sign convention is that a limb
@@ -131,6 +152,49 @@ func _leg_view_pass(f: Array[String]) -> void:
 				% [str(sim_probe), str(after)])
 	world.teardown()
 	world.free()
+
+func _leg_ability_poses(f: Array[String]) -> void:
+	var world = WorldScript.new()
+	if not world.build(SEED, LEVEL):
+		f.append("ability poses: world failed to build")
+		world.free()
+		return
+	var torso := world._limbs[0] as Node3D
+	var left := world._limbs[2] as Node3D
+	var right := world._limbs[3] as Node3D
+	world.ctl.grounded = true
+	world.ctl.dash_ticks = 8
+	for tick in 12:
+		world._player_pass()
+	if torso.rotation.x >= -0.5 or left.rotation.x >= -0.95 or right.rotation.x >= -0.95:
+		f.append("ability poses: a grounded dash must lean forward and sweep both arms back")
+	world.ctl.dash_ticks = 0
+	world.ctl.grounded = false
+	world.ctl.vy = -1.0
+	world.ctl.gliding = true
+	for tick in 12:
+		world._player_pass()
+	if left.rotation.z >= -0.95 or right.rotation.z <= 0.95:
+		f.append("ability poses: a glide must spread both arms outward")
+	var rest_shoulder: Vector3 = world._limb_rest[2] + world._limb_mounts[2]
+	var rest_hip: Vector3 = world._limb_rest[0] + world._limb_mounts[0]
+	var shoulder: Vector3 = left.transform * world._limb_mounts[2]
+	var expected: Vector3 = torso.transform * world._limb_mounts[0] \
+			+ torso.basis * (rest_shoulder - rest_hip)
+	if not shoulder.is_equal_approx(expected):
+		f.append("ability poses: the raised arm must stay attached to its shoulder")
+	world.ctl.gliding = false
+	for tick in 20:
+		world._player_pass()
+	var fall := WorldScript._pose_fall()
+	var left_fall := Vector3.DOWN.rotated(Vector3.RIGHT, float(fall["torso"]) + float(fall["arm_l"]))
+	var right_fall := Vector3.DOWN.rotated(Vector3.RIGHT, float(fall["torso"]) + float(fall["arm_r"]))
+	if (left.basis * Vector3.DOWN).distance_to(left_fall) > 0.08 \
+			or (right.basis * Vector3.DOWN).distance_to(right_fall) > 0.08:
+		f.append("ability poses: releasing glide must blend back to the fall pose")
+	world.teardown()
+	world.free()
+
 
 ## Leg 5 (J11): the figure renders through a real, non-default base material - in the
 ## level AND in the lobby. The .glb carries no material by design, so before the fix every
