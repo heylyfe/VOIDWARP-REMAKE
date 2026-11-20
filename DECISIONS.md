@@ -7417,3 +7417,23 @@ enemy is drawn while it falls and hidden once it is past the kill plane (`enemy_
 but its row stays in `rt.enemies` so every view index keeps pointing at it. The `crumbling` curse
 is deliberately NOT swept (PARKED.md row 32): its tiles return, so a lost gift there would be
 destroyed permanently for a temporary hole.
+
+## D-B6-2 [CONTESTABLE]: the collapse makes the gold phase a 5 s dash, and that is the owner's number
+
+**Ruling.** The collapse keeps the owner's own timing - cracks on the beacon-open tick, every
+non-hub tile gone 5.0 s later (`sim/collapse.gd`, quoted from the owner's request in its header).
+No timing is changed to protect the gold phase.
+
+**Why.** The owner asked for exactly this: "the platform should have cracks on them and 5s later
+they fall down to the void. The only platform that cannot be destroyed is the spawn platform."
+The gold phase was designed as "stay and collect GOLD gifts for extra currency" with overtime
+tiers every 20 s (DESIGN.md section 3.2). Five seconds of floor means the gold phase is now a
+dash rather than a stroll, and the overtime tiers are unreachable in practice - the collapse is
+the "you are taking too long" pressure now, and it is a harder one than overtime was.
+
+**Consequence, measured.** The app-world driver's purse on the pinned seed fell from 224 to 172
+centi-gold across ten levels: the 52 is the gold gifts that fell with their platforms. So the
+gold phase still pays, it just pays for what you can reach in five seconds. This is recorded as
+CONTESTABLE rather than changed because the number is the owner's, not the fleet's: if the gold
+phase should stay a stroll, the fix is a longer `CRACK_SECONDS` (or a partial collapse that
+leaves a route), and that is the owner's call, not a tuning pass.
