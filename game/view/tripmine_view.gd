@@ -159,6 +159,9 @@ func setup(level: Dictionary, mines_state: RefCounted) -> void:
 		_nodes.append({
 			"node": root, "slot": slot, "body": body, "rim": rim, "star": star,
 			"sides": sides, "ring": ring, "radar": radar, "puffs": puffs,
+			# the sim's own tile key, asked ONCE: a mine's tile never moves, and sync()
+			# runs every tick. The view caches the sim's answer; it derives no geometry.
+			"key": mines_state.slot_tile_key(slot),
 		})
 	sync()
 
@@ -234,7 +237,7 @@ func sync(eye: Vector3 = Vector3.ZERO) -> void:
 			# back with the tile. The collapse path is unaffected: drop() consumes the mine,
 			# so is_consumed is already true and the removed-set term changes nothing.
 			root.visible = not _mines.is_consumed(slot) \
-					and not _removed.has(_mines.slot_tile_key(slot))
+					and not _removed.has(str(e["key"]))
 		# one full turn per TURN_PERIOD seconds, phase from the slot order so
 		# neighbouring mines in a line do not spin in lockstep
 		root.rotation.y = t * TAU_F / TURN_PERIOD + float(line_i) * 0.7

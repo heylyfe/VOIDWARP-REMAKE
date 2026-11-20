@@ -84,6 +84,12 @@ var _dull_mat: StandardMaterial3D = null
 ## comes back with the tile - the crumbling curse's 5 s (D-B7-1). Read-only here: the
 ## view never writes sim state, so the gift stays collectible and stays in the quota.
 var _removed: Dictionary = {}
+## Slot id -> the sim's own tile key for that slot (gifts.gd slot_tile_key), asked ONCE at
+## setup() because a slot's tile never moves. sync() runs every tick over every slot, and
+## formatting the key there cost one string per slot per tick for an answer that cannot
+## change; this is the same value, computed once. The view still computes no geometry - it
+## caches the sim's answer, it does not derive one.
+var _tile_key: Array = []
 
 
 ## Builds one node per real gift slot. level: the Level dict; gifts_state: the
@@ -109,6 +115,10 @@ func setup(level: Dictionary, gifts_state: RefCounted) -> void:
 	_turn_idx = []
 	_turn_idx.resize(n)
 	_turn_idx.fill(-1)
+	_tile_key = []
+	_tile_key.resize(n)
+	for i in n:
+		_tile_key[i] = _gifts.slot_tile_key(i)
 	var black_ps: PackedScene = load(BLACK_MODEL)
 	var gold_ps: PackedScene = load(GOLD_MODEL)
 	var built: int = 0
@@ -283,7 +293,7 @@ func sync(gifts_state: RefCounted = null, time_secs: float = -1.0) -> void:
 		# above is untouched, so the gift is still collectible and still in the quota. The
 		# collapse path is unaffected: a gift that fell with its platform is `lost`, so
 		# present() is already false and this term changes nothing.
-		var gone: bool = _removed.has(_gifts.slot_tile_key(i))
+		var gone: bool = _removed.has(_tile_key[i])
 		# one full turn per TURN_PERIOD seconds, phase from the build order so
 		# neighbouring gifts in a line do not spin in lockstep - the tripmine's
 		# own formula (view/tripmine_view.gd sync())
