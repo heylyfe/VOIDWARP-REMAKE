@@ -28,6 +28,7 @@ func run() -> Array[String]:
 	_policy_pins(f)
 	_route_honours_menace(f)
 	_replan_keeps_goal_markers(f)
+	_goal_stale_reads_present(f)
 	return f
 
 
@@ -177,6 +178,48 @@ func _replan_keeps_goal_markers(f: Array[String]) -> void:
 		f.append("a replan with nothing reachable cleared the goal markers (%d/%d): the router then re-routes every tick and the follower stands still" % [int(mem["goal_tile"]), int(mem["goal_slot"])])
 	if not (mem["path"] as Array).is_empty():
 		f.append("a replan with nothing reachable kept a path it cannot walk")
+	# the same replan, but the gift the caller was walking is GONE (the collapse took its
+	# platform). Restoring the markers there is the ghost-chase again: the goal must clear.
+	var mem2: Dictionary = {
+		"path": [0, 1], "path_i": 1, "goal_kind": "gift", "goal_tile": 1, "goal_slot": 0,
+		"banned": {"0>1": true}, "lift_at": 1000, "menace": {}, "air_released": {},
+		"slot_tiles": [1],
+	}
+	var lv2 := _StubLevel.new()
+	lv2.beacon = _StubBeacon.new()
+	var g2 := _StubGifts.new()
+	g2.lost = true
+	lv2.gifts = g2
+	BotRun._replan(mem2, lv2, null, 0, null, gtiles, adj, {})
+	if int(mem2["goal_slot"]) == 0:
+		f.append("a replan restored the goal markers for a LOST gift: the bot walks to a gift the collapse took")
+
+
+## The collapse starts on the beacon-open tick, so the gold phase is exactly when a gift's
+## platform can fall out from under it. A lost gift is NOT a collected one, so a staleness
+## test that asks collected() alone leaves the bot routing to a ghost for the rest of the
+## level - the same defect _nearest_gift had, in the staleness test instead of the chooser.
+## _goal_stale is pure over (mem, lv) once the level is stubbed, so this runs with no engine.
+func _goal_stale_reads_present(f: Array[String]) -> void:
+	var lv := _StubLevel.new()
+	lv.beacon = _StubBeacon.new()
+	var g := _StubGifts.new()
+	lv.gifts = g
+	var mem: Dictionary = {"goal_kind": "gift", "goal_slot": 0}
+	if BotRun._goal_stale(mem, lv):
+		f.append("a live gift goal reads stale: the bot would replan every tick")
+	g.lost = true
+	if not BotRun._goal_stale(mem, lv):
+		f.append("a LOST gift goal does not read stale: the bot keeps routing to a gift the collapse took out of the level")
+	g.lost = false
+	g.taken = true
+	if not BotRun._goal_stale(mem, lv):
+		f.append("a collected gift goal does not read stale")
+	# the control that stops the leg passing by calling everything stale: a beacon goal is
+	# never stale while the beacon is shut, whatever the gift state says
+	var bmem: Dictionary = {"goal_kind": "beacon", "goal_slot": -1}
+	if BotRun._goal_stale(bmem, lv):
+		f.append("a beacon goal reads stale while the beacon is shut")
 
 
 class _StubBeacon:
@@ -186,17 +229,19 @@ class _StubBeacon:
 
 class _StubGifts:
 	var slots: Array = [0]
+	var lost := false
+	var taken := false
 
 	func is_real(_i: int) -> bool:
 		return true
 
 	func collected(_i: int) -> bool:
-		return false
+		return taken
 
 	# the router asks present() (real, not collected, not lost) since the platform
 	# collapse can take a gift out of the level without collecting it
 	func present(_i: int) -> bool:
-		return true
+		return not taken and not lost
 
 	func slot_pos(_i: int) -> Vector3:
 		return Vector3(0.0, 1.0, 0.0)

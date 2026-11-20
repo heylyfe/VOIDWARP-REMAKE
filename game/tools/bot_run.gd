@@ -1535,7 +1535,7 @@ static func _replan(mem: Dictionary, lv, ctl, cur: int, w2, gtiles: Array, adj: 
 	# every REPLAN_TICKS, and the follower refused to move (goal_slot < 0) until the
 	# 300-tick lift cooldown ran out. Restore the markers while the goal still exists.
 	if goal_kind == "gift" and goal_tile < 0 and prev_slot >= 0 \
-			and not lv.gifts.collected(prev_slot):
+			and lv.gifts.present(prev_slot):
 		goal_tile = prev_tile
 		goal_slot = prev_slot
 	mem["path"] = []
@@ -1585,7 +1585,12 @@ static func _goal_point(mem: Dictionary, lv) -> Vector3:
 	return Vector3(0.0, 0.0, 0.0)
 
 
-## Is the current goal invalid (gift collected / beacon opened)?
+## Is the current goal invalid (gift gone / beacon opened)?
+##
+## "Gone" is present(), not collected(): the collapse starts on the beacon-open tick, so the
+## gold phase is exactly when a gift's platform can fall out from under it. A lost gift is not
+## a collected one, so asking collected() alone left the bot routing to a ghost for the rest of
+## the level - the same defect _nearest_gift had, in the staleness test instead of the chooser.
 static func _goal_stale(mem: Dictionary, lv) -> bool:
 	if str(mem["goal_kind"]) == "beacon":
 		return false
@@ -1594,7 +1599,7 @@ static func _goal_stale(mem: Dictionary, lv) -> bool:
 	var slot := int(mem["goal_slot"])
 	if slot < 0:
 		return true
-	return lv.gifts.collected(slot)
+	return not lv.gifts.present(slot)
 
 
 ## Routing input for this tick: {"move": Vector2, "buttons": int}.

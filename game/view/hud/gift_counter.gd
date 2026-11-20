@@ -5,10 +5,13 @@ extends Control
 # "gifts collected / REAL total" - the only denominator that counts is the REAL
 # black gift total (sim/gifts.gd total_real: every occ == 0 slot; tripmines
 # occ == 1 are never a gift, never counted, DESIGN.md section 3.3). Mines are
-# excluded by construction here: collected is total_real - remaining(), and
-# remaining() only ever walks real slots.
+# excluded by construction: the caller counts collected slots by walking
+# is_real() && collected(), so an occ == 1 slot can never be counted.
 #
 # The caller (hud.gd sync) passes collected/total straight from the gift sim.
+# It does NOT compute collected as total_real - remaining(): since the platform
+# collapse (sim/gifts.gd lose()) a gift can leave the level without being
+# collected, and that subtraction would count it as taken.
 
 const EDGE := 24.0
 const WIDTH := 220.0
