@@ -7462,3 +7462,48 @@ path by `game/tests/test_upgrade_stat_contrib.gd` (world.build + world.step, 0/1
 athletic class, checked at the pipeline stat, the controller's multiplier and the speed the body
 moves at); with the module's contribution removed it fails six ways, and with the world's merge
 removed it fails the same six.
+
+## D-B4-1: the enemy spawn pays at most 4 bodies per tick, and the plan completes within ceil(P/4) ticks [CONTESTABLE]
+
+**Ruling.** `_spawn_planned()` spawns at most `SPAWN_PER_TICK = 4` bodies per tick. The spawn
+ORDER is unchanged (plan order: vote order, then copy index); only the tick each body appears
+on changes. The plan therefore completes by `spawn_delay_ticks + ceil(P / 4) - 1`, where P is
+the total planned copy count - tick 125 with Early Bird and tick 365 at the default 6 s delay
+for the pinned 22-body vote list. The bound is stated in `enemy_runtime.gd` as
+`spawn_complete_tick()` and asserted in `test_spawn_rule.gd`.
+
+**Why.** Measured on the biggest level (seed 7, level 25, 1778 tiles, 16 planned bodies, Early
+Bird so the spawn lands on tick 120), per-tick `world.step` cost, first-frame run:
+
+| arm | spawn tick (120) | next worst tick | mean |
+| --- | --- | --- | --- |
+| FULL (sim + view) | 11.9-15.5 ms | 6.6 ms (tick 269) | 2.21 ms |
+| SIMONLY (sim only) | 6.80 ms | 2.23 ms (tick 420) | 0.79 ms |
+
+So one tick paid ~0.43 ms of sim per body plus ~0.32 ms of view per body: the spawn tick was
+the worst step of the whole level and sat within 1.2 ms of the 16.67 ms budget (FLEET_PACK.md
+A13). At 4 bodies per tick the spawn tick costs ~3 ms and stops being the worst step at all -
+the level's worst step becomes the recurring 6.6 ms tick, which is not a spawn cost.
+
+**Why 4 and not 8 or 16.** 4 is the smallest N that leaves the spawn tick below the level's
+own recurring worst step, so the spawn stops being the thing that decides the frame budget.
+Larger N buys nothing (the recurring tick dominates) and spends the headroom a slower machine
+needs; smaller N stretches the arrival over more ticks for no gain.
+
+**Gameplay cost, stated plainly.** The arrival is no longer instantaneous: 22 bodies appear
+over 6 ticks (0.1 s) instead of 1. That is below the 0.15 s a telegraph already takes to read,
+and the order is unchanged, so the player sees the same bodies in the same places in the same
+sequence - just 100 ms apart. This is the [CONTESTABLE] part: if the arrival is meant to read
+as one event, the answer is a view-side flourish on the first tick, not a bigger N.
+
+**What does NOT change.** The D-056 rule is untouched: preferred anchor kind -> lane -> any
+round-trip tile >= 25 u from the spawn point, never within 25 u of the player, farthest from
+the player first, tie-break lowest index, copies of one chaser >= 30 u apart (SR-3). A body
+spawned on a later tick is picked by the same rule against that tick's inputs. D-T027-4's
+deferral still applies: an entry with no legal tile waits, and only then does the bound slip -
+on real levels step (c) always succeeds, so the bound holds there (asserted on a real level).
+
+**Determinism.** The schedule is a pure function of the plan and the tick: a per-tick budget
+consumed in plan order, no wall clock, no frame time, no new randomness. The same seed and the
+same inputs produce the same bodies on the same ticks, so the replay checkpoints are unchanged.
+

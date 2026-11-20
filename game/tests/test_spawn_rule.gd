@@ -41,6 +41,8 @@ func run() -> Array[String]:
 	_tie_break_and_determinism(f)
 	_separation_and_round_trip(f)
 	_deferral_keeps_the_plan(f)
+	_spread_and_bound(f)
+	_bound_on_a_real_level(f)
 	return f
 
 
@@ -182,3 +184,175 @@ func _separation_and_round_trip(f: Array[String]) -> void:
 	# rng streams: two enemies draw from different streams with the same seed base
 	if rt.enemies.size() == 2 and rt.enemies[0]["rng"].s == rt.enemies[1]["rng"].s:
 		f.append("spawn: the two enemies share one rng stream state")
+
+
+## D-B4-1: the plan pays at most SPAWN_PER_TICK bodies per tick, in plan order, and completes
+## by spawn_complete_tick(). The RULE is unchanged - every body still clears 25 u from the
+## player, copies of one entry still clear 30 u (SR-3), and an entry with a preferred anchor
+## kind still takes that kind first. Only the tick each body appears on moves.
+func _spread_and_bound(f: Array[String]) -> void:
+	var lv := _level()
+	lv["anchors"] = [
+		[4, 45, 5, 0, 1],   # nook, 45.3 u - the preferred kind's pick
+		[4, 30, 5, 0, 1],   # nook, 30.4 u - too close to the 45 u pick for copy 1 (SR-3)
+		[4, 60, 5, 0, 1],   # nook, 60.2 u - beyond the 60 u preference
+	]
+	# the line runs to x = 199 here (the other legs keep _level()'s 99) so one entry can host
+	# THREE copies at SR-3's 30 u: 45.5 (the nook), 199.5, then 169.5.
+	for x in range(100, 200):
+		lv["tiles"].append([x, 0, 0, 0, 0])
+		lv["tiles"].append([x, 5, 0, 0, 1])
+	var w := {"cols": {}, "prop_cols": {}, "pads": {}, "dais": [0, 0, 0], "glitched": {},
+			"slippery": {}, "removed": {}, "kill_y": -40.0, "enemies": [], "projectiles": [],
+			"hazards": []}
+	var Util := preload("res://tests/sim_testutil.gd")
+	var ctl = Util.ControllerScript.new()
+	ctl.setup("dasher", Util.consts())
+	ctl.place(w)
+	ctl.last_light_spent = true
+	var rt = EnemyRuntime.new()
+	rt.setup(lv, w, [ctl], 5, {"spawn_delay_ticks": 10})
+	# 3 entries x 3 copies = 9 copies, more than one tick's budget, so the spread is visible
+	# and the budget cuts MID-ENTRY: entry 1's third copy waits for the next tick.
+	var ids: Array = ["aaa", "bbb", "ccc"]
+	for id in ids:
+		rt.plan(str(id), str(id).to_upper(), EnemyRuntime.FixtureBehavior.new(),
+				{"preferred_kind": "nook", "contact_kill": true, "cycle_s": 0.0}, 3)
+	var total := 9
+	var per_tick: int = EnemyRuntime.SPAWN_PER_TICK
+	var want_bound: int = 10 + int(ceil(float(total) / float(per_tick))) - 1
+	var bound: int = rt.spawn_complete_tick()
+	if bound != want_bound:
+		f.append("spread: spawn_complete_tick() %d, want %d (delay 10 + ceil(9/%d) - 1)"
+				% [bound, want_bound, per_tick])
+	var counts: Array = []
+	var order: Array = []
+	var spawns: Array = []
+	for i in range(bound + 6):
+		rt.step(Util.DT)
+		counts.append(rt.enemies.size())
+		for e in rt.events:
+			if str(e.get("e", "")) == "enemy_spawn":
+				spawns.append(e)
+				order.append(str(e["id"]))
+	# nothing before the spawn tick, and the first spawn tick pays exactly the budget
+	if int(counts[9]) != 0:
+		f.append("spread: %d bodies at tick 9, want 0 (spawn delay is 10)" % int(counts[9]))
+	if int(counts[10]) != per_tick:
+		f.append("spread: %d bodies after the first spawn tick, want %d (SPAWN_PER_TICK)"
+				% [int(counts[10]), per_tick])
+	if int(counts[10]) >= total:
+		f.append("spread: the whole plan (%d) landed on the first spawn tick - not spread"
+				% total)
+	# complete by the bound, and not before it
+	if int(counts[bound]) != total:
+		f.append("spread: %d bodies at the bound tick %d, want %d"
+				% [int(counts[bound]), bound, total])
+	if int(counts[bound - 1]) >= total:
+		f.append("spread: the plan was already complete at tick %d, before the bound %d"
+				% [bound - 1, bound])
+	# plan order: vote order, then copy index - the bodies appear in that order across ticks
+	var want_order: Array = []
+	for id in ids:
+		for c in range(3):
+			want_order.append(str(id))
+	if order != want_order:
+		f.append("spread: spawn order %s, want plan order %s" % [str(order), str(want_order)])
+	if spawns.size() != total:
+		f.append("spread: %d enemy_spawn events, want %d" % [spawns.size(), total])
+		return
+	# the rule still holds for every body, whichever tick it appeared on
+	for s in spawns:
+		var dp: float = Vector3(float(s["x"]) - ctl.x, float(s["y"]) - ctl.y,
+				float(s["z"]) - ctl.z).length()
+		if dp < 25.0:
+			f.append("spread: %s at %.1f u from the player (< 25)" % [str(s["id"]), dp])
+	# SR-3 per entry: copies of ONE chaser are >= 30 u apart
+	for id in ids:
+		var pos: Array = []
+		for s in spawns:
+			if str(s["id"]) == str(id):
+				pos.append(Vector3(float(s["x"]), 0.0, float(s["z"])))
+		for a in range(pos.size()):
+			for b in range(a + 1, pos.size()):
+				var d: float = (pos[a] as Vector3).distance_to(pos[b] as Vector3)
+				if d < 30.0:
+					f.append("spread: %s copies %d and %d are %.1f u apart, want >= 30 (SR-3)"
+							% [str(id), a, b, d])
+	# anchor-kind preference: copy 0 of every entry takes the preferred nook (45.5, 5.5),
+	# whichever tick it appeared on
+	for id in ids:
+		for s in spawns:
+			if str(s["id"]) != str(id):
+				continue
+			if float(s["x"]) != 45.5 or float(s["z"]) != 5.5:
+				f.append("spread: %s copy 0 at (%s,%s), want the 45 u nook (45.5, 5.5)"
+						% [str(id), str(s["x"]), str(s["z"])])
+			break
+
+
+## D-B4-1's bound on a REAL level: step (c) always finds a tile there (D-T027-4), so the plan
+## completes exactly by spawn_complete_tick() - no deferral, no dropped tail, every copy present.
+func _bound_on_a_real_level(f: Array[String]) -> void:
+	var VoidGenScript := preload("res://terrain/voidgen.gd")
+	var CollisionScript := preload("res://sim/collision.gd")
+	var Util := preload("res://tests/sim_testutil.gd")
+	var lv: Dictionary = VoidGenScript.generate(7, 30, 1, 0)
+	if lv.is_empty():
+		f.append("bound: voidgen.generate(7, 30) returned {}")
+		return
+	var w: Dictionary = CollisionScript.make_world(lv["tiles"], lv["props"], lv["pads"])
+	var ctl = Util.ControllerScript.new()
+	ctl.setup("dasher", Util.consts())
+	ctl.place(w)
+	ctl.last_light_spent = true
+	var rt = EnemyRuntime.new()
+	rt.setup(lv, w, [ctl], 7, {"spawn_delay_ticks": 30})
+	# a 22-body plan, the pinned vote list's size: 6 entries x 3 copies + 4 singles
+	var ids: Array = ["kiwi_cat", "coil", "thicc_ben", "seal", "you", "nuke"]
+	for id in ids:
+		rt.plan(str(id), str(id), EnemyRuntime.FixtureBehavior.new(), {}, 3)
+	for id in ["gift_larper", "toucher", "address_me", "isagi"]:
+		rt.plan(str(id), str(id), EnemyRuntime.FixtureBehavior.new(), {}, 1)
+	var total := 22
+	var bound: int = rt.spawn_complete_tick()
+	if bound != 30 + int(ceil(float(total) / float(EnemyRuntime.SPAWN_PER_TICK))) - 1:
+		f.append("bound: spawn_complete_tick() %d, want %d" % [bound,
+				30 + int(ceil(float(total) / float(EnemyRuntime.SPAWN_PER_TICK))) - 1])
+	var first_tick := -1
+	for i in range(bound + 1):
+		var before: int = rt.enemies.size()
+		rt.step(Util.DT)
+		if first_tick < 0 and rt.enemies.size() > before:
+			first_tick = i
+		if i == 30 and rt.enemies.size() >= total:
+			f.append("bound: the whole plan (%d) landed on the first spawn tick - not spread"
+					% total)
+	if rt.enemies.size() != total:
+		f.append("bound: %d bodies at the bound tick %d, want %d (the plan must complete)"
+				% [rt.enemies.size(), bound, total])
+	if first_tick != 30:
+		f.append("bound: first spawn tick %d, want 30 (the spawn delay)" % first_tick)
+	if not rt.planned.is_empty():
+		f.append("bound: %d plan entries still queued at the bound tick %d"
+				% [rt.planned.size(), bound])
+	# the rule still holds on a real level: every body >= 25 u from the player, and copies of
+	# one entry >= 30 u apart (SR-3)
+	for e in rt.enemies:
+		var dp: float = Vector3(float(e["x"]) - ctl.x, float(e["y"]) - ctl.y,
+				float(e["z"]) - ctl.z).length()
+		if dp < 25.0:
+			f.append("bound: %s at %.1f u from the player (< 25)" % [str(e["id"]), dp])
+	for id in ids:
+		var pos: Array = []
+		for e in rt.enemies:
+			if str(e["id"]) == str(id):
+				pos.append(Vector3(float(e["x"]), 0.0, float(e["z"])))
+		for a in range(pos.size()):
+			for b in range(a + 1, pos.size()):
+				var d: float = (pos[a] as Vector3).distance_to(pos[b] as Vector3)
+				if d < 30.0:
+					f.append("bound: %s copies %d and %d are %.1f u apart, want >= 30 (SR-3)"
+							% [str(id), a, b, d])
+
+

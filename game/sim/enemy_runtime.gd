@@ -25,6 +25,12 @@ const SPAWN_DELAY_TICKS := 360    # 6.0 s after level start (Early Bird: the cal
 const MIN_PLAYER_DIST := 25.0     # never spawn within 25 u of the player
 const PREFERRED_DIST := 60.0      # farthest-but-within 60 u preference (steps a/b only)
 const COPY_SEP := 30.0            # copies of one chaser are >= 30 u apart (SR-3)
+# D-B4-1: at most this many bodies appear per tick. The whole plan on one tick cost ~0.43 ms of
+# sim + ~0.32 ms of view per body, which made the spawn tick the worst step of the biggest level
+# (11.9-15.5 ms against the 16.67 ms budget, FLEET_PACK.md A13). 4 keeps the spawn tick below the
+# level's own recurring worst step, so the arrival stops deciding the frame budget; the plan
+# completes by spawn_complete_tick() (ceil(P/4) ticks, 0.1 s for the pinned 22-body list).
+const SPAWN_PER_TICK := 4
 const OVERTIME_PERIOD := 20.0     # beacon open -> tier rises every 20 s (Long Night 14, Cold Blood 30)
 const OVERTIME_MAX_TIER := 8
 const OVERTIME_SPEED_PER_TIER := 0.06   # enemy movement speed +6% per tier
@@ -394,6 +400,7 @@ var events: Array = []              # the current step's events (controller.try_
 
 # live enemy state:
 var planned: Array = []             # spawn queue from the votes: [{"id","name","behavior","cfg","copies"}]
+var plan_copies_total := 0          # every copy the plan ever held (D-B4-1's bound reads it)
 var enemies: Array = []             # rows (see _spawn_one)
 var projectiles: Array = []         # live projectile rows
 var telegraphs: Array = []          # {"kind","shape","ticks","total","source"}
@@ -471,6 +478,17 @@ func plan(id: String, display_name: String, behavior: RefCounted, cfg: Dictionar
 		copies: int) -> void:
 	planned.append({"id": id, "name": display_name, "behavior": behavior, "cfg": cfg,
 			"copies": copies})
+	plan_copies_total += maxi(copies, 0)
+
+
+## D-B4-1: the tick by which every planned copy exists - spawn_delay_ticks plus
+## ceil(P / SPAWN_PER_TICK) - 1, P = every copy the plan ever held. A pure function of the plan
+## and the spawn delay. D-T027-4's deferral is the only thing that can push a body past it, and
+## on real levels step (c) always finds a tile, so the bound holds there (test_spawn_rule.gd
+## asserts it on a real level and on the synthetic one).
+func spawn_complete_tick() -> int:
+	var spawn_ticks := int(ceil(float(plan_copies_total) / float(SPAWN_PER_TICK)))
+	return spawn_delay_ticks + maxi(spawn_ticks - 1, 0)
 
 
 ## Direct spawn at an explicit world position (tests, drop-in fixtures, engine callers that
@@ -487,8 +505,9 @@ func spawn_at(id: String, display_name: String, behavior: RefCounted, cfg: Dicti
 
 func step(dt: float) -> Array:
 	events = []
-	# spawn rule: the whole plan spawns on the spawn tick (or the first tick a legal tile
-	# exists - D-T027-4), in plan order (vote order, D-056 candidate order per copy).
+	# spawn rule: the plan spawns from the spawn tick on, at most SPAWN_PER_TICK bodies per
+	# tick (D-B4-1), in plan order (vote order, D-056 candidate order per copy). A body with
+	# no legal tile waits for the first tick one exists (D-T027-4).
 	if tick >= spawn_delay_ticks and not planned.is_empty():
 		_spawn_planned()
 	# overtime (section 3.2): begins at beacon open, +1 tier every period, cap 8 (D-T027-4).
@@ -542,7 +561,7 @@ func step(dt: float) -> Array:
 
 # ---- the D-056 spawn rule --------------------------------------------------------------------
 
-## Spawns every planned entry:
+## Spawns up to SPAWN_PER_TICK bodies this tick (D-B4-1), in plan order:
 ##   (a) the enemy's preferred anchor kind; (b) a `lane` anchor; (c) any round-trip tile
 ##   >= 25 u from the spawn point. Never within 25 u of the player; farthest-from-the-player
 ##   first; the within-60 u preference applies at (a)/(b) only; tie-break lowest anchor index
@@ -550,14 +569,28 @@ func step(dt: float) -> Array:
 ##   preferred_kind "none" (DESIGN.md section 5's `none` rows) skips BOTH (a) and (b): the
 ##   enemy's initial position is fallback (c). "" keeps T-027's merged semantics (skips (a),
 ##   still runs (b)); see PARKED.md row 5.
+## The RULE is unchanged by the budget: a body spawned on a later tick is picked by the same
+## rule against that tick's inputs. Only the tick each body appears on moves, and the order
+## (vote order, then copy index) is the plan's own - the budget is consumed in plan order, so
+## the bodies appear in plan order across ticks. The schedule is a pure function of the plan
+## and the tick: no wall clock, no frame time, no new randomness.
 func _spawn_planned() -> void:
 	var queue: Array = planned
 	planned = []
+	var budget: int = SPAWN_PER_TICK
 	for plan_row in queue:
+		var copies: int = int(plan_row["copies"])
+		var k: int = int(plan_row.get("spawned_copies", 0))
+		if k >= copies:
+			continue   # complete: a finished entry is never re-queued
+		if budget <= 0:
+			# D-B4-1: this tick's budget is spent. This entry and every entry behind it keep
+			# their place in the plan and retry next tick, in plan order.
+			planned.append(plan_row)
+			continue
 		var id: String = plan_row["id"]
 		var cfg: Dictionary = plan_row["cfg"]
 		var kind: String = str(cfg.get("preferred_kind", ""))
-		var copies: int = int(plan_row["copies"])
 		# SR-3: "copies of one chaser are >= 30 u apart" - the separation runs against THIS
 		# entry's own already-spawned copies (D-T061-6), not against the whole roster: with
 		# all 22 bodies excluded at 30 u a dense vote list starves (no round-trip tile ever
@@ -567,18 +600,21 @@ func _spawn_planned() -> void:
 		# only the MISSING copies (never re-spawns the placed ones) and never drops the
 		# entries behind it - the old code `return`-ed on the first deferral, silently
 		# dropping the whole tail of the plan (D-T061-6).
-		var k: int = int(plan_row.get("spawned_copies", 0))
-		while k < copies:
+		while k < copies and budget > 0:
 			# re-read the live copies each round: copy 1 must clear copy 0 (and so on)
 			var exclude: Array = _copy_positions(id)
 			var spot: Variant = pick_spawn_tile(level, kind, _player_pos(0), exclude,
 					COPY_SEP if copies > 1 else 0.0, _round_trip_cached())
 			if spot == null:
-				plan_row["spawned_copies"] = k
-				planned.append(plan_row)   # the entry's remaining copies retry next tick
-				break
+				break   # D-T027-4: no legal tile this tick - the entry waits
 			_spawn_one(plan_row, spot, k, copies)
 			k += 1
+			budget -= 1
+		if k < copies:
+			# deferred (D-T027-4) or the budget ran out mid-entry (D-B4-1): keep the entry
+			# queued with its progress, so only the missing copies are attempted next tick
+			plan_row["spawned_copies"] = k
+			planned.append(plan_row)
 
 
 ## The live copies of one planned entry (SR-3's "the earlier copies").
