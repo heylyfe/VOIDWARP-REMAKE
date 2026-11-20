@@ -121,8 +121,31 @@ one that is inert on every seed where it does not fire.
 
 ## 6. Gate
 
-`powershell -NoProfile -ExecutionPolicy Bypass -File tools/gate.ps1` - see the pasted final
-lines below.
+`powershell -NoProfile -ExecutionPolicy Bypass -File tools/gate.ps1`, final lines:
+
+```
+---- gate summary ----
+OK   python oracle checks (TESTS OK, SELFTEST 18/18, GALLERY 16/16 OK)
+OK   terrain parity (PARITY 56/56 OK)
+OK   run_all (TESTS 122 passed 0 failed)
+OK   boundary scan (ran in run_all: game/tests/test_boundaries.gd)
+OK   content schema (ran in run_all: game/tests/test_content.gd)
+OK   drop-in fixture (ran in run_all: game/tests/test_dropin.gd)
+OK   replay determinism (ran in run_all: game/tests/test_replay.gd)
+OK   sprite validator
+OK   fog readability
+GATE OK (9 ran, 0 skipped, 399 s)
+GATE_EXIT=0
+```
+
+**One earlier gate run failed and it was not this change.** That run reported
+`FAIL test_platform_collapse.gd: leg 10: a body past the kill plane is still drawn below the
+level` (TESTS 120 passed 1 failed). `test_platform_collapse.gd` exercises the collapse view
+and enemy boards and never calls `bot_run.gd`. Run alone on the same tree it passes 3/3, and
+it passes in the green gate above. The failing run overlapped a concurrent commit landing on
+this branch from another agent (`59f4c3e`, which also edits `game/tools/bot_run.gd`), so the
+suite was reading a tree that changed under it. Recorded rather than explained away: the
+green run above is the one to trust, and it is the one on the committed tree.
 
 ## 7. Deviations
 
@@ -135,6 +158,10 @@ lines below.
 - Purse on seed 38 reads 212/218 here against D-C2-12's recorded 224. The antechamber
   `float(null)` fix (D-C2-13) landed after that measurement and changes the lobby build, so
   the lobby draws differ. Not investigated further; it does not affect the death.
+- This branch received commits from another agent while I worked (`59f4c3e` "a lost gift is
+  a stale goal", which also edits `game/tools/bot_run.gd`). The two changes are
+  complementary and touch different functions; the green gate above is on the combined tree.
+
 
 ## 8. New DECISIONS entries
 
