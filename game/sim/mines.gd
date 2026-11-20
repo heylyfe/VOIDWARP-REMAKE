@@ -51,6 +51,7 @@ const VoidRngScript := preload("res://terrain/void_rng.gd")
 const EventsScript := preload("res://sim/events.gd")
 const DeathScript := preload("res://sim/death.gd")
 const GiftsScript := preload("res://sim/gifts.gd")
+const CollisionScript := preload("res://sim/collision.gd")
 
 ## Contact trigger cylinder radius (DESIGN.md 3.3): 0.9 u horizontal, any height.
 const CONTACT_R := 0.9
@@ -147,6 +148,15 @@ func drop(slot_id: int) -> bool:
 func point(slot_id: int) -> Vector3:
 	var s: Dictionary = slots[slot_id]
 	return Vector3(float(int(s["x"])) + 0.5, float(int(s["y"])) * 0.5 + 1.0, float(int(s["z"])) + 0.5)
+
+
+## The collision tile key of the mine's supporting tile (collision.gd's own "%d,%d,%d"
+## (x, z, y_hu) - the format is collision.gd's, never re-spelled here). The view reads it
+## to ask whether that tile is currently in the world's removed set (a tile-schedule curse's
+## temporary hole, D-B7-1); the sim itself never consults it.
+func slot_tile_key(slot_id: int) -> String:
+	var s: Dictionary = slots[slot_id]
+	return CollisionScript.tile_key(int(s["x"]), int(s["z"]), int(s["y"]))
 
 
 ## The first (lowest slot id) live mine whose trigger cylinder contains the

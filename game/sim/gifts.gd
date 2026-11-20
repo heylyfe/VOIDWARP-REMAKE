@@ -22,6 +22,7 @@ extends RefCounted
 # RNG (the state is a pure function of the inputs), fixed 60 Hz tick via sim.gd.
 
 const EventsScript := preload("res://sim/events.gd")
+const CollisionScript := preload("res://sim/collision.gd")
 
 ## Pickup radius at pickup_radius stat 1.0 (TERRAIN_SPEC.md section 6.7: 0.4 u).
 const PICKUP_RADIUS := 0.4
@@ -113,6 +114,15 @@ func slot_pos(i: int) -> Vector3:
 ## scan keeps the section 6.7 formula in this file only).
 func position_of(i: int) -> Vector3:
 	return slot_pos(i)
+
+
+## The collision tile key of slot i's supporting tile (collision.gd's own "%d,%d,%d"
+## (x, z, y_hu) - the format is collision.gd's, never re-spelled here). The view reads
+## it to ask whether that tile is currently in the world's removed set (a tile-schedule
+## curse's temporary hole, D-B7-1); the sim itself never consults it.
+func slot_tile_key(i: int) -> String:
+	var s: Dictionary = slots[i]
+	return CollisionScript.tile_key(int(s["x"]), int(s["z"]), int(s["y"]))
 
 
 func is_real(i: int) -> bool:

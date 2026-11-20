@@ -7563,3 +7563,38 @@ not unwinnable: a player holding one charge pays it and walks in. The bot died w
 failure on the bot's side and exactly the kind of thing a human does better. The two entries
 together are the whole rule: the collapse converts "far from the beacon when the last black
 gift is taken" into "one void charge", and only a player already at zero dies to it.
+
+## D-B7-1: a gift or a tripmine on a tile a curse removed is hidden by the view, never swept
+
+**Ruling.** A gift or a tripmine whose supporting tile is currently in the world's
+removed-tile set (`w["removed"]`, keyed by collision.gd's own `tile_key`) renders hidden,
+and comes back with the tile. The rule lives in the two slot views: `view/gifts_view.gd`
+and `view/tripmine_view.gd` each take the live set through `set_removed(keys)` - fed from
+`app/world.gd`'s `_view_pass` every tick - and fold it into the visibility they already
+compute. The tile key is the sim's: `sim/gifts.gd slot_tile_key(i)` and
+`sim/mines.gd slot_tile_key(slot_id)` delegate to `collision.gd tile_key(x, z, y_hu)`, so
+no view re-spells the format and no view computes geometry.
+
+**Why view-side and not a sweep.** The B6 collapse sweep (`world.gd _collapse_sweep`)
+marks what was standing on a fallen tile: `gifts.lose(i)` and `mines.drop(slot_id)`. That
+is right for the collapse because the collapse's contract is "the tile is gone for good" -
+`sim/collapse.gd` writes into `removed` once, at the fall tick, and nothing restores it. A
+tile-schedule curse's contract is the opposite: the tile returns after 5 s. Running the
+same sweep there would destroy a gift permanently for a temporary hole - it would leave
+the quota, the straggler beam and the gold phase short by one gift the player could still
+have collected. So the curse's hole is a rendering fact, not a state change: the gift
+stays `present()`, stays collectible, stays in `remaining()`, and the mine stays live
+(`contact_at` still answers at its own point).
+
+**Why the collapse path is unaffected.** After the sweep a gift is `lost`, so `present()`
+is false and the view already hides it; a mine is `consumed`, so `is_consumed()` is true
+and the view already hides it. The new term is an `and` on a predicate that is already
+false, so it changes nothing there - proven both ways in
+`game/tests/test_removed_tile_view.gd`'s collapse leg: the lost gift and the dropped mine
+stay hidden with their tile in the removed set and with it out of the set.
+
+**Consequence.** A hole that opens or closes is on screen the same tick (the set is held
+by reference and re-fed before each sync). Nothing in the sim reads the new accessors, so
+determinism, the state hash and the replay checkpoints are untouched. The rule is per-slot
+and O(1) per slot per tick: one dictionary lookup, no allocation.
+

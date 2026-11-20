@@ -81,6 +81,11 @@ var _mines: RefCounted = null
 var _time: float = 0.0
 var _method_acting := false
 var _radar := false
+## The world's live removed-tile set (collision.gd's w["removed"], keyed by its own tile
+## key). A mine whose supporting tile is in it renders hidden while the hole lasts and
+## comes back with the tile - the crumbling curse's 5 s (D-B7-1). Read-only here: the
+## view never writes sim state, so the mine is still live and still kills.
+var _removed: Dictionary = {}
 
 
 ## Builds one box node per LIVE mine slot. level: the Level dict; mines_state:
@@ -88,6 +93,7 @@ var _radar := false
 func setup(level: Dictionary, mines_state: RefCounted) -> void:
 	_time = 0.0
 	_mines = mines_state
+	_removed = {}
 	for child in get_children():
 		child.free()
 	_nodes = []
@@ -172,6 +178,15 @@ func set_radar(on: bool) -> void:
 	_radar = on
 
 
+## The world's live removed-tile set (collision.gd's w["removed"]). A mine standing on a
+## tile in it renders hidden until the tile returns (the crumbling curse, D-B7-1). The
+## dict is held by reference - world._view_pass feeds it every tick, so a hole that opens
+## or closes is on screen the same tick. The tile key comes from the sim
+## (mines.gd slot_tile_key -> collision.gd tile_key); this view computes no geometry.
+func set_removed(keys: Dictionary) -> void:
+	_removed = keys
+
+
 ## The tell: inside the tell radius the particles + star show; beyond it the
 ## mine reads as a plain gift (the rim glow only). Distance in world u.
 static func tell_visible(dist: float) -> bool:
@@ -202,8 +217,9 @@ static func star_alpha(dist: float, method_acting: bool = false) -> float:
 ## Syncs the rotation, the rim glow, the star/particle ramp, the trigger ring and
 ## the radar outline from the caller's eye position (the camera). Call every frame
 ## or on change. A consumed mine (defused, shielded, saved or detonated) is
-## removed from view. eye == Vector3.ZERO means "no camera supplied": the tell
-## shows in full (the T-021 convention).
+## removed from view, and so is a mine whose supporting tile is currently in the
+## world's removed set (set_removed, D-B7-1). eye == Vector3.ZERO means "no camera
+## supplied": the tell shows in full (the T-021 convention).
 func sync(eye: Vector3 = Vector3.ZERO) -> void:
 	var t: float = _time
 	var no_eye: bool = eye == Vector3.ZERO
@@ -212,7 +228,13 @@ func sync(eye: Vector3 = Vector3.ZERO) -> void:
 		var root: Node3D = e["node"]
 		var slot: int = int(e["slot"])
 		if _mines != null:
-			root.visible = not _mines.is_consumed(slot)
+			# A consumed mine (defused, shielded, saved, detonated or dropped with its
+			# platform) is gone for good; a mine whose supporting tile is a temporary hole
+			# (the crumbling curse, D-B7-1) is hidden only while the hole lasts and comes
+			# back with the tile. The collapse path is unaffected: drop() consumes the mine,
+			# so is_consumed is already true and the removed-set term changes nothing.
+			root.visible = not _mines.is_consumed(slot) \
+					and not _removed.has(_mines.slot_tile_key(slot))
 		# one full turn per TURN_PERIOD seconds, phase from the slot order so
 		# neighbouring mines in a line do not spin in lockstep
 		root.rotation.y = t * TAU_F / TURN_PERIOD + float(line_i) * 0.7

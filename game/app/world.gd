@@ -1891,9 +1891,18 @@ func _prebuild_enemy_views() -> void:
 func _view_pass() -> void:
 	if lstate == null:
 		return
+	# The removed-tile set (collision.gd's w["removed"]) is fed to both slot views before
+	# they sync: a gift or a mine standing on a tile a tile-schedule curse just removed
+	# renders hidden for the 5 s the hole lasts and comes back with the tile (D-B7-1).
+	# View-side only - the sim state is untouched, so the gift stays collectible and the
+	# mine stays live. The collapse path needs nothing from this: a gift that fell with its
+	# platform is `lost` and a mine is `consumed`, so both are already hidden.
+	var removed: Dictionary = w["removed"] if not w.is_empty() else {}
 	if gifts_view != null:
+		gifts_view.set_removed(removed)
 		gifts_view.sync(lstate.gifts)
 	if tripmine_view != null and lstate.mines != null:
+		tripmine_view.set_removed(removed)
 		# the view owns no clock: sim seconds in, one turn per TURN_PERIOD (4 s)
 		tripmine_view.set_time(float(lstate.tick) * DT)
 		tripmine_view.sync(_eye_pos())

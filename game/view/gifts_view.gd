@@ -79,6 +79,11 @@ var _eye := Vector3.ZERO
 var _black_mat: Array = []     # slot id -> the slot's normal black base pass (glow on)
 var _black_glow: Array = []    # slot id -> the rim-glow state last applied to the slot
 var _dull_mat: StandardMaterial3D = null
+## The world's live removed-tile set (collision.gd's w["removed"], keyed by its own tile
+## key). A gift whose supporting tile is in it renders hidden while the hole lasts and
+## comes back with the tile - the crumbling curse's 5 s (D-B7-1). Read-only here: the
+## view never writes sim state, so the gift stays collectible and stays in the quota.
+var _removed: Dictionary = {}
 
 
 ## Builds one node per real gift slot. level: the Level dict; gifts_state: the
@@ -88,6 +93,7 @@ var _dull_mat: StandardMaterial3D = null
 func setup(level: Dictionary, gifts_state: RefCounted) -> void:
 	_gifts = gifts_state
 	_time = 0.0
+	_removed = {}
 	for child in get_children():
 		child.free()
 	_black = []
@@ -227,6 +233,15 @@ func set_viewpoint(p: Vector3) -> void:
 	_eye = p
 
 
+## The world's live removed-tile set (collision.gd's w["removed"]). A gift standing on a
+## tile in it renders hidden until the tile returns (the crumbling curse, D-B7-1). The
+## dict is held by reference - world._view_pass feeds it every tick, so a hole that opens
+## or closes is on screen the same tick. The tile key comes from the sim
+## (gifts.gd slot_tile_key -> collision.gd tile_key); this view computes no geometry.
+func set_removed(keys: Dictionary) -> void:
+	_removed = keys
+
+
 ## Swaps one slot's black base pass: the normal vertex-colour pass (glow on), or the
 ## dull one - the rim ribbon multiplied down onto the body colour (glow off). Same
 ## walk _add_body() applies at build time.
@@ -262,6 +277,13 @@ func sync(gifts_state: RefCounted = null, time_secs: float = -1.0) -> void:
 		# present() = real, not collected, not lost: a gift whose platform fell with the
 		# collapse is gone from the air on the same tick (sim/gifts.gd lose()).
 		var shown: bool = _gifts.present(i)
+		# ... and a gift whose supporting tile is currently a hole renders hidden too: the
+		# crumbling curse removes the tile for 5 s and returns it, so the gift waits out the
+		# hole in the air rather than hanging over it (D-B7-1). View-side only - present()
+		# above is untouched, so the gift is still collectible and still in the quota. The
+		# collapse path is unaffected: a gift that fell with its platform is `lost`, so
+		# present() is already false and this term changes nothing.
+		var gone: bool = _removed.has(_gifts.slot_tile_key(i))
 		# one full turn per TURN_PERIOD seconds, phase from the build order so
 		# neighbouring gifts in a line do not spin in lockstep - the tripmine's
 		# own formula (view/tripmine_view.gd sync())
@@ -269,7 +291,7 @@ func sync(gifts_state: RefCounted = null, time_secs: float = -1.0) -> void:
 		var rot: float = rot_base + ph
 		if _black[i] != null:
 			_black[i].rotation.y = rot
-			_black[i].visible = shown and not gold
+			_black[i].visible = shown and not gold and not gone
 			# Dull Gifts (T-051): the rim glow, a view tell, is visible only within 20 u
 			# of the player (DESIGN.md section 3.2, D-075). The module reads
 			# curses_held itself and answers neutral at 0 stacks - the un-cursed
@@ -284,4 +306,4 @@ func sync(gifts_state: RefCounted = null, time_secs: float = -1.0) -> void:
 				_apply_rim(i, glow)
 		if _gold[i] != null:
 			_gold[i].rotation.y = rot
-			_gold[i].visible = shown and gold
+			_gold[i].visible = shown and gold and not gone
