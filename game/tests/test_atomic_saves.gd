@@ -24,8 +24,7 @@ extends RefCounted
 #   - a crashed mid-write end state (a truncated .tmp left next to the destination) does
 #     not corrupt the destination: the loader still reads the OLD good file;
 #   - a mid-run reader of the run log sees the records so far, and no .tmp is left behind;
-#   - a forced rename failure leaves the destination holding its OLD bytes: this process holds
-#     the .tmp source open, which makes rename fail on demand, and the store's fallback moves
+#   - a forced rename failure leaves the destination holding its OLD bytes; the store moves
 #     the destination aside to .old first and restores it (see _rename_over_fallback);
 #   - level_complete without a preceding beacon_open logs black_ticks/gold_ticks == -1
 #     (the explicit sentinel, never an arithmetic accident) and a well-defined total_ticks.
@@ -33,9 +32,8 @@ extends RefCounted
 # Honest limit: this cannot kill the process mid-store_string, so a true mid-write crash is
 # simulated by its observable end states (truncated .tmp + intact destination, and the
 # unclosed RunLog case) rather than faked. The rename failure is not simulated either: it is
-# forced for real, because this process holds the .tmp source open so the engine's rename
-# fails on demand; a real antivirus lock is not emulatable here, so what is proven is the
-# observable class - the destination is protected while the rename fails. Scratch files live
+# forced with an open source on Windows and a missing source elsewhere; a real antivirus lock
+# is not emulatable here. Scratch files live
 # under user:// and are removed at the end; the player's real user:// files are never touched.
 
 const SettingsScript := preload("res://app/settings.gd")
@@ -175,19 +173,22 @@ func _rename_over_fallback(failures: Array[String]) -> void:
 		var t := FileAccess.open(RENAME_TMP, FileAccess.WRITE)
 		t.store_string("NEW")
 		t.close()
-		# Force the rename to fail on demand: this process holds the .tmp source open. On
-		# this platform that failure also removes the destination as a side effect of the
-		# attempt, which is exactly the class the .old side-move exists to survive.
-		var hold := FileAccess.open(RENAME_TMP, FileAccess.READ)
+		# Windows refuses to rename the open source. POSIX allows that, so use a
+		# missing source there to exercise the same failed-rename restoration path.
+		var hold: FileAccess = null
+		if OS.get_name() == "Windows":
+			hold = FileAccess.open(RENAME_TMP, FileAccess.READ)
+		else:
+			_rm(RENAME_TMP)
 		var ok: bool = entry[0]._rename_over(RENAME_TMP, RENAME_DEST)
 		hold = null
 		if ok:
-			failures.append("%s: rename fallback unexpectedly succeeded with the source held open" % label)
+			failures.append("%s: rename fallback unexpectedly succeeded with an unavailable source" % label)
 		if not FileAccess.file_exists(RENAME_DEST):
 			failures.append("%s: destination ABSENT after a failed rename" % label)
 		elif FileAccess.get_file_as_string(RENAME_DEST) != "GOOD":
 			failures.append("%s: destination does not hold the OLD bytes after a failed rename" % label)
-		if not FileAccess.file_exists(RENAME_TMP):
+		if OS.get_name() == "Windows" and not FileAccess.file_exists(RENAME_TMP):
 			failures.append("%s: .tmp gone after a failed rename (nothing left recoverable)" % label)
 		if FileAccess.file_exists(RENAME_DEST + ".old"):
 			failures.append("%s: .old not restored to the destination after a failed rename" % label)

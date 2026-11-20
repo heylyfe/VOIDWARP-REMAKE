@@ -312,7 +312,7 @@ static func _type_ok(t: Variant, value: Variant) -> bool:
 		if name == "integer":
 			if typeof(value) == TYPE_INT:
 				return true
-			if typeof(value) == TYPE_FLOAT and is_equal_approx(value, floorf(value)):
+			if typeof(value) == TYPE_FLOAT and value == floorf(value):
 				return true
 		if name == "array" and typeof(value) == TYPE_ARRAY:
 			return true

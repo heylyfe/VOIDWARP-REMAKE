@@ -20,6 +20,11 @@ const VoidRngScript := preload("res://terrain/void_rng.gd")
 
 func run() -> Array[String]:
 	var failures: Array[String] = []
+	# JSON numbers arrive as floats; integer fields must reject fractional values,
+	# even when they are close to a whole number or large enough for approximate equality.
+	_check(failures, RegistryScript._type_ok("integer", 2.0), "whole JSON number rejected as integer")
+	_check(failures, not RegistryScript._type_ok("integer", 2.000001), "fractional JSON number accepted as integer")
+	_check(failures, not RegistryScript._type_ok("integer", 100000.5), "large fractional JSON number accepted as integer")
 	var res := RegistryScript.load_all()
 	if not _check(failures, bool(res.get("ok", false)), "registry refuses boot on the real content: %s" % _first_errors(res)):
 		return failures
