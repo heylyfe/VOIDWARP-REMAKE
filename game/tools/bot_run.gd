@@ -1200,12 +1200,42 @@ static func _enemy_points(rt) -> Array:
 	return out
 
 
+## The widest contact radius in play: sim/enemy_runtime.gd body_contact's own test
+## (diameter_u * 0.5 + the player's 0.4 half-width). A fall that passes inside it is a
+## kill, so it is the corridor the landing pick must keep clear (D-B5B-1). 0.0 when no
+## contact-kill body is in play.
+static func _enemy_reach(rt) -> float:
+	var r := 0.0
+	for e in rt.enemies:
+		if not bool(e.get("contact_kill", true)):
+			continue
+		r = maxf(r, float(e.get("diameter_u", 0.0)) * 0.5 + 0.4)
+	return r
+
+
+## True when the straight XZ segment from `a` to `b` stays at least `r` u from every point
+## in `pts` (D-B5B-1). A landing column that is clear of a body is still a bad target when
+## the fall to it passes THROUGH the body: the bot steered at a column beyond the cat and
+## flew into it (level 11, seed 38, tick 2145). Pure.
+static func _seg_clear(a: Vector2, b: Vector2, pts: Array, r: float) -> bool:
+	var ab := b - a
+	var l2 := ab.length_squared()
+	for p in pts:
+		var t := 0.0
+		if l2 > 1e-9:
+			t = clampf((p - a).dot(ab) / l2, 0.0, 1.0)
+		if a.lerp(b, t).distance_to(p) < r:
+			return false
+	return true
+
+
 ## Centre of the nearest column within `r` u whose top lies below the feet (a body in the
 ## air can still come down on it), skipping columns within LAND_CLEAR of a point in
-## `avoid`; Vector2(INF, INF) when there is none. Ties break on the higher top (less
+## `avoid` and columns whose straight fall from the feet passes within `block_r` u of one
+## in `block`; Vector2(INF, INF) when there is none. Ties break on the higher top (less
 ## fall), then scan order. Pure.
 static func _nearest_landing(w, x: float, feet: float, z: float, r: float,
-		avoid: Array = []) -> Vector2:
+		avoid: Array = [], block: Array = [], block_r: float = 0.0) -> Vector2:
 	var best := Vector2(INF, INF)
 	var best_d := INF
 	var best_top := -INF
@@ -1215,6 +1245,8 @@ static func _nearest_landing(w, x: float, feet: float, z: float, r: float,
 			var c := Vector2(float(cx) + 0.5, float(cz) + 0.5)
 			var d := here.distance_to(c)
 			if d > r or d > best_d + 1e-6 or _near_any(c, avoid, LAND_CLEAR):
+				continue
+			if block_r > 0.0 and not _seg_clear(here, c, block, block_r):
 				continue
 			for t in w["cols"].get("%d,%d" % [cx, cz], []):
 				var ty := int(t["y"])
@@ -1666,7 +1698,13 @@ static func _routing(mem: Dictionary, lv, ctl, rt, w, w2, gtiles: Array, adj: Ar
 		var pz_a := float(ctl.z)
 		var feet_a := float(ctl.y)
 		var eps_a: Array = _enemy_points(rt)
-		var tgt: Vector2 = _nearest_landing(w, px_a, feet_a, pz_a, 3.0, eps_a)
+		var tgt: Vector2 = _nearest_landing(w, px_a, feet_a, pz_a, 3.0, eps_a,
+				eps_a, _enemy_reach(rt))
+		if tgt.x == INF:
+			# D-B5B-1: every column clear of a body needs a fall THROUGH one. Take the
+			# original pick rather than inventing a worse one - the point test is what
+			# the bot had before, and it is right whenever the body is not in the way.
+			tgt = _nearest_landing(w, px_a, feet_a, pz_a, 3.0, eps_a)
 		var lpi := pi
 		while lpi < path.size() and int(path[lpi]) == cur:
 			lpi += 1

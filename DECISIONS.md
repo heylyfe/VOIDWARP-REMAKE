@@ -7507,3 +7507,59 @@ on real levels step (c) always succeeds, so the bound holds there (asserted on a
 consumed in plan order, no wall clock, no frame time, no new randomness. The same seed and the
 same inputs produce the same bodies on the same ticks, so the replay checkpoints are unchanged.
 
+## D-B5B-1: the airborne landing pick is a point test, not a path test
+
+**Ruling.** `_nearest_landing` now also refuses a landing column whose straight fall from
+the feet passes within the body's own contact radius of a contact-kill body. The radius is
+`sim/enemy_runtime.gd` `body_contact`'s own (`diameter_u * 0.5 + 0.4`), not a new number.
+When no column survives, the original pick is used unchanged.
+
+**Why.** The bot died on level 11 (seed 38) at tick 2151, `D-KIWI`, airborne, 0.80 u from a
+kiwi cat. The trace shows the mechanism exactly: at tick 2138-2144 the bot is falling with
+`land=(27.50,33.50)` - its own column - and the cat is 1.45 u away. At tick 2145 the cat
+moves to (26.59,32.66), which puts the bot's own column 1.24 u from it, just inside
+`LAND_CLEAR` (1.25). `_nearest_landing` then re-picks the next nearest column that clears
+the body: **(25.50,33.50)**, on the FAR side of the cat. The bot steers at it at full speed
+and flies through the body. The column was clear; the fall to it was not. A point test
+cannot see that.
+
+**Consequence.** Level 11, seed 38 goes from `tick=2151 gifts_left=48 D-KIWI` to
+`tick=4797 gifts_left=1 D-VOID`: the cat trap is gone and the bot now collects all but one
+gift. Seeds 36, 37, 39 and 40 are byte-identical before and after (same level, killer, tick,
+purse), so the change is inert where the filter never fires. It does not make the game
+easier: it is the bot declining a fall it can see is lethal.
+
+## D-B5B-2: level 11 is not survivable after the beacon opens, and that is the collapse's arithmetic
+
+**Ruling.** The remaining level-11 death is not a bot-policy limit. It is the platform
+collapse (sim/collapse.gd, owner request 2026-11-20) giving 300 ticks - 5.0 s - to cross
+from the last black gift to the beacon, on a level where that distance can exceed what 5.0 s
+of running covers. No bot change fixes it and no game change is made under this ticket.
+
+**Why.** Measured on seed 38, level 11, with the D-B5B-1 fix in place:
+
+- `platforms_cracked tick=4381 player=(39.50,13.50,52.13) beacon=(0.50,0.50) dist=64.70
+  fall_tick=4681`
+- `platforms_fell tick=4681 player=(35.89,11.66,42.30) dist=54.77`
+
+The beacon opens on the last real black gift (`sim/gifts.gd` `all_black_collected` is the
+only caller of `beacon.open`), and the collapse starts on that same tick. 64.70 u at the
+player's 9.0 u/s base run is **7.19 s** against a **5.0 s** window - and that ignores the
+jumps, the gaps and the 13.5 u of height the bot also has to lose. The bot was still 54.77 u
+out when the floor went. A player has the same 5.0 s.
+
+**Consequence.** The 30-level proof stays open, and the reason is now precise and different
+from D-C2-11/D-C2-12: the bot's policy was the limit up to level 11's cat trap (fixed,
+D-B5B-1), and past it the limit is the collapse window against the beacon distance. The
+honest next lever is an owner decision on the collapse (a longer window, or a rule that the
+last gift cannot be the farthest from the beacon), not a bot ticket. Recorded, not acted on:
+this ticket forbids terrain, timing and economy changes.
+
+**The charge is the escape hatch, and the bot had none.** D-B6-1 already ruled that a player
+caught by the collapse falls, spends a void charge and respawns on the dais - which is on the
+hub, next to the beacon. So "not survivable" above means *not survivable at zero charges*,
+not unwinnable: a player holding one charge pays it and walks in. The bot died with
+`charges=0` because it had spent both earlier in the run, which is a resource-management
+failure on the bot's side and exactly the kind of thing a human does better. The two entries
+together are the whole rule: the collapse converts "far from the beacon when the last black
+gift is taken" into "one void charge", and only a player already at zero dies to it.
