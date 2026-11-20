@@ -30,6 +30,7 @@ extends Node3D
 # Reads sim state only (never writes): set_progress + set_open from the caller.
 
 const BeaconScript := preload("res://sim/beacon.gd")
+const BeaconAudioScript := preload("res://view/audio/beacon_audio.gd")
 
 const MODEL := "res://assets/models/beacon.glb"
 const OPEN_COLOR := Color(0.910, 1.0, 1.0)   # #E8FFFF
@@ -51,6 +52,7 @@ const TRIGGER_RADIUS := BeaconScript.RADIUS  # 1.5 u, binding
 
 var _ramp := 0.0
 var _opened := false
+var _open_cue_played := false  # the owner's open cue starts once per open; a re-fed state never restarts it
 var _open_tick := -1          # the sim tick the beacon opened on (-1: no tick clock)
 var _tick := 0
 var _blocked := false
@@ -229,10 +231,16 @@ func set_progress(collected: int, total: int) -> void:
 func set_open(opened: bool, tick: int = -1) -> void:
 	if opened and not _opened:
 		_open_tick = tick
+		# the owner-supplied open cue, once per open (beacon_audio.gd; the app's
+		# per-tick state feed drives this transition, so the call lands here)
+		if not _open_cue_played:
+			if BeaconAudioScript.play_open(self) != null:
+				_open_cue_played = true
 	_opened = opened
 	if not opened:
 		_ramp = 0.0
 		_open_tick = -1
+		_open_cue_played = false
 		_blocked = false
 		_slow_door_ticks = -1
 		for b in _body:
