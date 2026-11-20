@@ -1767,10 +1767,20 @@ func _billboard_pass(dt: float, ev: Array = []) -> void:
 	}
 	for i in rt.enemies.size():
 		var e: Dictionary = rt.enemies[i]
+		# A body that fell with its platform (sim/enemy_runtime.gd _support_pass) is drawn
+		# while it falls and hidden once it is past the kill plane. The row stays in
+		# rt.enemies so every index here keeps pointing at it, but nothing should keep
+		# animating 40 u below the level.
+		var gone: bool = bool(e.get("gone", false))
 		if enemy_views[i] != null:
-			enemy_views[i].sync(e, ctx)
+			enemy_views[i].set_shown(not gone)
+			if not gone:
+				enemy_views[i].sync(e, ctx)
 		var bd = boards[i]
 		if bd == null:
+			continue
+		bd.visible = not gone
+		if gone:
 			continue
 		bd.position = Vector3(float(e["x"]), float(e["y"]), float(e["z"]))
 		bd.set_animation(str(e.get("anim_state", "")))

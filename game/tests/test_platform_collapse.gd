@@ -483,9 +483,15 @@ func _leg_10(f: Array[String]) -> void:
 	var b: Dictionary = _probe(world, "toucher", tb, 2.0)
 	var ya := float(a["y"])
 	var yb := float(b["y"])
+	var ia: int = (world.rt.enemies as Array).find(a)
 	_steps(world, 6)
 	if not bool(a.get("falling", false)) or not bool(b.get("falling", false)):
 		f.append("leg 10: an enemy on a fallen tile did not start falling (it floats)")
+	# the view: a falling body is still drawn (you watch it drop), a retired one is not
+	if ia < 0 or ia >= world.boards.size() or world.boards[ia] == null:
+		f.append("leg 10: the falling probe has no board (the view leg proves nothing)")
+	elif not (world.boards[ia] as Node3D).visible:
+		f.append("leg 10: a falling body was hidden before it reached the kill plane")
 	_steps(world, 90)
 	if not bool(a.get("gone", false)) or not bool(b.get("gone", false)):
 		f.append("leg 10: an enemy never reached the kill plane (a=%s b=%s)"
@@ -498,6 +504,10 @@ func _leg_10(f: Array[String]) -> void:
 	var live: Array = world.w["enemies"]
 	if live.has(a["body_mirror"]) or live.has(b["body_mirror"]):
 		f.append("leg 10: a fallen enemy is still a live body in w[\"enemies\"]")
+	# ...and it is not drawn 40 u below the level either
+	if ia >= 0 and ia < world.boards.size() and world.boards[ia] != null:
+		if (world.boards[ia] as Node3D).visible:
+			f.append("leg 10: a body past the kill plane is still drawn below the level")
 	_drop(world)
 
 

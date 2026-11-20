@@ -52,6 +52,15 @@ static func supports(p_id: String) -> bool:
 	return KINDS.has(p_id)
 
 
+## Show or hide the bespoke view. A row that fell with its platform (sim/enemy_runtime.gd
+## _support_pass) is drawn while it falls and hidden once it is past the kill plane: the
+## row stays in rt.enemies so every index in app/world.gd keeps pointing at it, but a body
+## 40 u below the level must not keep animating there.
+func set_shown(on: bool) -> void:
+	if view != null:
+		view.visible = on
+
+
 ## Builds the bespoke view for p_id from its content folder. False for an unsupported id
 ## (the caller keeps the generic billboard).
 func setup(p_id: String, folder: String) -> bool:

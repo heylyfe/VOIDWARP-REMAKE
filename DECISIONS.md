@@ -7391,3 +7391,29 @@ the correct `if (v is float or v is int)` shape; `antechamber.gd` now does too.
 `test_antechamber_exhibits.gd` builds every registered enemy's exhibit and asserts a non-empty
 name, with the null-world_height enemy as the explicit control - reverted, it fails twice naming
 nuke. The same run's log went from dozens of `SCRIPT ERROR` lines to zero.
+
+## D-B6-1: the collapse takes what was standing on it, and a caught player spends a charge
+
+**Ruling.** When the platform collapse removes a tile, a gift on it is LOST (not collected,
+not paid, not drawn), a tripmine on it is DROPPED (consumed through the same bitset a defuse
+uses, so it can never kill), and an enemy resting on it FALLS at the controller's own terminal
+speed and is retired past the kill plane. A player on it is not touched by the sweep: they fall
+through the controller's existing void rule, which is the only death path in the game.
+
+**Why.** The collapse only edited collision, so everything standing on a removed tile hung in
+the air. The gift rule is "lost, not relocated": the beacon is already open when the collapse
+starts (`sim/gifts.gd` is the only caller of `beacon.open`, on the same tick the black phase
+ends), so the black quota is already met and no loss can make a level unwinnable - and
+relocating would break `gifts.gd`'s own contract that no code outside `terrain/` invents a gift
+position. The enemy rule is the runtime's first ground test: `resting_key()` asks the tile the
+feet rest on INCLUDING removed tiles, because `support_at()` skips them and so cannot tell "the
+platform under me fell" from "I was never standing on anything".
+
+**Consequence.** A player caught away from the hub when the beacon opens falls and spends a void
+charge; the respawn puts them on the dais, which is on the hub, so the collapse converts "being
+far away" into "one charge". At zero charges the fall is a real death (`D-VOID`) - the same rule
+the game already had for any fall, not a new one. The 5 s crack phase is the warning. A fallen
+enemy is drawn while it falls and hidden once it is past the kill plane (`enemy_view_host.set_shown`),
+but its row stays in `rt.enemies` so every view index keeps pointing at it. The `crumbling` curse
+is deliberately NOT swept (PARKED.md row 32): its tiles return, so a lost gift there would be
+destroyed permanently for a temporary hole.
