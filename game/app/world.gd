@@ -347,7 +347,7 @@ func build(seed_value: int, level: int, p_ledger: Dictionary = {}) -> bool:
 	# shipped game runs the modifier math, so a bought upgrade and a held curse change the
 	# live run. Two contexts, because `when: gold_phase` is live only while the gold phase
 	# is on: _stats_black is the always-on set, _stats_gold adds the gold-phase modifiers.
-	var mods := _run_modifiers(plan)
+	var mods := _run_modifiers(plan, kit)
 	var base: Dictionary = ctl.base_stats()
 	_stats_black = ContentApiScript.apply_modifiers(base, mods, {"phase": "", "class": kit})
 	_stats_gold = ContentApiScript.apply_modifiers(base, mods,
@@ -955,10 +955,12 @@ func _feed_run_stats(stats: Dictionary) -> void:
 
 
 ## Every modifier the run owns: each held curse's and each owned upgrade's modifiers,
-## repeated once per stack (DESIGN.md sections 7 and 8). Data-driven - no content id is
-## named here - and sorted by id so the `set`-wins tie-break in apply_modifiers is
-## deterministic whatever order the ledger's dictionaries happen to hold.
-func _run_modifiers(plan: Dictionary) -> Array:
+## repeated once per stack (DESIGN.md sections 7 and 8), plus whatever a script upgrade's
+## own module declares through static stat_mods(kit) (D-B5A-1) - so a script upgrade can add
+## to a stat the same way a JSON modifier does. Data-driven - no content id is named here -
+## and sorted by id so the `set`-wins tie-break in apply_modifiers is deterministic whatever
+## order the ledger's dictionaries happen to hold.
+func _run_modifiers(plan: Dictionary, kit: String) -> Array:
 	var out: Array = []
 	var curses: Dictionary = plan.get("curses", {})
 	var curse_ids: Array = curses.keys()
@@ -974,7 +976,30 @@ func _run_modifiers(plan: Dictionary) -> Array:
 		var u: Dictionary = _api.upgrade(str(id))
 		out.append_array(ContentApiScript.mods_for_stacks(u.get("modifiers", []),
 				int(stacks[id])))
+		# A script upgrade may also declare a stat contribution of its own (D-B5A-1): its
+		# module's static stat_mods(kit) returns ONE stack's modifier dicts, repeated here
+		# per owned stack exactly like the JSON half above. The module names itself and
+		# decides which classes it applies to; this file names no upgrade id.
+		out.append_array(ContentApiScript.mods_for_stacks(_upgrade_stat_mods(str(id), kit),
+				int(stacks[id])))
 	return out
+
+
+## One owned script upgrade's declared stat contribution (static stat_mods(kit)): the
+## modifier dicts ONE stack makes, in the same shape a JSON "modifiers" row has. A module
+## that declares none, or an upgrade with no module, contributes nothing - so an un-upgraded
+## run's modifier list is exactly what it was before this existed.
+func _upgrade_stat_mods(id: String, kit: String) -> Array:
+	var path := "res://content/upgrades/%s.gd" % id
+	if not ResourceLoader.exists(path):
+		return []
+	var mod: Script = load(path)
+	if mod == null or not mod.has_method("stat_mods"):
+		return []
+	var d = mod.stat_mods(kit)
+	if d is Array:
+		return d
+	return []
 
 
 ## True once the beacon has been entered (the level is complete). Convenience for

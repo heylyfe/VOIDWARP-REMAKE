@@ -7437,3 +7437,28 @@ gold phase still pays, it just pays for what you can reach in five seconds. This
 CONTESTABLE rather than changed because the number is the owner's, not the fleet's: if the gold
 phase should stay a stroll, the fix is a longer `CRACK_SECONDS` (or a partial collapse that
 leaves a route), and that is the owner's call, not a tuning pass.
+
+## D-B5A-1: a script upgrade may declare a stat contribution, and that closes the Athletic branch
+
+**Ruling.** The stat pipeline takes a per-upgrade contribution. A script upgrade module may
+declare `static func stat_mods(kit: String) -> Array` returning the modifier dicts ONE stack
+makes, in the same shape a JSON `modifiers` row has; `app/world.gd` repeats it per owned stack
+and merges it into the list `core/content_api.gd`'s `apply_modifiers` consumes. `quick_recovery`
+uses it: the Athletic gets `run_speed` +0.05 per stack (+5%, +10% at max_stacks 2) and keeps the
+-20% cooldown knob for the classes that have a class cooldown. D-C2-5's inert branch is closed.
+
+**Why.** D-C2-5 recorded the gap and said the right fix was a stat-pipeline change rather than
+another special case in the module. This is that change, and it is the smallest one that keeps
+every existing rule: the module names itself and owns its number, `app/` still names no content
+id (the boundary scan holds), and `run_speed` stays the pipeline's to own - the contribution is
+an ordinary modifier, so it composes with Yearn for Speed, Weighed Down and the glitched floor
+through the same arithmetic instead of through a second path.
+
+**Consequence.** A script upgrade can now move any stat in the closed list, not just a
+controller knob, so the next upgrade whose rule sentence names a stat needs no app change. The
+`add` op is what makes +5% per stack read as +10% at two stacks rather than 1.05^2 = 10.25%: the
+rule sentence says per stack, and `add` is the op that means that. Proven through the shipped
+path by `game/tests/test_upgrade_stat_contrib.gd` (world.build + world.step, 0/1/2 stacks on the
+athletic class, checked at the pipeline stat, the controller's multiplier and the speed the body
+moves at); with the module's contribution removed it fails six ways, and with the world's merge
+removed it fails the same six.

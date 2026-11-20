@@ -18,7 +18,7 @@ The world is serious. The enemies are not.
 
 Waves 1–4 land together: the systems the earlier alphas built but never wired are wired now.
 
-- **Every upgrade now has a shipped call site, with one recorded exception.** All 36 upgrades and
+- **Every upgrade now has a shipped call site.** All 36 upgrades and
   all 46 curses were inert at the start of this work — the shop took gold and changed nothing.
   `world.gd` runs the modifier pass into the black-phase and gold-phase stat blocks and swaps them
   on the phase edges, and the controller consumes them. Field Dressing gives the free fall DESIGN
@@ -31,13 +31,12 @@ Waves 1–4 land together: the systems the earlier alphas built but never wired 
   game at 1200 g — could never teleport, because its channel was only ever advanced by the bot
   engine. `bounty_hunter`'s +50% bounty was never shown or paid, because the real Antechamber never
   ran the draw pass. Both are wired now, along with `more`, `last_call`, `straggler_scope`,
-  `spring_heels`, `twin_dash`, `updraft` and `marathon`. The one exception is `quick_recovery`'s
-  Athletic branch: the Athletic has no class cooldown, so the rule sentence gives it +5% run speed
-  instead, and the controller exposes no per-upgrade run-speed knob to add to. That purchase does
-  nothing for that one class, and it is recorded in the module and in DECISIONS D-C2-5 rather than
-  papered over. The 46th curse, `zoomies`, is retired by design — the kiwi cat never dashes or
-  lunges (DESIGN section 5, decision J6, SR-5) — and `test_curse_retired.gd` proves it can never be
-  offered or dispatched, so it cannot cost a player a curse slot.
+  `spring_heels`, `twin_dash`, `updraft` and `marathon`. The last gap, `quick_recovery`'s Athletic
+  branch, is closed: the Athletic has no class cooldown, so the rule sentence gives it +5% run
+  speed per stack instead, and the stat pipeline now takes a per-upgrade contribution for exactly
+  that (DECISIONS D-B5A-1). The 46th curse, `zoomies`, is retired by design — the kiwi cat never
+  dashes or lunges (DESIGN section 5, decision J6, SR-5) — and `test_curse_retired.gd` proves it
+  can never be offered or dispatched, so it cannot cost a player a curse slot.
 - **The curses are dispatched now.** 11 curses are pure stat modifiers and always applied through
   the modifier pass. The other 35 declare a script, and each had a module with its own unit test
   while nothing in the shipped game called any of them — the run tracked `curses_held` and handed

@@ -30,8 +30,9 @@ extends RefCounted
 #   marathon         intermission create gains p_max_stacks_bonus from the
 #                    caller's aggregator (the athletic + owned pairing)
 #   more             _economy.apply_gift_yield(<more stacks>)           (at build)
-#   quick_recovery   ctl.apply_cooldown_reduction(<quick_recovery>) for
-#                    dasher/glider; apply_speed_upgrade(0.05 * n) for athletic
+#   quick_recovery   ctl.cooldown_mul = knobs.cooldown_mul for dasher/glider (at build);
+#                    the athletic half is a run_speed stat contribution, not a knob
+#                    (D-B5A-1, proven by tests/test_upgrade_stat_contrib.gd)
 #   spring_heels     ctl.apply_double_jump_stacks(<spring_heels stacks>) (at build)
 #   straggler_scope  lstate.gifts.apply_straggler_band(<straggler_scope stacks>) (at build)
 #
