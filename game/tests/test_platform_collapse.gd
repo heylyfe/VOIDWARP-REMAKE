@@ -9,10 +9,19 @@ extends RefCounted
 #   leg 5  a player parked on a non-hub tile drops into the real void_fall event
 #   leg 6  determinism: two identical builds -> identical sets and fall tick
 #   leg 7  collapse disabled: zero cracked, zero removed, the same player does NOT fall
+#   leg 8  a gold gift on a fallen tile is LOST: not present, not collected, not paid
+#   leg 9  a tripmine on a fallen tile is dropped: gone, and it cannot kill
+#   leg 10 an enemy on a fallen tile falls and is retired past the kill plane - the same
+#          behaviour for two different bodies
+#   leg 11 negative control: collapse off -> the same gift, mine and enemy are untouched
+#   leg 12 the gift quota is still met after a collapse (the beacon stays open)
 
 const WorldScript := preload("res://app/world.gd")
 const CollapseScript := preload("res://sim/collapse.gd")
 const CollisionScript := preload("res://sim/collision.gd")
+const GiftsScript := preload("res://sim/gifts.gd")
+const MinesScript := preload("res://sim/mines.gd")
+const RtScript := preload("res://sim/enemy_runtime.gd")
 
 const DT := 1.0 / 60.0
 const CASES := [[1, 5], [7, 3], [42, 11]]   # [seed, level]
@@ -24,6 +33,11 @@ func run() -> Array[String]:
 	_leg_4(f)
 	_leg_5_7(f)
 	_leg_6(f)
+	_leg_8(f)
+	_leg_9(f)
+	_leg_10(f)
+	_leg_11(f)
+	_leg_12(f)
 	return f
 
 
@@ -287,3 +301,302 @@ func _leg_6(f: Array[String]) -> void:
 		f.append("leg 6: removed sets differ between identical runs")
 	if snaps[0]["fall"] != snaps[1]["fall"] or snaps[0]["n"] != snaps[1]["n"]:
 		f.append("leg 6: fall tick / count differ: %s vs %s" % [str(snaps[0]["fall"]), str(snaps[1]["fall"])])
+
+
+# ---- legs 8-12: what happens to everything standing on a platform that falls ----------
+#
+# The collapse itself only edits collision. The sweep that follows it (app/world.gd
+# _collapse_sweep) is what decides the fate of the gifts and tripmines resting on those
+# tiles; the enemy runtime's own support rule (sim/enemy_runtime.gd resting_key /
+# _support_pass) decides the enemies'. These legs drive the real world, so they test the
+# wiring, not a helper.
+
+## Open the beacon the way play does: collect every real black gift (gifts.collect flips
+## the phase to gold on the last one, which puts a gold gift at every real slot), then let
+## the beacon open and take the open edge. Returns the collapse start tick.
+func _open_gold(world) -> int:
+	var g: RefCounted = world.lstate.gifts
+	var ev: Array = []
+	for i in g.slots.size():
+		if g.is_real(i):
+			g.collect(i, int(world.lstate.tick), 0, ev)
+	world.lstate.beacon.open(int(world.lstate.tick))
+	world.step(DT)
+	return int(world.lstate.tick)
+
+
+## A non-hub tile the collapse removes: [x, z, y_hu]. `avoid` skips keys already taken.
+func _falling_tile(world, avoid: Array) -> Array:
+	var hub: Dictionary = world._collapse["hub_keys"]
+	for k in world._collapse["keys"]:
+		if hub.has(k) or avoid.has(str(k)):
+			continue
+		var p: PackedStringArray = str(k).split(",")
+		return [int(p[0]), int(p[1]), int(p[2])]
+	return []
+
+
+## The first PRESENT gift slot standing on a tile the collapse removes:
+## [slot, x, z, y_hu], or [] when the level has none.
+func _gift_on_falling_tile(world) -> Array:
+	var g: RefCounted = world.lstate.gifts
+	var keys: Dictionary = world._collapse["key_set"]
+	for i in g.slots.size():
+		if not g.present(i):
+			continue
+		var s: Dictionary = g.slots[i]
+		if keys.has(CollisionScript.tile_key(int(s["x"]), int(s["z"]), int(s["y"]))):
+			return [i, int(s["x"]), int(s["z"]), int(s["y"])]
+	return []
+
+
+## The first LIVE tripmine slot standing on a tile the collapse removes:
+## [slot, x, z, y_hu], or [] when the level has none.
+func _mine_on_falling_tile(world) -> Array:
+	var m: RefCounted = world.lstate.mines
+	var keys: Dictionary = world._collapse["key_set"]
+	for slot_id in m.ids:
+		if m.is_consumed(slot_id):
+			continue
+		var s: Dictionary = m.slots[slot_id]
+		if keys.has(CollisionScript.tile_key(int(s["x"]), int(s["z"]), int(s["y"]))):
+			return [slot_id, int(s["x"]), int(s["z"]), int(s["y"])]
+	return []
+
+
+## A no-op body of the given world height: it never moves on its own, so the only thing
+## that can change its height is the support rule under test.
+func _probe_cfg(height_u: float) -> Dictionary:
+	return {"world_height": height_u, "frame_w": 256, "frame_h": 256,
+			"body_rect": [0, 0, 256, 256], "contact_kill": false, "cycle_ticks": 0}
+
+
+## Spawn a stationary probe body standing on tile [x, z, y_hu]. The id is a real content
+## folder (so the billboard pass finds its sheet) but the behavior is the runtime's no-op
+## fixture: nothing but the support rule under test can move the body.
+func _probe(world, id: String, t: Array, height_u: float) -> Dictionary:
+	world.bespoke_enemy_views = false
+	return world.rt.spawn_at(id, id, RtScript.FixtureBehavior.new(), _probe_cfg(height_u),
+			Vector3(float(t[0]) + 0.5, CollisionScript.tile_top(int(t[2])), float(t[1]) + 0.5))
+
+
+# ---- leg 8: a gold gift on a fallen tile is lost --------------------------------------
+
+func _leg_8(f: Array[String]) -> void:
+	var world = _build(1, 5)
+	if world == null:
+		f.append("leg 8: build failed")
+		return
+	var g: RefCounted = world.lstate.gifts
+	_open_gold(world)
+	if g.phase != GiftsScript.PHASE_GOLD:
+		f.append("leg 8: phase %s after collecting every black gift, want gold" % g.phase)
+	var pick := _gift_on_falling_tile(world)
+	if pick.is_empty():
+		f.append("leg 8: no present gift slot on a tile the collapse removes")
+		_drop(world)
+		return
+	var slot: int = int(pick[0])
+	if not g.present(slot) or g.is_lost(slot):
+		f.append("leg 8: the picked gift is not present before the fall")
+	# the whole crack phase: the gift is still in the air over a live tile
+	_steps(world, CollapseScript.FALL_TICKS - 1)
+	if not g.present(slot) or g.is_lost(slot):
+		f.append("leg 8: the gift was lost before the fall tick")
+	world.step(DT)
+	if not g.is_lost(slot):
+		f.append("leg 8: the gift on a fallen tile was not lost (it hangs in the air)")
+	if g.present(slot):
+		f.append("leg 8: the lost gift still reads present - the view would draw it")
+	if g.collected(slot):
+		f.append("leg 8: the lost gift reads collected - it must not pay gold")
+	# and it stays lost: nothing restores it on a later tick
+	_steps(world, 30)
+	if not g.is_lost(slot) or g.present(slot):
+		f.append("leg 8: the lost gift came back 30 ticks later")
+	_drop(world)
+
+
+# ---- leg 9: a tripmine on a fallen tile is gone and cannot kill ------------------------
+
+func _leg_9(f: Array[String]) -> void:
+	var world = _build(1, 5)
+	if world == null:
+		f.append("leg 9: build failed")
+		return
+	var m: RefCounted = world.lstate.mines
+	_open_gold(world)
+	var pick := _mine_on_falling_tile(world)
+	if pick.is_empty():
+		f.append("leg 9: no live tripmine on a tile the collapse removes")
+		_drop(world)
+		return
+	var slot: int = int(pick[0])
+	var mx := float(int(pick[1])) + 0.5
+	var mz := float(int(pick[2])) + 0.5
+	if m.contact_at(mx, mz) != slot:
+		f.append("leg 9: the mine does not trigger at its own point before the fall (the leg proves nothing)")
+	_steps(world, CollapseScript.FALL_TICKS - 1)
+	if m.is_consumed(slot):
+		f.append("leg 9: the mine was dropped before the fall tick")
+	world.step(DT)
+	if not m.is_consumed(slot):
+		f.append("leg 9: the mine on a fallen tile was not dropped (it hangs in the air)")
+	if m.contact_at(mx, mz) != -1:
+		f.append("leg 9: a dropped mine still triggers at its own point")
+	# a player standing exactly where the mine was takes no mine event at all
+	_park(world, [int(pick[1]), int(pick[2]), int(pick[3])])
+	var hit := ""
+	for _i in 20:
+		world.step(DT)
+		for e in world.last_events:
+			var k := str(e.get("e", ""))
+			if k == MinesScript.EV_MINE_CONTACT or k == MinesScript.EV_MINE_DETONATED:
+				hit = k
+	if hit != "":
+		f.append("leg 9: a player standing where the fallen mine was still took a %s event" % hit)
+	_drop(world)
+
+
+# ---- leg 10: an enemy on a fallen tile falls, the same for two different bodies --------
+
+func _leg_10(f: Array[String]) -> void:
+	var world = _build(1, 5)
+	if world == null:
+		f.append("leg 10: build failed")
+		return
+	_open_gold(world)
+	# the probes go down a few ticks before the fall, so nothing but the support rule can
+	# move them: their behavior is a no-op
+	_steps(world, CollapseScript.FALL_TICKS - 6)
+	var ta := _falling_tile(world, [])
+	if ta.is_empty():
+		f.append("leg 10: no falling tile in the level")
+		_drop(world)
+		return
+	var tb := _falling_tile(world, [CollisionScript.tile_key(int(ta[0]), int(ta[1]), int(ta[2]))])
+	if tb.is_empty():
+		f.append("leg 10: fewer than two falling tiles in the level")
+		_drop(world)
+		return
+	var a: Dictionary = _probe(world, "gift_larper", ta, 1.0)
+	var b: Dictionary = _probe(world, "toucher", tb, 2.0)
+	var ya := float(a["y"])
+	var yb := float(b["y"])
+	_steps(world, 6)
+	if not bool(a.get("falling", false)) or not bool(b.get("falling", false)):
+		f.append("leg 10: an enemy on a fallen tile did not start falling (it floats)")
+	_steps(world, 90)
+	if not bool(a.get("gone", false)) or not bool(b.get("gone", false)):
+		f.append("leg 10: an enemy never reached the kill plane (a=%s b=%s)"
+				% [str(a.get("gone", false)), str(b.get("gone", false))])
+	if float(a["y"]) >= ya or float(b["y"]) >= yb:
+		f.append("leg 10: an enemy did not lose height (a %.2f->%.2f b %.2f->%.2f)"
+				% [ya, float(a["y"]), yb, float(b["y"])])
+	if bool(a.get("gone", false)) != bool(b.get("gone", false)):
+		f.append("leg 10: the two bodies behaved differently")
+	var live: Array = world.w["enemies"]
+	if live.has(a["body_mirror"]) or live.has(b["body_mirror"]):
+		f.append("leg 10: a fallen enemy is still a live body in w[\"enemies\"]")
+	_drop(world)
+
+
+# ---- leg 11: negative control - collapse off, nothing is touched -----------------------
+
+func _leg_11(f: Array[String]) -> void:
+	var world = _build(1, 5, false)
+	if world == null:
+		f.append("leg 11: build failed")
+		return
+	var g: RefCounted = world.lstate.gifts
+	var m: RefCounted = world.lstate.mines
+	_open_gold(world)
+	var gp := _gift_on_falling_tile(world)
+	var mp := _mine_on_falling_tile(world)
+	var ta := _falling_tile(world, [])
+	if gp.is_empty() or mp.is_empty() or ta.is_empty():
+		f.append("leg 11: the level has no gift/mine/tile to control against")
+		_drop(world)
+		return
+	var gslot: int = int(gp[0])
+	var mslot: int = int(mp[0])
+	var mx := float(int(mp[1])) + 0.5
+	var mz := float(int(mp[2])) + 0.5
+	var probe: Dictionary = _probe(world, "gift_larper", ta, 1.0)
+	var y0 := float(probe["y"])
+	# the same number of ticks the collapse legs run, plus the fall window
+	_steps(world, CollapseScript.FALL_TICKS + 96)
+	if _removed(world) != 0:
+		f.append("leg 11: collapse off, removed=%d, want 0" % _removed(world))
+	if g.is_lost(gslot) or not g.present(gslot):
+		f.append("leg 11: collapse off, the gift was still lost")
+	if m.is_consumed(mslot):
+		f.append("leg 11: collapse off, the mine was still dropped")
+	if m.contact_at(mx, mz) != mslot:
+		f.append("leg 11: collapse off, the mine no longer triggers at its own point")
+	if bool(probe.get("falling", false)) or bool(probe.get("gone", false)):
+		f.append("leg 11: collapse off, the enemy still fell")
+	if absf(float(probe["y"]) - y0) > 0.001:
+		f.append("leg 11: collapse off, the enemy's height changed (%.3f -> %.3f)"
+				% [y0, float(probe["y"])])
+	if not (world.w["enemies"] as Array).has(probe["body_mirror"]):
+		f.append("leg 11: collapse off, the enemy left the live body list")
+	_drop(world)
+
+
+# ---- leg 12: the gift quota is still met after a collapse ------------------------------
+
+func _leg_12(f: Array[String]) -> void:
+	var world = _build(1, 5)
+	if world == null:
+		f.append("leg 12: build failed")
+		return
+	var g: RefCounted = world.lstate.gifts
+	var quota := int(g.total_real)   # the default rule: every real black gift
+	_open_gold(world)
+	var collected_black := 0
+	for i in g.slots.size():
+		if g.is_real(i) and GiftsScript.bit_get(g.black_taken, i):
+			collected_black += 1
+	if collected_black < quota:
+		f.append("leg 12: %d black gifts collected, quota %d - the beacon should not have opened"
+				% [collected_black, quota])
+	_steps(world, CollapseScript.FALL_TICKS + 5)
+	var present_n := 0
+	var lost_n := 0
+	var gold_n := 0
+	for i in g.slots.size():
+		if not g.is_real(i):
+			continue
+		if g.is_lost(i):
+			lost_n += 1
+		elif g.collected(i):
+			gold_n += 1
+		else:
+			present_n += 1
+	if lost_n <= 0:
+		f.append("leg 12: the collapse lost no gift (the leg proves nothing)")
+	if present_n + lost_n + gold_n != quota:
+		f.append("leg 12: present %d + lost %d + collected %d != quota %d"
+				% [present_n, lost_n, gold_n, quota])
+	if g.remaining() != present_n:
+		f.append("leg 12: remaining() %d != the %d present gifts" % [g.remaining(), present_n])
+	# the quota was met BEFORE the collapse and losing gifts cannot un-meet it
+	if not g.all_black_collected():
+		f.append("leg 12: the quota is no longer met after the collapse")
+	if not world.lstate.beacon.is_open():
+		f.append("leg 12: the beacon closed after the collapse")
+	if collected_black < quota:
+		f.append("leg 12: collected %d < quota %d after the collapse" % [collected_black, quota])
+	# The HUD counter must not count a lost gift as collected. It reads the real collected
+	# count (app/world.gd _sync_hud); the old total_real - remaining() arithmetic would
+	# report lost_n gifts the player never took.
+	world._sync_hud()
+	var want := "%d / %d" % [gold_n, quota]
+	var got_text: String = world.hud.gift_counter.counter_text()
+	if got_text != want:
+		f.append("leg 12: HUD counter '%s', want '%s' (a lost gift must not read as collected)"
+				% [got_text, want])
+	if got_text == "%d / %d" % [gold_n + lost_n, quota]:
+		f.append("leg 12: HUD counter counts the %d lost gifts as collected" % lost_n)
+	_drop(world)

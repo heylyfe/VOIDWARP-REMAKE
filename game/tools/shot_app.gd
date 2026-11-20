@@ -87,7 +87,7 @@ func _shot_gift_closeup() -> void:
 		var best := INF
 		var feet := Vector3(_world.ctl.x, _world.ctl.y, _world.ctl.z)
 		for i in lstate.gifts.slots.size():
-			if not lstate.gifts.is_real(i):
+			if not lstate.gifts.present(i):
 				continue
 			var p: Vector3 = lstate.gifts.slot_pos(i)
 			var d: float = p.distance_to(feet)

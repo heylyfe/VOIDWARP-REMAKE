@@ -41,6 +41,17 @@ const VOLLEY_TICKS := 9           # D-064: balls inside one volley 0.15 s apart
 const VOLLEY_GAP_TICKS := 45      # D-064: consecutive volleys 0.75 s apart (start to start)
 const SALVO_MAX_TICKS := 360      # D-064: one salvo (tracking + restarts + descent) <= 6.0 s
 
+# The platform-collapse support rule (sim/collapse.gd): a body whose feet rest on a tile
+# that left collision falls. FALL_SPEED is the controller's own terminal_fall (u/s) and
+# FALL_KILL_Y its kill_plane_y, so an enemy and a player leave the level the same way and
+# at the same rate. SUPPORT_EPS is how far a tile top may sit from the feet and still count
+# as "standing on it": wide enough for a ramp's slope (0.5 u across one cell) and for a body
+# that has sunk a little into its tile, narrow enough that a body flying above the geometry
+# is not "resting" on it.
+const FALL_SPEED := 40.0
+const FALL_KILL_Y := -40.0
+const SUPPORT_EPS := 0.6
+
 # Anchor kinds (TERRAIN_SPEC section 6.5): 0 perch, 1 open, 2 lane, 4 nook. Kind 3 (`hop`) is
 # retired and reserved - never emitted, the id is never reused (D-056).
 const KIND_IDS := {"perch": 0, "open": 1, "lane": 2, "nook": 4}
@@ -498,6 +509,11 @@ func step(dt: float) -> Array:
 		e["anim_t"] = float(e["anim_t"]) + dt
 		var beh: RefCounted = e["behavior"]
 		beh.tick(e, api, dt_ticks)
+	# The platform-collapse support rule: a row whose tile left collision falls, and a row
+	# past the kill plane is retired. Runs AFTER the behaviors (so it tests the position they
+	# left the row at) and BEFORE the mirror sync (so a row that just started falling is
+	# already out of world["enemies"] when this tick's readers look).
+	_support_pass(dt)
 	# T-032 / SR-4 / D-059: the body mirror (world["enemies"]) is the live body list the
 	# arbiter's no_enemy_body_within, the controller's safe-tile check and the threat radar
 	# read, and a behavior moves the ROW only. Refreshing every row here - after every
@@ -506,6 +522,8 @@ func step(dt: float) -> Array:
 	# dictionary writes per live row per tick (a full roster is a few dozen writes), no
 	# allocation, no row touched.
 	for body in enemies:
+		if is_out_of_play(body):
+			continue
 		sync_body_mirror(body)
 	# projectiles, then body-contact kills (the KILL RULE: the framework checks contact).
 	_step_projectiles(dt)
@@ -567,7 +585,7 @@ func _spawn_planned() -> void:
 func _copy_positions(id: String) -> Array:
 	var out: Array = []
 	for e in enemies:
-		if str(e["id"]) == id:
+		if str(e["id"]) == id and not is_out_of_play(e):
 			out.append(Vector3(float(e["x"]), float(e["y"]), float(e["z"])))
 	return out
 
@@ -881,6 +899,86 @@ func sync_body_mirror(row: Dictionary) -> void:
 	m["r"] = float(row["diameter_u"]) * 0.5
 
 
+# ---- the platform-collapse support rule (sim/collapse.gd) ------------------------------------
+#
+# The runtime had no ground test at all: a row's y is set at spawn and only a behavior ever
+# moves it, so an enemy standing on a tile the collapse removed kept its old height and hung
+# in the air. The rule below is the missing test, and it is deliberately narrow: a body falls
+# only when the tile it was RESTING ON left collision. A body that was never standing on
+# anything (a floater crossing the void, SR-1's "no collision: a floater crosses tiles and
+# void") is untouched, so no floater's kinematics change.
+
+## The tile key the body's feet rest on, INCLUDING tiles the collapse removed: the tile in
+## the body's 0.4 half-width footprint whose top is CLOSEST to the feet, within limit either
+## way. "" when the body rests on nothing (over the void, or flying above the geometry).
+## support_at() cannot answer this question - it skips removed tiles, so it cannot tell "the
+## platform under me fell" from "I was never standing on anything".
+static func resting_key(w: Dictionary, px: float, pz: float, feet: float, limit: float) -> String:
+	var best_d: float = INF
+	var best_key := ""
+	var hw := 0.4
+	var x0 := int(floor(px - hw + CollisionScript.SKIN))
+	var x1 := int(floor(px + hw - CollisionScript.SKIN))
+	var z0 := int(floor(pz - hw + CollisionScript.SKIN))
+	var z1 := int(floor(pz + hw - CollisionScript.SKIN))
+	var cx := x0
+	while cx <= x1:
+		var cz := z0
+		while cz <= z1:
+			for t in w["cols"].get("%d,%d" % [cx, cz], []):
+				var d: float = absf(CollisionScript.tile_top(t["y"]) - feet)
+				if d <= limit and d < best_d:
+					best_d = d
+					best_key = CollisionScript.tile_key(cx, cz, t["y"])
+			cz += 1
+		cx += 1
+	return best_key
+
+
+## One pass over the live rows: a row resting on a removed tile starts falling, a falling row
+## keeps falling at FALL_SPEED, and a row past FALL_KILL_Y is retired (gone). One-way: a row
+## that is already falling is never re-tested, so a floater that drifts back over a live tile
+## mid-fall does not stop in mid-air. A falling row leaves world["enemies"] at once - it is no
+## longer a live body for the arbiter's spawn gate, the safe-tile check or the threat radar -
+## and it can no longer kill (see _contact_kills).
+func _support_pass(dt: float) -> void:
+	for e in enemies:
+		if bool(e.get("gone", false)):
+			continue
+		if not bool(e.get("falling", false)):
+			var key: String = resting_key(world, float(e["x"]), float(e["z"]),
+					float(e["y"]), SUPPORT_EPS)
+			if key.is_empty() or not (world["removed"] as Dictionary).has(key):
+				continue
+			e["falling"] = true
+			_drop_mirror(e)
+			events.append({"e": "enemy_platform_fall", "id": e["id"], "name": e["name"],
+					"x": e["x"], "y": e["y"], "z": e["z"], "tick": tick})
+		e["y"] = float(e["y"]) - FALL_SPEED * dt
+		if float(e["y"]) < FALL_KILL_Y:
+			e["gone"] = true
+			e["falling"] = false
+			events.append({"e": "enemy_void_fall", "id": e["id"], "name": e["name"],
+					"x": e["x"], "y": e["y"], "z": e["z"], "tick": tick})
+
+
+## Take a row's body mirror out of world["enemies"] (the row itself stays in `enemies`, so
+## every view index and every boards[] slot keeps pointing at the same row).
+func _drop_mirror(row: Dictionary) -> void:
+	var m: Variant = row.get("body_mirror", null)
+	if not (m is Dictionary):
+		return
+	var list: Array = world.get("enemies", [])
+	var at: int = list.find(m)
+	if at >= 0:
+		list.remove_at(at)
+
+
+## True when the row is out of play: falling into the void, or already past the kill plane.
+static func is_out_of_play(row: Dictionary) -> bool:
+	return bool(row.get("falling", false)) or bool(row.get("gone", false))
+
+
 ## D-073: the arrival push, reaching the LIVE rows. Every body whose horizontal (XZ)
 ## distance from `origin` is < radius moves radially out to exactly radius from it; y is
 ## never touched (a push must not change a body's height or its y-banded footprint), and a
@@ -1064,6 +1162,9 @@ static func body_contact(row: Dictionary, ctl) -> bool:
 
 func _contact_kills() -> void:
 	for e in enemies:
+		# a body falling into the void is out of play: it cannot kill on the way down
+		if is_out_of_play(e):
+			continue
 		if not bool(e["contact_kill"]) or float(e["diameter_u"]) <= 0.0:
 			continue
 		for i in range(controllers.size()):
@@ -1103,6 +1204,8 @@ func _update_near() -> void:
 		near_seen[i] = seen
 		var cy: float = float(ctl.y) + 0.9
 		for e in enemies:
+			if is_out_of_play(e):
+				continue
 			if float(e["diameter_u"]) <= 0.0:
 				continue
 			var dx: float = float(e["x"]) - float(ctl.x)

@@ -687,8 +687,11 @@ func step(dt: float) -> void:
 			ev.append(cev)
 	# The collapse fall: on start + 300 the non-hub tiles leave collision. A key it removes is
 	# no longer this file's tile-schedule drop, so a later tile_returned cannot restore it.
-	for ck in CollapseScript.tick(_collapse, int(lstate.tick), w, ev):
+	var fell: Array = CollapseScript.tick(_collapse, int(lstate.tick), w, ev)
+	for ck in fell:
 		_tiles_dropped.erase(ck)
+	# ...and everything that was standing on those tiles goes with them.
+	_collapse_sweep(fell)
 	if _economy != null and bool(_economy.gold_phase):
 		_economy.tick_gold(dt)
 	for e in rt.step(dt):
@@ -1200,6 +1203,44 @@ func _on_tile_step(key: String) -> void:
 	_curses.state["tick"] = int(lstate.tick) if lstate != null else 0
 	for mod in _tile_step_mods:
 		mod.call(TILE_STEP_QUERY, _curses.state, key)
+
+
+## Everything that was standing on a tile the collapse just removed goes with it. The
+## collapse itself (sim/collapse.gd) only edits collision; this is the one place that knows
+## what was resting on those tiles, because it is the one place that holds the gift state,
+## the mine state and the enemy runtime at the same time.
+##   gift    - lost (gifts.lose): gone with the platform, never collected, never paid, never
+##             rendered. Safe for the quota: the collapse starts on the beacon-open tick, so
+##             the black quota is already met and no gift loss can make a level unwinnable.
+##   tripmine- dropped (mines.drop): the same bitset a defused mine uses, so the view hides
+##             it and contact_at can never return it - it cannot kill from the void.
+##   enemy   - NOT handled here: enemy_runtime's own support rule (resting_key/_support_pass)
+##             makes a body whose tile left collision fall, and retires it past the kill
+##             plane. It runs inside rt.step, so it also covers a tile a curse removes.
+## The player is deliberately untouched: a body left without support drops through the
+## controller's own kill plane and the existing void-fall rule runs (sim/controller.gd).
+func _collapse_sweep(keys: Array) -> void:
+	if keys.is_empty() or lstate == null:
+		return
+	var gone := {}
+	for k in keys:
+		gone[str(k)] = true
+	if lstate.gifts != null:
+		var g: RefCounted = lstate.gifts
+		for i in g.slots.size():
+			if not g.present(i):
+				continue
+			var s: Dictionary = g.slots[i]
+			if gone.has(CollisionScript.tile_key(int(s["x"]), int(s["z"]), int(s["y"]))):
+				g.lose(i)
+	if lstate.mines != null:
+		var m: RefCounted = lstate.mines
+		for slot_id in m.ids:
+			if m.is_consumed(slot_id):
+				continue
+			var s: Dictionary = m.slots[slot_id]
+			if gone.has(CollisionScript.tile_key(int(s["x"]), int(s["z"]), int(s["y"]))):
+				m.drop(slot_id)
 
 
 ## Apply the tile events raised at index >= from: fell erases the tile from collision
@@ -2017,8 +2058,10 @@ static func _role_hex(roles: Dictionary, role: String, fallback: String) -> Colo
 
 
 ## HUD snapshot. gifts / purse / chain come from the LevelState and the economy this
-## node owns (gifts_collected = total_real - remaining(), the sim's own definition);
-## the roster is the resolved vote plan (static for the level).
+## node owns; the roster is the resolved vote plan (static for the level).
+## gifts_collected counts the real slots that were actually COLLECTED, not
+## total_real - remaining(): since the platform collapse (sim/gifts.gd lose()) a gift can
+## leave the level without being collected, and the subtraction would count it as taken.
 func _sync_hud() -> void:
 	if hud == null or ctl == null or rt == null:
 		return
@@ -2027,7 +2070,9 @@ func _sync_hud() -> void:
 	if lstate != null and lstate.gifts != null:
 		var g: RefCounted = lstate.gifts
 		total = int(g.total_real)
-		collected = total - int(g.remaining())
+		for i in g.slots.size():
+			if g.is_real(i) and g.collected(i):
+				collected += 1
 	var purse := 0
 	var chain := 1.0
 	if _economy != null:

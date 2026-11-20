@@ -570,5 +570,10 @@ class _StubMapSlots extends RefCounted:
 	func collected(i: int) -> bool:
 		return collected_ids.has(i)
 
+	# the map asks present() (real, not collected, not lost) since the platform collapse
+	# can take a gift out of the level without collecting it
+	func present(i: int) -> bool:
+		return not collected_ids.has(i)
+
 	func is_consumed(i: int) -> bool:
 		return consumed_ids.has(i)

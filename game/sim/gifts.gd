@@ -50,6 +50,17 @@ var phase: String = PHASE_BLACK
 ## Bitsets indexed by slot id, one byte per 8 slots.
 var black_taken := PackedByteArray()
 var gold_taken := PackedByteArray()
+## Slots whose supporting tile left collision (the platform collapse, sim/collapse.gd):
+## the gift went down with the platform and is gone - never collected, never paid, never
+## rendered, never counted in a remaining total. A third bitset rather than a reuse of
+## black_taken/gold_taken, because a lost gift is NOT a collected one: it must not pay
+## gold, must not raise the chain, and must not emit gift_collected.
+##
+## Losses only ever happen AFTER the beacon opens: the collapse starts on the beacon-open
+## tick (app/world.gd), and the beacon opens exactly when the black quota is met
+## (all_black_collected below, the only caller of beacon.open). So a lost slot can never
+## be one the black quota still needed, and losing gifts cannot make a level unwinnable.
+var lost := PackedByteArray()
 ## Skeleton Key's collection quota (T-053, D-T053-4): the beacon opens when at least
 ## this many REAL black gifts are collected instead of all of them; the uncollected
 ## ones enter the gold phase by the same flip (gold gifts at every black slot - the
@@ -70,6 +81,7 @@ static func create(level: Dictionary) -> RefCounted:
 	var n: int = g.slots.size()
 	g.black_taken.resize((n + 7) >> 3)
 	g.gold_taken.resize((n + 7) >> 3)
+	g.lost.resize((n + 7) >> 3)
 	var real: int = 0
 	for s in g.slots:
 		if int(s["occ"]) == 0:
@@ -128,10 +140,31 @@ func collected(i: int) -> bool:
 	return bit_get(gold_taken, i)
 
 
+## True when slot i's supporting tile left collision: the gift fell with the platform.
+func is_lost(i: int) -> bool:
+	return i >= 0 and bit_get(lost, i)
+
+
+## The gift went down with its platform. Returns true when this call changed the state
+## (false for an occ == 1 slot, an already-collected gift, or one already lost). A lost
+## gift is not collected: no gold, no chain, no event - the void took it.
+func lose(i: int) -> bool:
+	if not is_real(i) or collected(i) or is_lost(i):
+		return false
+	bit_set(lost, i)
+	return true
+
+
+## True when slot i carries a gift the player can still see and pick up: a real slot,
+## not collected, not lost. The one predicate the view and the pickup loop share.
+func present(i: int) -> bool:
+	return is_real(i) and not collected(i) and not is_lost(i)
+
+
 func remaining() -> int:
 	var n := 0
 	for i in slots.size():
-		if is_real(i) and not collected(i):
+		if present(i):
 			n += 1
 	return n
 
@@ -143,14 +176,22 @@ func remaining() -> int:
 func all_black_collected() -> bool:
 	if phase != PHASE_BLACK:
 		return true
+	# A lost slot is out of the level: it can never be collected, so it is neither a
+	# remainder to wait for nor a collection to count. With no losses this is exactly the
+	# old arithmetic (got == total_real - rem).
 	var rem := 0
+	var got := 0
 	for i in slots.size():
-		if is_real(i) and not bit_get(black_taken, i):
+		if not is_real(i) or is_lost(i):
+			continue
+		if bit_get(black_taken, i):
+			got += 1
+		else:
 			rem += 1
 	if rem == 0:
 		return true
 	if black_quota >= 0:
-		return (total_real - rem) >= black_quota
+		return got >= black_quota
 	return false
 
 
@@ -169,7 +210,7 @@ func straggler_ids() -> Array:
 	if rem * 100 > total_real * straggler_pct:
 		return out
 	for i in slots.size():
-		if is_real(i) and not collected(i):
+		if present(i):
 			out.append(i)
 	return out
 
@@ -188,7 +229,7 @@ static func tick(lv: RefCounted, player_index: int, events: Array) -> void:
 	var r2: float = r * r
 	var opened := false
 	for i in g.slots.size():
-		if not g.is_real(i) or g.collected(i):
+		if not g.present(i):
 			continue
 		var pos: Vector3 = g.slot_pos(i)
 		var dx: float = px - pos.x
@@ -207,7 +248,7 @@ static func tick(lv: RefCounted, player_index: int, events: Array) -> void:
 
 
 func collect(i: int, tick: int, player_index: int, events: Array) -> void:
-	if not is_real(i) or collected(i):
+	if not present(i):
 		return
 	var was_black := phase == PHASE_BLACK
 	if was_black:

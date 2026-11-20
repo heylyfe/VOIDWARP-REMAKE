@@ -1555,7 +1555,10 @@ static func _nearest_gift(lv, mem: Dictionary, dist_v: Variant, ignore_released:
 	var goal_tile := -1
 	var goal_slot := -1
 	for i in range(slots.size()):
-		if not lv.gifts.is_real(i) or lv.gifts.collected(i):
+		# present() = real, not collected, not lost: a gift whose platform fell with the
+		# collapse (sim/gifts.gd lose()) can never be picked up, so routing to it would
+		# stall the bot on a ghost for the rest of the level.
+		if not lv.gifts.present(i):
 			continue
 		if not ignore_released and (released as Dictionary).has(i):
 			continue

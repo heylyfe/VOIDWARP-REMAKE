@@ -113,7 +113,7 @@ static func nearest_real_gift(lv: RefCounted, px: float, pz: float,
 	var best: Dictionary = {}
 	var best_d2 := range_u * range_u
 	for i in g.slots.size():
-		if not g.is_real(i) or g.collected(i):
+		if not g.present(i):
 			continue
 		var pos: Vector3 = g.position_of(i)
 		var dx: float = px - pos.x
@@ -188,7 +188,7 @@ func revealed(lv: RefCounted, p_index: int, range_u: float = CARTOGRAPHER_RANGE)
 			if not _near_any(tiles, pos.x, pos.z, r2):
 				continue
 			if g.is_real(i):
-				if g.collected(i):
+				if not g.present(i):
 					continue
 				out.append({"kind": "gift", "slot": i, "x": pos.x, "z": pos.z,
 						"piece": str(g.slots[i]["piece"]), "tier": int(g.slots[i]["tier"])})

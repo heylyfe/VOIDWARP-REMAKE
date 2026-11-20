@@ -259,7 +259,9 @@ func sync(gifts_state: RefCounted = null, time_secs: float = -1.0) -> void:
 	var gold: bool = _gifts.phase == GiftsScript.PHASE_GOLD
 	var rot_base: float = _time * TAU_F / TURN_PERIOD
 	for i in _gifts.slots.size():
-		var shown: bool = _gifts.is_real(i) and not _gifts.collected(i)
+		# present() = real, not collected, not lost: a gift whose platform fell with the
+		# collapse is gone from the air on the same tick (sim/gifts.gd lose()).
+		var shown: bool = _gifts.present(i)
 		# one full turn per TURN_PERIOD seconds, phase from the build order so
 		# neighbouring gifts in a line do not spin in lockstep - the tripmine's
 		# own formula (view/tripmine_view.gd sync())

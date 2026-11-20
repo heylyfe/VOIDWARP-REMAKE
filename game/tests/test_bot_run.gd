@@ -193,6 +193,11 @@ class _StubGifts:
 	func collected(_i: int) -> bool:
 		return false
 
+	# the router asks present() (real, not collected, not lost) since the platform
+	# collapse can take a gift out of the level without collecting it
+	func present(_i: int) -> bool:
+		return true
+
 	func slot_pos(_i: int) -> Vector3:
 		return Vector3(0.0, 1.0, 0.0)
 

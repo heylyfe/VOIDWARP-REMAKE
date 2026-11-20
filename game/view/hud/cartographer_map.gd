@@ -119,7 +119,10 @@ static func revealed_rows(level_dict: Dictionary, visited: Dictionary, px: float
 		if not _near_any(visited, sx, sz, CARTO_RANGE2):
 			continue
 		if int(s["occ"]) == 0:
-			if gifts != null and gifts.collected(i):
+			# present() = real, not collected, not lost - the same predicate the sim twin
+			# (sim/upgrades.gd revealed()) uses, so the map cannot show a gift the sim
+			# would not hand out (a gift lost to the platform collapse).
+			if gifts != null and not gifts.present(i):
 				continue
 			out.append({"kind": "gift", "x": sx, "z": sz})
 		else:

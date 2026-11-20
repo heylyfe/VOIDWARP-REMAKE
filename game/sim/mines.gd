@@ -130,6 +130,17 @@ func consume(slot_id: int) -> void:
 	consumed[slot_id >> 3] |= 1 << (slot_id & 7)
 
 
+## The mine's supporting tile left collision (the platform collapse, sim/collapse.gd): the
+## mine goes down with its platform. Same bitset as a defused / detonated mine, so the view
+## hides it (tripmine_view.sync reads is_consumed) and contact_at can never return it again -
+## a mine on a fallen tile cannot kill. Returns true when this call changed the state.
+func drop(slot_id: int) -> bool:
+	if slot_id < 0 or slot_id >= slots.size() or is_consumed(slot_id):
+		return false
+	consume(slot_id)
+	return true
+
+
 ## The mine's world point: the slot's tile centre lifted to the section 6.7
 ## occupancy height (x + 0.5, y*0.5 + 1.0, z + 0.5) - the point the view renders
 ## and the blast measures from. Contact itself only uses the x/z of it.
