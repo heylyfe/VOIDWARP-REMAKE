@@ -613,3 +613,28 @@ PARKED.md). Nothing else. A ticket with no line has not been reached.
 20:47Z WHAT IS ACTUALLY LEFT OPEN IS THREE THINGS AND TWO OF THEM ARE NOT MINE. Row 30 (spikes hanging on the hub in ~4% of levels) carries my own 2026-11-19 ruling to park it: the fix is a mesher rule that decides what "reads as part of the hub", which is a design call, not a test fix. Row 31 (the difficulty bands are not reachable by the bot probe) needs the owner to either move the third enemy vote from lobby 3 to lobby 5 or accept that the bands are a target for a competent human. Row 24 (the bot completes level 1 in 82 of 100 seeds against a 95 bar) is the one real engineering gap left, and B5B just changed the bot's landing pick, so that number may have moved without anyone measuring it.
 20:52Z ROW 30 WAS STALE TOO, AND IT WAS STALE BECAUSE OF MY OWN RULING. The row says spikes hang on the hub in about 4% of levels and carries a 2026-11-19 guardian ruling to park it: "do not change the mesher or any pinned seed now", on the grounds that the fix is a design call about what reads as part of the hub. But `aaf1b56` ("Terrain: no spike hangs on the hub any more (PARKED row 30)") is on main and it did exactly the fix the row's own "fix idea" described: `_spike_hangs_on_hub()` suppresses a spike whose centre is inside the hub bbox and whose vertical span comes within HUB_CLEAR_HU (12) of the hub slab. The reason my ruling was wrong is worth keeping: I parked it as a design call, and then the test was corrected to define "reads as part of the hub" precisely - centre in the bbox AND span within 12 HU - at which point the rule stopped being a judgement and became a check. A parked row whose blocker is "we have not decided what X means" should be re-read after the test suite decides what X means.
 20:53Z TWO ROWS CLOSED AS STALE IN ONE PASS, AND THAT IS A SIGNAL ABOUT THE LIST, NOT ABOUT ME. Rows 9 and 30 both described real bugs, both were fixed, and neither row was updated when the fix landed. The list is append-only by convention and nothing forces a fix to come back and close its row, so a stale row is the default outcome rather than the exception. The cheap discipline that would prevent it: whoever fixes a parked row greps PARKED.md for the row id in the same commit. I am not adding a rule for it now - I am writing down that the list needs a sweep before anyone treats it as a queue, which is exactly the mistake I nearly made tonight.
+
+## HANDOVER 2026-11-20 21:01Z (owner: PC shutting down, stop now)
+
+**Committed and pushed. main == origin at `edabb7a`. Working tree CLEAN - nothing uncommitted, nothing reverted, nothing deleted.**
+
+Landed this session (all gate-green, all pushed):
+- `9588f23` B4 - enemy spawn pays 4 bodies/tick (worst step 15.66 -> 7.82 ms). D-B4-1.
+- `59f4c3e` my fix - bot `_goal_stale` and the marker restore ask `present()`, not `collected()`.
+- `e2b0a36` B5B - bot landing pick is a path test, not a point test. D-B5B-1, D-B5B-2.
+- `9163885` B7 - gift/mine on a curse's hole hidden by the view. D-B7-1. PARKED row 32 closed.
+- Docs commits: `76bdb37`, `b2af3f5`, `edbb23d`, `834c52f`, `6360c27`, `edabb7a`.
+
+Gate baseline on main: `GATE OK (9 ran, 0 skipped, 383-440 s)`, `TESTS 123 passed 0 failed`, `PARITY 56/56`, `SELFTEST 18/18`, `GALLERY 16/16`, `SPRITES OK`, `FOGCHECK OK`.
+Shipped path (`out/old_driver_single_free.gd`): `deepest=10 completed=9 purse=172 ticks=33898`, both legs identical, zero SCRIPT ERROR.
+
+**Workers running: NONE.** B4, B5B and B7 all reported and landed. No delegate is in flight, so nothing is lost by the shutdown.
+
+**Uncommitted: nothing.** `GUARDIAN.md` is untracked and gitignored by rule (never commit it); it has a check #101 entry for tonight.
+
+**Interrupted:** the A3 measurement (`bot_run.gd --runs 100 --max-level 2`, 100 seeds on level 1) was killed mid-run by this shutdown. It wrote nothing to the repo. Its purpose was to see whether B5B's landing fix moved PARKED row 24's 82/100 against the 95 bar.
+
+**Next step to resume tomorrow:**
+1. Re-run the A3 sweep: `tools/godot/godot.exe --headless --path game --script res://tools/bot_run.gd -- --runs 100 --max-level 2`. If it is above 82/100, update PARKED row 24 with the new number and the reason; if it is unchanged, row 24 is the next real engineering ticket.
+2. Two decisions are waiting on the owner, both written up: PARKED row 31 (move the third enemy vote from lobby 3 to lobby 5, or accept the bands are a human target) and D-B6-2 / D-B5B-2 (the collapse's 5 s window against a 64.7 u beacon distance - it costs a void charge, and kills a player already at zero).
+3. PARKED.md is a record now, not a queue: rows 9 and 30 were closed as stale tonight because both were already fixed and neither row was updated. Sweep before treating any row as work.
