@@ -15,8 +15,10 @@ extends Control
 # then CONFIRM it (the CONFIRM button, Enter/Space, or a second click on the selected
 # card). Nothing is selected when the altar opens, so a key that is still held from the
 # menu (the press that started the run) has nothing to confirm; key echoes are ignored.
-# None of the buttons take keyboard focus - the altar reads the keys itself
+# None of the buttons take Godot keyboard focus - the altar reads the keys itself
 # (handle_input), so Godot's built-in ui_accept can never press a card behind its back.
+# The focus ring is the shared one (view/ui_focus.gd, D-GUI-1): Tab walks the cards, then
+# CONFIRM, then SKIP; a card that takes the ring is selected.
 # The backdrop is the only mouse stop; every container between it and the cards ignores
 # the mouse, so a click lands on the card under the cursor.
 #
@@ -37,18 +39,15 @@ extends Control
 static var PlayerDataPath := "res://data/player.json"   # static var so tests can point it at a scratch file
 
 const ICON_DIR := "res://assets/icons/classes/"
-const C_VOID := Color(0.0078, 0.0118, 0.0588)        # #02030F the void backdrop (menu.gd)
-const C_CARD := Color(0.051, 0.071, 0.161)           # #0D1229 the card fill (= the icon canvas)
-const C_WHITE := Color(0.910, 1.0, 1.0)              # #E8FFFF beacon_open
-const C_GOLD := Color(1.0, 0.784, 0.239)             # #FFC83D gold_gift
-const C_TEAL := Color(0.486, 1.0, 0.957)             # #7CFFF4 the icons' highlight
-const C_MUTED := Color(0.545, 0.620, 0.718)
-const CARD_SIZE := Vector2(250, 340)     # the card's width, and its MINIMUM height
-const ICON_SIZE := 128.0
-const CARD_PAD_X := 14.0                 # the text column's inset from the card's sides
-const CARD_PAD_TOP := 16.0
-const CARD_PAD_BOTTOM := 14.0
+const UiStyle := preload("res://view/ui_style.gd")
+const UiFocus := preload("res://view/ui_focus.gd")
+const CARD_SIZE := Vector2(256, 320)     # the card's width, and its MINIMUM height
+const ICON_SIZE := 96.0
+const CARD_PAD_X := 16.0                 # the text column's inset from the card's sides
+const CARD_PAD_TOP := 20.0
+const CARD_PAD_BOTTOM := 16.0
 const CARD_GAP := 8.0                    # the gap between the icon, the name and the two lines
+const LAST_MARK := "  (last)"            # appended to the class the runs currently use
 
 signal class_chosen(class_id: String)
 signal skipped
@@ -58,10 +57,10 @@ var _selected: String = ""              # step 1: the highlighted card ("" = non
 var _classes: Dictionary = {}           # player.json's class table (id -> block)
 var _ids: Array = []                    # the table's ids, sorted (draw order)
 var _cards: Dictionary = {}             # id -> Button (the whole card is the button)
-var _styles: Dictionary = {}            # "idle" / "hover" / "selected" -> StyleBoxFlat
 var _confirm: Button
 var _skip: Button
 var _hint: Label
+var _focus: UiFocus = UiFocus.new()     # cards, then CONFIRM, then SKIP (D-GUI-1)
 
 
 func _init() -> void:
@@ -79,14 +78,13 @@ func _init() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	focus_mode = Control.FOCUS_NONE
 	visible = false
-	_styles["idle"] = _card_style(Color(C_MUTED.r, C_MUTED.g, C_MUTED.b, 0.35), 2)
-	_styles["hover"] = _card_style(Color(C_TEAL.r, C_TEAL.g, C_TEAL.b, 0.7), 2)
-	_styles["selected"] = _card_style(C_GOLD, 4)
-	var bg := ColorRect.new()
+	_focus.hover_focus = false          # hover never selects a card: a click does
+	_focus.changed = _on_focus_changed
 	# Fully opaque: the altar is a modal decision and the loading screen behind it is
 	# noise. At 0.94 the loading title, the gag line and the progress bar all showed
 	# through the cards and the CONFIRM/SKIP row, which read as a broken layout.
-	bg.color = C_VOID
+	var bg := ColorRect.new()
+	bg.color = UiStyle.GROUND
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(bg)
@@ -97,14 +95,19 @@ func _init() -> void:
 	add_child(center)
 	var col := VBoxContainer.new()
 	col.alignment = BoxContainer.ALIGNMENT_CENTER
-	col.add_theme_constant_override("separation", 14)
+	col.add_theme_constant_override("separation", UiStyle.SP_3)
 	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	center.add_child(col)
-	col.add_child(_label("CHOOSE YOUR CLASS", 42, C_WHITE))
-	col.add_child(_label("pick a card, then confirm - the run waits for your pick", 16, C_MUTED))
+	var title := UiStyle.label("CHOOSE YOUR CLASS", "title")
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	col.add_child(title)
+	col.add_child(UiStyle.rule(32.0, Control.SIZE_SHRINK_CENTER))
+	var sub := UiStyle.label("pick a card, then confirm - the run waits for your pick", "small")
+	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	col.add_child(sub)
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.add_theme_constant_override("separation", 18)
+	row.add_theme_constant_override("separation", UiStyle.SP_4)
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.add_child(row)
 	for i in _ids.size():
@@ -112,50 +115,40 @@ func _init() -> void:
 		var b := _build_card(fid, i + 1)
 		row.add_child(b)
 		_cards[fid] = b
-	_hint = _label("", 16, C_MUTED)
+		_focus.add(b, UiStyle.SECONDARY, func() -> void: confirm(), Callable(), _paint_card)
+	_hint = UiStyle.label("", "small", UiStyle.TEXT_DIM)
+	_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	col.add_child(_hint)
 	var buttons := HBoxContainer.new()
 	buttons.alignment = BoxContainer.ALIGNMENT_CENTER
-	buttons.add_theme_constant_override("separation", 18)
+	buttons.add_theme_constant_override("separation", UiStyle.SP_4)
 	buttons.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	col.add_child(buttons)
 	_confirm = Button.new()
 	_confirm.name = "Confirm"
 	_confirm.text = "CONFIRM"
-	_confirm.focus_mode = Control.FOCUS_NONE
-	_confirm.custom_minimum_size = Vector2(220, 48)
-	_confirm.add_theme_font_size_override("font_size", 24)
-	_confirm.add_theme_color_override("font_color", C_GOLD)
+	_confirm.custom_minimum_size = Vector2(UiStyle.BUTTON_W, UiStyle.BUTTON_H)
+	UiStyle.style_button(_confirm, UiStyle.PRIMARY)
 	_confirm.pressed.connect(func() -> void: confirm())
 	buttons.add_child(_confirm)
+	_focus.add(_confirm, UiStyle.PRIMARY, func() -> void: confirm())
 	_skip = Button.new()
 	_skip.name = "Skip"
-	_skip.text = "SKIP - let the seed decide"
-	_skip.focus_mode = Control.FOCUS_NONE
-	_skip.custom_minimum_size = Vector2(0, 48)
-	_skip.add_theme_font_size_override("font_size", 17)
-	_skip.add_theme_color_override("font_color", C_MUTED)
+	_skip.text = "SKIP - LET THE SEED DECIDE"
+	_skip.custom_minimum_size = Vector2(0, UiStyle.BUTTON_H)
+	UiStyle.style_button(_skip, UiStyle.SECONDARY)
 	_skip.pressed.connect(func() -> void: skip())
 	buttons.add_child(_skip)
+	_focus.add(_skip, UiStyle.SECONDARY, func() -> void: skip())
+	var hints := UiStyle.key_hints([["1-%d" % maxi(_ids.size(), 1), "select"], ["TAB", "move"],
+			["ENTER", "confirm"], ["ESC", "menu"]])
+	hints.alignment = BoxContainer.ALIGNMENT_CENTER
+	hints.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
+	hints.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	hints.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	hints.offset_bottom = -UiStyle.EDGE
+	add_child(hints)
 	_refresh()
-
-func _label(p_text: String, p_size: int, p_color: Color) -> Label:
-	var l := Label.new()
-	l.text = p_text
-	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	l.add_theme_font_size_override("font_size", p_size)
-	l.add_theme_color_override("font_color", p_color)
-	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	return l
-
-
-func _card_style(p_border: Color, p_width: int) -> StyleBoxFlat:
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = C_CARD
-	sb.border_color = p_border
-	sb.set_border_width_all(p_width)
-	sb.set_corner_radius_all(10)
-	return sb
 
 
 ## One card: the whole card is one Button (the click target); the icon and the text sit
@@ -187,40 +180,37 @@ func _build_card(p_id: String, p_number: int) -> Button:
 	if ResourceLoader.exists(path):
 		icon.texture = load(path)
 	box.add_child(icon)
-	var title := _label("%d  %s" % [p_number, p_id.to_upper()], 26, C_WHITE)
-	title.name = "Name"
-	box.add_child(title)
-	var plain := _label(plain_text(p_id), 16, C_WHITE)
-	plain.name = "Plain"
-	plain.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	plain.custom_minimum_size = Vector2(CARD_SIZE.x - 28, 0)
-	box.add_child(plain)
-	var stats := _label(blurb(p_id, _classes), 13, C_MUTED)
-	stats.name = "Stats"
-	stats.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	stats.custom_minimum_size = Vector2(CARD_SIZE.x - 28, 0)
-	box.add_child(stats)
+	box.add_child(_card_label("Name", _name_text(p_number, p_id, false), "entry", UiStyle.TEXT_STRONG))
+	box.add_child(_card_label("Plain", plain_text(p_id), "body", UiStyle.TEXT))
+	box.add_child(_card_label("Stats", blurb(p_id, _classes), "small", UiStyle.TEXT_MUTED))
 	return b
 
 
+func _card_label(p_name: String, p_text: String, p_role: String, p_color: Color) -> Label:
+	var l := UiStyle.label(p_text, p_role, p_color)
+	l.name = p_name
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	l.custom_minimum_size = Vector2(CARD_SIZE.x - CARD_PAD_X * 2.0, 0)
+	return l
+
+
+func _name_text(p_number: int, p_id: String, p_last: bool) -> String:
+	return "%d  %s%s" % [p_number, p_id.to_upper(), LAST_MARK if p_last else ""]
+
+
 ## The card's height. A Button does not size itself to its children, so the height is
-## measured from the text the card actually holds: a longer blurb makes a taller card
-## instead of spilling past the border (the Glider's stats line used to, by ~15 px).
-## CARD_SIZE.y stays the floor, so a short card never shrinks below the house size.
+## measured from the text the card can hold - the name WITH its "(last)" mark, the plain
+## line and the stats line, each wrapped to the inner width in its own face, padding in -
+## so a longer blurb makes a taller card instead of spilling past the border (the
+## Glider's stats line used to). CARD_SIZE.y stays the floor.
 func _card_height(p_id: String) -> float:
-	var need := CARD_PAD_TOP + CARD_PAD_BOTTOM + ICON_SIZE + CARD_GAP * 3.0
-	need += _wrapped_height("%d  %s" % [1, p_id.to_upper()], 26)
-	need += _wrapped_height(plain_text(p_id), 16)
-	need += _wrapped_height(blurb(p_id, _classes), 13)
-	return maxf(CARD_SIZE.y, ceilf(need))
-
-
-## The height one line of card text needs when wrapped to the card's inner width.
-## The project sets no theme, so the labels render in ThemeDB's fallback font.
-func _wrapped_height(p_text: String, p_size: int) -> float:
-	var f: Font = ThemeDB.fallback_font
 	var w := CARD_SIZE.x - CARD_PAD_X * 2.0
-	return f.get_multiline_string_size(p_text, HORIZONTAL_ALIGNMENT_CENTER, w, p_size).y
+	var need := CARD_PAD_TOP + CARD_PAD_BOTTOM + ICON_SIZE + CARD_GAP * 3.0
+	need += UiStyle.text_height(_name_text(_ids.size(), p_id, true), "entry", w)
+	need += UiStyle.text_height(plain_text(p_id), "body", w)
+	need += UiStyle.text_height(blurb(p_id, _classes), "small", w)
+	return maxf(CARD_SIZE.y, ceilf(need))
 
 
 ## One plain sentence of what the class does - what a new player needs, no numbers.
@@ -270,10 +260,12 @@ func _on_card_pressed(p_id: String) -> void:
 
 
 ## Step 1. Refuses ids the class table does not hold (the cards are the only altars).
+## The selected card takes the focus ring (set directly: no changed callback, no loop).
 func select(class_id: String) -> bool:
 	if not _classes.has(class_id):
 		return false
 	_selected = class_id
+	_focus.index = _ids.find(class_id)
 	_refresh()
 	return true
 
@@ -305,10 +297,10 @@ func skip() -> void:
 func open(p_current: String = "") -> void:
 	chosen = ""
 	_selected = ""
+	_focus.index = -1
 	for id in _cards.keys():
 		var title: Label = (_cards[id] as Button).find_child("Name", true, false)
-		var n := _ids.find(id) + 1
-		title.text = "%d  %s%s" % [n, str(id).to_upper(), "  (last)" if str(id) == p_current else ""]
+		title.text = _name_text(_ids.find(id) + 1, str(id), str(id) == p_current)
 	_refresh()
 	visible = true
 
@@ -345,6 +337,11 @@ func confirm_button() -> Button:
 func skip_button() -> Button:
 	return _skip
 
+
+## The keyboard focus: the cards, CONFIRM, SKIP (tests/test_ui_style.gd drives it).
+func focus_cycle() -> UiFocus:
+	return _focus
+
 # ---- keyboard -----------------------------------------------------------------------------
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -352,18 +349,26 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 
-## The altar's keys. Left/Right (or A/D), Tab / Shift+Tab move the selection, 1..n select
-## that card, Enter/Space confirm the selection (SKIP is mouse-only: S is a movement key,
-## and a run must never be skipped by a stray WASD press). Echoes (a held key) are
-## ignored, so the press that started the run can never also confirm a card. ESC is left
-## to the app (back to the menu). Returns true when the event was the altar's.
+## The altar's keys. Left/Right (or A/D, Up/Down) walk the cards, 1..n select that card,
+## Tab / Shift+Tab move the focus ring through the cards, CONFIRM and SKIP (a card that
+## takes the ring is selected, exactly as before). Enter/Space press what has the ring:
+## SKIP skips, anything else confirms the selection (nothing selected -> nothing happens).
+## SKIP has no letter key: S is a movement key, and a run must never be skipped by a stray
+## WASD press. Echoes (a held key) never confirm, so the press that started the run cannot
+## also pick a card. ESC is left to the app (back to the menu). Returns true when the
+## event was the altar's.
 func handle_input(event: InputEvent) -> bool:
 	if not visible or not (event is InputEventKey):
 		return false
 	var k := event as InputEventKey
-	if not k.pressed or k.echo:
+	if not k.pressed:
 		return false
 	var code: int = int(k.keycode) if k.keycode != KEY_NONE else int(k.physical_keycode)
+	if code == KEY_TAB:
+		_focus.step(-1 if k.shift_pressed else 1)
+		return true
+	if k.echo:
+		return false
 	match code:
 		KEY_LEFT, KEY_A, KEY_UP:
 			_step(-1)
@@ -371,11 +376,11 @@ func handle_input(event: InputEvent) -> bool:
 		KEY_RIGHT, KEY_D, KEY_DOWN:
 			_step(1)
 			return true
-		KEY_TAB:
-			_step(-1 if k.shift_pressed else 1)
-			return true
 		KEY_ENTER, KEY_KP_ENTER, KEY_SPACE:
-			confirm()
+			if _focus.current() == _skip:
+				skip()
+			else:
+				confirm()
 			return true
 	if code >= KEY_1 and code <= KEY_9:
 		var i := code - KEY_1
@@ -386,7 +391,7 @@ func handle_input(event: InputEvent) -> bool:
 
 
 ## Move the selection one card; from "nothing selected" the first step lands on the
-## first card (Right/Tab) or the last one (Left).
+## first card (Right) or the last one (Left).
 func _step(p_dir: int) -> void:
 	if _ids.is_empty():
 		return
@@ -398,19 +403,44 @@ func _step(p_dir: int) -> void:
 	select(str(_ids[i]))
 
 
-## The look follows the state: the selected card wears the gold frame, CONFIRM is live
-## only with a selection, and the hint says what the next action does.
-func _refresh() -> void:
+## The ring moved (Tab): a card that takes it is selected; CONFIRM / SKIP just repaint.
+func _on_focus_changed(p_i: int) -> void:
+	if p_i >= 0 and p_i < _ids.size():
+		select(str(_ids[p_i]))
+	else:
+		_refresh()
+
+
+## A card's look: the focus ring when it has the ring; ACCENT edge + a faint ACCENT fill
+## when it is the selection without the ring (the ring is on CONFIRM); MID edge at rest,
+## ACCENT edge under the mouse.
+func _paint_card(p_c: Control, p_focused: bool) -> void:
+	var b := p_c as Button
+	var sel := false
 	for id in _cards.keys():
-		var b: Button = _cards[id]
-		var sel := str(id) == _selected
-		var normal: StyleBoxFlat = _styles["selected"] if sel else _styles["idle"]
-		var hover: StyleBoxFlat = _styles["selected"] if sel else _styles["hover"]
-		b.add_theme_stylebox_override("normal", normal)
-		b.add_theme_stylebox_override("hover", hover)
-		b.add_theme_stylebox_override("pressed", _styles["selected"])
-		b.add_theme_stylebox_override("hover_pressed", _styles["selected"])
-		b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+		if _cards[id] == b:
+			sel = str(id) == _selected
+	var rest: StyleBoxFlat
+	if p_focused:
+		rest = UiStyle.focus_box(0, 0)
+	elif sel:
+		rest = UiStyle.box(Color(UiStyle.ACCENT.r, UiStyle.ACCENT.g, UiStyle.ACCENT.b, 0.10),
+				UiStyle.ACCENT, UiStyle.BORDER, 0, 0, 0)
+	else:
+		rest = UiStyle.box(UiStyle.PANEL_FILL, UiStyle.MID, UiStyle.BORDER, 0, 0, 0)
+	var hover := rest.duplicate() as StyleBoxFlat
+	if not p_focused:
+		hover.border_color = UiStyle.ACCENT
+	for st in ["normal", "pressed", "focus", "disabled"]:
+		b.add_theme_stylebox_override(st, rest)
+	for st in ["hover", "hover_pressed"]:
+		b.add_theme_stylebox_override(st, hover)
+
+
+## The look follows the state: the ring and the selection repaint, CONFIRM is live only
+## with a selection, and the hint says what the next action does.
+func _refresh() -> void:
+	_focus.repaint()
 	if _confirm != null:
 		_confirm.disabled = _selected == ""
 		_confirm.text = "CONFIRM" if _selected == "" else "CONFIRM " + _selected.to_upper()

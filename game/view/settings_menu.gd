@@ -13,30 +13,34 @@ extends Control
 # never be lost to a crash), and show_settings() re-applies everything, so opening the
 # screen loads the saved values into the running game.
 #
-# SELF-CONTAINED BY CONTRACT this wave (menu files belong to another worker): builds in
-# _init, holds no reference to the menu, no dependency beyond app/settings.gd. The whole
-# public API is
+# Builds in _init, holds no reference to the menu; its dependencies are app/settings.gd
+# and the shared view/ui_style.gd + view/ui_focus.gd. Opened from the pause overlay
+# (app/pause_overlay.gd SETTINGS). The whole public API is
 #   signal closed
 #   show_settings()  load + sync + apply + show
 #   close_settings() persist + hide + emit closed
-# Wave-2 wiring is one line (see the hand-off report); until then nothing in the menu
-# references this file.
+#   handle_input(e)  the screen's keys (fed by _unhandled_input)
+#   focus_cycle()    the keyboard focus (tests)
 #
-# Headless-safe like menu.gd: no _input paths, plain property setters, tests drive the
-# widgets directly (setting HSlider.value fires value_changed without a scene tree).
+# Headless-safe like menu.gd: plain property setters, tests drive the widgets directly.
+#
+# Look and keys (D-GUI-1, view/ui_style.gd + view/ui_focus.gd): one centred panel - the
+# SETTINGS heading, then one row per setting (tracked caption, control, the value in mono),
+# the hint, and BACK. Each row is one focus stop wearing the shared focus ring: Tab /
+# Shift+Tab / Up / Down move it, Left / Right adjust the focused slider (key repeat
+# allowed), Enter / Space toggle FULLSCREEN or press BACK, ESC closes the screen (persist +
+# `closed`), wherever it was opened from. The mouse works on every control as before.
 
 const SettingsScript := preload("res://app/settings.gd")
-
-## Palette (data/palette.json roles; the same values menu.gd uses).
-const C_VOID := Color(0.0078, 0.0118, 0.0588)        # #02030F the void backdrop
-const C_WHITE := Color(0.910, 1.0, 1.0)              # #E8FFFF beacon_open
-const C_GOLD := Color(1.0, 0.784, 0.239)             # #FFC83D gold_gift
-const C_MUTED := Color(0.545, 0.620, 0.718)          # unselected entry text
-const C_DIM := Color(0.431, 0.494, 0.584)            # footer text
+const UiStyle := preload("res://view/ui_style.gd")
+const UiFocus := preload("res://view/ui_focus.gd")
 
 const PANEL_TITLE := "SETTINGS"
 const HINT_TEXT := "changes apply and save immediately."
 const SENS_SLIDER_STEP := 0.01
+const PANEL_W := 560.0          # the panel's inner width
+const CAPTION_W := 176.0        # the caption column ("MOUSE SENSITIVITY" + padding)
+const VALUE_W := 64.0           # the value column ("0.30", "100")
 
 signal closed
 
@@ -50,8 +54,9 @@ var _fullscreen_check: CheckButton
 var _volume_value: Label
 var _sens_value: Label
 var _fov_value: Label
-var _fonts: Dictionary = {}               # role -> FontVariation
-var _scaled: Array = []                   # [Control, theme font-size key, base px]
+var _fullscreen_value: Label
+var _back: Button
+var _focus: UiFocus = UiFocus.new()
 
 
 func _init() -> void:
@@ -65,172 +70,138 @@ func _init() -> void:
 
 # ---- build ---------------------------------------------------------------------------------------
 
-func _font(role: String, embolden: float) -> FontVariation:
-	if not _fonts.has(role):
-		var f := FontVariation.new()
-		f.base_font = ThemeDB.fallback_font
-		f.variation_embolden = embolden
-		_fonts[role] = f
-	return _fonts[role]
-
-
-func _label(text: String, role: String, embolden: float, base_px: int, color: Color) -> Label:
-	var l := Label.new()
-	l.text = text
-	l.add_theme_font_override("font", _font(role, embolden))
-	l.add_theme_color_override("font_color", color)
-	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_scaled.append([l, "font_size", base_px])
-	return l
-
-
 func _build() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	var bg := ColorRect.new()
+	var bg := UiStyle.backdrop(Color(0, 0, 0, 0.92))
 	bg.name = "Void"
-	bg.color = Color(C_VOID.r, C_VOID.g, C_VOID.b, 0.94)
-	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(bg)
-
 	var center := CenterContainer.new()
 	center.name = "Center"
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(center)
-
 	var panel := PanelContainer.new()
 	panel.name = "SettingsPanel"
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(C_VOID.r, C_VOID.g, C_VOID.b, 0.96)
-	sb.border_color = Color(C_GOLD.r, C_GOLD.g, C_GOLD.b, 0.7)
-	sb.border_width_left = 3
-	sb.border_width_right = 3
-	sb.border_width_top = 3
-	sb.border_width_bottom = 3
-	sb.content_margin_left = 34.0
-	sb.content_margin_right = 34.0
-	sb.content_margin_top = 28.0
-	sb.content_margin_bottom = 22.0
-	panel.add_theme_stylebox_override("panel", sb)
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_theme_stylebox_override("panel", UiStyle.panel_box())
 	center.add_child(panel)
-
 	var vb := VBoxContainer.new()
 	vb.name = "Body"
-	vb.add_theme_constant_override("separation", 10)
-	vb.custom_minimum_size = Vector2(520, 0)
+	vb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vb.add_theme_constant_override("separation", UiStyle.SP_2)
+	vb.custom_minimum_size = Vector2(PANEL_W, 0)
 	panel.add_child(vb)
-
-	var head := _label(PANEL_TITLE, "title", 0.85, 40, C_WHITE)
+	var head := UiStyle.label(PANEL_TITLE, "title")
 	head.name = "SettingsTitle"
 	vb.add_child(head)
-	var rule := ColorRect.new()
-	rule.name = "Rule"
-	rule.color = Color(C_GOLD.r, C_GOLD.g, C_GOLD.b, 0.85)
-	rule.custom_minimum_size = Vector2(56, 3)
-	rule.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	vb.add_child(rule)
-
-	# master volume
-	var vol_cap := _label("MASTER VOLUME", "body", 0.0, 15, C_MUTED)
-	vb.add_child(vol_cap)
-	var vol_row := HBoxContainer.new()
-	vol_row.add_theme_constant_override("separation", 14)
-	vb.add_child(vol_row)
-	_volume_slider = HSlider.new()
-	_volume_slider.name = "VolumeSlider"
-	_volume_slider.min_value = float(SettingsScript.VOLUME_MIN)
-	_volume_slider.max_value = float(SettingsScript.VOLUME_MAX)
-	_volume_slider.step = 1.0
-	_volume_slider.custom_minimum_size = Vector2(300, 28)
-	_volume_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_volume_slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	_volume_slider.focus_mode = Control.FOCUS_NONE
-	_volume_slider.value_changed.connect(_on_volume_changed)
-	vol_row.add_child(_volume_slider)
-	_volume_value = _label("", "bold", 0.4, 15, C_WHITE)
-	_volume_value.name = "VolumeValue"
-	_volume_value.custom_minimum_size = Vector2(56, 0)
-	_volume_value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	vol_row.add_child(_volume_value)
-
-	# mouse sensitivity
-	var sens_cap := _label("MOUSE SENSITIVITY", "body", 0.0, 15, C_MUTED)
-	vb.add_child(sens_cap)
-	var sens_row := HBoxContainer.new()
-	sens_row.add_theme_constant_override("separation", 14)
-	vb.add_child(sens_row)
-	_sens_slider = HSlider.new()
-	_sens_slider.name = "SensSlider"
-	_sens_slider.min_value = SettingsScript.SENS_MIN
-	_sens_slider.max_value = SettingsScript.SENS_MAX
-	_sens_slider.step = SENS_SLIDER_STEP
-	_sens_slider.custom_minimum_size = Vector2(300, 28)
-	_sens_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_sens_slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	_sens_slider.focus_mode = Control.FOCUS_NONE
-	_sens_slider.value_changed.connect(_on_sens_changed)
-	sens_row.add_child(_sens_slider)
-	_sens_value = _label("", "bold", 0.4, 15, C_WHITE)
-	_sens_value.name = "SensValue"
-	_sens_value.custom_minimum_size = Vector2(56, 0)
-	_sens_value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	sens_row.add_child(_sens_value)
-
-	# field of view
-	var fov_cap := _label("FIELD OF VIEW", "body", 0.0, 15, C_MUTED)
-	vb.add_child(fov_cap)
-	var fov_row := HBoxContainer.new()
-	fov_row.add_theme_constant_override("separation", 14)
-	vb.add_child(fov_row)
-	_fov_slider = HSlider.new()
-	_fov_slider.name = "FovSlider"
-	_fov_slider.min_value = SettingsScript.FOV_MIN
-	_fov_slider.max_value = SettingsScript.FOV_MAX
-	_fov_slider.step = 1.0
-	_fov_slider.custom_minimum_size = Vector2(300, 28)
-	_fov_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_fov_slider.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	_fov_slider.focus_mode = Control.FOCUS_NONE
-	_fov_slider.value_changed.connect(_on_fov_changed)
-	fov_row.add_child(_fov_slider)
-	_fov_value = _label("", "bold", 0.4, 15, C_WHITE)
-	_fov_value.name = "FovValue"
-	_fov_value.custom_minimum_size = Vector2(56, 0)
-	_fov_value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	fov_row.add_child(_fov_value)
-
-	# fullscreen
+	vb.add_child(UiStyle.rule())
+	vb.add_child(_gap(UiStyle.SP_3))
+	_volume_slider = _slider("VolumeSlider", float(SettingsScript.VOLUME_MIN),
+			float(SettingsScript.VOLUME_MAX), 1.0, _on_volume_changed)
+	_volume_value = _row(vb, "VolumeRow", "MASTER VOLUME", _volume_slider, "VolumeValue",
+			Callable(), _adjust.bind(_volume_slider, _on_volume_changed))
+	_sens_slider = _slider("SensSlider", SettingsScript.SENS_MIN, SettingsScript.SENS_MAX,
+			SENS_SLIDER_STEP, _on_sens_changed)
+	_sens_value = _row(vb, "SensRow", "MOUSE SENSITIVITY", _sens_slider, "SensValue",
+			Callable(), _adjust.bind(_sens_slider, _on_sens_changed))
+	_fov_slider = _slider("FovSlider", SettingsScript.FOV_MIN, SettingsScript.FOV_MAX, 1.0,
+			_on_fov_changed)
+	_fov_value = _row(vb, "FovRow", "FIELD OF VIEW", _fov_slider, "FovValue",
+			Callable(), _adjust.bind(_fov_slider, _on_fov_changed))
 	_fullscreen_check = CheckButton.new()
 	_fullscreen_check.name = "FullscreenCheck"
-	_fullscreen_check.text = "FULLSCREEN"
-	_fullscreen_check.focus_mode = Control.FOCUS_NONE
-	_fullscreen_check.add_theme_font_override("font", _font("body", 0.4))
-	_fullscreen_check.add_theme_color_override("font_color", C_MUTED)
-	_fullscreen_check.add_theme_font_size_override("font_size", 18)
+	_fullscreen_check.text = ""
+	_fullscreen_check.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_fullscreen_check.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	UiStyle.style_toggle(_fullscreen_check)
 	_fullscreen_check.toggled.connect(_on_fullscreen_toggled)
-	vb.add_child(_fullscreen_check)
-
-	# footer: hint + back
-	var hint := _label(HINT_TEXT, "body", 0.0, 13, C_DIM)
+	_fullscreen_value = _row(vb, "FullscreenRow", "FULLSCREEN", _fullscreen_check,
+			"FullscreenValue", _toggle_fullscreen, Callable())
+	vb.add_child(_gap(UiStyle.SP_2))
+	var hint := UiStyle.label(HINT_TEXT, "small", UiStyle.TEXT_DIM)
 	hint.name = "SettingsHint"
 	vb.add_child(hint)
-	var gap := Control.new()
-	gap.custom_minimum_size = Vector2(0, 12)
-	gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	vb.add_child(gap)
-	var back := Button.new()
-	back.name = "BackButton"
-	back.text = "BACK"
-	back.focus_mode = Control.FOCUS_NONE
-	back.flat = false
-	back.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	back.add_theme_font_override("font", _font("entry", 0.35))
-	back.add_theme_color_override("font_color", C_GOLD)
-	back.add_theme_color_override("font_hover_color", C_WHITE)
-	back.pressed.connect(close_settings)
-	_scaled.append([back, "font_size", 18])
-	back.custom_minimum_size = Vector2(150, 40)
-	back.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	vb.add_child(back)
+	vb.add_child(_gap(UiStyle.SP_3))
+	var foot := HBoxContainer.new()
+	foot.name = "Footer"
+	foot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	foot.add_theme_constant_override("separation", UiStyle.SP_4)
+	vb.add_child(foot)
+	_back = Button.new()
+	_back.name = "BackButton"
+	_back.text = "BACK"
+	_back.custom_minimum_size = Vector2(160, UiStyle.BUTTON_H)
+	UiStyle.style_button(_back, UiStyle.SECONDARY)
+	_back.pressed.connect(close_settings)
+	foot.add_child(_back)
+	_focus.add(_back, UiStyle.SECONDARY, close_settings)
+	var hints := UiStyle.key_hints([["TAB", "move"], ["← →", "adjust"], ["ESC", "back"]])
+	hints.alignment = BoxContainer.ALIGNMENT_END
+	hints.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hints.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	foot.add_child(hints)
+
+
+func _gap(p_h: float) -> Control:
+	var g := Control.new()
+	g.custom_minimum_size = Vector2(0, p_h)
+	g.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return g
+
+
+func _slider(p_name: String, p_min: float, p_max: float, p_step: float, p_changed: Callable) -> HSlider:
+	var s := HSlider.new()
+	s.name = p_name
+	s.min_value = p_min
+	s.max_value = p_max
+	s.step = p_step
+	s.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	UiStyle.style_slider(s)
+	s.value_changed.connect(p_changed)
+	return s
+
+
+## One setting row: [CAPTION | control | value], the whole row one focus stop. Returns the
+## value label.
+func _row(p_parent: Control, p_name: String, p_caption: String, p_control: Control,
+		p_value_name: String, p_activate: Callable, p_adjust: Callable) -> Label:
+	var row := PanelContainer.new()
+	row.name = p_name
+	row.mouse_filter = Control.MOUSE_FILTER_PASS
+	row.custom_minimum_size = Vector2(0, UiStyle.BUTTON_H)
+	p_parent.add_child(row)
+	var hb := HBoxContainer.new()
+	hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hb.add_theme_constant_override("separation", UiStyle.SP_4)
+	row.add_child(hb)
+	var cap := UiStyle.label(p_caption, "label")
+	cap.custom_minimum_size = Vector2(CAPTION_W, 0)
+	cap.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	cap.size_flags_vertical = Control.SIZE_FILL
+	hb.add_child(cap)
+	hb.add_child(p_control)
+	var val := UiStyle.label("", "num")
+	val.name = p_value_name
+	val.custom_minimum_size = Vector2(VALUE_W, 0)
+	val.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	val.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	val.size_flags_vertical = Control.SIZE_FILL
+	hb.add_child(val)
+	_focus.add(row, UiStyle.ROW, p_activate, p_adjust)
+	return val
+
+
+## Left / Right on a focused slider row: one step, through the slider's own handler (the
+## same write-through a drag makes), so it never depends on value_changed firing.
+func _adjust(p_dir: int, p_slider: HSlider, p_changed: Callable) -> void:
+	var v := clampf(p_slider.value + p_slider.step * float(p_dir), p_slider.min_value, p_slider.max_value)
+	p_slider.set_value_no_signal(v)
+	p_changed.call(v)
+
+
+func _toggle_fullscreen() -> void:
+	_fullscreen_check.set_pressed_no_signal(not _fullscreen_check.button_pressed)
+	_on_fullscreen_toggled(_fullscreen_check.button_pressed)
 
 
 ## Push the current store values into the widgets without re-triggering their handlers.
@@ -242,6 +213,7 @@ func _sync_controls() -> void:
 	_volume_value.text = str(store.volume)
 	_sens_value.text = "%.2f" % store.mouse_sensitivity
 	_fov_value.text = str(int(roundf(store.field_of_view)))
+	_fullscreen_value.text = "ON" if store.fullscreen else "OFF"
 
 
 # ---- public API ----------------------------------------------------------------------------------
@@ -251,6 +223,7 @@ func show_settings() -> void:
 	store.load_from(settings_path)
 	_sync_controls()
 	_apply_consumers()
+	_focus.focus(0)
 	show()
 
 
@@ -263,6 +236,27 @@ func close_settings() -> void:
 
 func is_open() -> bool:
 	return visible
+
+
+## The keyboard focus (tests/test_ui_style.gd drives it).
+func focus_cycle() -> UiFocus:
+	return _focus
+
+
+## The screen's keys: ESC closes, everything else is the shared focus map.
+func handle_input(event: InputEvent) -> bool:
+	if not visible or not (event is InputEventKey):
+		return false
+	var k := event as InputEventKey
+	if k.pressed and not k.echo and (k.keycode == KEY_ESCAPE or k.physical_keycode == KEY_ESCAPE):
+		close_settings()
+		return true
+	return _focus.handle_key(event)
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if handle_input(event) and is_inside_tree():
+		get_viewport().set_input_as_handled()
 
 
 # ---- change handlers: write-through --------------------------------------------------------------
@@ -287,6 +281,7 @@ func _on_fov_changed(v: float) -> void:
 
 func _on_fullscreen_toggled(on: bool) -> void:
 	store.fullscreen = on
+	_fullscreen_value.text = "ON" if on else "OFF"
 	_commit()
 
 
@@ -305,4 +300,3 @@ func _apply_consumers() -> void:
 		if cam != null:
 			store.apply_camera(cam)
 		store.apply_window(get_window())
-

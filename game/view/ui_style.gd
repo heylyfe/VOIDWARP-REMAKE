@@ -85,7 +85,7 @@ const ROW := "row"               # a settings row (caption + control + value)
 const MONO_NAMES := ["Cascadia Mono", "Consolas", "JetBrains Mono", "DejaVu Sans Mono",
 		"Liberation Mono", "Menlo", "Courier New", "monospace"]
 
-static var _fonts: Dictionary = {}
+static var _cache: Dictionary = {}
 
 
 # ---- faces -------------------------------------------------------------------------------
@@ -96,8 +96,8 @@ static var _fonts: Dictionary = {}
 ## behind it (the fallback's "tnum" feature) so a number never jitters even on a machine
 ## without one. Cached: every screen shares one object per face.
 static func font(p_role: String) -> Font:
-	if _fonts.has(p_role):
-		return _fonts[p_role]
+	if _cache.has(p_role):
+		return _cache[p_role]
 	var f: Font
 	match p_role:
 		"mono":
@@ -116,7 +116,7 @@ static func font(p_role: String) -> Font:
 			f = _variation(0.5, 1)
 		_:
 			f = _variation(0.0, 0)
-	_fonts[p_role] = f
+	_cache[p_role] = f
 	return f
 
 
@@ -185,10 +185,32 @@ static func label(p_text: String, p_role: String = "body", p_color: Color = Colo
 
 
 static func style_label(l: Label, p_role: String, p_color: Color = Color(0, 0, 0, -1)) -> void:
+	l.add_theme_stylebox_override("normal", pad_box())
 	l.add_theme_font_override("font", role_font(p_role))
 	l.add_theme_font_size_override("font_size", role_size(p_role))
 	l.add_theme_color_override("font_color", role_color(p_role) if p_color.a < 0.0 else p_color)
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+
+## The empty box every label draws in: MIN_PAD on all four sides, so no text ever touches
+## the edge of its own rect (tests/test_ui_style.gd FIT).
+static func pad_box() -> StyleBoxEmpty:
+	if not _cache.has("_pad"):
+		var sb := StyleBoxEmpty.new()
+		sb.set_content_margin_all(MIN_PAD)
+		_cache["_pad"] = sb
+	return _cache["_pad"]
+
+
+## The height a label of p_role needs for p_text wrapped in a p_width-wide rect, padding
+## and line spacing included (the class altar sizes its cards with this).
+static func text_height(p_text: String, p_role: String, p_width: float, p_size: int = -1) -> float:
+	var f := role_font(p_role)
+	var fs := role_size(p_role) if p_size < 0 else p_size
+	var ts := f.get_multiline_string_size(p_text, HORIZONTAL_ALIGNMENT_LEFT,
+			p_width - 2.0 * MIN_PAD, fs)
+	var lines := maxi(1, int(roundf(ts.y / f.get_height(fs))))
+	return ts.y + 3.0 * float(lines - 1) + 2.0 * MIN_PAD
 
 
 ## A 1 px accent rule under a heading.
@@ -389,3 +411,67 @@ static func key_hints(p_pairs: Array, p_scale: float = 1.0) -> HBoxContainer:
 		one.add_child(verb)
 		row.add_child(one)
 	return row
+
+
+# ---- sliders and toggles -----------------------------------------------------------------
+
+## A house slider: a 2 px MID track, the filled part in ACCENT, a SOFT square grabber,
+## at least 32 px tall (the whole row is the hit target), no Godot focus.
+static func style_slider(p_s: HSlider) -> void:
+	p_s.focus_mode = Control.FOCUS_NONE
+	p_s.custom_minimum_size.y = maxf(p_s.custom_minimum_size.y, 32.0)
+	p_s.size_flags_vertical = Control.SIZE_FILL
+	var track := box(Color(MID.r, MID.g, MID.b, 1.0), Color(0, 0, 0, 0), 0, 0, 0, 1)
+	var fill := box(ACCENT, Color(0, 0, 0, 0), 0, 0, 0, 1)
+	p_s.add_theme_stylebox_override("slider", track)
+	p_s.add_theme_stylebox_override("grabber_area", fill)
+	p_s.add_theme_stylebox_override("grabber_area_highlight", fill)
+	p_s.add_theme_icon_override("grabber", _swatch("grab", SOFT, Vector2i(8, 16)))
+	p_s.add_theme_icon_override("grabber_highlight", _swatch("grab_hi", WHITE, Vector2i(8, 16)))
+
+
+## A house toggle (CheckButton): a 1 px edged 36x18 track with a square knob - MID and
+## left when off, ACCENT and right when on. Text and icons are the palette's only.
+static func style_toggle(p_c: CheckButton) -> void:
+	p_c.focus_mode = Control.FOCUS_NONE
+	p_c.flat = true
+	p_c.add_theme_icon_override("unchecked", _toggle_icon(false))
+	p_c.add_theme_icon_override("checked", _toggle_icon(true))
+	p_c.add_theme_icon_override("unchecked_disabled", _toggle_icon(false))
+	p_c.add_theme_icon_override("checked_disabled", _toggle_icon(true))
+	p_c.custom_minimum_size.y = maxf(p_c.custom_minimum_size.y, 32.0)
+	var empty := StyleBoxEmpty.new()
+	for st in ["normal", "hover", "pressed", "hover_pressed", "focus", "disabled"]:
+		p_c.add_theme_stylebox_override(st, empty)
+
+
+static func _swatch(p_key: String, p_col: Color, p_size: Vector2i) -> ImageTexture:
+	if _cache.has(p_key):
+		return _cache[p_key]
+	var img := Image.create(p_size.x, p_size.y, false, Image.FORMAT_RGBA8)
+	img.fill(p_col)
+	var t := ImageTexture.create_from_image(img)
+	_cache[p_key] = t
+	return t
+
+
+static func _toggle_icon(p_on: bool) -> ImageTexture:
+	var key := "toggle_on" if p_on else "toggle_off"
+	if _cache.has(key):
+		return _cache[key]
+	var w := 36
+	var h := 18
+	var edge: Color = ACCENT if p_on else MID
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	for x in w:
+		img.set_pixel(x, 0, edge)
+		img.set_pixel(x, h - 1, edge)
+	for y in h:
+		img.set_pixel(0, y, edge)
+		img.set_pixel(w - 1, y, edge)
+	var kx := w - 3 - 12 if p_on else 3
+	img.fill_rect(Rect2i(kx, 3, 12, h - 6), ACCENT if p_on else MID)
+	var t := ImageTexture.create_from_image(img)
+	_cache[key] = t
+	return t
