@@ -51,6 +51,7 @@ const RecordsScript := preload("res://core/records.gd")
 const VOID_DISPLAY := "The Void"
 const CURSE_ICON := 96.0
 const CURSE_ICON_Script := preload("res://view/hud/icon_placeholder.gd")
+const IconArtScript := preload("res://view/icon_art.gd")
 
 ## The Master's lines, one set per death kind; %s is the killer's name. Picked by
 ## the level reached, so a run's line is stable and different runs vary.
@@ -95,6 +96,7 @@ var _voice_label: Label
 var _sprite: TextureRect
 var _tbd_box: Label
 var _curse_icon: Control
+var _curse_art: TextureRect
 var _name_label: Label
 var _code_label: Label
 var _level_label: Label
@@ -180,6 +182,16 @@ func _init() -> void:
 	_curse_icon.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_curse_icon.visible = false
 	col.add_child(_curse_icon)
+	# the curse's own icon (assets/icons/curses/<id>.png); the placeholder above stays the
+	# fallback for an id with no art yet, and always holds the id curse_icon_id() reports
+	_curse_art = TextureRect.new()
+	_curse_art.custom_minimum_size = Vector2(CURSE_ICON, CURSE_ICON)
+	_curse_art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_curse_art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_curse_art.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_curse_art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_curse_art.visible = false
+	col.add_child(_curse_art)
 	_name_label = _label("", 40, DANGER_RED)
 	col.add_child(_name_label)
 	_code_label = _label("", 18, Color(1.0, 1.0, 1.0, 0.85))
@@ -376,7 +388,7 @@ static func enemy_sprite_for_code(p_code: String) -> Texture2D:
 
 ## The curse id shown as the curse icon, or "" when this is not a curse death.
 func curse_icon_id() -> String:
-	if is_curse_death(code) and _curse_icon != null and _curse_icon.visible:
+	if is_curse_death(code) and _curse_icon != null and (_curse_icon.visible or _curse_art.visible):
 		return str(_curse_icon.icon_id)
 	return ""
 
@@ -415,18 +427,24 @@ func show_run_over(info: Dictionary) -> void:
 		_sprite.visible = false
 		_tbd_box.visible = false
 		_curse_icon.visible = false
+		_curse_art.visible = false
 		_name_label.add_theme_color_override("font_color", VOID_COLOR)
 	elif is_curse_death(code):
-		# the curse icon (placeholder art) and D-CURSE:<id>; no killer sprite
+		# the curse's own icon (placeholder only when it has no art yet) and D-CURSE:<id>;
+		# no killer sprite
 		_sprite.visible = false
 		_tbd_box.visible = false
 		_curse_icon.setup(code.substr(8), CURSE_ICON)
-		_curse_icon.visible = true
+		var curse_tex := IconArtScript.texture_for("curses", code.substr(8))
+		_curse_art.texture = curse_tex
+		_curse_art.visible = curse_tex != null
+		_curse_icon.visible = curse_tex == null
 		_name_label.add_theme_color_override("font_color", DANGER_RED)
 	elif sprite is Texture2D:
 		_sprite.visible = true
 		_tbd_box.visible = false
 		_curse_icon.visible = false
+		_curse_art.visible = false
 		_sprite.texture = sprite
 		_name_label.add_theme_color_override("font_color", DANGER_RED)
 	else:
@@ -434,6 +452,7 @@ func show_run_over(info: Dictionary) -> void:
 		_sprite.visible = false
 		_tbd_box.visible = true
 		_curse_icon.visible = false
+		_curse_art.visible = false
 		_name_label.add_theme_color_override("font_color", DANGER_RED)
 	visible = true
 	if is_inside_tree():
