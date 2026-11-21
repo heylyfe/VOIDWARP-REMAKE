@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <g id="rear-leg">
+      <g transform="rotate(14 268 302)">
+        <rect x="243" y="282" width="51" height="158" rx="9"/>
+        <rect x="239" y="413" width="67" height="33" rx="8"/>
+      </g>
+    </g>
+    <g id="lead-leg">
+      <g transform="rotate(15 234 299)">
+        <rect x="206" y="279" width="55" height="167" rx="10"/>
+        <rect x="200" y="420" width="74" height="35" rx="8"/>
+      </g>
+    </g>
+    <g id="rear-arm">
+      <rect x="111" y="181" width="128" height="47" rx="9" transform="rotate(24 204 212)"/>
+      <rect x="94" y="133" width="48" height="84" rx="8" transform="rotate(-18 117 185)"/>
+    </g>
+    <g id="body">
+      <rect x="200" y="197" width="103" height="124" rx="10" transform="rotate(8 252 216)"/>
+    </g>
+    <g id="head">
+      <rect x="207" y="122" width="96" height="91" rx="10" transform="rotate(8 254 166)"/>
+    </g>
+    <g id="lead-arm">
+      <rect x="280" y="193" width="121" height="47" rx="9" transform="rotate(-23 299 215)"/>
+      <rect x="369" y="136" width="49" height="77" rx="9" transform="rotate(23 389 189)"/>
+    </g>
+  </defs>
+  <path d="M91 100 210 213 M421 100 300 214" fill="none" stroke="#7CFFF4" stroke-width="5" stroke-linecap="round"/>
+  <path d="M56 96 107 53 Q110 50 116 49 Q256 29 396 49 Q402 50 405 53 L456 96 Q464 103 453 103 H59 Q48 103 56 96Z" fill="#2FB7B0" stroke="#7CFFF4" stroke-width="11" stroke-linejoin="round"/>
+  <path d="M104 84 122 66 Q256 50 390 66 L408 84Z" fill="#8FE8E0"/>
+  <!-- Draw the rim first, then cover the strokes where the prisms overlap. -->
+  <g fill="#7CFFF4" stroke="#7CFFF4" stroke-width="12" stroke-linejoin="round" stroke-linecap="round">
+    <use href="#rear-leg"/>
+    <use href="#lead-leg"/>
+    <use href="#rear-arm"/>
+    <use href="#body"/>
+    <use href="#head"/>
+    <use href="#lead-arm"/>
+  </g>
+  <use href="#rear-leg" fill="#0A2E30"/>
+  <use href="#lead-leg" fill="#2FB7B0"/>
+  <rect x="213" y="317" width="13" height="99" rx="6" fill="#1C6E70" transform="rotate(15 234 299)"/>
+  <use href="#rear-arm" fill="#0A2E30"/>
+  <rect x="101" y="140" width="34" height="23" rx="7" fill="#2FB7B0" transform="rotate(-18 117 185)"/>
+  <use href="#body" fill="#1C6E70"/>
+  <rect x="276" y="205" width="20" height="105" rx="7" fill="#2FB7B0" transform="rotate(8 252 216)"/>
+  <use href="#head" fill="#0A2E30"/>
+  <g transform="rotate(8 254 166)">
+    <rect x="275" y="129" width="20" height="76" rx="7" fill="#1C6E70"/>
+    <rect x="253" y="149" width="39" height="12" rx="6" fill="#8FE8E0"/>
+  </g>
+  <use href="#lead-arm" fill="#2FB7B0"/>
+  <rect x="375" y="142" width="37" height="24" rx="7" fill="#8FE8E0" transform="rotate(23 389 189)"/>
+</svg>

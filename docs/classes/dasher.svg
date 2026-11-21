@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <g id="rear-arm">
+      <rect x="241" y="167" width="48" height="133" rx="9" transform="rotate(66 265 189)"/>
+    </g>
+    <g id="rear-leg">
+      <g transform="rotate(50 217 280)">
+        <rect x="189" y="255" width="57" height="208" rx="10"/>
+        <rect x="190" y="430" width="70" height="34" rx="8"/>
+      </g>
+    </g>
+    <g id="lead-leg">
+      <rect x="207" y="274" width="137" height="59" rx="10" transform="rotate(10 225 290)"/>
+      <rect x="284" y="297" width="57" height="148" rx="10" transform="rotate(24 316 317)"/>
+      <rect x="238" y="420" width="80" height="37" rx="9" transform="rotate(12 269 434)"/>
+    </g>
+    <g id="body">
+      <rect x="228" y="144" width="108" height="155" rx="10" transform="rotate(40 284 169)"/>
+    </g>
+    <g id="head">
+      <rect x="312" y="62" width="106" height="102" rx="10" transform="rotate(16 365 113)"/>
+    </g>
+    <g id="lead-arm">
+      <rect x="280" y="167" width="139" height="51" rx="9" transform="rotate(-14 304 191)"/>
+      <rect x="362" y="148" width="111" height="53" rx="9" transform="rotate(-19 382 173)"/>
+    </g>
+  </defs>
+  <path d="M37 161H154 M49 196H131 M62 231H113 M74 266H99" fill="none" stroke="#7CFFF4" stroke-width="9" stroke-linecap="round" stroke-opacity=".5"/>
+  <!-- Draw the rim first, then cover the strokes where the prisms overlap. -->
+  <g fill="#7CFFF4" stroke="#7CFFF4" stroke-width="12" stroke-linejoin="round" stroke-linecap="round">
+    <use href="#rear-arm"/>
+    <use href="#rear-leg"/>
+    <use href="#lead-leg"/>
+    <use href="#body"/>
+    <use href="#head"/>
+    <use href="#lead-arm"/>
+  </g>
+  <use href="#rear-arm" fill="#0A2E30"/>
+  <use href="#rear-leg" fill="#0A2E30"/>
+  <rect x="196" y="291" width="13" height="141" rx="6" fill="#1C6E70" transform="rotate(50 217 280)"/>
+  <use href="#lead-leg" fill="#2FB7B0"/>
+  <use href="#body" fill="#1C6E70"/>
+  <rect x="310" y="150" width="21" height="139" rx="8" fill="#2FB7B0" transform="rotate(40 284 169)"/>
+  <use href="#head" fill="#0A2E30"/>
+  <g transform="rotate(16 365 113)">
+    <rect x="390" y="69" width="21" height="86" rx="7" fill="#1C6E70"/>
+    <rect x="371" y="89" width="37" height="13" rx="6" fill="#8FE8E0"/>
+  </g>
+  <use href="#lead-arm" fill="#2FB7B0"/>
+  <rect x="433" y="156" width="32" height="36" rx="7" fill="#8FE8E0" transform="rotate(-19 382 173)"/>
+</svg>
