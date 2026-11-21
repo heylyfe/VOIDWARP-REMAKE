@@ -1,5 +1,5 @@
 {
-  "$comment": "Upgrade JSON schema (DESIGN.md sections 12 and 8; ticket T-013). The stats/hooks/tier/class vocabularies are closed lists; tier pool-entry levels (T1@1, T2@4, T3@10, T4@18, T5@26) live in core/content_api.gd TIER_FROM, not here.",
+  "$comment": "Upgrade JSON schema (DESIGN.md sections 12 and 8; ticket T-013). The stats/hooks/tier/class vocabularies are closed lists; tier pool-entry levels (T1@1, T2@4, T3@10, T4@18, T5@26) live in data/upgrade_pools.json tiers (with the price bands), not here.",
   "type": "object",
   "additionalProperties": false,
   "required": ["id", "name", "tier", "price", "max_stacks", "class_only", "class_boost", "effect", "modifiers", "hooks"],

@@ -19,7 +19,10 @@ const RegistryScript := preload("res://core/registry.gd")
 const StatsScript := preload("res://core/stats.gd")
 
 # Upgrade tiers enter the shop pool at these levels (DESIGN.md section 8 tier table [CANON]).
-const TIER_FROM: Dictionary = {"T1": 1, "T2": 4, "T3": 10, "T4": 18, "T5": 26}
+# Filled at load() from data/upgrade_pools.json "tiers" (tier -> pool_from), the one source
+# of the table (D-C4-15-1); it was a code constant that duplicated the data file's _doc.
+# Empty on a failed boot, so shop_pool() then admits nothing.
+var TIER_FROM: Dictionary = {}
 
 var _reg: Dictionary = {}
 
@@ -28,7 +31,18 @@ var _reg: Dictionary = {}
 static func load() -> RefCounted:
 	var api := new()
 	api._reg = RegistryScript.load_all()
+	for t in api.tiers().keys():
+		if str(t).begins_with("_"):
+			continue
+		api.TIER_FROM[str(t)] = int((api.tiers()[t] as Dictionary).get("pool_from", 99999))
 	return api
+
+
+## The price-tier table, {"T1": {"pool_from", "price_min", "price_max"}, ...} plus its "_doc"
+## (data/upgrade_pools.json tiers; DESIGN.md section 8). {} on a failed boot.
+func tiers() -> Dictionary:
+	var t: Variant = data("upgrade_pools").get("tiers", {})
+	return t if t is Dictionary else {}
 
 
 func is_ok() -> bool:
@@ -104,7 +118,7 @@ func eligible_curses(p_level: int, votes: Dictionary) -> Array[String]:
 ## The brackeed upgrade pool for p_level (DESIGN.md section 8 [CANON]): the ids of the
 ## one bracket containing the level (first bracket wins on overlap), kept only when the
 ## upgrade exists in content/upgrades/ and its tier has entered the pool at or below the
-## level (T1@1, T2@4, T3@10, T4@18, T5@26). Sorted as listed in the bracket file.
+## level (data/upgrade_pools.json tiers: T1@1, T2@4, T3@10, T4@18, T5@26). Sorted as listed in the bracket file.
 func shop_pool(p_level: int) -> Array[String]:
 	var out: Array[String] = []
 	var brackets: Variant = data("upgrade_pools").get("brackets", [])

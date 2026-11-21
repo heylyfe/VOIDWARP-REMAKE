@@ -7941,3 +7941,70 @@ over the shipped data, so each check still moves exactly one number.
 
 **[CONTESTABLE]** 8 u and the cap of 12 are the guardian's ruling. 20 s, 5 s and 10 s are the
 owner's numbers.
+
+## D-C4-15-1: the tier table is data, and the price bands are checked
+
+**Ruling.** DESIGN.md section 8's price-tier table now has one machine-readable copy:
+`game/data/upgrade_pools.json` `"tiers"` (pool_from, price_min, price_max for T1-T5; the schema
+requires all five). `core/content_api.gd` used to hold the pool-from levels as a code constant
+(`TIER_FROM`) that only repeated the data file's `_doc` text. It now fills `TIER_FROM` from the data
+at `load()` and exposes the table as `tiers()`. The price bands were in no file but DESIGN.md.
+`shop_pool()` and `draw_shop()` are unchanged: they already applied the tier gate, and
+`tests/test_upgrade_tiers.gd` proves that instead of changing them.
+
+The new test fails if the data's tier table differs from DESIGN.md section 8, if two bands overlap
+or the pool-from levels stop ascending, if any upgrade's list price is outside its tier's band, if a
+bracket lists an id before its tier's pool-from level (checked on the raw data, because
+`shop_pool()` would hide it), if `shop_pool()` holds one at levels 0-60, or if `draw_shop()` offers
+one (levels 0-32 x 4 classes x 5 purses x 4 seeds). Every leg was shown failing on an injected
+defect before it was restored.
+
+**Why.** The owner's complaint is about levels and prices. The rule that settles it should sit in
+the data file the shop reads, next to the brackets, and not in a code constant plus a prose table.
+
+## D-C4-15-2: the owner's "end-game upgrade at level 2" does not happen on this tree; no tier or price was changed
+
+**Ruling.** This is the audit of all 36 upgrades (the table is in README.md, generated from the data
+by `game/tools/upgrade_table.gd`). Every list price is inside its DESIGN.md section 8 band. No bracket
+lists an id early. The earliest shop that can show a T2 is the one after level 4, a T3 after level 10,
+a T4 after level 19 (it enters the pool at 18, which has no shop) and the T5 after level 28 (enters at
+26, no shop). A probe through the real `Intermission` (levels 0-30 x 60 seeds x purses 0/50/200/2000)
+found 0 offers above the tier gate. Level 2 and level 3 have no shop at all (the schedule is C, then E),
+so nothing can be bought at level 2. The only shop before that, after level 1, sells exactly the
+CANON three.
+
+So no data defect matches the complaint, and none was invented to fit it. DESIGN.md section 8 is
+frozen and pins every id's tier and price, and so does `tests/test_upgrades_decl.gd`. Re-tiering
+an upgrade is a design change and needs the owner. The candidates are parked in PARKED.md row 35
+with their numbers: Field Dressing's power against its T1 price, the unreachable "2-3" bracket, and
+a T5 that the average-player model buys in 1% of runs.
+
+**Measured, before and after, on the same seeds (both identical, as expected for a change that
+moves no id, price or bracket):** `bot_run.gd --runs 20 --seed-base 60717 --max-level 18`: level 1
+completed 20/20 (median 43.6 s), level 6 reached 20% (4/20), level 12 0%, level 18 0%, median level
+4, max 8. The 40 per-run lines are byte-identical. `economy_audit.gd`: AUDIT OK, afford1 99.5%,
+afford3 29.3%, purchases 23.89, cautious 8.25, identical.
+
+## D-C4-15-3: the README upgrade table is generated, and a test keeps it honest
+
+**Ruling.** README.md carries the tier bands and a per-upgrade table (tier, price, 2nd and 3rd stack
+price, max stacks, pool from, first shop, class). The block between the `upgrade-table` markers is
+written by `game/tools/upgrade_table.gd -- --write`. Every number comes from the same calls the game
+makes (`shop_pool()`, `bays_for_level()`, `price_for()`). `tests/test_upgrade_tiers.gd` regenerates
+the block and fails if one byte differs. "First shop" is listed next to "pool from" because those two
+answer different questions: Field Dressing is in the pool from level 2, but the first lobby that
+sells it is after level 4.
+
+## D-C4-15-4: the two probes print the purse, behind flags
+
+**Ruling.** `bot_run.gd -- --purse` prints `PURSE run i seed=s [...]`: the purse the shop sees after
+each completed level. `economy_audit.gd -- --purse` prints the mean purse at each shop and the tiers
+bought there, for the average and the cautious player. Both are off by default, so the default output
+and every assertion are unchanged.
+
+**What the numbers show.** The bot's purse is not a player's purse. The bot buys nothing, and its
+ledger is credited only with curse bounties, not with gold or the stipend. Seed 60717 reads 0, 0, 22,
+22, 76, 76. The economy-audit model is the instrument for income. Its average player arrives with
+64 g at the level-1 shop, 196 g at level 4, 353 g at level 10, 396 g at level 19 and 883 g at level 28.
+The first T3 purchase is at level 10, the first T4 at level 22, and T5 is bought 0.01 times per run.
+Nothing is bought above its tier's level.
