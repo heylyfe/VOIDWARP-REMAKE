@@ -8,15 +8,15 @@ extends Control
 # roster standing as real billboards. The UI never covers the roster: the column is on the left,
 # the stage camera shifts the island right (menu_stage.gd CAM_H_OFFSET).
 #
-# LOOK (D-GUI-1, view/ui_style.gd; supersedes D-MENU-9's gold): the house teal over the
-# house-teal island (D-GUI-2). One focal column - the wordmark (VOIDWRAP in white, RUN in
+# LOOK (D-FRONT-1, view/ui_style.gd; supersedes D-MENU-9's gold): the house teal over the
+# house-teal island (D-FRONT-2). One focal column - the wordmark (VOIDWRAP in white, RUN in
 # the accent), a 1 px rule, the entries as quiet rows; the selected entry wears the shared
 # focus ring. The build pill sits in the bottom-left corner, the disclaimer bottom-right.
 #
 # INPUT is the game's own mapping (data/bindings.json through app/input_capture.gd, the file the
 # play capture reads): move_forward / move_back select (wrapping), jump or interact confirm, pause
 # backs out of the HOW TO PLAY panel; Tab / Shift+Tab and Up / Down also walk the entries
-# (the shared focus keys, D-GUI-1). Gamepad: the bound jump / interact buttons confirm, the left
+# (the shared focus keys, D-FRONT-1). Gamepad: the bound jump / interact buttons confirm, the left
 # stick (the game's move axis) and the d-pad select. Enter is NOT a confirm key; the entries never
 # take keyboard focus, so Godot's built-in ui_accept / ui_up / ui_down cannot double-fire.
 # The mouse also works: hover selects, click activates.
@@ -66,7 +66,7 @@ const AmbienceAudioScript := preload("res://view/audio/ambience_audio.gd")
 const UiStyle := preload("res://view/ui_style.gd")
 const UiFocus := preload("res://view/ui_focus.gd")
 
-## Palette (D-GUI-1, view/ui_style.gd - supersedes D-MENU-9's gold/indigo). The names are
+## Palette (D-FRONT-1, view/ui_style.gd - supersedes D-MENU-9's gold/indigo). The names are
 ## the old roles, kept because tests/test_menu.gd reads C_GOLD / C_MUTED: C_GOLD is the
 ## SELECTED entry's text, C_MUTED an unselected entry's.
 const C_VOID := UiStyle.BLACK
@@ -104,7 +104,7 @@ var _panel_right := 0.0
 var _stick_latched := false
 var _scaled: Array = []                 # [Control, theme font-size key, base px]
 var _title_face: FontVariation = UiStyle.scaled_face(0.85)   # the wordmark (tracking scales)
-var _focus: UiFocus = UiFocus.new()     # the entries; the ring follows `selected` (D-GUI-1)
+var _focus: UiFocus = UiFocus.new()     # the entries; the ring follows `selected` (D-FRONT-1)
 
 var _viewport_box: SubViewportContainer
 var _scrim: ColorRect
@@ -354,7 +354,7 @@ func _build_howto_panel() -> void:
 
 
 ## "W / S select     SPACE / F confirm" - read from the bindings, never hardcoded. The keys
-## in white mono, the verbs in the tracked label face (D-GUI-1).
+## in white mono, the verbs in the tracked label face (D-FRONT-1).
 func keys_hint_bbcode() -> String:
 	return "[color=#FFFFFF][b]%s[/b][/color] [color=#8FE8E0]SELECT[/color]      [color=#FFFFFF][b]%s[/b][/color] [color=#8FE8E0]CONFIRM[/color]" % [
 		_keys(["move_forward", "move_back"]), _keys(["jump", "interact"])]
@@ -476,7 +476,7 @@ func _style_entry(i: int) -> void:
 
 func _set_selected(i: int, snap: bool = false) -> void:
 	selected = posmod(i, MENU_ENTRIES.size())
-	_focus.index = selected          # the shared ring follows the selection (D-GUI-1)
+	_focus.index = selected          # the shared ring follows the selection (D-FRONT-1)
 	_entry_hint.text = str(ENTRY_HINTS[selected])
 	if snap:
 		for k in _entry_anim.size():
@@ -607,7 +607,7 @@ func handle_input(event: InputEvent) -> bool:
 			return false
 		var code: int = int(k.keycode) if k.keycode != KEY_NONE else int(k.physical_keycode)
 		action = action_for_key(code)
-		# D-GUI-1: Tab / Shift+Tab and the arrow keys walk the entries on every screen. Enter
+		# D-FRONT-1: Tab / Shift+Tab and the arrow keys walk the entries on every screen. Enter
 		# stays inert here (D-MENU-9: confirm is the game's jump / interact binding).
 		if action == "" and code == KEY_TAB:
 			action = "up" if k.shift_pressed else "down"

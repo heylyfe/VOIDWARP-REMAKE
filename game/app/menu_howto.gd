@@ -26,7 +26,7 @@ const EconomyScript := preload("res://sim/economy.gd")
 const EnemyRuntimeScript := preload("res://sim/enemy_runtime.gd")
 const InputCaptureScript := preload("res://app/input_capture.gd")
 
-## D-GUI-1: the panel speaks the house palette (view/ui_style.gd). The names are the old
+## D-FRONT-1: the panel speaks the house palette (view/ui_style.gd). The names are the old
 ## roles; the values are teal: headings and the charge pips in the accent, emphasis (keys,
 ## the beacon, the kill rule, the sparks) in white, running text in soft teal. The words
 ## still say "gold" and "pink" - the colour of the thing in the world, not of the text.

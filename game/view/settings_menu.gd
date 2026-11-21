@@ -24,7 +24,7 @@ extends Control
 #
 # Headless-safe like menu.gd: plain property setters, tests drive the widgets directly.
 #
-# Look and keys (D-GUI-1, view/ui_style.gd + view/ui_focus.gd): one centred panel - the
+# Look and keys (D-FRONT-1, view/ui_style.gd + view/ui_focus.gd): one centred panel - the
 # SETTINGS heading, then one row per setting (tracked caption, control, the value in mono),
 # the hint, and BACK. Each row is one focus stop wearing the shared focus ring: Tab /
 # Shift+Tab / Up / Down move it, Left / Right adjust the focused slider (key repeat

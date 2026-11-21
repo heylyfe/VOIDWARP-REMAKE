@@ -1,6 +1,6 @@
 extends SceneTree
 #
-# Front-end screenshot tool (D-GUI-1): boots the REAL app (app/app.gd) and captures every
+# Front-end screenshot tool (D-FRONT-1): boots the REAL app (app/app.gd) and captures every
 # front-end screen the way a player meets them. Windowed run - rendering needs a GPU,
 # never --headless; the out dir must be ABSOLUTE:
 #

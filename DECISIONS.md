@@ -8198,3 +8198,98 @@ shortened from 1.630 to 1.255 u and bob fell from 0.0240 to 0.0024 u. The
 controlled tests exercise flat walking, flat running, a ramp and a 0.5 u
 staircase. The capture tool uses separate fixed-camera walk, run and ramp
 sequences at 30 samples per second.
+## D-FRONT-1 (2026-11-21): one front-end style and one keyboard focus for every menu screen
+**Renumbered at merge.** This ticket first wrote these five rulings as D-GUI-1..5, but the HUD ticket merged first and already holds D-GUI-1 on main. They are D-FRONT-1..5 here and in every code comment this branch touched, so the two tickets no longer share an id. No ruling text changed.
+
+**Owner report.** "Work on the gui as well as its kinda bad." Each front-end screen invented its own
+font sizes, margins, colours and button shapes (gold #FFC83D, indigo #02030F / #0D1229, grey-blue
+#8B9EB7, rounded 10 px cards, 3 px borders, gradient scrims), and no two screens took the keyboard
+the same way.
+
+**Ruling.** `game/view/ui_style.gd` is the single source of the front end's look, and
+`game/view/ui_focus.gd` the single keyboard focus. Every screen this ruling covers uses both: the main
+menu (app/menu.gd + menu_howto.gd), the class altar, the pause overlay, the settings screen, the lobby
+purse HUD and the loading screen's chrome. The in-game HUD (view/hud/*) is NOT covered; it has its own
+owner.
+- **Palette**: the five house teals (#0A2E30 deep, #1C6E70 mid, #2FB7B0 accent, #7CFFF4 bright,
+  #8FE8E0 soft) plus pure white and pure black, at any alpha. Nothing else in the 2D chrome. BRIGHT is
+  reserved for the focus ring; ACCENT is used sparingly (rules, the primary button's edge, RUN).
+- **Type scale** (px at 1280x720): display 56, title 26, entry 20, body 15, small 13, label 11
+  (tracked 2 px, upper case), mono numbers 15. Faces: the built-in fallback for text (D-MENU-9's
+  reason stands), and the first installed monospace system face for numbers (Cascadia Mono, Consolas,
+  DejaVu Sans Mono, ...) with the fallback's tabular digits behind it, so a purse never jitters.
+- **Spacing**: 4 / 8 / 12 / 16 / 24 / 32 / 48; corner pills inset 24 px.
+- **Shapes**: 1 px borders, 2 px corner radius, no shadows, no gradients. Buttons 40 px tall, 240 px
+  wide by default. Every label carries a 4 px padding box, so no text touches its own rect.
+- **Hierarchy**: PRIMARY (accent edge + faint accent fill, white text) for the one action a screen
+  exists for (RESUME, CONFIRM), SECONDARY (mid edge, soft text) for the rest, GHOST rows for the main
+  menu entries.
+- **Focus ring**: a 1 px BRIGHT border with a 3 px BRIGHT bar on the left, on exactly one control.
+  Tab / Shift+Tab cycle and wrap; Up / Down move; Left / Right adjust a focused slider; Enter / Space
+  activate (never on a key repeat); Escape backs out where the screen owns it (the settings screen and
+  the HOW TO PLAY panel; the pause and the altar keep app.gd's ESC). Controls keep FOCUS_NONE, so
+  Godot's ui_accept can never double-fire (D-MENU-9's reason). The mouse moves the same ring on hover,
+  except at the class altar, where hover must not select a card (a click selects, a second confirms).
+- **Per screen**: the pause overlay shows LEVEL / PURSE as corner pills, PAUSED + rule as the focal
+  column, RESUME first and focused on open, SETTINGS, then ABANDON RUN last. The settings screen is one
+  panel of rows (tracked caption, control, value in mono); each row is one focus stop. The altar's
+  Tab walks the cards, then CONFIRM, then SKIP; Enter on SKIP skips. The lobby purse is a corner pill
+  pinned to the top-right edge. The loading screen keeps its gag stage (D-LOAD-1's register) but its
+  backdrop is the flat house void (no gradient), its motes and floor are house teal, and the bar is a
+  flat 6 px accent fill in a 1 px mid frame.
+
+**Supersedes.** D-MENU-9's gold selection colours and indigo panel (the selection's four cues stay:
+text colour, left bar, faint fill, indent); D-LOAD-1 / D-LOAD-6's pink bar, pink FIELD NOTE header and
+indigo gradient (the gags' own colours stay); the lobby prompt bar's indigo slab #2E2E4A / edge #5A5A82,
+now #0A2E30 / #1C6E70 (its gold / danger price colours stay - test_lobby_defects pins them, and they are
+world semantics, not chrome); menu_howto.gd's gold / red / pink bbcode, now accent headings and white
+emphasis (the words still say "gold" and "pink").
+
+**Measured.** New `tests/test_ui_style.gd` checks, on every covered screen with the longest real
+strings loaded (a 3-digit level, a 6-digit purse, the longest class name with its "(last)" mark, all 30
+loading tips, the slider extremes): every Label / Button text fits its own rect with >= 4 px on all four
+sides and stays inside its panel and on the 1280x720 screen; every interactive control is >= 32 px
+tall; Tab focuses each control in turn with exactly one focus ring, wraps, and Shift+Tab walks back;
+every colour override, flat stylebox, ColorRect and bbcode colour is in the palette; no gradient
+textures; plus Escape / Enter legs and the longest enemy / curse / upgrade names on the lobby's prompt
+bar. Negative control: the final test against the untouched screens (33d447e) fails **216** checks
+(palette 159, fit 46, slider height 3, no shared focus on 4 screens, key legs 3, all 30 tips 1);
+against this branch, **0**. The longest names on the prompt bar: enemy "gin ichimaru" scale 1.000,
+curse "Quarter Chimes" 0.973, upgrade "Radar Module: Threats" 0.680 - all inside the text box; the
+floor is 0.5 (the bar's name reads ~22 px at camera distance, so 0.5 keeps it at the type scale's
+smallest size, 11 px). Nothing in an existing test was deleted, skipped or loosened.
+
+## D-FRONT-2 (2026-11-21): the menu island wears the house teal act (supersedes D-MENU-2's biome pick)
+
+**Ruling.** app/menu_stage.gd picks its biome by void colour; VOID_HEX is now #010B0C (data/palette.json
+`void`, the Deepwater act) instead of the indigo #02030F, and CARD_GRADE is a slightly teal
+(0.80, 0.93, 0.91) instead of the indigo-cool grade. The pick is still by palette field, never by id.
+**Why.** The owner fixed the house palette as teal; an indigo island behind teal chrome read as two
+games. D-MENU-2's glow, beacon key light and roster layout are unchanged. The roster's danger-line
+captions stay red (D-MENU-6: they are the in-game danger text, shown in the world, not chrome).
+
+## D-FRONT-3 (2026-11-21): Enter stays inert on the main menu; Tab and the arrows join it
+
+**Ruling.** The brief asks for Enter / Space to activate on every screen. On the main menu, Space (the
+jump binding) and F confirm as before, and Tab / Shift+Tab and Up / Down now walk the entries - but
+Enter still does nothing. test_menu.gd asserts exactly that ("Enter is not the game's confirm: it must
+do nothing", D-MENU-9), and existing tests are not loosened. Every other screen takes Enter.
+**Overrule** by changing that assertion in test_menu.gd and adding KEY_ENTER to menu.gd action_for_key().
+
+## D-FRONT-4 (2026-11-21): the pause overlay draws on its own canvas layer, above the HUD
+
+**Ruling.** The overlay's content lives on a CanvasLayer at layer 129 - above the level HUD (1), the
+run-over screen (2) and address_me_view's overlay (128). The overlay Control itself still owns
+`visible` / is_open() and keeps its layer in step. **Why.** The screenshot pass showed the in-game HUD
+drawing OVER the pause overlay (its gift icon on top of the LEVEL pill, its 0 / 40 counter across the
+key hints): a pause has to dim the HUD, not sit under it. test_ui_style sizes the root viewport to
+1280x720 while it measures, because a canvas layer lays out against the viewport, which --headless
+leaves tiny.
+
+## D-FRONT-5 (2026-11-21): the cursor on menu screens is still written by world.gd alone
+
+**Ruling.** No front-end file writes Input.mouse_mode. test_input.gd pins world.gd as the only writer
+under app/, and the existing paths already free the cursor on every menu screen: world teardown on the
+way to the menu, apply_mouse_mode() when the altar opens and when the pause opens, lobby_scene's own
+release, and the capture comes back only when play starts (test_class_altar_pick asserts both ends).
+shot_gui.gd prints the mouse mode on the menu and on the pause: 0 (visible) on both.

@@ -62,9 +62,9 @@ const ICON_H := 1.2                        # curse / upgrade icon billboard
 const BAR_W := 6.0                         # the slab's width, world u
 const BAR_H := 1.9                         # the slab's height, world u
 const BAR_Z := 0.35                        # toward the player: the slab sits in FRONT of the exhibit
-const BAR_BG_HEX := "#0A2E30"              # the house deep teal (D-GUI-1; was the reference's indigo #2E2E4A)
+const BAR_BG_HEX := "#0A2E30"              # the house deep teal (D-FRONT-1; was the reference's indigo #2E2E4A)
 const BAR_BG_ALPHA := 0.86                 # slightly translucent
-const BAR_EDGE_HEX := "#1C6E70"            # the 1-line top edge, house mid teal (D-GUI-1; was #5A5A82)
+const BAR_EDGE_HEX := "#1C6E70"            # the 1-line top edge, house mid teal (D-FRONT-1; was #5A5A82)
 const BAR_EDGE_H := 0.035
 const BAR_PIXEL := 0.005                   # Label3D pixel_size for every glyph on the bar
 const BAR_FONT := 110                      # the name (fitted down when it would overflow)
@@ -970,7 +970,7 @@ func _bar(p_wrap: Dictionary, p_lines: Array, p_price: int = -1, p_purse: int = 
 	var sub := _bar_label(bar, _bar_clip(desc, BAR_FONT_DESC, text_w / BAR_PIXEL),
 			BAR_FONT_DESC, HORIZONTAL_ALIGNMENT_CENTER)
 	_bar_fit(sub, -BAR_W * 0.5 + BAR_TEXT_X, BAR_DESC_DY, text_w)
-	sub.modulate = Color(0.5608, 0.9098, 0.8784)   # house soft teal #8FE8E0 (D-GUI-1)
+	sub.modulate = Color(0.5608, 0.9098, 0.8784)   # house soft teal #8FE8E0 (D-FRONT-1)
 	# the price line: what the shop charges, and whether the purse covers it
 	if p_price >= 0:
 		var affordable: bool = p_purse >= p_price

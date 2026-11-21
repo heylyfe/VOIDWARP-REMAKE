@@ -12,7 +12,7 @@ extends SceneTree
 #        <out_dir>/altar_01_selected.png (card 2 selected: the focus ring, CONFIRM live)
 #        <out_dir>/altar_02_held.png    (5 s later: the loading clock ran out, the run waits)
 #        <out_dir>/altar_03_focus_confirm.png (two Tabs walk the ring from card 2 over card 3 to
-#                                        CONFIRM; card 3 stays selected - D-GUI-1 focus)
+#                                        CONFIRM; card 3 stays selected - D-FRONT-1 focus)
 # Prints a DIAG line per shot (mouse mode, card count, per-card icon/name/desc, confirm
 # state, the card row's centre vs the viewport centre) so a blank or off-centre shot is not
 # mistaken for a fixed one. Named shot_*, not test_*, so tests/run_all.gd skips it. Prints

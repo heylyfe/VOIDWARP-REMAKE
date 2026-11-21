@@ -3,7 +3,7 @@ extends Control
 # view/lobby/lobby_hud.gd - the Antechamber's HUD (owner defect: the lobby showed no purse
 # at all, so a player could not see the gold the altars were asking for).
 #
-# One compact pill, top-right (D-GUI-1, view/ui_style.gd: the front end's pill language):
+# One compact pill, top-right (D-FRONT-1, view/ui_style.gd: the front end's pill language):
 # the tracked PURSE label, the gold-balance icon, then the purse in whole gold in the mono
 # face, so the number never jitters as it changes. The pill grows leftwards from the
 # corner, so a 6-digit purse keeps its padding. The purse is the lobby state's own field

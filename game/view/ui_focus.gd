@@ -1,6 +1,6 @@
 extends RefCounted
 #
-# view/ui_focus.gd - the keyboard focus every menu screen shares (D-GUI-1, view/ui_style.gd).
+# view/ui_focus.gd - the keyboard focus every menu screen shares (D-FRONT-1, view/ui_style.gd).
 #
 # A screen registers its interactive controls in visual order; this object owns which one
 # is focused and paints the focus ring (UiStyle.focus_box) on exactly that one. Keys:

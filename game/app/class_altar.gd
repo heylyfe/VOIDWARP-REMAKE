@@ -17,7 +17,7 @@ extends Control
 # menu (the press that started the run) has nothing to confirm; key echoes are ignored.
 # None of the buttons take Godot keyboard focus - the altar reads the keys itself
 # (handle_input), so Godot's built-in ui_accept can never press a card behind its back.
-# The focus ring is the shared one (view/ui_focus.gd, D-GUI-1): Tab walks the cards, then
+# The focus ring is the shared one (view/ui_focus.gd, D-FRONT-1): Tab walks the cards, then
 # CONFIRM, then SKIP; a card that takes the ring is selected.
 # The backdrop is the only mouse stop; every container between it and the cards ignores
 # the mouse, so a click lands on the card under the cursor.
@@ -60,7 +60,7 @@ var _cards: Dictionary = {}             # id -> Button (the whole card is the bu
 var _confirm: Button
 var _skip: Button
 var _hint: Label
-var _focus: UiFocus = UiFocus.new()     # cards, then CONFIRM, then SKIP (D-GUI-1)
+var _focus: UiFocus = UiFocus.new()     # cards, then CONFIRM, then SKIP (D-FRONT-1)
 
 
 func _init() -> void:

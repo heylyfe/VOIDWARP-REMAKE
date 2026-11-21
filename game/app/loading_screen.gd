@@ -39,7 +39,7 @@ const TIP_ROTATION_SECONDS := 5.0
 const HAZARD_TELL_WEIGHT := 3
 const TIPS_PATH := "res://data/tips.json"
 const PROGRESS_EPSILON := 0.000001
-## The chrome's widths (D-GUI-1): the tip's wrap width and the bar's length.
+## The chrome's widths (D-FRONT-1): the tip's wrap width and the bar's length.
 const TIP_W := 820.0
 const BAR_W := 480.0
 ## Float slack on "the hold is reached" so 40 accumulated 0.05 steps count as 2.0 s.
@@ -266,7 +266,7 @@ func _process(delta: float) -> void:
 	advance(delta)
 
 
-## D-GUI-1 (view/ui_style.gd): the wordmark is the top focal line in the display face with
+## D-FRONT-1 (view/ui_style.gd): the wordmark is the top focal line in the display face with
 ## a 1 px accent rule; the bottom block is the FIELD NOTE label (tracked, accent), the tip
 ## in body text, a flat 6 px bar (1 px MID edge, ACCENT fill, no rounding) and the status
 ## line in the mono face so the percentage never jitters.

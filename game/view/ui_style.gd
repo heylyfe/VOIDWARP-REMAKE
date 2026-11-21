@@ -1,6 +1,6 @@
 extends RefCounted
 #
-# view/ui_style.gd - the ONE front-end style every menu screen uses (D-GUI-1).
+# view/ui_style.gd - the ONE front-end style every menu screen uses (D-FRONT-1).
 #
 # Screens: app/menu.gd, app/class_altar.gd, app/pause_overlay.gd, view/settings_menu.gd,
 # view/lobby/lobby_hud.gd, app/loading_screen.gd. The in-game HUD (view/hud/*) is not on

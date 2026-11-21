@@ -11,7 +11,7 @@ extends Control
 
 const GagsScript := preload("res://app/loading_gags.gd")
 
-## D-GUI-1: a flat backdrop in the house void (#010B0C, data/palette.json `void`) - no
+## D-FRONT-1: a flat backdrop in the house void (#010B0C, data/palette.json `void`) - no
 ## gradient - and a deep-teal floor slab under the bright lip. The gags keep their own
 ## colours (the cartoon register, D-LOAD-1); only the room around them is the house's.
 const BG_TOP := Color(0.0039, 0.0431, 0.0471)       # #010B0C

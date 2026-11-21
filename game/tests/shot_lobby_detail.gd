@@ -14,7 +14,7 @@ extends SceneTree
 #        <out_dir>/detail_04_icons_eye.png       (the upgrade bay from standing eye height)
 #        <out_dir>/detail_05_icons_above.png     (the same bay from above, 45 degrees)
 #        <out_dir>/detail_06_purse_max.png       (completed 999, purse 999999: the purse pill and
-#                                                 the price line at their widest - D-GUI-1)
+#                                                 the price line at their widest - D-FRONT-1)
 # Prints a DIAG line per shot (the stood-at altar's label, price, afford state and the
 # price line's text; the icon quads' facing) so a blank shot is not mistaken for a fixed
 # one. Named shot_*, not test_*, so tests/run_all.gd skips it. Prints "SHOT <path>" per PNG

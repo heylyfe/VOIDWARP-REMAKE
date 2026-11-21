@@ -1,6 +1,6 @@
 extends RefCounted
 #
-# test_ui_style.gd (D-GUI-1): the front-end screens share one style (view/ui_style.gd) and
+# test_ui_style.gd (D-FRONT-1): the front-end screens share one style (view/ui_style.gd) and
 # one keyboard focus (view/ui_focus.gd). For every screen - main menu (and its HOW TO PLAY
 # panel), class altar, pause overlay, settings, lobby purse HUD, loading screen - with the
 # longest real strings loaded (a 3-digit level, a 6-digit purse, the longest class name with
@@ -13,6 +13,8 @@ extends RefCounted
 #               walks back;
 #   5. PALETTE  every colour override, flat stylebox, ColorRect and bbcode colour is one
 #               of the five house teals or pure white / black (alpha ignored).
+# 6. NAMES   the longest enemy, curse and upgrade names fit the lobby's 3D prompt bar (the
+#             only place those names are drawn outside the in-game HUD).
 # Plus the screen-owned back / activate keys (Escape closes the settings screen and the
 # HOW TO PLAY panel; Enter on a focused control activates it).
 # Headless, in the real tree (labels need a layout): each screen goes under a 1280x720
@@ -26,6 +28,8 @@ const SettingsMenuScript := preload("res://view/settings_menu.gd")
 const LobbyHudScript := preload("res://view/lobby/lobby_hud.gd")
 const LoadingScript := preload("res://app/loading_screen.gd")
 const RecordsScript := preload("res://core/records.gd")
+const AntechamberScript := preload("res://view/lobby/antechamber.gd")
+const IntermissionScript := preload("res://sim/intermission.gd")
 
 const SCREEN := Vector2(1280, 720)
 const PAD := 4.0
@@ -64,6 +68,7 @@ func run() -> Array[String]:
 	_settings(f)
 	_lobby_hud(f)
 	_loading(f)
+	_bar_names(f)
 	_root.remove_child(_holder)
 	_holder.free()
 	_root.size = old_size
@@ -476,3 +481,55 @@ func _loading(f: Array[String]) -> void:
 	if bad > 0:
 		f.append("loading: %d / %d tips do not fit (first: %s)" % [bad, tips.size(), first])
 	_unmount(l)
+
+
+## The longest real names (every enemy, curse and upgrade in the content tree) on the
+## Antechamber's prompt bar, placed by the bar's own _bar_fit: the name starts at the bar's
+## text edge, ends inside the slab, and is never shrunk below BAR_MIN_K. The bar's name reads
+## ~22 px at the game camera's distance (antechamber.gd BAR_* notes), so 0.5 keeps the
+## longest name at >= 11 px - the smallest size in the type scale (UiStyle.FS_LABEL).
+const BAR_MIN_K := 0.5
+
+func _bar_names(f: Array[String]) -> void:
+	var api = load("res://core/content_api.gd").load()
+	if api == null or not api.is_ok():
+		f.append("bar names: the content registry did not boot")
+		return
+	var h = AntechamberScript.new()
+	h.build_all(api, IntermissionScript.create(api, 1, 400, 7), "", 1)
+	var left: float = -AntechamberScript.BAR_W * 0.5 + AntechamberScript.BAR_TEXT_X
+	var right: float = AntechamberScript.BAR_W * 0.5 - AntechamberScript.BAR_RIGHT_PAD
+	var font: Font = ThemeDB.fallback_font
+	var fs: int = AntechamberScript.BAR_FONT
+	for kind in ["enemy", "curse", "upgrade"]:
+		var ids: Array = api.call(kind + "_ids")
+		var longest := ""
+		for id in ids:
+			var nm := str((api.call(kind, str(id)) as Dictionary).get("name", str(id)))
+			if font.get_string_size(nm, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x \
+					> font.get_string_size(longest, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x:
+				longest = nm
+		if longest == "":
+			f.append("bar names: no %s names to measure" % kind)
+			continue
+		var l := Label3D.new()
+		l.text = longest
+		l.font_size = fs
+		l.pixel_size = AntechamberScript.BAR_PIXEL
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		h._bar_fit(l, left, AntechamberScript.BAR_NAME_DY, right - left)
+		var k: float = l.scale.x
+		var w: float = font.get_string_size(longest, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x \
+				* AntechamberScript.BAR_PIXEL * k
+		var x0: float = l.position.x - w * 0.5
+		var x1: float = l.position.x + w * 0.5
+		print("test_ui_style: longest %s name '%s' -> scale %.3f, spans %.3f..%.3f of %.3f..%.3f"
+				% [kind, longest, k, x0, x1, left, right])
+		if x0 < left - 1e-3 or x1 > right + 1e-3:
+			f.append("bar names: the longest %s name '%s' spans %.3f..%.3f, the bar's text box %.3f..%.3f"
+					% [kind, longest, x0, x1, left, right])
+		if k < BAR_MIN_K:
+			f.append("bar names: the longest %s name '%s' is shrunk to %.2f (< %.2f) to fit"
+					% [kind, longest, k, BAR_MIN_K])
+		l.free()
+	h.free()

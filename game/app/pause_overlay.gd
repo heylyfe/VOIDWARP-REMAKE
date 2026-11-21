@@ -19,7 +19,7 @@ extends Control
 #   func close() / func is_open()
 
 #
-# Look (D-GUI-1, view/ui_style.gd): the frozen run stays visible under a black scrim; the
+# Look (D-FRONT-1, view/ui_style.gd): the frozen run stays visible under a black scrim; the
 # run's state sits in compact pills in the top-left corner (LEVEL, PURSE); the one focal
 # element is the centred column - PAUSED, a 1 px accent rule, then RESUME (the primary
 # action, focused when the overlay opens), SETTINGS and ABANDON RUN (secondary). The key
