@@ -2,7 +2,8 @@ extends SceneTree
 #
 # Economy audit A11 (FLEET_PACK.md section 4; ticket T-022) - headless:
 #
-#   <godot> --headless --path game --script res://tools/economy_audit.gd
+#   <godot> --headless --path game --script res://tools/economy_audit.gd [-- --purse]
+#   (--purse also prints the mean purse at each shop and the tiers bought there; C4-15)
 #
 # Simulates 1,000 full runs to level 30 with the average-player income model of DESIGN.md
 # section 3.2 (one total-per-level number per level, read from data/economy.json - the
@@ -96,6 +97,10 @@ func _simulate(failures: Array[String], api: RefCounted, cautious: bool) -> Dict
 	var shops_with_1 := 0
 	var shops_with_3 := 0
 	var purchases := 0
+	# C4-15 (informational, --purse): per shop level, the summed purse BEFORE the visit and
+	# the purchases by tier, so the per-level purse and "which tier is bought when" print.
+	var lv_purse := {}
+	var lv_tiers := {}
 	for run in RUNS:
 		var cls: String = CLASSES[int(VoidRngScript.new(VoidRngScript.mix(run, CLASS_SEED_OFFSET)).urange(3))]
 		var purse := 0
@@ -116,6 +121,7 @@ func _simulate(failures: Array[String], api: RefCounted, cautious: bool) -> Dict
 				var draw_rng: RefCounted = VoidRngScript.new(VoidRngScript.mix(VoidRngScript.mix(run, AVG_INCOME_SEED), level))
 				var shop: Dictionary = OffersScript.draw_shop(api, level, purse, stacks, cls, draw_rng, discount)
 				shops += 1
+				lv_purse[level] = int(lv_purse.get(level, 0)) + purse
 				var affordable := 0
 				var cheapest_offer := {}
 				var offer_sum := 0
@@ -133,6 +139,7 @@ func _simulate(failures: Array[String], api: RefCounted, cautious: bool) -> Dict
 				if cautious:
 					if not cheapest_offer.is_empty() and int(cheapest_offer["price"]) * 3 <= purse:
 						purse -= int(cheapest_offer["price"])
+						_tally(lv_tiers, level, api, str(cheapest_offer["id"]))
 						purchases += 1
 						_bump(stacks, str(cheapest_offer["id"]))
 				else:
@@ -146,6 +153,7 @@ func _simulate(failures: Array[String], api: RefCounted, cautious: bool) -> Dict
 						var price := int(o["price"])
 						if price <= purse:
 							purse -= price
+							_tally(lv_tiers, level, api, str(o["id"]))
 							purchases += 1
 							bought += 1
 							_bump(stacks, str(o["id"]))
@@ -162,7 +170,24 @@ func _simulate(failures: Array[String], api: RefCounted, cautious: bool) -> Dict
 	else:
 		if mean < BAND_CAUTIOUS_MIN or mean > BAND_CAUTIOUS_MAX:
 			failures.append("cautious purchases per run %.2f outside 6-10" % mean)
+	if OS.get_cmdline_user_args().has("--purse"):
+		var levels: Array = lv_purse.keys()
+		levels.sort()
+		for lv in levels:
+			var t: Dictionary = lv_tiers.get(lv, {})
+			print("PURSE %s shop after level %d: mean purse %.0f g | bought per run T1 %.2f T2 %.2f T3 %.2f T4 %.2f T5 %.2f" % [
+					"cautious" if cautious else "average", int(lv), float(lv_purse[lv]) / RUNS,
+					float(t.get("T1", 0)) / RUNS, float(t.get("T2", 0)) / RUNS, float(t.get("T3", 0)) / RUNS,
+					float(t.get("T4", 0)) / RUNS, float(t.get("T5", 0)) / RUNS])
 	return {"shops": shops, "shops_with_1": shops_with_1, "shops_with_3": shops_with_3, "purchases": purchases}
+
+
+## C4-15: one purchase of p_id at p_level, counted under its tier.
+func _tally(p_tiers: Dictionary, p_level: int, api: RefCounted, p_id: String) -> void:
+	if not p_tiers.has(p_level):
+		p_tiers[p_level] = {}
+	var t := str(api.upgrade(p_id).get("tier", ""))
+	p_tiers[p_level][t] = int(p_tiers[p_level].get(t, 0)) + 1
 
 
 ## Marks the bought stack so max-stacked items stop being drawn.

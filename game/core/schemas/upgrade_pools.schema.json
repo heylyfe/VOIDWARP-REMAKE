@@ -1,11 +1,24 @@
 {
-  "$comment": "data/upgrade_pools.json schema (DESIGN.md section 8 [CANON]; ticket T-013). Level 1 bracket is exactly the T1 trio; each later bracket lists all upgrades whose tier has entered the pool (T1@1, T2@4, T3@10, T4@18, T5@26). max_level null = open-ended last bracket. The membership/set relationships are asserted by test_content.gd, not by the schema.",
+  "$comment": "data/upgrade_pools.json schema (DESIGN.md section 8 [CANON]; ticket T-013). Level 1 bracket is exactly the T1 trio; each later bracket lists all upgrades whose tier has entered the pool (tiers.<T>.pool_from: T1@1, T2@4, T3@10, T4@18, T5@26). max_level null = open-ended last bracket. The membership/set relationships are asserted by test_content.gd, not by the schema.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["mode", "brackets"],
+  "required": ["mode", "tiers", "brackets"],
   "properties": {
     "_doc": {"type": "string"},
     "mode": {"type": "string"},
+    "tiers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["T1", "T2", "T3", "T4", "T5"],
+      "properties": {
+        "_doc": {"type": "string"},
+        "T1": {"type": "object", "additionalProperties": false, "required": ["pool_from", "price_min", "price_max"], "properties": {"pool_from": {"type": "integer", "minimum": 1}, "price_min": {"type": "integer", "minimum": 0}, "price_max": {"type": "integer", "minimum": 0}}},
+        "T2": {"type": "object", "additionalProperties": false, "required": ["pool_from", "price_min", "price_max"], "properties": {"pool_from": {"type": "integer", "minimum": 1}, "price_min": {"type": "integer", "minimum": 0}, "price_max": {"type": "integer", "minimum": 0}}},
+        "T3": {"type": "object", "additionalProperties": false, "required": ["pool_from", "price_min", "price_max"], "properties": {"pool_from": {"type": "integer", "minimum": 1}, "price_min": {"type": "integer", "minimum": 0}, "price_max": {"type": "integer", "minimum": 0}}},
+        "T4": {"type": "object", "additionalProperties": false, "required": ["pool_from", "price_min", "price_max"], "properties": {"pool_from": {"type": "integer", "minimum": 1}, "price_min": {"type": "integer", "minimum": 0}, "price_max": {"type": "integer", "minimum": 0}}},
+        "T5": {"type": "object", "additionalProperties": false, "required": ["pool_from", "price_min", "price_max"], "properties": {"pool_from": {"type": "integer", "minimum": 1}, "price_min": {"type": "integer", "minimum": 0}, "price_max": {"type": "integer", "minimum": 0}}}
+      }
+    },
     "brackets": {
       "type": "array",
       "minItems": 1,

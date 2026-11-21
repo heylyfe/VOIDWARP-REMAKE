@@ -244,12 +244,16 @@ static func play_run(api: RefCounted, seed: int, max_level: int, p_log = null,
 	var death_tick := -1
 	var death_killer := ""
 	var death_code := ""
+	# C4-15: the purse the shop sees after each completed level (index 0 = after level 1),
+	# read before that lobby resolves. Informational; --purse prints it.
+	var purses: Array = []
 	while entered <= max_level:
 		var result: Dictionary = _play_level(api, ledger, seed, entered, p_log, p_rec)
 		var res := str(result.get("result", "dead"))
 		if res == "complete":
 			if entered == 1:
 				l1_tick = int(result.get("complete_tick", -1))
+			purses.append(int(ledger["purse"]))
 			if entered >= max_level:
 				break
 			entered += 1
@@ -277,6 +281,7 @@ static func play_run(api: RefCounted, seed: int, max_level: int, p_log = null,
 		"death_tick": death_tick, "death_killer": death_killer, "death_code": death_code,
 		"charges": int(ledger.get("charges", 2)),
 		"forced_gate": forced_gate,
+		"purses": purses,
 	}
 
 
@@ -2046,6 +2051,8 @@ func _init() -> void:
 			i, int(rd["seed"]), str(rd["class"]), int(rd["entered"]),
 			str(rd["outcome"]), str(int(rd.get("l1_tick", -1))),
 			str(rd["reached_6"]), str(rd["reached_12"]), str(rd["reached_18"]), extra])
+		if bool(args.get("purse", false)):
+			print("PURSE run %d seed=%d %s" % [i, int(rd["seed"]), str(rd.get("purses", []))])
 	# FIX-A3 summary: level-1 completions, the median sim time of a COMPLETED level 1,
 	# the death-code histogram, the levels reached. Informational - the criterion
 	# itself lives in FLEET_PACK section 5 / DECISIONS, never weakened here.
@@ -2085,7 +2092,7 @@ func _init() -> void:
 
 static func _parse_args(user_args: PackedStringArray) -> Dictionary:
 	var out := {"runs": RUNS_DEFAULT, "seed_base": SEED_BASE, "max_level": MAX_LEVEL_DEFAULT,
-			"trace": false, "log": false, "log_dir": ""}
+			"trace": false, "log": false, "log_dir": "", "purse": false}
 	var i := 0
 	while i < user_args.size():
 		var a := str(user_args[i])
@@ -2105,6 +2112,8 @@ static func _parse_args(user_args: PackedStringArray) -> Dictionary:
 		elif a == "--max-level" and i + 1 < user_args.size():
 			out["max_level"] = int(user_args[i + 1])
 			i += 1
+		elif a == "--purse":
+			out["purse"] = true   # C4-15: per-level purse line per run
 		elif a == "--trace":
 			out["trace"] = true
 		elif a.begins_with("--runs="):

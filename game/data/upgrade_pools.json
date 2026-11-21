@@ -1,6 +1,14 @@
 {
-  "_doc": "Per-level upgrade pools (DESIGN.md section 8 [CANON]). The shop never shows the full catalog; the game maps the player's level to the bracket whose [min_level, max_level] contains it (max_level null = open-ended). Level 1 is exactly paycheck, more, yearn_for_speed; every later bracket lists all upgrades whose tier has entered the pool (tier pool-from levels: T1 at 1, T2 at 4, T3 at 10, T4 at 18, T5 at 26). An upgrade also needs tier min level <= level. Draw: 3 distinct, not at max stacks, weighted x2 for items the current class boosts (class_boost in each upgrade file), seeded; affordability filter price <= max(2 x purse, 80).",
+  "_doc": "Per-level upgrade pools (DESIGN.md section 8 [CANON]). The shop never shows the full catalog; the game maps the player's level to the bracket whose [min_level, max_level] contains it (max_level null = open-ended). Level 1 is exactly paycheck, more, yearn_for_speed; every later bracket lists all upgrades whose tier has entered the pool (tier pool-from levels in \"tiers\" below: T1 at 1, T2 at 4, T3 at 10, T4 at 18, T5 at 26). An upgrade also needs tier min level <= level. Draw: 3 distinct, not at max stacks, weighted x2 for items the current class boosts (class_boost in each upgrade file), seeded; affordability filter price <= max(2 x purse, 80).",
   "mode": "standard",
+  "tiers": {
+    "_doc": "DESIGN.md section 8 price-tier table [CANON], the one machine-readable copy (D-C4-15-1). pool_from = the first level whose shop pool may hold the tier (core/content_api.gd shop_pool reads it); price_min/price_max = the band every upgrade file's base price must sit in (tests/test_upgrade_tiers.gd). Stacked prices (price x 1.5^stacks) are not banded: the band is the list price.",
+    "T1": {"pool_from": 1, "price_min": 40, "price_max": 80},
+    "T2": {"pool_from": 4, "price_min": 120, "price_max": 200},
+    "T3": {"pool_from": 10, "price_min": 280, "price_max": 400},
+    "T4": {"pool_from": 18, "price_min": 550, "price_max": 800},
+    "T5": {"pool_from": 26, "price_min": 1100, "price_max": 1500}
+  },
   "brackets": [
     {
       "bracket": "1",
