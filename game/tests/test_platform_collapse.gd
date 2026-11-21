@@ -6,12 +6,16 @@ extends RefCounted
 # band) cracks on the open tick and falls 300 ticks later, the next zone cracks 600 ticks after
 # that, and so on inward. Legs 1-12 were written for the one global fall; they now assert the
 # first zone's fall (the same 5 s boundary) and legs 13-15 cover the rest of the schedule.
-# D-B11-1 (owner retune, supersedes D-B10-1's 16 u / cap 6): nothing cracks for the 20 s
-# START DELAY after the beacon opens (1200 ticks), so zone 0 cracks on open + 1200, and the
-# zones are 8 u wide, at most 12. "crack" below is zone 0's crack tick, open + 1200.
+# D-B11-1 (owner retune, supersedes D-B10-1's 16 u / cap 6): nothing cracks for the
+# START DELAY after the beacon opens, so zone 0 cracks on open + DELAY, and the
+# zones are 8 u wide, at most 12. "crack" below is zone 0's crack tick, open + DELAY.
+# D-B12-1 (owner bug report "the platforms dont collapse", supersedes D-B11-1's 20 s):
+# the start delay is 5.0 s (300 ticks), because the gold phase - the walk from the last
+# black gift to the dais - measures 3.1-14.9 s over 90 levels, so a 20 s grace meant the
+# first crack never landed before the player reached the beacon.
 #   leg 1  before the beacon opens: nothing cracked, nothing removed (negative control)
-#   leg 2  the open tick and every tick of the 20 s delay: NOTHING cracked, removed == 0, no
-#          overlay, no platforms_cracked event; on open + 1200 ONLY zone 0 is cracked,
+#   leg 2  the open tick and every tick of the start delay: NOTHING cracked, removed == 0, no
+#          overlay, no platforms_cracked event; on open + DELAY ONLY zone 0 is cracked,
 #          removed == 0, only its overlay is visible
 #   leg 3  crack + 299: removed == 0; crack + 300: removed == zone 0 exactly, the inner zones
 #          still stand and still render (the 5 s boundary, both sides)
@@ -26,8 +30,8 @@ extends RefCounted
 #   leg 11 negative control: collapse off -> the same gift, mine and enemy are untouched
 #   leg 12 the gift quota is still met after a collapse (the beacon stays open)
 #   leg 13 the whole schedule, tick by tick, 3 seeds/levels: one zone cracking at a time,
-#          nothing cracks before open + 1200, zone i cracks on open + 1200 + 900 i and falls
-#          on open + 1200 + 900 i + 300, removed == the fallen zones exactly, zones in
+#          nothing cracks before open + DELAY, zone i cracks on open + DELAY + 900 i and falls
+#          on open + DELAY + 900 i + 300, removed == the fallen zones exactly, zones in
 #          outside-in order, whole pieces only, the hub left
 #   leg 14 the zone-count rule and the numbers (delay, crack, gap, 8 u, cap 12) come from
 #          data/collapse.json
@@ -38,7 +42,7 @@ extends RefCounted
 #          and gap seconds and the zone width each change the hash (B10 review finding 1);
 #          so does the start delay (D-B11-1)
 #   leg 18 the start delay is a pure-state rule: 0 s cracks zone 0 on the start tick (the
-#          D-B10-1 behaviour), 20 s waits exactly 1200 ticks, a short delay is honoured
+#          D-B10-1 behaviour), 5 s waits exactly 300 ticks, a short delay is honoured
 
 const WorldScript := preload("res://app/world.gd")
 const CollapseScript := preload("res://sim/collapse.gd")
@@ -52,11 +56,12 @@ const CASES := [[1, 5], [7, 3], [42, 11]]   # [seed, level]
 # The contract at 60 Hz, hard-coded on purpose (leg 14 checks the data says the same):
 const CRACK := 300   # 5.0 s from a zone's cracks to its fall
 const GAP := 600     # 10.0 s from a fall to the next zone's cracks
-const DELAY := 1200  # 20.0 s from the beacon opening to zone 0's cracks (D-B11-1)
+const DELAY := 300   # 5.0 s from the beacon opening to zone 0's cracks (D-B12-1)
 const HashScript := preload("res://sim/state_hash.gd")
 const RunStateScript := preload("res://sim/run_state.gd")
 const VoidGenScript := preload("res://terrain/voidgen.gd")
 const MesherScript := preload("res://view/level_mesher.gd")
+const WarningScript := preload("res://view/hud/collapse_warning.gd")
 
 
 func run() -> Array[String]:
@@ -76,6 +81,7 @@ func run() -> Array[String]:
 	_leg_16(f)
 	_leg_17(f)
 	_leg_18(f)
+	_leg_19(f)
 	return f
 
 
@@ -140,7 +146,7 @@ func _legs_1_2_3(f: Array[String]) -> void:
 	var t0 := _open(world)
 	if int(world._collapse["start_tick"]) != t0:
 		f.append("leg 2: collapse start tick %d != the open-edge tick %d" % [int(world._collapse["start_tick"]), t0])
-	# ...and the 20 s start delay (D-B11-1): every tick from the open tick to open + 1199
+	# ...and the start delay (D-B12-1): every tick from the open tick to open + DELAY - 1
 	# has nothing cracked, nothing removed, no overlay and no platforms_cracked event
 	if CollapseScript.zone_crack_tick(world._collapse, 0) != t0 + DELAY:
 		f.append("leg 2: zone 0 cracks on %d, want open + %d = %d"
@@ -158,19 +164,19 @@ func _legs_1_2_3(f: Array[String]) -> void:
 		if bad_here:
 			delay_bad += 1
 			if delay_bad <= 3:
-				f.append("leg 2: open + %d (inside the 20 s delay) cracked=%d removed=%d overlay=%s"
+				f.append("leg 2: open + %d (inside the start delay) cracked=%d removed=%d overlay=%s"
 						% [d, _cracked(world), _removed(world), str(world.collapse_view.any_overlay_visible())])
 	if delay_bad > 0:
 		f.append("leg 2: %d of the %d delay ticks had something cracked/removed" % [delay_bad, DELAY])
 	if int(world.lstate.tick) != t0 + DELAY - 1:
 		f.append("leg 2: tick bookkeeping: at %d, want %d" % [int(world.lstate.tick), t0 + DELAY - 1])
-	# zone 0's crack tick: open + 1200
+	# zone 0's crack tick: open + DELAY
 	world.step(DT)
 	var tc := int(world.lstate.tick)
 	if tc != t0 + DELAY:
 		f.append("leg 2: tick bookkeeping: at %d, want the crack tick %d" % [tc, t0 + DELAY])
 	if _cracked(world) <= 0:
-		f.append("leg 2: on the crack tick (open + 1200) cracked=%d, want > 0" % _cracked(world))
+		f.append("leg 2: on the crack tick (open + DELAY) cracked=%d, want > 0" % _cracked(world))
 	var nz := CollapseScript.zone_count(world._collapse)
 	if nz < 2:
 		f.append("leg 2: %d zone(s) on seed 1 level 5 - the sequential legs prove nothing" % nz)
@@ -471,7 +477,7 @@ func _mine_on_falling_tile(world) -> Array:
 	return []
 
 
-## Ticks from the open edge to zone zi's fall (the contract: 1200 + zi x 900 + 300).
+## Ticks from the open edge to zone zi's fall (the contract: DELAY + zi x 900 + 300).
 func _off(zi: int) -> int:
 	return DELAY + zi * (CRACK + GAP) + CRACK
 
@@ -789,7 +795,7 @@ func _leg_13(f: Array[String]) -> void:
 						% [tag, i, lo, i + 1, hi])
 		_steps(world, 3)
 		var t0 := _open(world)
-		var tc := t0 + DELAY   # zone 0's crack tick: the 20 s start delay first (D-B11-1)
+		var tc := t0 + DELAY   # zone 0's crack tick: the start delay first (D-B12-1)
 		for i in nz:
 			if CollapseScript.zone_crack_tick(st, i) != tc + i * (CRACK + GAP):
 				f.append("%s: zone %d cracks on %d, want open + %d + %d x %d = %d" % [tag, i,
@@ -859,8 +865,8 @@ func _leg_14(f: Array[String]) -> void:
 	if float(cfg.get("crack_to_fall_s", -1.0)) != 5.0 or float(cfg.get("gap_after_fall_s", -1.0)) != 10.0:
 		f.append("leg 14: data/collapse.json crack/gap %s/%s, want the owner's 5.0/10.0"
 				% [str(cfg.get("crack_to_fall_s")), str(cfg.get("gap_after_fall_s"))])
-	if float(cfg.get("start_delay_s", -1.0)) != 20.0:
-		f.append("leg 14: data/collapse.json start_delay_s %s, want the owner's 20.0"
+	if float(cfg.get("start_delay_s", -1.0)) != 5.0:
+		f.append("leg 14: data/collapse.json start_delay_s %s, want D-B12-1's 5.0"
 				% str(cfg.get("start_delay_s")))
 	if float(cfg.get("zone_width_u", -1.0)) != 8.0 or int(cfg.get("zone_max", -1)) != 12:
 		f.append("leg 14: data/collapse.json zone width %s / cap %s, want D-B11-1's 8.0 / 12"
@@ -1020,9 +1026,9 @@ func _leg_17(f: Array[String]) -> void:
 	if _hash_cfg(lv, {"zone_max": 2}, true) == base:
 		f.append("leg 17: a 2-zone cap and the shipped 12-zone cap hash the same")
 	if _hash_cfg(lv, {"start_delay_s": 0.0}, true) == base:
-		f.append("leg 17: no start delay and the shipped 20 s delay hash the same (D-B11-1)")
-	if _hash_cfg(lv, {"start_delay_s": 19.0}, true) == base:
-		f.append("leg 17: a 19 s and a 20 s start delay hash the same")
+		f.append("leg 17: no start delay and the shipped 5 s delay hash the same (D-B12-1)")
+	if _hash_cfg(lv, {"start_delay_s": 4.0}, true) == base:
+		f.append("leg 17: a 4 s and a 5 s start delay hash the same")
 	# and the same config twice must agree, or the digest is not deterministic
 	if _hash_cfg(lv, {}, true) != base:
 		f.append("leg 17: the same collapse config hashed differently twice")
@@ -1031,12 +1037,12 @@ func _leg_17(f: Array[String]) -> void:
 # ---- leg 18: the start delay, on the pure state ---------------------------------------------
 
 ## D-B11-1: start() starts the clock; zones[0] cracks `delay` ticks later. A 0 s delay is the
-## D-B10-1 behaviour (cracks on the start tick, start() returns the event); 20 s is the shipped
-## 1200 ticks; 0.5 s proves the number is read, not assumed.
+## D-B10-1 behaviour (cracks on the start tick, start() returns the event); 5 s is the shipped
+## 300 ticks; 0.5 s proves the number is read, not assumed.
 func _leg_18(f: Array[String]) -> void:
 	var lv: Dictionary = VoidGenScript.generate(1, 5, 1, 0)
 	var t_start := 100
-	for row in [[0.0, 0], [20.0, DELAY], [0.5, 30]]:
+	for row in [[0.0, 0], [5.0, DELAY], [0.5, 30]]:
 		var tag := "leg 18 delay %.1f s" % float(row[0])
 		var want: int = int(row[1])
 		var c: Dictionary = CollapseScript.config().duplicate()
@@ -1081,3 +1087,64 @@ func _leg_18(f: Array[String]) -> void:
 		if crack_events != (0 if want == 0 else 1):
 			f.append("%s: %d platforms_cracked events from tick(), want %d" % [tag, crack_events,
 					0 if want == 0 else 1])
+
+
+# ---- leg 19: the HUD collapse warning (D-B12-1) ---------------------------------------
+
+## The owner's bug report was "the platforms dont collapse": the schedule was right but
+## nothing told the player it had started. This leg pins the feed world.gd hands the HUD and
+## the exact strings view/hud/collapse_warning.gd renders from it.
+func _leg_19(f: Array[String]) -> void:
+	var world = _build(1, 5)
+	if world == null:
+		f.append("leg 19: build failed")
+		return
+	_steps(world, 10)
+	# before the beacon opens the warning is hidden and the feed is empty
+	if not world._collapse_feed().is_empty():
+		f.append("leg 19: the collapse feed is non-empty before the beacon opened")
+	var w = WarningScript.new()
+	w.sync(false, false, 0.0, 0)
+	if bool(w.visible) or w.warning_text() != "":
+		f.append("leg 19: the warning is visible before the beacon opened")
+	# the open tick: waiting out the start delay
+	var t0 := _open(world)
+	var feed: Dictionary = world._collapse_feed()
+	if not bool(feed.get("active", false)):
+		f.append("leg 19: the feed is inactive on the open tick")
+	if bool(feed.get("cracking", false)):
+		f.append("leg 19: the feed says cracking during the start delay")
+	if absf(float(feed.get("seconds", 0.0)) - float(DELAY) / 60.0) > 0.1:
+		f.append("leg 19: the start-delay countdown is %.2f s, want %.2f" % [
+			float(feed.get("seconds", 0.0)), float(DELAY) / 60.0])
+	if int(feed.get("zones_left", -1)) != CollapseScript.zone_count(world._collapse):
+		f.append("leg 19: zones_left %d, want %d" % [
+			int(feed.get("zones_left", -1)), CollapseScript.zone_count(world._collapse)])
+	w.sync(true, false, float(feed.get("seconds", 0.0)), int(feed.get("zones_left", 0)))
+	if not bool(w.visible):
+		f.append("leg 19: the warning is hidden while the collapse is running")
+	if not w.warning_text().begins_with("NEXT RING IN"):
+		f.append("leg 19: waiting text %s, want NEXT RING IN ..." % w.warning_text())
+	# the crack tick: counting down to the fall
+	_steps(world, DELAY)
+	feed = world._collapse_feed()
+	if not bool(feed.get("cracking", false)):
+		f.append("leg 19: the feed does not say cracking on the crack tick")
+	if absf(float(feed.get("seconds", 0.0)) - float(CRACK) / 60.0) > 0.1:
+		f.append("leg 19: the fall countdown is %.2f s, want %.2f" % [
+			float(feed.get("seconds", 0.0)), float(CRACK) / 60.0])
+	w.sync(true, true, float(feed.get("seconds", 0.0)), int(feed.get("zones_left", 0)))
+	if not w.warning_text().begins_with("THE VOID IS CLOSING"):
+		f.append("leg 19: cracking text %s, want THE VOID IS CLOSING ..." % w.warning_text())
+	# after the first fall: one zone fewer
+	_steps(world, CRACK)
+	feed = world._collapse_feed()
+	if int(feed.get("zones_left", -1)) != CollapseScript.zone_count(world._collapse) - 1:
+		f.append("leg 19: zones_left after the first fall %d, want %d" % [
+			int(feed.get("zones_left", -1)), CollapseScript.zone_count(world._collapse) - 1])
+	# the end: only the hub
+	w.sync(true, false, 0.0, 0)
+	if w.warning_text() != "ONLY THE HUB REMAINS":
+		f.append("leg 19: final text %s, want ONLY THE HUB REMAINS" % w.warning_text())
+	w.free()
+	_drop(world)

@@ -14,6 +14,8 @@ extends Control
 #                  the caller builds the entry list from the sim radar queries)
 #   cartographer map  top-right   (T-053 addendum R4: the footprint minimap;
 #                  hidden unless the run owns the footprint map)
+#   collapse warning  top-centre  (D-B12-1: the outside-in collapse countdown; hidden
+#                  until the beacon opens)
 #   screen_fx  full-screen void flash / Last Light bloom / death black-out (T-086);
 #              drawn topmost; re-emits blackout_finished for the app layer
 #
@@ -33,6 +35,8 @@ extends Control
 #   radar_entries: Array[{angle, dist}]   (world-space atan2(dz, dx), u)
 #   footprint_map: Dictionary  {visible, lv, p_index, scale_px, colours, facing}; an
 #                  absent or visible==false dict keeps the map hidden and cost-free
+#   collapse: Dictionary  {active, cracking, seconds, zones_left}  (D-B12-1; an absent
+#                  dict keeps the collapse warning hidden)
 #
 # The HUD never writes sim state.
 
@@ -45,6 +49,7 @@ const EnemyRosterScript := preload("res://view/hud/enemy_roster.gd")
 const ScreenFxScript := preload("res://view/hud/screen_fx.gd")
 const RadarArrowsScript := preload("res://view/hud/radar_arrows.gd")
 const CartographerMapScript := preload("res://view/hud/cartographer_map.gd")
+const CollapseWarningScript := preload("res://view/hud/collapse_warning.gd")
 
 var gift_counter: Control
 var purse_chain: Control
@@ -54,6 +59,7 @@ var icon_rows: Control
 var enemy_roster: Control
 var radar_arrows: Control
 var cartographer_map: Control
+var collapse_warning: Control   # D-B12-1: the outside-in collapse countdown, top-centre
 var screen_fx: Control   # T-086: full-screen void flash / white bloom / death black-out
 
 signal blackout_finished
@@ -79,6 +85,8 @@ func _init() -> void:
 	cartographer_map = CartographerMapScript.new()
 	cartographer_map.visible = false   # until sync() says the run owns the footprint map
 	add_child(cartographer_map)
+	collapse_warning = CollapseWarningScript.new()
+	add_child(collapse_warning)
 	# T-086: the screen-wide effects draw over every other HUD element
 	screen_fx = ScreenFxScript.new()
 	add_child(screen_fx)
@@ -96,6 +104,10 @@ func sync(snapshot: Dictionary) -> void:
 	icon_rows.set_upgrades(snapshot.get("upgrades", []))
 	enemy_roster.set_roster(snapshot.get("roster", []))
 	radar_arrows.sync(snapshot.get("radar_entries", []))
+	# D-B12-1: the collapse countdown. An absent dict keeps it hidden (the beacon is closed).
+	var col: Dictionary = snapshot.get("collapse", {})
+	collapse_warning.sync(bool(col.get("active", false)), bool(col.get("cracking", false)),
+			float(col.get("seconds", 0.0)), int(col.get("zones_left", 0)))
 	# The footprint map draws only for a run that owns the footprint map; otherwise
 	# it stays hidden and clears itself (sync(null)) at zero cost.
 	var cart: Dictionary = snapshot.get("footprint_map", {})

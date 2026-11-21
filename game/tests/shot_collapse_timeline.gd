@@ -5,7 +5,7 @@ extends SceneTree
 # Shots 00-02 share ONE camera framed on the outermost ring (zone 0), so they compare frame
 # to frame; 03 is framed on the third ring. (A camera over the dais high enough for the
 # whole level puts the outer ring 50+ u away, where the fog hides it.)
-#   00 quiet   10 s after the open: nothing may crack yet (the 20 s grace)
+#   00 quiet   2 s after the open: nothing may crack yet (the 5 s grace, D-B12-1)
 #   01 crack   0.5 s after the first crack: the outermost ring shows its cracks
 #   02 fall    1 s after that ring fell: a hole where the outer ring was, nothing else cracking
 #   03 later   the third ring cracking: two rings gone, rings visibly thin (8 u)
@@ -76,13 +76,13 @@ func _run() -> void:
 			_open_tick, t0, delay_s, crack / float(HZ), gap / float(HZ),
 			CollapseScript.zone_count(st), float(st["radius"]),
 			float(st["radius"]) / float(CollapseScript.zone_count(st))])
-	if absf(delay_s - 20.0) > 0.1:
-		_fail = "the first crack is %.2f s after the open, not 20 s" % delay_s
+	if absf(delay_s - 5.0) > 0.1:
+		_fail = "the first crack is %.2f s after the open, not 5 s (D-B12-1)" % delay_s
 
-	_steps_until(_open_tick + 10 * HZ)
-	await _frame_and_shot(st, 0, "tl_00_quiet_10s")
+	_steps_until(_open_tick + 2 * HZ)
+	await _frame_and_shot(st, 0, "tl_00_quiet_2s")
 	if CollapseScript.cracked_keys(st).size() > 0 or _cracking(st) != -1:
-		_fail = "something is cracking 10 s after the open"
+		_fail = "something is cracking 2 s after the open"
 	_steps_until(t0 + HZ / 2)
 	await _frame_and_shot(st, 0, "tl_01_first_crack")
 	if _cracking(st) != 0:

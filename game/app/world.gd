@@ -2224,7 +2224,31 @@ func _sync_hud() -> void:
 		"upgrades": _icon_items(_ledger.get("stacks", {})),
 		"radar_entries": _radar_entries(),
 		"footprint_map": _footprint_feed(),
+		"collapse": _collapse_feed(),
 	})
+
+
+## D-B12-1: the collapse countdown the HUD shows (view/hud/collapse_warning.gd). Empty until
+## the beacon opens, so the warning stays hidden through the whole black phase. Read-only on
+## sim state: the schedule itself lives in sim/collapse.gd.
+func _collapse_feed() -> Dictionary:
+	if _collapse == null or _collapse.is_empty() or lstate == null:
+		return {}
+	var ph := CollapseScript.phase(_collapse)
+	if ph == CollapseScript.PHASE_IDLE:
+		return {}
+	var left := CollapseScript.zone_count(_collapse) - int(_collapse.get("fallen_n", 0))
+	var secs := 0.0
+	if ph == CollapseScript.PHASE_CRACKING:
+		secs = float(int(_collapse["fall_tick"]) - int(lstate.tick)) / 60.0
+	elif ph == CollapseScript.PHASE_WAITING:
+		secs = float(int(_collapse["crack_tick"]) - int(lstate.tick)) / 60.0
+	return {
+		"active": true,
+		"cracking": ph == CollapseScript.PHASE_CRACKING,
+		"seconds": maxf(secs, 0.0),
+		"zones_left": maxi(left, 0),
+	}
 
 
 ## The class ability's live number for the cooldown HUD: the Dasher's dash cooldown

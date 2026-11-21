@@ -91,12 +91,13 @@ toucher's floor.
 1. **Spawn** on a causeway over the void with two void charges in hand.
 2. **Collect** every black gift on the level. The beacon stays shut until the last one.
 3. **Decide** — walk into the open beacon and bank the run, or stay out for gold. Staying out is on
-   a clock that closes in like a shrinking safe zone: for twenty seconds after the beacon opens
-   nothing cracks; then the farthest ring of platforms cracks and falls into the void five seconds
-   later; ten seconds after that the next ring inward cracks, and so on until only the hub is left.
-   Rings are 8 u thin, so each fall takes a slice rather than a chunk: 4 to 12 rings by level size,
-   70 to 190 s from the beacon opening to the last ring gone (median 115 s; the numbers are in
-   `game/data/collapse.json`, ruling D-B11-1). Gold on a ring that falls is gone with it.
+   a clock that closes in like a shrinking safe zone: five seconds after the beacon opens the
+   farthest ring of platforms cracks and falls into the void five seconds later; ten seconds after
+   that the next ring inward cracks, and so on until only the hub is left. A countdown at the top of
+   the screen says which ring is next and how long you have. Rings are 8 u thin, so each fall takes a
+   slice rather than a chunk: 4 to 12 rings by level size, 55 to 175 s from the beacon opening to the
+   last ring gone (median 106 s; the numbers are in `game/data/collapse.json`, rulings D-B11-1 and
+   D-B12-1). Gold on a ring that falls is gone with it.
    Enemies get faster and the fog closes in while you are out there.
 4. **Fall** and you spend a charge. Fall with none left and the run ends.
 
@@ -356,6 +357,19 @@ texture variants: Godot refuses an arm64 export without them. The desktop preset
 variants, so their builds are unchanged by it.
 
 ## Changelog
+
+<details open>
+<summary><b>Unreleased</b> — the collapse actually starts now</summary>
+
+**"The platforms don't collapse."** They did — the schedule was right — but the first crack came
+twenty seconds after the beacon opened, and the walk from the last black gift to the dais is 3 to 15
+seconds (mean 6.8 s across 90 measured levels). A player heading for the beacon always finished the
+level before anything fell. The grace is now five seconds, so the first ring cracks while you are
+still out there and falls at ten. A countdown at the top of the screen names the next ring and its
+timer. The rest of the schedule is unchanged: 8 u rings, 5 s crack, 10 s gap, 55 to 175 s to reach
+the hub. Ruling D-B12-1.
+
+</details>
 
 <details>
 <summary><b>What changed in v0.1.11-alpha.3</b> — the owner's fourteen, and the collapse becomes a shrinking safe zone</summary>

@@ -8008,3 +8008,37 @@ ledger is credited only with curse bounties, not with gold or the stipend. Seed 
 64 g at the level-1 shop, 196 g at level 4, 353 g at level 10, 396 g at level 19 and 883 g at level 28.
 The first T3 purchase is at level 10, the first T4 at level 22, and T5 is bought 0.01 times per run.
 Nothing is bought above its tier's level.
+
+## D-B12-1: the collapse starts 5 s after the beacon opens, not 20 (supersedes D-B11-1's delay)
+
+**Owner report.** "the platforms dont collapse" (v0.1.11-alpha.3).
+
+**What was actually wrong.** Nothing in the schedule. Driven through the real gift path (walk the
+player onto every black gift so `sim/gifts.gd` `tick()` opens the beacon), the collapse cracks zone 0
+and drops it exactly on time, and the view drops that zone's meshes and hides them. The problem was
+that nobody ever saw it: D-B11-1's `start_delay_s = 20.0` is longer than the whole gold phase.
+
+**Measured.** The gold phase is the walk from the last black gift to the dais. Over seeds 1/7/42 x
+levels 1-30 (90 levels), the farthest real black gift sits 28-107 u from the dais, which is 3.1-14.9 s
+at the 9 u/s bound: mean 6.8 s, and **90 of 90 levels are under 20 s**. So a player who collected the
+last gift and headed for the beacon always finished the level before the first crack at 20 s. There
+was also no HUD element saying the collapse had started.
+
+**Ruling.** `start_delay_s` is **5.0** (300 ticks). The first crack lands inside a normal gold phase
+and the first fall at 10 s. Everything else D-B11-1 set is unchanged: `crack_to_fall_s` 5.0,
+`gap_after_fall_s` 10.0, `zone_width_u` 8.0, `zone_min` 1, `zone_max` 12. The collapse still takes
+55-175 s to reach the hub (mean 106 s), so the "much longer, much less per fall" intent is intact.
+`view/hud/collapse_warning.gd` is new: a top-centre countdown ("NEXT RING IN Ns" while waiting,
+"THE VOID IS CLOSING - RING FALLS IN Ns" while a ring cracks, "ONLY THE HUB REMAINS" at the end),
+fed by `world._collapse_feed()` and hidden until the beacon opens.
+
+**Re-measured.** `tools/collapse_reach.gd`: `levels=90 unwinnable=0 worst_slack=84.0 at=seed 42
+level 3 zones=4..12 mean=7.4 collapse_s=55..175 mean=106`. The worst slack fell from 99.0 s to 84.0 s
+(the 15 s the delay gave back) and is still far from zero. The bot does not run the collapse
+(`bot_run.gd` has no collapse tick, true since B6), so its numbers cannot move; level-1 completion is
+re-measured in the ticket report.
+
+**Tests.** `test_platform_collapse.gd` legs 2, 13, 14, 17 and 18 now pin 5 s / 300 ticks instead of
+20 s / 1200; leg 19 is new and pins the HUD feed and the three warning strings. Nothing was deleted,
+skipped or loosened. `shot_collapse_timeline.gd` (a tool, not a gate step) now asserts the 5 s delay
+and takes its quiet shot at 2 s.
