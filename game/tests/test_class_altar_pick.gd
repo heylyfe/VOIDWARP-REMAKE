@@ -51,6 +51,7 @@ func run() -> Array[String]:
 	_leg_clicks(f, tree.root)
 	_leg_keyboard(f, tree.root)
 	_leg_hold(f, tree.root)
+	_leg_layout(f, tree.root)
 	tree.root.size = old_size
 	return f
 
@@ -290,4 +291,62 @@ func _leg_hold(f: Array[String], root: Window) -> void:
 		f.append("hold: the skipped run's kit '%s' is not its seeded ledger class" % kit)
 	if not bool(app._world._mouse_locked):
 		f.append("hold: play started after SKIP with the cursor still free")
+	_free_app(app, scratch)
+
+# ---- leg D: a card holds its own text, and the backdrop hides the loading screen -----------
+
+func _leg_layout(f: Array[String], root: Window) -> void:
+	var scratch := "user://test_class_altar_layout_scratch.json"
+	var app = _new_app(root, scratch)
+	app._menu.play_requested.emit()
+	var altar = app._class_altar
+	if altar == null:
+		f.append("layout: PLAY opened no altar")
+		_free_app(app, scratch)
+		return
+	_layout(altar)
+	# The backdrop is the altar's own first child. At 0.94 the loading screen's title, its
+	# gag line and its progress bar all showed through the cards and the CONFIRM/SKIP row.
+	var bg: ColorRect = null
+	for c in altar.get_children():
+		if c is ColorRect:
+			bg = c
+			break
+	if bg == null:
+		f.append("layout: the altar has no backdrop")
+	elif bg.color.a < 0.999:
+		f.append("layout: the backdrop is only %.2f opaque - the loading screen shows through"
+				% bg.color.a)
+	# Every card must be tall enough for the text it actually holds. The height is measured
+	# here from the laid-out label widths and the font, NOT from the altar's own helper, so
+	# a longer blurb or a smaller card fails this instead of spilling past the border.
+	for id in altar.class_ids():
+		var card: Control = _card(altar, str(id))
+		if card == null:
+			f.append("layout: no card for %s" % id)
+			continue
+		var box: VBoxContainer = null
+		for c in card.get_children():
+			if c is VBoxContainer:
+				box = c
+				break
+		if box == null:
+			f.append("layout: the %s card has no text column" % id)
+			continue
+		var need := box.offset_top - box.offset_bottom
+		need += float(box.get_theme_constant("separation")) * float(maxi(box.get_child_count() - 1, 0))
+		for c in box.get_children():
+			if c is Label:
+				var l := c as Label
+				var font := l.get_theme_font("font")
+				var fs := l.get_theme_font_size("font_size")
+				var w := l.size.x
+				if w <= 1.0:
+					w = card.size.x + box.offset_left + box.offset_right
+				need += font.get_multiline_string_size(l.text, HORIZONTAL_ALIGNMENT_CENTER, w, fs).y
+			else:
+				need += c.custom_minimum_size.y
+		if card.size.y + 0.5 < need:
+			f.append("layout: the %s card is %.1f px tall but its text needs %.1f - it spills past the border"
+					% [id, card.size.y, need])
 	_free_app(app, scratch)

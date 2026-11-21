@@ -43,8 +43,12 @@ const C_WHITE := Color(0.910, 1.0, 1.0)              # #E8FFFF beacon_open
 const C_GOLD := Color(1.0, 0.784, 0.239)             # #FFC83D gold_gift
 const C_TEAL := Color(0.486, 1.0, 0.957)             # #7CFFF4 the icons' highlight
 const C_MUTED := Color(0.545, 0.620, 0.718)
-const CARD_SIZE := Vector2(250, 340)
+const CARD_SIZE := Vector2(250, 340)     # the card's width, and its MINIMUM height
 const ICON_SIZE := 128.0
+const CARD_PAD_X := 14.0                 # the text column's inset from the card's sides
+const CARD_PAD_TOP := 16.0
+const CARD_PAD_BOTTOM := 14.0
+const CARD_GAP := 8.0                    # the gap between the icon, the name and the two lines
 
 signal class_chosen(class_id: String)
 signal skipped
@@ -79,7 +83,10 @@ func _init() -> void:
 	_styles["hover"] = _card_style(Color(C_TEAL.r, C_TEAL.g, C_TEAL.b, 0.7), 2)
 	_styles["selected"] = _card_style(C_GOLD, 4)
 	var bg := ColorRect.new()
-	bg.color = Color(C_VOID.r, C_VOID.g, C_VOID.b, 0.94)
+	# Fully opaque: the altar is a modal decision and the loading screen behind it is
+	# noise. At 0.94 the loading title, the gag line and the progress bar all showed
+	# through the cards and the CONFIRM/SKIP row, which read as a broken layout.
+	bg.color = C_VOID
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(bg)
@@ -157,16 +164,16 @@ func _build_card(p_id: String, p_number: int) -> Button:
 	var b := Button.new()
 	b.name = "Card" + p_id.capitalize()
 	b.focus_mode = Control.FOCUS_NONE
-	b.custom_minimum_size = CARD_SIZE
+	b.custom_minimum_size = Vector2(CARD_SIZE.x, _card_height(p_id))
 	b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	b.pressed.connect(func() -> void: _on_card_pressed(p_id))
 	var box := VBoxContainer.new()
 	box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	box.offset_left = 14
-	box.offset_right = -14
-	box.offset_top = 16
-	box.offset_bottom = -14
-	box.add_theme_constant_override("separation", 8)
+	box.offset_left = CARD_PAD_X
+	box.offset_right = -CARD_PAD_X
+	box.offset_top = CARD_PAD_TOP
+	box.offset_bottom = -CARD_PAD_BOTTOM
+	box.add_theme_constant_override("separation", int(CARD_GAP))
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	b.add_child(box)
 	var icon := TextureRect.new()
@@ -194,6 +201,26 @@ func _build_card(p_id: String, p_number: int) -> Button:
 	stats.custom_minimum_size = Vector2(CARD_SIZE.x - 28, 0)
 	box.add_child(stats)
 	return b
+
+
+## The card's height. A Button does not size itself to its children, so the height is
+## measured from the text the card actually holds: a longer blurb makes a taller card
+## instead of spilling past the border (the Glider's stats line used to, by ~15 px).
+## CARD_SIZE.y stays the floor, so a short card never shrinks below the house size.
+func _card_height(p_id: String) -> float:
+	var need := CARD_PAD_TOP + CARD_PAD_BOTTOM + ICON_SIZE + CARD_GAP * 3.0
+	need += _wrapped_height("%d  %s" % [1, p_id.to_upper()], 26)
+	need += _wrapped_height(plain_text(p_id), 16)
+	need += _wrapped_height(blurb(p_id, _classes), 13)
+	return maxf(CARD_SIZE.y, ceilf(need))
+
+
+## The height one line of card text needs when wrapped to the card's inner width.
+## The project sets no theme, so the labels render in ThemeDB's fallback font.
+func _wrapped_height(p_text: String, p_size: int) -> float:
+	var f: Font = ThemeDB.fallback_font
+	var w := CARD_SIZE.x - CARD_PAD_X * 2.0
+	return f.get_multiline_string_size(p_text, HORIZONTAL_ALIGNMENT_CENTER, w, p_size).y
 
 
 ## One plain sentence of what the class does - what a new player needs, no numbers.
