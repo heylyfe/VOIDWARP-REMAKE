@@ -56,7 +56,7 @@ const MINE_MODEL := "res://assets/models/tripmine_box.glb"
 ## from the content tree at run time (the biome whose void colour equals the menu's
 ## backdrop colour), never by id; the level is that biome's first level (fog_env reads
 ## the act density for it). See DECISIONS.md D-FIX-APP-BOUNDARY-1.
-const VOID_HEX := "#02030F"   # the menu backdrop's own void colour (menu.gd C_VOID)
+const VOID_HEX := "#010B0C"   # the house void (data/palette.json `void`; D-GUI-2 - was indigo #02030F)
 
 ## Anim-block states tried in order for a roster pose (the T-083 "anim" block).
 const IDLE_STATES: Array[String] = ["idle", "idle_chase", "idle_flap"]
@@ -76,7 +76,7 @@ const FLYER_H := 1.3      # the sky enemy's body height (no canon row exists for
 ## which the frame is a photo card. Measured on the shipped roster: the photo 1.000, the densest
 ## cut-out 0.801 - the gap is wide on purpose, so a cut-out never gets a doorway.
 const CARD_COVERAGE_MIN := 0.97
-const CARD_GRADE := Color(0.80, 0.83, 0.95)  # about -18 % value, a little cooler: the act's indigo light
+const CARD_GRADE := Color(0.80, 0.93, 0.91)  # about -12 % value, a little teal: the house act's light (D-GUI-2)
 const CARD_FRAME_W := 0.16    # doorway post / lintel thickness (u)
 const CARD_FRAME_D := 0.26    # doorway depth (u)
 const CARD_SILL_H := 0.05     # threshold strip in front of the photo's bottom edge (u)
@@ -159,7 +159,7 @@ func build() -> void:
 # ---- palette helpers ---------------------------------------------------------------------------
 
 ## The menu biome, picked from the content tree at run time: the biome whose palette void
-## equals VOID_HEX (the deep-indigo act set the island wears). Falls back to the deepest act
+## equals VOID_HEX (the house-teal act the island wears, D-GUI-2). Falls back to the deepest act
 ## (highest first level) when no void matches - a content drift, not a crash. Returns
 ## {"id": String, "level": int}; {"id": "", "level": 1} when the content tree is unreadable
 ## (fog_env resolves "" to the act-I biome from the level). No content id is named here.

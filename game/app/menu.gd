@@ -8,9 +8,15 @@ extends Control
 # roster standing as real billboards. The UI never covers the roster: the column is on the left,
 # the stage camera shifts the island right (menu_stage.gd CAM_H_OFFSET).
 #
+# LOOK (D-GUI-1, view/ui_style.gd; supersedes D-MENU-9's gold): the house teal over the
+# house-teal island (D-GUI-2). One focal column - the wordmark (VOIDWRAP in white, RUN in
+# the accent), a 1 px rule, the entries as quiet rows; the selected entry wears the shared
+# focus ring. The build pill sits in the bottom-left corner, the disclaimer bottom-right.
+#
 # INPUT is the game's own mapping (data/bindings.json through app/input_capture.gd, the file the
 # play capture reads): move_forward / move_back select (wrapping), jump or interact confirm, pause
-# backs out of the HOW TO PLAY panel. Gamepad: the bound jump / interact buttons confirm, the left
+# backs out of the HOW TO PLAY panel; Tab / Shift+Tab and Up / Down also walk the entries
+# (the shared focus keys, D-GUI-1). Gamepad: the bound jump / interact buttons confirm, the left
 # stick (the game's move axis) and the d-pad select. Enter is NOT a confirm key; the entries never
 # take keyboard focus, so Godot's built-in ui_accept / ui_up / ui_down cannot double-fire.
 # The mouse also works: hover selects, click activates.
@@ -57,12 +63,22 @@ const RecordsScript := preload("res://core/records.gd")
 const UiAudioScript := preload("res://view/audio/ui_audio.gd")
 const AmbienceAudioScript := preload("res://view/audio/ambience_audio.gd")
 
-## Palette (data/palette.json roles; D-MENU-2).
-const C_VOID := Color(0.0078, 0.0118, 0.0588)        # #02030F the void backdrop
-const C_WHITE := Color(0.910, 1.0, 1.0)              # #E8FFFF beacon_open
-const C_GOLD := Color(1.0, 0.784, 0.239)             # #FFC83D gold_gift
-const C_MUTED := Color(0.545, 0.620, 0.718)          # unselected entry text
-const C_DIM := Color(0.431, 0.494, 0.584)            # footer text
+const UiStyle := preload("res://view/ui_style.gd")
+const UiFocus := preload("res://view/ui_focus.gd")
+
+## Palette (D-GUI-1, view/ui_style.gd - supersedes D-MENU-9's gold/indigo). The names are
+## the old roles, kept because tests/test_menu.gd reads C_GOLD / C_MUTED: C_GOLD is the
+## SELECTED entry's text, C_MUTED an unselected entry's.
+const C_VOID := UiStyle.BLACK
+const C_WHITE := UiStyle.TEXT_STRONG
+const C_GOLD := UiStyle.TEXT_STRONG
+const C_MUTED := UiStyle.TEXT_MUTED
+const C_DIM := UiStyle.TEXT_DIM
+
+## Layout at the 1280x720 reference (scaled by ui_scale).
+const ENTRY_W := 320.0
+const ENTRY_H := 48.0
+const DISCLAIMER_W := 560.0
 
 const STICK_THRESHOLD := 0.6
 const SCROLL_STEP := 48.0
@@ -87,10 +103,11 @@ var _panel_left := 0.0                  # the panel's resting offsets (set by _a
 var _panel_right := 0.0
 var _stick_latched := false
 var _scaled: Array = []                 # [Control, theme font-size key, base px]
-var _fonts: Dictionary = {}             # role -> FontVariation
+var _title_face: FontVariation = UiStyle.scaled_face(0.85)   # the wordmark (tracking scales)
+var _focus: UiFocus = UiFocus.new()     # the entries; the ring follows `selected` (D-GUI-1)
 
 var _viewport_box: SubViewportContainer
-var _scrim: TextureRect
+var _scrim: ColorRect
 var _column: VBoxContainer
 var _title_top: Label
 var _title_run: Label
@@ -100,6 +117,7 @@ var _entry_box: VBoxContainer
 var _entry_hint: Label
 var _keys_hint: RichTextLabel
 var _bests: Label
+var _version_pill: PanelContainer
 var _version: Label
 var _disclaimer: Label
 var _panel: PanelContainer
@@ -146,22 +164,10 @@ func _notification(what: int) -> void:
 
 # ---- build ---------------------------------------------------------------------------------------
 
-func _font(role: String, embolden: float) -> FontVariation:
-	if not _fonts.has(role):
-		var f := FontVariation.new()
-		f.base_font = ThemeDB.fallback_font
-		f.variation_embolden = embolden
-		_fonts[role] = f
-	return _fonts[role]
-
-
-func _label(text: String, role: String, embolden: float, base_px: int, color: Color) -> Label:
-	var l := Label.new()
-	l.text = text
-	l.add_theme_font_override("font", _font(role, embolden))
-	l.add_theme_color_override("font_color", color)
-	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_scaled.append([l, "font_size", base_px])
+## One label in a UiStyle role whose size scales with ui_scale (base = the role's px).
+func _label(text: String, role: String, color: Color = Color(0, 0, 0, -1), base_px: int = -1) -> Label:
+	var l := UiStyle.label(text, role, color)
+	_scaled.append([l, "font_size", base_px if base_px > 0 else UiStyle.role_size(role)])
 	return l
 
 
@@ -192,44 +198,16 @@ func _build() -> void:
 	_viewport_box.add_child(vp)
 	add_child(_viewport_box)
 
-	# left scrim: the column reads over the 3D without a box around it
-	_scrim = TextureRect.new()
+	# one flat scrim over the whole stage (no gradient): the island stays the picture, the
+	# text reads over it without a box around the column
+	_scrim = ColorRect.new()
 	_scrim.name = "Scrim"
+	_scrim.color = Color(0, 0, 0, 0.30)
 	_scrim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_scrim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_scrim.stretch_mode = TextureRect.STRETCH_SCALE
-	_scrim.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	var g := Gradient.new()
-	g.set_color(0, Color(C_VOID.r, C_VOID.g, C_VOID.b, 0.92))
-	g.set_color(1, Color(C_VOID.r, C_VOID.g, C_VOID.b, 0.0))
-	g.add_point(0.30, Color(C_VOID.r, C_VOID.g, C_VOID.b, 0.78))
-	var gt := GradientTexture2D.new()
-	gt.gradient = g
-	gt.fill_from = Vector2(0.0, 0.5)
-	gt.fill_to = Vector2(0.62, 0.5)
-	gt.width = 256
-	gt.height = 4
-	_scrim.texture = gt
 	add_child(_scrim)
-	var foot := TextureRect.new()
-	foot.name = "FooterScrim"
-	foot.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	foot.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	foot.stretch_mode = TextureRect.STRETCH_SCALE
-	foot.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	var fg := Gradient.new()
-	fg.set_color(0, Color(C_VOID.r, C_VOID.g, C_VOID.b, 0.0))
-	fg.set_color(1, Color(C_VOID.r, C_VOID.g, C_VOID.b, 0.85))
-	var fgt := GradientTexture2D.new()
-	fgt.gradient = fg
-	fgt.fill_from = Vector2(0.5, 0.82)
-	fgt.fill_to = Vector2(0.5, 1.0)
-	fgt.width = 4
-	fgt.height = 256
-	foot.texture = fgt
-	add_child(foot)
 
-	# the menu column
+	# the menu column: the one focal element (wordmark, entries)
 	_column = VBoxContainer.new()
 	_column.name = "MenuColumn"
 	_column.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -240,50 +218,49 @@ func _build() -> void:
 	title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	title.add_theme_constant_override("separation", 0)
 	_column.add_child(title)
-	_title_top = _label("VOIDWRAP", "title", 0.85, 84, C_WHITE)
+	_title_top = _label("VOIDWRAP", "display", C_WHITE)
 	_title_top.name = "TitleVoidwrap"
+	_title_top.add_theme_font_override("font", _title_face)
 	title.add_child(_title_top)
-	_title_run = _label("RUN", "title", 0.85, 84, C_GOLD)
+	_title_run = _label("RUN", "display", UiStyle.ACCENT)
 	_title_run.name = "TitleRun"
+	_title_run.add_theme_font_override("font", _title_face)
 	title.add_child(_title_run)
-	_rule = ColorRect.new()
-	_rule.name = "Rule"
-	_rule.color = Color(C_GOLD.r, C_GOLD.g, C_GOLD.b, 0.85)
-	_rule.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_rule = UiStyle.rule()
 	_column.add_child(_rule)
-	_tagline = _label("collect every black gift. mind the void.", "body", 0.0, 17, C_MUTED)
+	_tagline = _label("collect every black gift. mind the void.", "body", C_MUTED)
 	_tagline.name = "Tagline"
 	_column.add_child(_tagline)
 	var gap := Control.new()
 	gap.name = "Gap"
 	gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_scaled.append([gap, "min_h", 44])
+	_scaled.append([gap, "min_h", 40])
 	_column.add_child(gap)
 
 	_entry_box = VBoxContainer.new()
 	_entry_box.name = "Entries"
 	_entry_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_column.add_child(_entry_box)
+	_focus.hover_focus = false          # the entries' own hover handler moves the selection
 	for i in MENU_ENTRIES.size():
 		var b := Button.new()
 		b.name = "Entry%d" % i
 		b.text = str(MENU_ENTRIES[i])
-		b.flat = false
-		b.focus_mode = Control.FOCUS_NONE
+		UiStyle.style_button(b, UiStyle.GHOST)
 		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		b.add_theme_font_override("font", _font("entry", 0.35))
 		b.mouse_entered.connect(_on_entry_hover.bind(i))
 		b.pressed.connect(_on_entry_pressed.bind(i))
-		_scaled.append([b, "font_size", 30])
+		_scaled.append([b, "font_size", UiStyle.FS_ENTRY])
 		_entry_box.add_child(b)
 		_entries.append(b)
 		_entry_anim.append(0.0)
-	_entry_hint = _label("", "body", 0.0, 15, C_MUTED)
+		_focus.add(b, UiStyle.GHOST, activate.bind(i), Callable(), _paint_none)
+	_entry_hint = _label("", "small", C_DIM)
 	_entry_hint.name = "EntryHint"
 	_column.add_child(_entry_hint)
 	var gap2 := Control.new()
 	gap2.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_scaled.append([gap2, "min_h", 26])
+	_scaled.append([gap2, "min_h", 24])
 	_column.add_child(gap2)
 	_keys_hint = RichTextLabel.new()
 	_keys_hint.name = "KeysHint"
@@ -292,30 +269,41 @@ func _build() -> void:
 	_keys_hint.scroll_active = false
 	_keys_hint.autowrap_mode = TextServer.AUTOWRAP_OFF
 	_keys_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_keys_hint.add_theme_font_override("normal_font", _font("body", 0.0))
-	_keys_hint.add_theme_font_override("bold_font", _font("bold", 0.6))
-	_scaled.append([_keys_hint, "normal_font_size", 14])
-	_scaled.append([_keys_hint, "bold_font_size", 14])
+	_keys_hint.add_theme_font_override("normal_font", UiStyle.font("label"))
+	_keys_hint.add_theme_font_override("bold_font", UiStyle.font("mono"))
+	_keys_hint.add_theme_stylebox_override("normal", UiStyle.pad_box())
+	_scaled.append([_keys_hint, "normal_font_size", UiStyle.FS_LABEL])
+	_scaled.append([_keys_hint, "bold_font_size", UiStyle.FS_LABEL + 1])
 	_keys_hint.text = keys_hint_bbcode()
 	_column.add_child(_keys_hint)
-	# the locally recorded bests (DESIGN.md section 9): one quiet line under the key hint,
-	# dim like the version tag (the menu never restyles for it)
-	_bests = _label("", "body", 0.2, 13, C_MUTED)
+	# the locally recorded bests (DESIGN.md section 9): one quiet mono line under the key
+	# hint - numbers in the mono face, so a 6-digit purse never shifts the line
+	_bests = _label("", "num", C_MUTED, UiStyle.FS_SMALL)
 	_bests.name = "Bests"
 	_column.add_child(_bests)
 	refresh_records()
 
-	# footer: version tag + the disclaimer (always on screen - the About entry is gone)
-	_version = _label(VERSION_TAG, "body", 0.2, 13, C_DIM)
+	# corners: the build pill bottom-left, the disclaimer bottom-right (always on screen -
+	# the About entry is gone)
+	_version_pill = UiStyle.pill("BUILD", VERSION_TAG)
+	_version_pill.name = "VersionPill"
+	add_child(_version_pill)
+	_version = _version_pill.get_node("Row/Value")
 	_version.name = "VersionTag"
-	add_child(_version)
-	_disclaimer = _label("VOIDWRAP RUN: " + ABOUT_DISCLAIMER, "body", 0.0, 12, C_DIM)
+	_scaled.append([_version, "font_size", UiStyle.FS_LABEL + 1])
+	_scaled.append([_version_pill.get_node("Row/Key"), "font_size", UiStyle.FS_LABEL])
+	_disclaimer = _label("VOIDWRAP RUN: " + ABOUT_DISCLAIMER, "small", C_DIM, UiStyle.FS_LABEL + 1)
 	_disclaimer.name = "Disclaimer"
 	_disclaimer.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_disclaimer.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_disclaimer.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
 	add_child(_disclaimer)
 
 	_build_howto_panel()
+
+
+func _paint_none(_c: Control, _on: bool) -> void:
+	pass             # the entries are painted by _style_entry (eased), not by the cycle
 
 
 func _build_howto_panel() -> void:
@@ -323,59 +311,52 @@ func _build_howto_panel() -> void:
 	_panel.name = "HowToPanel"
 	_panel.visible = false
 	_panel.mouse_filter = Control.MOUSE_FILTER_STOP
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(C_VOID.r, C_VOID.g, C_VOID.b, 0.94)
-	sb.border_color = Color(C_GOLD.r, C_GOLD.g, C_GOLD.b, 0.7)
-	_panel.add_theme_stylebox_override("panel", sb)
+	_panel.add_theme_stylebox_override("panel", UiStyle.panel_box())
 	add_child(_panel)
 	var vb := VBoxContainer.new()
 	vb.name = "Body"
+	vb.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_panel.add_child(vb)
-	var head := _label("HOW TO PLAY", "title", 0.85, 40, C_WHITE)
+	var head := _label("HOW TO PLAY", "title")
 	head.name = "HowToTitle"
 	vb.add_child(head)
-	var rule := ColorRect.new()
-	rule.color = Color(C_GOLD.r, C_GOLD.g, C_GOLD.b, 0.85)
-	rule.custom_minimum_size = Vector2(56, 3)
-	rule.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	vb.add_child(rule)
+	vb.add_child(UiStyle.rule())
 	_panel_text = RichTextLabel.new()
 	_panel_text.name = "HowToText"
 	_panel_text.bbcode_enabled = true
 	_panel_text.scroll_active = true
 	_panel_text.fit_content = false
 	_panel_text.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_panel_text.add_theme_font_override("normal_font", _font("body", 0.0))
-	_panel_text.add_theme_font_override("bold_font", _font("bold", 0.6))
+	_panel_text.add_theme_font_override("normal_font", UiStyle.font("body"))
+	_panel_text.add_theme_font_override("bold_font", UiStyle.font("strong"))
+	_panel_text.add_theme_color_override("default_color", UiStyle.TEXT)
 	_panel_text.add_theme_constant_override("line_separation", 4)
-	_scaled.append([_panel_text, "normal_font_size", 17])
-	_scaled.append([_panel_text, "bold_font_size", 17])
+	_panel_text.add_theme_stylebox_override("normal", UiStyle.pad_box())
+	_scaled.append([_panel_text, "normal_font_size", UiStyle.FS_BODY])
+	_scaled.append([_panel_text, "bold_font_size", UiStyle.FS_BODY])
 	vb.add_child(_panel_text)
 	var row := HBoxContainer.new()
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vb.add_child(row)
 	_back_button = Button.new()
 	_back_button.name = "BackButton"
 	_back_button.text = "BACK"
-	_back_button.focus_mode = Control.FOCUS_NONE
-	_back_button.add_theme_font_override("font", _font("entry", 0.35))
-	_back_button.add_theme_color_override("font_color", C_GOLD)
-	_back_button.add_theme_color_override("font_hover_color", C_WHITE)
 	_back_button.pressed.connect(close_howto)
-	_scaled.append([_back_button, "font_size", 18])
 	row.add_child(_back_button)
-	_panel_hint = _label("", "body", 0.0, 14, C_DIM)
+	_panel_hint = _label("", "label", C_DIM)
 	_panel_hint.name = "HowToHint"
 	_panel_hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_panel_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_panel_hint.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	row.add_child(_panel_hint)
-	_panel_hint.text = "%s scroll     %s / %s back" % [
-		_keys(["move_forward", "move_back"]), _keys(["jump", "interact"]), _keys(["pause"])]
+	_panel_hint.text = ("%s scroll     %s / %s back" % [
+		_keys(["move_forward", "move_back"]), _keys(["jump", "interact"]), _keys(["pause"])]).to_upper()
 
 
-## "W / S select     SPACE / F confirm" - read from the bindings, never hardcoded.
+## "W / S select     SPACE / F confirm" - read from the bindings, never hardcoded. The keys
+## in white mono, the verbs in the tracked label face (D-GUI-1).
 func keys_hint_bbcode() -> String:
-	return "[color=#E8FFFF][b]%s[/b][/color] [color=#8B9EB7]select[/color]      [color=#E8FFFF][b]%s[/b][/color] [color=#8B9EB7]confirm[/color]" % [
+	return "[color=#FFFFFF][b]%s[/b][/color] [color=#8FE8E0]SELECT[/color]      [color=#FFFFFF][b]%s[/b][/color] [color=#8FE8E0]CONFIRM[/color]" % [
 		_keys(["move_forward", "move_back"]), _keys(["jump", "interact"])]
 
 
@@ -397,50 +378,53 @@ func _apply_scale() -> void:
 	for item in _scaled:
 		var node: Control = item[0]
 		var key: String = item[1]
-		var px: int = maxi(int(round(float(item[2]) * ui_scale)), 1)
+		var px: int = maxi(int(roundf(float(item[2]) * ui_scale)), 1)
 		if key == "min_h":
 			node.custom_minimum_size = Vector2(0, px)
 		else:
 			node.add_theme_font_size_override(key, px)
-	(_fonts["title"] as FontVariation).spacing_glyph = int(round(10.0 * ui_scale))
-	if _fonts.has("entry"):
-		(_fonts["entry"] as FontVariation).spacing_glyph = int(round(3.0 * ui_scale))
-	var margin: float = round(w * 0.065)
+	_title_face.spacing_glyph = int(roundf(UiStyle.TRACK_DISPLAY * ui_scale))
+	var margin: float = roundf(w * 0.065)
+	var edge: float = roundf(UiStyle.EDGE * ui_scale)
 	_column.anchor_left = 0.0
 	_column.anchor_right = 0.0
 	_column.anchor_top = 0.0
 	_column.anchor_bottom = 1.0
 	_column.offset_left = margin
-	_column.offset_right = margin + round(520.0 * ui_scale)
-	_column.offset_top = round(40.0 * ui_scale)
-	_column.offset_bottom = -round(90.0 * ui_scale)
-	_column.add_theme_constant_override("separation", int(round(8.0 * ui_scale)))
-	_entry_box.add_theme_constant_override("separation", int(round(4.0 * ui_scale)))
-	_title_top.add_theme_constant_override("line_spacing", 0)
-	_title_run.add_theme_constant_override("line_spacing", 0)
-	_rule.custom_minimum_size = Vector2(round(64.0 * ui_scale), maxf(2.0, round(3.0 * ui_scale)))
-	_rule.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	_column.offset_right = margin + roundf(520.0 * ui_scale)
+	_column.offset_top = roundf(40.0 * ui_scale)
+	_column.offset_bottom = -roundf(90.0 * ui_scale)
+	_column.add_theme_constant_override("separation", int(roundf(UiStyle.SP_2 * ui_scale)))
+	_entry_box.add_theme_constant_override("separation", int(roundf(UiStyle.SP_1 * ui_scale)))
+	_rule.custom_minimum_size = Vector2(roundf(32.0 * ui_scale), 1)
 	for b in _entries:
-		b.custom_minimum_size = Vector2(round(360.0 * ui_scale), round(54.0 * ui_scale))
+		b.custom_minimum_size = Vector2(roundf(ENTRY_W * ui_scale), roundf(ENTRY_H * ui_scale))
 		b.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	var pad: float = round(22.0 * ui_scale)
-	_version.anchor_left = 0.0
-	_version.anchor_right = 0.0
-	_version.anchor_top = 1.0
-	_version.anchor_bottom = 1.0
-	_version.offset_left = margin
-	_version.offset_right = margin + round(360.0 * ui_scale)
-	_version.offset_top = -pad - round(20.0 * ui_scale)
-	_version.offset_bottom = -pad
+	# the build pill: bottom-left corner, growing up from the edge
+	_version_pill.anchor_left = 0.0
+	_version_pill.anchor_right = 0.0
+	_version_pill.anchor_top = 1.0
+	_version_pill.anchor_bottom = 1.0
+	_version_pill.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_version_pill.offset_left = margin
+	_version_pill.offset_right = margin
+	_version_pill.offset_top = -edge
+	_version_pill.offset_bottom = -edge
+	_version_pill.custom_minimum_size.y = roundf(UiStyle.PILL_H * ui_scale)
+	# the disclaimer: bottom-right corner, wrapped to a quiet block, growing up
 	_disclaimer.anchor_left = 1.0
 	_disclaimer.anchor_right = 1.0
 	_disclaimer.anchor_top = 1.0
 	_disclaimer.anchor_bottom = 1.0
-	_disclaimer.offset_right = -margin * 0.6
-	_disclaimer.offset_left = -margin * 0.6 - round(780.0 * ui_scale)
-	_disclaimer.offset_top = -pad - round(40.0 * ui_scale)
-	_disclaimer.offset_bottom = -pad
-	_disclaimer.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+	_disclaimer.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	var dw: float = roundf(DISCLAIMER_W * ui_scale)
+	var dh: float = ceilf(UiStyle.text_height(_disclaimer.text, "small", dw,
+			_disclaimer.get_theme_font_size("font_size")))
+	_disclaimer.offset_right = -edge
+	_disclaimer.offset_left = -edge - dw
+	_disclaimer.offset_bottom = -edge
+	_disclaimer.offset_top = -edge - dh
+	_version_pill.reset_size()
 	# the panel: right side, clear of the menu column
 	_panel.anchor_left = 0.0
 	_panel.anchor_right = 1.0
@@ -448,35 +432,39 @@ func _apply_scale() -> void:
 	_panel.anchor_bottom = 1.0
 	# the panel starts right of the title (it never clips the wordmark)
 	var title_w: float = maxf(_title_top.get_combined_minimum_size().x, 440.0 * ui_scale)
-	_panel_left = margin + title_w + round(36.0 * ui_scale)
-	_panel_right = -round(48.0 * ui_scale)
-	_panel.offset_top = round(52.0 * ui_scale)
-	_panel.offset_bottom = -round(96.0 * ui_scale)
-	var sb: StyleBoxFlat = _panel.get_theme_stylebox("panel") as StyleBoxFlat
-	if sb != null:
-		sb.border_width_left = maxi(2, int(round(3.0 * ui_scale)))
-		var cm: float = round(34.0 * ui_scale)
-		sb.content_margin_left = cm
-		sb.content_margin_right = cm
-		sb.content_margin_top = round(28.0 * ui_scale)
-		sb.content_margin_bottom = round(22.0 * ui_scale)
-	_panel_text.text = HowToScript.bbcode(bindings).replace("{h}", str(int(round(19.0 * ui_scale))))
+	_panel_left = margin + title_w + roundf(36.0 * ui_scale)
+	_panel_right = -roundf(48.0 * ui_scale)
+	_panel.offset_top = roundf(52.0 * ui_scale)
+	_panel.offset_bottom = -roundf(96.0 * ui_scale)
+	var pad: float = roundf(UiStyle.PANEL_PAD * ui_scale)
+	_panel.add_theme_stylebox_override("panel", UiStyle.panel_box(pad))
+	(_panel.get_node("Body") as VBoxContainer).add_theme_constant_override("separation",
+			int(roundf(UiStyle.SP_3 * ui_scale)))
+	_panel_text.text = HowToScript.bbcode(bindings).replace("{h}", str(int(roundf(UiStyle.FS_TITLE * 0.7 * ui_scale))))
+	_back_button.custom_minimum_size = Vector2(roundf(160.0 * ui_scale), 0)
+	UiStyle.style_button(_back_button, UiStyle.SECONDARY, ui_scale)
+	UiStyle.paint(_back_button, UiStyle.SECONDARY, true, ui_scale)   # the panel's only control
 	for i in _entries.size():
 		_style_entry(i)
 	_place_panel()
 
 
+## The entry look, eased by _entry_anim (0 = resting ghost row, 1 = the shared focus ring):
+## the ring's edge fades in, the left bar grows to UiStyle.FOCUS_BAR, the faint accent fill
+## comes up and the text goes from C_MUTED to C_GOLD (white).
 func _style_entry(i: int) -> void:
 	var b: Button = _entries[i]
 	var t: float = _entry_anim[i]
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(C_GOLD.r, C_GOLD.g, C_GOLD.b, 0.10 * t)
-	sb.border_color = Color(C_GOLD.r, C_GOLD.g, C_GOLD.b, t)
-	sb.border_width_left = int(round(4.0 * ui_scale * t))
-	sb.content_margin_left = round((12.0 + 16.0 * t) * ui_scale)
-	sb.content_margin_right = round(12.0 * ui_scale)
-	sb.content_margin_top = round(6.0 * ui_scale)
-	sb.content_margin_bottom = round(6.0 * ui_scale)
+	var px: float = roundf(UiStyle.PAD_X * ui_scale)
+	var py: float = roundf(UiStyle.PAD_Y * ui_scale)
+	var sb: StyleBoxFlat
+	if t >= 0.999:
+		sb = UiStyle.focus_box(px, py)
+	else:
+		var a := UiStyle.ACCENT
+		sb = UiStyle.box(Color(a.r, a.g, a.b, 0.14 * t), Color(UiStyle.FOCUS.r, UiStyle.FOCUS.g,
+				UiStyle.FOCUS.b, t), UiStyle.BORDER if t > 0.01 else 0,
+				int(roundf(UiStyle.FOCUS_BAR * t)), px, py)
 	for state in ["normal", "hover", "pressed", "hover_pressed", "focus", "disabled"]:
 		b.add_theme_stylebox_override(state, sb)
 	var col: Color = C_MUTED.lerp(C_GOLD, t)
@@ -488,6 +476,7 @@ func _style_entry(i: int) -> void:
 
 func _set_selected(i: int, snap: bool = false) -> void:
 	selected = posmod(i, MENU_ENTRIES.size())
+	_focus.index = selected          # the shared ring follows the selection (D-GUI-1)
 	_entry_hint.text = str(ENTRY_HINTS[selected])
 	if snap:
 		for k in _entry_anim.size():
@@ -534,6 +523,11 @@ func selected_index() -> int:
 
 func entry_buttons() -> Array[Button]:
 	return _entries
+
+
+## The keyboard focus registry (tests/test_ui_style.gd reads it); its index is `selected`.
+func focus_cycle() -> UiFocus:
+	return _focus
 
 
 func version_label() -> Label:
@@ -613,6 +607,14 @@ func handle_input(event: InputEvent) -> bool:
 			return false
 		var code: int = int(k.keycode) if k.keycode != KEY_NONE else int(k.physical_keycode)
 		action = action_for_key(code)
+		# D-GUI-1: Tab / Shift+Tab and the arrow keys walk the entries on every screen. Enter
+		# stays inert here (D-MENU-9: confirm is the game's jump / interact binding).
+		if action == "" and code == KEY_TAB:
+			action = "up" if k.shift_pressed else "down"
+		elif action == "" and code == KEY_UP:
+			action = "up"
+		elif action == "" and code == KEY_DOWN:
+			action = "down"
 		if k.echo and action != "up" and action != "down":
 			return false
 	elif event is InputEventJoypadButton:
