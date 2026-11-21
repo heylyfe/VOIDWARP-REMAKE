@@ -690,11 +690,16 @@ static func _wedge(s_top: Surf, s_side: Surf, x: int, z: int, y: int, d: int, co
 ## collapse drops that set as one node). In a split build each part's hidden-face test sees
 ## only its own tiles, so a seam face between the hub and a neighbour is kept on both sides
 ## and neither part shows a hole once the other is gone.
+## PART_ZONE meshes only the pieces whose ids are keys of `zone_pieces` (one collapse zone,
+## sim/collapse.gd; D-B10-1): the sequential collapse drops each zone on its own, so each zone
+## is its own part. The hub is never in a zone set. The same per-part hidden-face rule holds.
 const PART_HUB := "hub"
 const PART_REST := "rest"
+const PART_ZONE := "zone"
 
 
-static func build(L: Dictionary, biome: Dictionary = {}, part: String = "") -> Dictionary:
+static func build(L: Dictionary, biome: Dictionary = {}, part: String = "",
+		zone_pieces: Dictionary = {}) -> Dictionary:
 	var t0 := Time.get_ticks_usec()
 	var split_hub := -1
 	for p in L.get("pieces", []):
@@ -703,6 +708,7 @@ static func build(L: Dictionary, biome: Dictionary = {}, part: String = "") -> D
 			break
 	var want_hub := part == PART_HUB
 	var split := part == PART_HUB or part == PART_REST
+	var zoned := part == PART_ZONE
 	var lvl := int(L.get("level", 1))
 	var bd: Dictionary = biome
 	if bd.is_empty():
@@ -741,6 +747,8 @@ static func build(L: Dictionary, biome: Dictionary = {}, part: String = "") -> D
 		tile_piece["%d,%d,%d" % [x, z, y]] = pid
 		if split and ((pid == split_hub) != want_hub):
 			continue
+		if zoned and not zone_pieces.has(pid):
+			continue
 		if not cols_e.has(kz):
 			cols_e[kz] = {}
 		(cols_e[kz] as Dictionary)[y] = kind
@@ -774,6 +782,8 @@ static func build(L: Dictionary, biome: Dictionary = {}, part: String = "") -> D
 		if int(t[3]) != 0:
 			continue
 		if split and ((int(t[4]) == split_hub) != want_hub):
+			continue
+		if zoned and not zone_pieces.has(int(t[4])):
 			continue
 		var x: int = int(t[0])
 		var z: int = int(t[1])
@@ -812,6 +822,8 @@ static func build(L: Dictionary, biome: Dictionary = {}, part: String = "") -> D
 	for p in L.get("props", []):
 		if split and ((int(p[5]) == split_hub) != want_hub):
 			continue
+		if zoned and not zone_pieces.has(int(p[5])):
+			continue
 		var px: float = float(p[0])
 		var pz: float = float(p[1])
 		var pbase: float = float(p[2]) * HU
@@ -828,7 +840,10 @@ static func build(L: Dictionary, biome: Dictionary = {}, part: String = "") -> D
 	# Launch pads: 0.125 u plate on the tile top (section 12.2: pulsing emission 0.5-1.5 at 1 Hz).
 	var pads_meshed := 0
 	for p in L.get("pads", []):
-		if split and ((int(tile_piece.get("%d,%d,%d" % [int(p[0]), int(p[1]), int(p[2])], -2)) == split_hub) != want_hub):
+		var pad_pid: int = int(tile_piece.get("%d,%d,%d" % [int(p[0]), int(p[1]), int(p[2])], -2))
+		if split and ((pad_pid == split_hub) != want_hub):
+			continue
+		if zoned and not zone_pieces.has(pad_pid):
 			continue
 		var px: float = float(p[0])
 		var pz: float = float(p[1])
@@ -886,6 +901,8 @@ static func build(L: Dictionary, biome: Dictionary = {}, part: String = "") -> D
 		if bbw > SPIKE_MAX_BBOX or bbd > SPIKE_MAX_BBOX:
 			continue
 		var pid: int = int(p["id"])
+		if zoned and not zone_pieces.has(pid):
+			continue
 		@warning_ignore("integer_division")
 		var cxi: int = (int(bb[0]) + int(bb[2])) / 2
 		@warning_ignore("integer_division")

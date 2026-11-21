@@ -1,0 +1,8 @@
+{
+  "_doc": "THE one tunable file for the platform collapse after the beacon opens (sim/collapse.gd; owner correction 2026-11-21, D-B10-1, supersedes D-B6-2's one global fall). The level is cut into ZONES by distance from the hub: every non-hub piece (a platform or a bridge, never a single tile) belongs to exactly one zone, chosen by the XZ distance from the dais centre to the piece's NEAREST tile. The hub piece is in no zone and never falls. After the beacon opens the FARTHEST zone cracks; crack_to_fall_s later it falls into the void; gap_after_fall_s after that the next-closer zone cracks, and so on inward until only the hub is left. Only one zone is ever cracking. Zone count = ceil(level radius / zone_width_u), clamped to [zone_min, zone_max], where the level radius is the largest piece distance; the bands are then equal slices of that radius, and a band no piece falls into is dropped (no empty wait). Times are seconds at the fixed 60 Hz sim tick.",
+  "crack_to_fall_s": 5.0,
+  "gap_after_fall_s": 10.0,
+  "zone_width_u": 16.0,
+  "zone_min": 1,
+  "zone_max": 6
+}

@@ -20,6 +20,11 @@ extends RefCounted
 #   GIFTS <phase> <black hex> <gold hex>   (T-020) phase + the two slot-id bitsets, hex encoded
 #   BEACON <opened> <completed>            (T-020) the beacon machine flags
 #   MINES <consumed hex>                   (T-021) the tripmine consumed bitset, hex encoded
+#   COLLAPSE <phase> <start> <cur> <fallen_n> <removed_n>  (B10, D-B10-1) the sequential
+#                                          platform-collapse schedule; only when the level
+#                                          carries one (lstate.collapse non-empty). The zone
+#                                          partition is a pure function of the Level, so the
+#                                          live fields alone pin every zone's crack/fall tick.
 # Level content itself is NOT dumped: it is a pure function of the seed and enters the hash once,
 # via LEVELHASH.
 
@@ -80,6 +85,12 @@ static func dump(rs: RefCounted) -> PackedStringArray:
 	# itself is not hashed - it is a pure function of the Level hash (occ fields).
 	if lv.mines != null:
 		out.append("MINES %s" % (lv.mines.consumed as PackedByteArray).hex_encode())
+	# B10: the collapse schedule is live state (D-B10-1). Absent for a level with no
+	# collapse, so every pre-B10 dump (the bare sim, the replay goldens) is unchanged.
+	var cst: Dictionary = lv.collapse
+	if not cst.is_empty():
+		out.append("COLLAPSE %d %d %d %d %d" % [int(cst["phase"]), int(cst["start_tick"]),
+				int(cst["cur"]), int(cst["fallen_n"]), int(cst["removed_n"])])
 	return out
 
 

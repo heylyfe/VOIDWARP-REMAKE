@@ -41,6 +41,10 @@ var mines: RefCounted = null
 ## T-053: the scripted-upgrade state, built from ROLE keys (D-T053-1) supplied by
 ## the caller; null when no scripted upgrade is owned.
 var upgrades: RefCounted = null
+## B10: the platform-collapse schedule (sim/collapse.gd create(); D-B10-1). Set by the owner of
+## the collapse (app/world.gd) after build; {} when the caller runs no collapse (the bare sim,
+## the bot). Live state, so sim/state_hash.gd dumps it as the COLLAPSE line.
+var collapse: Dictionary = {}
 
 
 ## level_number is 1-based (the run's current level). player_count in 1..8 (TERRAIN_SPEC.md spawns).

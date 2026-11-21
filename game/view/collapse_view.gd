@@ -1,21 +1,24 @@
 extends Node3D
 #
-# Platform collapse view (owner request 2026-11-20; sim/collapse.gd owns the schedule).
+# Platform collapse view (owner request 2026-11-20; sim/collapse.gd owns the schedule; the
+# sequential outside-in zones are D-B10-1).
 #
-# This node IS the drop root: it carries every non-hub level mesh (level_mesher PART_REST)
-# plus one merged crack overlay (a quad 0.02 u over each collapsing tile top). The hub's
-# meshes are built separately by the world and never parented here, so nothing on the
-# spawn platform can crack or fall.
+# This node holds one DROP ROOT PER ZONE (child "Zone<i>", i in fall order): each carries that
+# zone's level meshes (level_mesher PART_ZONE with the zone's piece set) plus its own merged
+# crack overlay (a quad 0.02 u over each of the zone's tile tops) and its own crack material.
+# The hub's meshes are built separately by the world and never parented here, so nothing on
+# the spawn platform can crack or fall.
 #
-#   idle      overlay hidden, node at rest.
-#   cracking  overlay visible from the start tick itself; crack_progress (0..1 over the
-#             300-tick phase) widens and reveals the crack network; the last 60 ticks the
-#             node shudders (a few cm, deterministic from the tick).
-#   fallen    from the fall tick the node drops on a ballistic curve (g = 32 u/s^2, the
+# Per zone, from sim/collapse.gd zone_phase:
+#   idle      overlay hidden, zone at rest.
+#   cracking  overlay visible from the zone's crack tick itself; crack_progress (0..1 over the
+#             crack phase) widens and reveals the crack network; the last 60 ticks the zone
+#             shudders (a few cm, deterministic from the tick).
+#   fallen    from the zone's fall tick it drops on a ballistic curve (g = 32 u/s^2, the
 #             controller's gravity) and is hidden DROP_TICKS later, so it never lingers.
 #
 # Read-only on sim state: sync(st, tick) is called once per sim tick from the world's view
-# pass. Cost per tick is one transform write and one shader uniform - nothing is rebuilt.
+# pass. Cost per tick is a transform write and a shader uniform per zone - nothing is rebuilt.
 
 const CollapseScript := preload("res://sim/collapse.gd")
 
@@ -84,33 +87,43 @@ void fragment() {
 }
 "
 
-var overlay: MeshInstance3D = null
-var _mat: ShaderMaterial = null
+var zones: Array = []      # Node3D drop roots, fall order
+var overlays: Array = []   # MeshInstance3D crack overlay per zone
+var _mats: Array = []      # ShaderMaterial per zone (each zone has its own progress)
 var _meshes: Array = []
-var _rest_y := 0.0
+var _shader: Shader = null
 
 
-## rest_meshes: level_mesher.build(lv, {}, PART_REST)["meshes"]; st: collapse.create(lv).
-func setup(lv: Dictionary, rest_meshes: Dictionary, st: Dictionary) -> void:
+## zone_meshes[i]: level_mesher.build(lv, {}, PART_ZONE, zone i's pieces)["meshes"];
+## st: collapse.create(lv).
+func setup(lv: Dictionary, zone_meshes: Array, st: Dictionary) -> void:
 	name = "PlatformCollapse"
-	for mn in rest_meshes:
-		var mi := MeshInstance3D.new()
-		mi.mesh = rest_meshes[mn]
-		add_child(mi)
-		_meshes.append(mi)
-	_mat = ShaderMaterial.new()
-	var sh := Shader.new()
-	sh.code = CRACK_SHADER
-	_mat.shader = sh
-	var m := build_overlay(lv, st)
-	overlay = MeshInstance3D.new()
-	overlay.name = "Cracks"
-	overlay.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	if m != null:
-		m.surface_set_material(0, _mat)
-		overlay.mesh = m
-	overlay.visible = false
-	add_child(overlay)
+	_shader = Shader.new()
+	_shader.code = CRACK_SHADER
+	for i in zone_meshes.size():
+		var root := Node3D.new()
+		root.name = "Zone%d" % i
+		add_child(root)
+		var zm: Dictionary = zone_meshes[i]
+		for mn in zm:
+			var mi := MeshInstance3D.new()
+			mi.mesh = zm[mn]
+			root.add_child(mi)
+			_meshes.append(mi)
+		var mat := ShaderMaterial.new()
+		mat.shader = _shader
+		var m := build_overlay(lv, st, i)
+		var ov := MeshInstance3D.new()
+		ov.name = "Cracks"
+		ov.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		if m != null:
+			m.surface_set_material(0, mat)
+			ov.mesh = m
+		ov.visible = false
+		root.add_child(ov)
+		zones.append(root)
+		overlays.append(ov)
+		_mats.append(mat)
 	position = Vector3.ZERO
 	visible = true
 
@@ -119,9 +132,21 @@ func mesh_instances() -> Array:
 	return _meshes
 
 
-## One merged quad per collapsing tile (flat tops and ramp slopes; a tile under a prop is
-## skipped - the prop box covers it). null when nothing collapses.
-static func build_overlay(lv: Dictionary, st: Dictionary) -> ArrayMesh:
+func zone_count() -> int:
+	return zones.size()
+
+
+## True when any zone's crack overlay is showing.
+func any_overlay_visible() -> bool:
+	for i in zones.size():
+		if (zones[i] as Node3D).visible and (overlays[i] as MeshInstance3D).visible:
+			return true
+	return false
+
+
+## One merged quad per tile of zone `zi` (flat tops and ramp slopes; a tile under a prop is
+## skipped - the prop box covers it). zi < 0: every collapsing tile. null when none.
+static func build_overlay(lv: Dictionary, st: Dictionary, zi: int = -1) -> ArrayMesh:
 	var prop_at := {}
 	for p in lv.get("props", []):
 		prop_at["%d,%d,%d" % [int(p[0]), int(p[1]), int(p[2])]] = true
@@ -131,6 +156,8 @@ static func build_overlay(lv: Dictionary, st: Dictionary) -> ArrayMesh:
 	for t in lv.get("tiles", []):
 		var key := "%d,%d,%d" % [int(t[0]), int(t[1]), int(t[2])]
 		if not CollapseScript.listed(st, key) or prop_at.has(key):
+			continue
+		if zi >= 0 and CollapseScript.zone_of(st, key) != zi:
 			continue
 		var x := float(t[0])
 		var z := float(t[1])
@@ -166,35 +193,50 @@ static func build_overlay(lv: Dictionary, st: Dictionary) -> ArrayMesh:
 
 ## The view pass: read the collapse state on sim tick `tick`.
 func sync(st: Dictionary, tick: int) -> void:
-	var ph := CollapseScript.phase(st)
-	if ph == CollapseScript.PHASE_IDLE:
-		overlay.visible = false
-		position = Vector3.ZERO
-		visible = true
-		return
-	if ph == CollapseScript.PHASE_CRACKING:
-		overlay.visible = overlay.mesh != null
-		_mat.set_shader_parameter("progress", CollapseScript.crack_progress(st, tick))
-		var left := int(st["fall_tick"]) - tick
-		if left <= SHUDDER_TICKS:
-			var amp := SHUDDER_AMP * (1.0 - float(left) / float(SHUDDER_TICKS))
-			position = Vector3(amp * sin(float(tick) * 2.7), 0.0, amp * cos(float(tick) * 3.1))
-		else:
-			position = Vector3.ZERO
-		visible = true
-		return
-	# fallen
-	var n := CollapseScript.ticks_since_fall(st, tick)
-	if n >= DROP_TICKS:
-		visible = false
-		return
-	var t := float(n) / 60.0
-	_mat.set_shader_parameter("progress", 1.0)
-	overlay.visible = overlay.mesh != null
-	position = Vector3(0.0, -0.5 * GRAVITY * t * t, 0.0)
-	visible = true
+	for i in zones.size():
+		_sync_zone(st, tick, i)
 
 
-## Drop offset in u (<= 0) on the current frame; for tests and probes.
-func drop_offset() -> float:
-	return position.y
+func _sync_zone(st: Dictionary, tick: int, i: int) -> void:
+	var root: Node3D = zones[i]
+	var ov: MeshInstance3D = overlays[i]
+	var mat: ShaderMaterial = _mats[i]
+	match CollapseScript.zone_phase(st, i):
+		CollapseScript.ZONE_IDLE:
+			ov.visible = false
+			root.position = Vector3.ZERO
+			root.visible = true
+		CollapseScript.ZONE_CRACKING:
+			ov.visible = ov.mesh != null
+			mat.set_shader_parameter("progress", CollapseScript.crack_progress(st, tick, i))
+			var left := CollapseScript.zone_fall_tick(st, i) - tick
+			if left <= SHUDDER_TICKS:
+				var amp := SHUDDER_AMP * (1.0 - float(left) / float(SHUDDER_TICKS))
+				root.position = Vector3(amp * sin(float(tick) * 2.7), 0.0, amp * cos(float(tick) * 3.1))
+			else:
+				root.position = Vector3.ZERO
+			root.visible = true
+		_:
+			var n := CollapseScript.ticks_since_fall(st, tick, i)
+			if n >= DROP_TICKS:
+				root.visible = false
+				return
+			var t := float(n) / 60.0
+			mat.set_shader_parameter("progress", 1.0)
+			ov.visible = ov.mesh != null
+			root.position = Vector3(0.0, -0.5 * GRAVITY * t * t, 0.0)
+			root.visible = true
+
+
+## Zone i's drop offset in u (<= 0) on the current frame; for tests and probes.
+func drop_offset(i: int = 0) -> float:
+	return (zones[i] as Node3D).position.y if i < zones.size() else 0.0
+
+
+## True while zone i is drawn (false once it has dropped out of sight).
+func zone_visible(i: int) -> bool:
+	return i < zones.size() and (zones[i] as Node3D).visible
+
+
+func zone_overlay_visible(i: int) -> bool:
+	return i < zones.size() and (overlays[i] as MeshInstance3D).visible

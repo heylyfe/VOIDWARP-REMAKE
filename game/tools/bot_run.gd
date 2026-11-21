@@ -1216,8 +1216,9 @@ static func _near_any(c: Vector2, pts: Array, r: float) -> bool:
 ## The XZ points the router must treat as dangerous. A body that is out of play
 ## (sim/enemy_runtime.gd is_out_of_play: falling with its platform, or gone past the kill
 ## plane) cannot kill - the runtime skips it in _contact_kills by the same predicate - so
-## routing around it is routing around nothing. The collapse starts on the beacon-open tick,
-## so this is exactly the gold phase, when the bot is choosing where to run.
+## routing around it is routing around nothing. The collapse starts on the beacon-open tick
+## and takes the level zone by zone from the outside in (sim/collapse.gd, D-B10-1), so this is
+## exactly the gold phase, when the bot is choosing where to run.
 static func _enemy_points(rt) -> Array:
 	var out: Array = []
 	for e in rt.enemies:
@@ -1649,8 +1650,9 @@ static func _goal_point(mem: Dictionary, lv) -> Vector3:
 
 ## Is the current goal invalid (gift gone / beacon opened)?
 ##
-## "Gone" is present(), not collected(): the collapse starts on the beacon-open tick, so the
-## gold phase is exactly when a gift's platform can fall out from under it. A lost gift is not
+## "Gone" is present(), not collected(): the collapse starts on the beacon-open tick (its zones
+## then fall one by one from the outside in, D-B10-1), so the gold phase is exactly when a
+## gift's platform can fall out from under it. A lost gift is not
 ## a collected one, so asking collected() alone left the bot routing to a ghost for the rest of
 ## the level - the same defect _nearest_gift had, in the staleness test instead of the chooser.
 static func _goal_stale(mem: Dictionary, lv) -> bool:

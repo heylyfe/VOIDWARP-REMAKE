@@ -7438,6 +7438,9 @@ CONTESTABLE rather than changed because the number is the owner's, not the fleet
 phase should stay a stroll, the fix is a longer `CRACK_SECONDS` (or a partial collapse that
 leaves a route), and that is the owner's call, not a tuning pass.
 
+**SUPERSEDED 2026-11-21 by D-B10-1** (the owner's correction: a sequential outside-in collapse,
+not one global fall). The text above is kept as written (R9).
+
 ## D-B5A-1: a script upgrade may declare a stat contribution, and that closes the Athletic branch
 
 **Ruling.** The stat pipeline takes a per-upgrade contribution. A script upgrade module may
@@ -7770,3 +7773,63 @@ constraint belongs.
 so a dodge arc can still cross a mine. Closing row 33 means making the dodge consult the arc
 model (`_jump_arc`'s `MINE_ARC_SAFE` check) instead of the landing pick. That is the next
 thing to try, and it is a bigger change than this one.
+
+## D-B10-1: the collapse is sequential, outside in, one zone at a time (supersedes D-B6-2)
+
+**Ruling.** The owner corrected the collapse: not every non-hub tile at once 5 s after the
+beacon opens, but a shrinking safe zone. `sim/collapse.gd` now cuts the level into ZONES and
+runs a per-zone schedule; every number is in `game/data/collapse.json`:
+
+- **Zone rule.** Every non-hub piece (a platform or a bridge, never a single tile) goes into
+  one zone by the XZ distance from the dais centre to the piece's NEAREST tile. Level radius R
+  = the largest such distance; zone count N = clamp(ceil(R / `zone_width_u` 16), `zone_min` 1,
+  `zone_max` 6); band = min(N-1, floor(d * N / R)); a band no piece lands in is dropped. The
+  hub piece (`ROLE_HUB`) is in no zone and never falls.
+- **Schedule.** On the beacon-open tick the farthest zone cracks; `crack_to_fall_s` 5.0 s
+  (300 ticks) later it falls; `gap_after_fall_s` 10.0 s (600 ticks) later the next zone inward
+  cracks. Zone i cracks on open + 900 i and falls on open + 900 i + 300. Only one zone is
+  ever cracking. Across seeds 1/7/42 x levels 1-30 that is 2 to 6 zones, 35 to 80 s in all.
+- **Unchanged.** What stands on a falling zone goes with it (D-B6-1: gifts lost, mines
+  dropped, enemies fall, the player falls through the void rule); the removed-tile set is the
+  same `w["removed"]`. The view drops each zone on its own (`collapse_view.gd`, one drop root
+  and one crack overlay per zone, meshed by `level_mesher` `PART_ZONE`).
+- **Determinism.** Tick-driven, no RNG, no clock. The state now rides on `lstate.collapse` and
+  `sim/state_hash.gd` dumps `COLLAPSE <phase> <start> <cur> <fallen_n> <removed_n>` (absent
+  when a level carries no collapse, so every pre-B10 dump and golden is unchanged).
+
+**Why nearest-tile distance.** A piece that reaches inward falls with its inner band, i.e.
+later. That gives a player on its far end more time, never less, and the "whole pieces only"
+rule (never single random tiles) is what the owner asked for.
+
+**Measured: no level becomes unwinnable** (`game/out/zone_reach.gd`, seeds 1/7/42 x levels
+1-30, run speed 9 u/s, straight XZ distances, as the old `collapse_reach.gd` check did):
+
+- WIN rule: the player picks the last black gift. Taking the gift with the most slack last,
+  the run to the dais must finish before that gift's zone falls. 0/90 unwinnable. In 87/90 a
+  real black gift is on the hub itself, so it never falls; the worst of the other three still
+  has 311.8 u of slack (seed 42 level 13, gift 3.16 u from the dais, zone falls at 35 s).
+- STRAND rule (stronger: anywhere the player stands when the beacon opens): from every
+  non-hub tile, the straight distance to the nearest tile that falls LATER (or a hub tile)
+  must be covered before the tile's zone falls. 0 of 91,770 tiles fail. The worst slack is
+  11.0 u (seed 42 level 11, first zone: 34 u to cover in 5 s). From any later zone the next
+  escape has the full 15 s (135 u), and the worst need is 40 u (95 u spare).
+
+**Measured: purse** (app-world driver `old_driver_single_free.gd`, seed 38, glider):
+before (D-B6-2 global fall, this tree's base) the driver reaches level 10, purse **170**.
+After, it dies on level 8 (D-KIWI), purse **97**. Through the 7 levels both complete, the
+purse is 246.28 before and 256.28 after (+10.00). So each level pays more gold, but the run is
+shorter. The death is not the collapse: under the global fall the bot on level 8 was caught
+50 u out, fell, spent a charge and respawned on the dais, so it never met the kiwi cat. Under
+zones it walks in past the cat and the cat kills it at 21 u. In other words, the old global
+fall was teleporting the bot past an enemy for one charge. (The 216 the ticket quotes is an
+older run; 170 is this tree's base, measured with the same driver.)
+
+**Measured: bot** (`tools/bot_run.gd`): level 1 97/100 (`--runs 100 --max-level 2`); level 6
+20.0% (12/60) (`--runs 60 --max-level 18 --seed-base 60717`), deaths identical to D-B9-2's
+row. Neither number can move, and that is a finding, not a result: `bot_run.gd` plays
+through `RunState` and never runs `sim/collapse.gd` (true since B6). The collapse only reaches
+the bot through the app-world driver above.
+
+**[CONTESTABLE]** zone width 16 u and the cap of 6 zones are the fleet's choice, not the
+owner's. 5.0 s and 10.0 s are the owner's numbers.
+

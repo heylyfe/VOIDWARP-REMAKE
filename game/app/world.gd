@@ -251,8 +251,9 @@ const TILE_RETURNED := "tile_returned"
 var _tile_step_mods: Array = []
 var _tile_step_keys: Dictionary = {}
 var _tiles_dropped: Dictionary = {}
-# Platform collapse (sim/collapse.gd): every non-hub tile cracks on the beacon-open tick and
-# leaves collision 300 ticks (5 s) later; the hub never does. platform_collapse is a
+# Platform collapse (sim/collapse.gd, D-B10-1): after the beacon opens the non-hub pieces fall
+# zone by zone from the outside in (crack, fall 5 s later, 10 s gap, the next zone inward;
+# numbers in data/collapse.json); the hub never does. platform_collapse is a
 # setting (not reset by teardown) - false is the feature's negative control.
 var platform_collapse := true
 var _collapse: Dictionary = {}
@@ -406,10 +407,12 @@ func build(seed_value: int, level: int, p_ledger: Dictionary = {}) -> bool:
 
 	# Level geometry. Built always (not only windowed, unlike the probe): this IS the
 	# playable scene; the headless gate builds it too (test_mesh.gd meshes headless).
-	# With the collapse on, the hub is meshed on its own and everything else goes under
-	# the collapse view (the one node that cracks and drops); off, the level is one build.
+	# With the collapse on, the hub is meshed on its own and every collapse zone is meshed
+	# as its own part under the collapse view (one drop root per zone); off, the level is
+	# one build. The state rides on lstate so sim/state_hash.gd dumps it (COLLAPSE line).
 	_collapse = CollapseScript.create(lv)
 	_collapse["enabled"] = platform_collapse
+	lstate.collapse = _collapse
 	var mesher: Dictionary = MesherScript.build(lv, {},
 			MesherScript.PART_HUB if platform_collapse else "")
 	for mn in mesher["meshes"]:
@@ -420,8 +423,11 @@ func build(seed_value: int, level: int, p_ledger: Dictionary = {}) -> bool:
 	if platform_collapse:
 		collapse_view = CollapseViewScript.new()
 		add_child(collapse_view)
-		collapse_view.setup(lv, MesherScript.build(lv, {}, MesherScript.PART_REST)["meshes"],
-				_collapse)
+		var zone_meshes: Array = []
+		for zi in CollapseScript.zone_count(_collapse):
+			zone_meshes.append(MesherScript.build(lv, {}, MesherScript.PART_ZONE,
+					_collapse["zones"][zi]["pieces"])["meshes"])
+		collapse_view.setup(lv, zone_meshes, _collapse)
 		_mesh_instances.append_array(collapse_view.mesh_instances())
 
 	# Fog / environment for the level's biome (act table; 31+ cycles, D-T014c-1).
@@ -685,7 +691,8 @@ func step(dt: float) -> void:
 		var cev: Dictionary = CollapseScript.start(_collapse, int(lstate.tick))
 		if not cev.is_empty():
 			ev.append(cev)
-	# The collapse fall: on start + 300 the non-hub tiles leave collision. A key it removes is
+	# The collapse schedule: on each zone's fall tick its tiles leave collision (the next
+	# zone inward cracks after the gap). A key it removes is
 	# no longer this file's tile-schedule drop, so a later tile_returned cannot restore it.
 	var fell: Array = CollapseScript.tick(_collapse, int(lstate.tick), w, ev)
 	for ck in fell:
