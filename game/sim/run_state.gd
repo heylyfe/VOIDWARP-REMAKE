@@ -31,6 +31,14 @@ var rng: Dictionary = {}  # stream name -> VoidRng instance (lookup only, never 
 ## ids - the id->role aggregation lives outside sim). Empty = none owned; load_level
 ## hands them to LevelState.build, which builds the upgrade state when non-empty.
 var upgrade_roles: Dictionary = {}
+## The run's carried enemy set (DESIGN.md section 6): {enemy id: votes}, accumulated over
+## every intermission so far and never rebuilt from one lobby's picks - a voted type stays
+## in play for the rest of the run and a repeat vote raises its count. hunger is the E-bay
+## "Hunger" stack count (section 6: offered once the pool is exhausted). Both are RUN
+## state, not level state: load_level never touches them, and state_hash.gd dumps them
+## (VOTES / HUNGER lines) so two runs that voted differently never hash the same.
+var run_votes: Dictionary = {}
+var run_hunger: int = 0
 
 
 static func new_run(p_run_seed: int, p_players: int, p_content_ids: Array) -> RefCounted:
