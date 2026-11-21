@@ -175,13 +175,17 @@ Known gaps, stated plainly:
   `Unreferenced static string` error at around 30 runs in one process, so long runs are measured
   in chunks; seeds are independent, so the splice loses nothing.
 - **The difficulty bands are NOT met, and the probe that measures them cannot reach them.**
-  Measured on this tree (seed base 60717, 20 runs, full depth): level 6 = 15% against a bar of
+  Measured on this tree (seed base 60717, 20 runs, full depth): level 6 = 20% against a bar of
   ≥80%; level 12 = 0% against 40–60%; level 18 = 0% against 15–30%; median level reached 4, max 8.
   Two probe defects were found and both are fixed, which is why those numbers are the honest ones.
   The bot had no mine model at all — it advanced the sim through `MinesScript.tick()` and never
   read a mine position, so 37 of 99 deaths were tripmines it could not see. It also routed over
-  unsupported tiles and fell into the void in 5 of 20 runs. With both fixed, D-MINE and D-VOID are
-  ZERO and every remaining death is a genuine enemy kill (Coil 8, Kiwi 6, YOU?! 4, Toucher 1).
+  unsupported tiles and fell into the void in 5 of 20 runs. With both fixed, D-VOID went to ZERO
+  and every remaining death was a genuine enemy kill. A later bot fix (D-B9-1) took level 6 from
+  15% to 20% and coil deaths from 8 to 5 — the bot had been standing in coil rings it had decided
+  were out of reach — and cost 2 mine deaths, because it now dodges a ring while airborne and
+  lands on a mine it never looked at (PARKED row 33). The current table is Coil 5, Kiwi 6,
+  YOU?! 5, Toucher 1, Mine 2.
   The bands still fail because survival collapses in the middle of the run, not because of a bug:
   per-level survival — the share of runs that survive level N — is 95 / 80 / 65 / **35** / **15**
   percent for levels 1–5, measured in the same 20-run sweep as the band numbers above. Levels 3
@@ -233,7 +237,9 @@ Known gaps, stated plainly:
   contact cylinder is 0.9 u and the player runs 9.0 u/s, so the warning is 1.23 s against a human
   reaction-plus-decision budget of 0.75 s. The tell ramps in rather than popping, fog leaves 87% of
   it at 12 u, and the minimum mine-to-mine distance across 200 levels is 2.000 u, so no wall can
-  form. The bot's mine deaths are ZERO. Mines are absent for levels 1–4 and appear at level 5
+  form. The bot's mine deaths were ZERO until D-B9-1 taught it to dodge a coil ring while
+  airborne; it now lands on mines it never looked at, which is a gap in the bot's guard and not in
+  the mine (PARKED row 33). Mines are absent for levels 1–4 and appear at level 5
   (`gift_larper` carries `min_level: 5`), which is a deliberate staircase: the counter-play (Defuse
   Kit) is first buyable at the post-L4 shop, exactly before the hazard appears.
 - One exe-related row was closed by the v0.1.0-alpha.1 export.

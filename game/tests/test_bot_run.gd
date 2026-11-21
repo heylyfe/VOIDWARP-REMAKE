@@ -30,6 +30,7 @@ func run() -> Array[String]:
 	_replan_keeps_goal_markers(f)
 	_goal_stale_reads_present(f)
 	_threats_skip_out_of_play(f)
+	_chaser_survival_pins(f)
 	return f
 
 
@@ -252,6 +253,50 @@ func _threats_skip_out_of_play(f: Array[String]) -> void:
 		f.append("_enemy_points dropped a LIVE body: the filter is too wide")
 	if not is_equal_approx(BotRun._enemy_reach(rt), 0.9):
 		f.append("_enemy_reach dropped a LIVE body's radius")
+
+
+## D-B9-1: the two chaser deaths the pinned sweep kept producing, pinned as pure functions.
+## Both are policy bugs, not game bugs - the sim was right and the bot read it wrong.
+func _chaser_survival_pins(f: Array[String]) -> void:
+	# (a) a DEGENERATE y band is a plane marker, not a volume. The coil's landing ring is
+	# drawn on the landing plane (y0 == y1) and its kill is a height-blind 1.2 u circle
+	# (D-T-031-4), so a bot that reads the zero-height band as a volume stops dodging the
+	# moment it steps up 0.5 u, jumps or drops.
+	var ring := {"shape": "circle", "cx": 0.0, "cz": 0.0, "r": 1.2, "y0": 0.0, "y1": 0.0}
+	if not BotRun._inside_footprint(ring, 0.0, 0.5, 0.0):
+		f.append("coil ring: feet 0.5 u above the landing plane read as OUTSIDE the strike - the landing kill is height-blind (D-T-031-4)")
+	if not BotRun._inside_footprint(ring, 0.0, 2.0, 0.0):
+		f.append("coil ring: feet 2.0 u above the landing plane read as OUTSIDE the strike")
+	# the control that stops the fix being "ignore y entirely": a band with REAL height bounds
+	var slab := {"shape": "circle", "cx": 0.0, "cz": 0.0, "r": 1.2, "y0": 0.0, "y1": 1.0}
+	if not BotRun._inside_footprint(slab, 0.0, 0.5, 0.0):
+		f.append("slab: feet inside a 1.0 u band read as OUTSIDE it")
+	if BotRun._inside_footprint(slab, 0.0, 3.0, 0.0):
+		f.append("slab: feet 3.0 u above a 1.0 u band read as INSIDE it - the y test was dropped, not narrowed")
+	# ...and the horizontal test still bounds a degenerate band
+	if BotRun._inside_footprint(ring, 5.0, 0.0, 0.0):
+		f.append("coil ring: feet 5 u away read as INSIDE a 1.2 u circle")
+	# (b) a body the hop cannot lift the feet over is not hurdled. body_contact clears only
+	# on py0 > row.y + height_u, so a body whose top is at the apex is never cleared at all.
+	var ctl := _StubCtl.new()
+	var apex: float = BotRun._hop_apex(ctl)
+	if not is_equal_approx(apex, 2.25):
+		f.append("hop apex %.3f, want 2.25 (jump_velocity 12, gravity 32)" % apex)
+	if not BotRun._hop_clears(0.0, {"y": 0.0, "height_u": 1.0}, apex):
+		f.append("hop: a 1.0 u body on the floor read as unclearable")
+	# the kiwi cat hovers, so its top sits 2.0-2.4 u above the feet
+	if BotRun._hop_clears(0.0, {"y": 1.4, "height_u": 1.0}, apex):
+		f.append("hop: a body whose top is 2.4 u up read as clearable - the hop keeps the feet inside its span")
+	# a coil in flight is 2.0 u tall
+	if BotRun._hop_clears(0.0, {"y": 2.0, "height_u": 1.0}, apex):
+		f.append("hop: a 2.0 u body at 2.0 u read as clearable")
+	# the control that stops the rule being "never hop": a low body IS clearable
+	if not BotRun._hop_clears(0.0, {"y": 0.0, "height_u": 0.5}, apex):
+		f.append("hop: a 0.5 u body read as unclearable - the rule is too wide")
+
+
+class _StubCtl:
+	var C := {"jump_velocity": 12.0, "gravity": 32.0}
 
 
 class _StubRuntime:

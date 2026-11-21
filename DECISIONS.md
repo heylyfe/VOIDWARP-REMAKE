@@ -7624,3 +7624,58 @@ rule.
 can spawn an over-level body and nothing will stop it. That is the accepted cost of not
 carrying a redundant check; the alternative is a spawn-path guard whose only reachable
 caller is a test. Revisit if a ledger ever arrives from outside `intermission.gd`.
+
+## D-B9-1: a degenerate y band is a plane marker, and a body the hop cannot clear is not hurdled
+
+**Ruling.** Two bot-policy fixes in `tools/bot_run.gd`, both of them the bot reading the sim
+wrong rather than the sim being wrong.
+
+(a) `_inside_footprint` treats a DEGENERATE y band (`y1 == y0`) as a plane marker, not a
+volume. The coil's landing ring is drawn on the landing plane (`y0 == y1 == land_y`) and the
+toucher's pulse on its own plane, both for address_me's arbiter gate and the view. The strike
+they announce is not bounded by that plane: the coil's landing kill is a height-blind 1.2 u
+circle (D-T-031-4, "regardless of feet height"). Reading the zero-height band as a volume made
+the bot stop dodging the moment it stepped up 0.5 u, jumped or dropped. A band with real height
+still bounds - the fix narrows the y test, it does not drop it.
+
+(b) `_hop_clears` refuses to hurdle a body whose TOP sits at or above `HOP_CLEAR_FRAC` (0.8) of
+the hop's apex. `sim/enemy_runtime.gd` `body_contact` clears only on `py0 > row.y + height_u`,
+so a body whose top is at the apex is NEVER cleared: the hop keeps the feet inside its vertical
+span for the whole arc and only costs the horizontal escape that outruns it. The kiwi cat hovers
+(`climb_u_per_s` 2.0) so its top sits 2.0-2.4 u above the feet, and a coil in flight is 2.0 u
+tall; both were hopped and both killed the bot mid-hop.
+
+**Measured** on the pinned 20-seed sweep (seed base 60717, `--max-level 18`), baseline vs these
+two fixes only:
+
+| | baseline | after |
+|---|---|---|
+| level 6 reach | 15.0% (3/20) | **20.0% (4/20)** |
+| D-COIL | 8 | **5** |
+| D-KIWI | 6 | 6 |
+| D-YOU | 4 | 5 |
+| D-TOUCH | 1 | 1 |
+| D-MINE | 0 | **2** |
+| D-VOID | 0 | 0 |
+| A3 (level 1) | 19/20 | 19/20 |
+
+The coil drop is the fix working: 3 of the 8 coil deaths were the bot standing in a ring it had
+decided was out of reach. The bands are still 60 points short of the bar, so this does not
+validate them - it makes the instrument less wrong.
+
+**A THIRD FIX WAS WRITTEN AND REJECTED.** The same ticket also added `_avoid_vector` to the
+airborne heading, on the argument that the airborne branch returns before the avoid layer and so
+a body about to touch the player mid-arc was simply flown into. With all three fixes the sweep
+gave level 6 = 15% (no gain), D-COIL 8 (no gain), and **D-VOID 0 -> 3**: the avoid layer steered
+the arc off its footing, which is exactly what its own comment claimed it could not do. Rejected
+on the measurement, not on the argument. The comment's claim ("`_safe_dir`-rotated, so it cannot
+steer the arc off its footing") is false and is recorded here so nobody re-adds it on the same
+reasoning.
+
+**THE MINE REGRESSION IS REAL AND IS THE NEXT TICKET.** D-MINE went 0 -> 2. The mechanism is
+that the band fix makes the bot dodge while AIRBORNE, and `_mine_guard` checks the commanded
+heading for ~1.2 u ahead - it never checks the LANDING point. A bot that dodges a ring mid-jump
+now lands on a mine it never looked at. The guard is applied to the final heading on every path
+(`bot_run.gd` `move = _mine_guard(...)`), so this is not a bypass; it is a missing airborne case.
+Recorded as PARKED row 33. Until it is fixed the README's "the bot's mine deaths are ZERO" is no
+longer true and has been corrected.

@@ -852,11 +852,18 @@ static func _real_footprint(shape: Dictionary) -> bool:
 
 
 ## True when feet (+x/y/z, y inflated by FOOT_INFLATE) are inside the footprint.
+## D-B9-1: a DEGENERATE y band (y1 == y0) is a plane marker, not a volume. The coil's
+## landing ring is drawn on the landing plane (y0 == y1 == land_y) and the toucher's
+## pulse on its own plane, both for address_me's arbiter gate and the view - the strike
+## they announce is not bounded by that plane. The coil's landing kill is a height-blind
+## 1.2 u circle (D-T-031-4), so reading a zero-height band as "the feet are out of the
+## strike" made the bot stop dodging the moment it stepped up 0.5 u, jumped or dropped:
+## 5 of the 8 D-COIL deaths on the pinned sweep. A band with real height still bounds.
 static func _inside_footprint(shape: Dictionary, px: float, py: float, pz: float) -> bool:
 	var kind := str(shape.get("shape", "circle"))
 	var y0 := float(shape.get("y0", -INF))
 	var y1 := float(shape.get("y1", INF))
-	if py < y0 - FOOT_INFLATE or py > y1 + FOOT_INFLATE:
+	if y1 - y0 > 0.0 and (py < y0 - FOOT_INFLATE or py > y1 + FOOT_INFLATE):
 		return false
 	if kind == "circle":
 		var dx := px - float(shape["cx"])
@@ -1866,6 +1873,33 @@ static func _routing(mem: Dictionary, lv, ctl, rt, w, w2, gtiles: Array, adj: Ar
 const HURDLE_DIST := 3.0
 const HURDLE_HOLD := 22   # ticks of JUMP to hold: past the 0.375 s apex (vy 12 / gravity 32)
 const AVOID_DIST := 3.0
+## D-B9-1: the fraction of the hop's apex a body's TOP may sit at and still be cleared.
+## sim/enemy_runtime.gd body_contact clears only when the player's feet rise above
+## row.y + height_u, so a body whose top is at the apex is never cleared at all - the
+## feet stay inside its vertical span for the whole arc. 0.8 of the 2.25 u apex is
+## 1.8 u, where the feet are above the body for 0.34 s of the 0.75 s arc: the window a
+## 7.5 u/s closing speed needs to cross the 1.7 u contact circle.
+const HOP_CLEAR_FRAC := 0.8
+
+## The in-place hop's apex above the takeoff feet, from the controller's own jump physics
+## (v^2 / 2g). 2.25 u at the shipped constants (jump_velocity 12, gravity 32).
+static func _hop_apex(ctl) -> float:
+	var jv := float(ctl.C["jump_velocity"])
+	return jv * jv / (2.0 * maxf(float(ctl.C["gravity"]), 1e-3))
+
+
+## D-B9-1: true when the in-place hop's arc lifts the player's feet above `body`'s top for
+## a real window - the only case where hurdling a contact-kill body is a counter-play at
+## all. sim/enemy_runtime.gd body_contact clears on py0 > row.y + height_u, so a body
+## whose top sits at or above the arc's apex is NEVER cleared: the hop keeps the feet
+## inside its vertical span and only costs the horizontal escape that outruns it. The
+## kiwi cat hovers (climb_u_per_s 2.0) so its top sits 2.0-2.4 u above the feet, and a
+## coil in flight is 2.0 u tall - both were hopped and both killed the bot mid-hop.
+## Pure - the test asserts on it.
+static func _hop_clears(ctl_y: float, body: Dictionary, apex: float) -> bool:
+	var top := float(body.get("y", 0.0)) + float(body.get("height_u", 1.0))
+	return top - ctl_y <= apex * HOP_CLEAR_FRAC
+
 
 static func _bot_input(mem: Dictionary, lv, rt, ctl, w, w2, gtiles: Array, adj: Array,
 		L: Dictionary) -> Dictionary:
@@ -1928,6 +1962,7 @@ static func _bot_input(mem: Dictionary, lv, rt, ctl, w, w2, gtiles: Array, adj: 
 					float(e["x"]), float(e["y"]), float(e["z"]),
 					_e_vel(mem, e).x, _e_vel(mem, e).y, str(ctl.grounded)])
 	if bool(ctl.grounded) and (buttons & BUTTON_JUMP) == 0:
+		var apex := _hop_apex(ctl)
 		for e in rt.enemies:
 			if not bool(e.get("contact_kill", true)):
 				continue
