@@ -53,9 +53,10 @@ static func _play_path(host: Object, path: String) -> AudioStreamPlayer:
 
 
 ## Loads the cue as a stream, or null when the path is absent / not audio.
-## The file check comes first, so a missing file never reaches load().
+## Check the resource before loading so missing cues stay silent.
 static func _load_stream(path: String) -> AudioStream:
-	if not FileAccess.file_exists(path):
+	# Exports pack the imported stream and remap, not the raw MP3 file.
+	if not ResourceLoader.exists(path):
 		return null
 	var res: Variant = load(path)
 	if res == null or not (res is AudioStream):
