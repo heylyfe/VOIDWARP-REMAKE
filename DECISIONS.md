@@ -7598,3 +7598,29 @@ by reference and re-fed before each sync). Nothing in the sim reads the new acce
 determinism, the state hash and the replay checkpoints are untouched. The rule is per-slot
 and O(1) per slot per tick: one dictionary lookup, no allocation.
 
+
+## D-DEPTH-1: the min_level gate lives in the offer, not in the spawn, and that is left alone
+
+**Ruling.** `sim/offers.gd` `enemy_candidates()` is the only place `min_level` is enforced:
+a type whose `min_level` is above the level being voted is never offered, so it can never
+be voted. `sim/enemy_runtime.gd` does NOT re-check `min_level` when it spawns a row, and
+this entry records that as deliberate rather than as a missing guard.
+
+**Why it is not a bug.** The vote is the only way a row is ever created. A ledger's `votes`
+dict is produced by `sim/intermission.gd` from the offers, so every vote in normal play has
+already passed the gate. A second check in the spawn path would be dead code that only a
+hand-built ledger could reach - and the one caller that does hand-build ledgers is a test.
+
+**Measured, not assumed.** `world.build(1, 12, {"votes": {"gin": 1}, ...})` spawns gin at
+level 12, whose `min_level` is 17. Disabling the offer gate (`if false and p_level <
+min_level`) changes NO roster at levels 1, 5, 12, 18, 24 or 30 on the seeds probed, because
+the schedule never offers an over-level type at those depths - the gate is a safety net that
+does not fire on the shipped path. Both facts were probed directly while writing
+`tests/test_depth_smoke.gd`, which is why that file asserts a property of the VOTE path
+("normal play never produces a body above its min_level") and not an invariant of the spawn
+rule.
+
+**Consequence.** If a future save/load or a debug console ever writes `votes` directly, it
+can spawn an over-level body and nothing will stop it. That is the accepted cost of not
+carrying a redundant check; the alternative is a spawn-path guard whose only reachable
+caller is a test. Revisit if a ledger ever arrives from outside `intermission.gd`.
