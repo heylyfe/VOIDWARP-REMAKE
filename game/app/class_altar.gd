@@ -94,7 +94,7 @@ func _init() -> void:
 	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	center.add_child(col)
 	col.add_child(_label("CHOOSE YOUR CLASS", 42, C_WHITE))
-	col.add_child(_label("pick a card, then confirm - the run waits for you", 16, C_MUTED))
+	col.add_child(_label("pick a card, then confirm - the run waits for your pick", 16, C_MUTED))
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 18)

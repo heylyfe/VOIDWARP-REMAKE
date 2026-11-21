@@ -305,7 +305,7 @@ func _build_world_node(p_level: int, p_ledger: Dictionary) -> Node:
 
 func _on_loading_finished() -> void:
 	# gap 2: the altar holds the run. Before this guard the clock running out freed the
-	# open altar and went live with the seeded replay's class - the "it picks for you"
+	# open altar and went live with the seeded replay's class - the owner's "it picks for me"
 	# bug: 5 s on the first launch, 2 s on every later PLAY, and a player still reading
 	# the cards lost the choice to the timer.
 	if _class_altar != null and _class_altar.is_open():
