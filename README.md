@@ -9,10 +9,28 @@ third fall is the end of the run.
 
 The world is serious. The enemies are not.
 
-> **Status: alpha — `v0.1.2-alpha.3`.** One level, playable end to end. Not yet a 30-level run.
+> **Status: alpha — `v0.1.9-alpha.3`.** One level, playable end to end. Not yet a 30-level run.
 > See [What works today](#what-works-today) for the honest list.
 
 **VOIDWRAP RUN is a personal, non-commercial project — no money is involved, and it is not affiliated with, endorsed by, or connected to any person, brand, character, or IP referenced or depicted in the game.**
+
+## What changed in v0.1.9-alpha.3
+
+A fix release. The `v0.1.8-alpha.3` binaries do not carry the state-hash fix below; this tag does.
+`v0.1.8-alpha.3` is left in place, unchanged.
+
+- **The state hash pins the collapse config, not just the live schedule.** An adversarial review of
+  the sequential collapse found a real collision: the `COLLAPSE` line carried only
+  `phase / start / cur / fallen_n / removed_n`, so a world with the collapse enabled and one with it
+  disabled hashed identically before the beacon opened, and two runs whose `game/data/collapse.json`
+  differed hashed identically as well. The line now also carries `enabled`, `crack_ticks`,
+  `gap_ticks` and a `partition` digest computed once at `create()`. A new test leg asserts each of
+  the five collisions; reverting the line produces exactly five failures.
+- **The review's honesty findings are recorded, not papered over.** "No level becomes unwinnable" is
+  a straight-line bound — XZ distance at 9 u/s, ignoring jumps, height, routes, enemies and airborne
+  state — not a proof. And the bot percentages are not evidence about the collapse, because
+  `bot_run.gd` never runs it. Both are a dated correction on `D-B10-1` in `DECISIONS.md`, and the
+  review itself is in `tickets/B10.review.md`.
 
 ## What changed in v0.1.2-alpha.3
 
