@@ -84,7 +84,11 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
-	AmbienceAudioScript.stop(_ambience)
+	# The bed is our own child, so it has already left the tree - and may already be freed -
+	# by the time this runs. stop() takes a typed AudioStreamPlayer, so a freed node throws
+	# at the call boundary before any guard inside it could run: check here.
+	if is_instance_valid(_ambience):
+		AmbienceAudioScript.stop(_ambience)
 	_ambience = null
 
 
