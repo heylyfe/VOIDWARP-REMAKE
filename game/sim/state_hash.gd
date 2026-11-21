@@ -24,8 +24,8 @@ extends RefCounted
 #   BEACON <opened> <completed>            (T-020) the beacon machine flags
 #   MINES <consumed hex>                   (T-021) the tripmine consumed bitset, hex encoded
 #   COLLAPSE <enabled> <phase> <start> <cur> <fallen_n> <removed_n> <crack_ticks> <gap_ticks>
-#            <partition>                 (B10, D-B10-1) the sequential platform-collapse
-#                                          schedule; only when the level carries one
+#            <partition> <delay_ticks>   (B10, D-B10-1; delay_ticks D-B11-1) the sequential
+#                                          platform-collapse schedule; only when the level carries one
 #                                          (lstate.collapse non-empty). enabled and the
 #                                          timing/partition fields are hashed because they are
 #                                          DATA, not a function of the Level: without them two
@@ -107,12 +107,13 @@ static func dump(rs: RefCounted) -> PackedStringArray:
 	# same until the first zone fell and then diverge (B10 review finding 1).
 	var cst: Dictionary = lv.collapse
 	if not cst.is_empty():
-		out.append("COLLAPSE %d %d %d %d %d %d %d %d %s" % [
+		out.append("COLLAPSE %d %d %d %d %d %d %d %d %s %d" % [
 			(1 if bool(cst.get("enabled", true)) else 0),
 			int(cst["phase"]), int(cst["start_tick"]), int(cst["cur"]),
 			int(cst["fallen_n"]), int(cst["removed_n"]),
 			int(cst["crack_ticks"]), int(cst["gap_ticks"]),
 			str(cst.get("partition", "")),
+			int(cst.get("delay_ticks", 0)),   # D-B11-1: the start delay is data too
 		])
 	return out
 
