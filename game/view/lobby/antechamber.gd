@@ -33,6 +33,7 @@ extends Node3D
 # hold would accrue twice per frame.
 
 const FogEnvScript := preload("res://view/fog_env.gd")
+const IconArtScript := preload("res://view/icon_art.gd")
 const BillboardScript := preload("res://view/billboard.gd")
 const OffersSim := preload("res://sim/offers.gd")
 const NoRefundsScript := preload("res://content/curses/no_refunds.gd")
@@ -751,9 +752,11 @@ func _exhibit(p_wrap: Dictionary, p_anchor: Node3D, p_altar: Dictionary) -> Stri
 	if kind == "E":
 		return _exhibit_enemy(p_anchor, p_altar)
 	if kind == "C":
-		return _exhibit_icon(p_anchor, _c("danger", Color(1, 0.16, 0.16)), str(p_altar.get("name", "")))
+		return _exhibit_icon(p_anchor, _c("danger", Color(1, 0.16, 0.16)),
+				str(p_altar.get("name", "")), "curses", str(p_altar.get("id", "")))
 	if kind == "U" or kind == "REST":
-		return _exhibit_icon(p_anchor, Color(0.1, 0.9, 0.85), str(p_altar.get("id", "")))
+		return _exhibit_icon(p_anchor, Color(0.1, 0.9, 0.85),
+				str(p_altar.get("id", "")), "upgrades", str(p_altar.get("id", "")))
 	if kind == "CLASS":
 		return _exhibit_class(p_anchor, str(p_altar.get("id", "")))
 	return "TBD"
@@ -789,8 +792,12 @@ func _exhibit_enemy(p_anchor: Node3D, p_altar: Dictionary) -> String:
 	return name
 
 
-## Curse / upgrade exhibit: an icon billboard (1.2 u) with the pink / aqua border frame.
-func _exhibit_icon(p_anchor: Node3D, p_border: Color, p_name: String) -> String:
+## Curse / upgrade exhibit: the item's own icon (assets/icons/<kind>/<id>.png through
+## view/icon_art.gd) on a 1.2 u billboard with the pink / aqua border frame. The icon is
+## unshaded, so the house palette reads exactly as drawn whatever the biome lighting is.
+## An id with no art yet keeps the dark face - a missing icon never blanks the altar.
+func _exhibit_icon(p_anchor: Node3D, p_border: Color, p_name: String, p_kind: String,
+		p_id: String) -> String:
 	var border := MeshInstance3D.new()
 	var quad := PlaneMesh.new()
 	quad.size = Vector2(ICON_H, ICON_H)
@@ -808,6 +815,20 @@ func _exhibit_icon(p_anchor: Node3D, p_border: Color, p_name: String) -> String:
 	face.material_override = fm
 	face.position = Vector3(0.0, 0.0, 0.01)
 	p_anchor.add_child(face)
+	var tex := IconArtScript.texture_for(p_kind, p_id)
+	if tex != null:
+		var art := MeshInstance3D.new()
+		var art_q := PlaneMesh.new()
+		art_q.size = Vector2(ICON_H * 0.72, ICON_H * 0.72)
+		art.mesh = art_q
+		var am := StandardMaterial3D.new()
+		am.albedo_texture = tex
+		am.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		am.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		art.material_override = am
+		art.position = Vector3(0.0, 0.0, 0.02)
+		art.set_meta("icon_kind", "art")
+		p_anchor.add_child(art)
 	return p_name
 
 

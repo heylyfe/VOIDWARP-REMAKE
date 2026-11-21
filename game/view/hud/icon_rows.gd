@@ -3,14 +3,17 @@ extends Control
 # Curse and upgrade icon rows, top of the screen, collapsible with Tab (ticket
 # T-025; DESIGN.md section 14).
 #
-# Two rows: owned curses on top, owned upgrades beneath. Each entry is a
-# synthesized placeholder icon (icon_placeholder.gd - no curse/upgrade art exists
-# yet, D-T025-4) with a stack badge when more than one stack is held. Pressing
+# Two rows: owned curses on top, owned upgrades beneath. Each entry is the item's own
+# icon (assets/icons/<kind>/<id>.png through view/icon_art.gd) with a stack badge when
+# more than one stack is held; an id with no art yet falls back to the synthesized
+# placeholder (icon_placeholder.gd), so a missing icon never blanks the row. Pressing
 # Tab (KEY_TAB, hud.gd routes it here) toggles both rows collapsed/expanded;
 # collapsed hides the rows, never the rest of the HUD. The rows carry no
 # tooltips - the shop and lobby own item text.
 # The rows are CENTRED in their ±400 px anchor box, so cells pack around the
 # middle and never walk into the roster (top-left) or the purse (top-right).
+
+const IconArtScript := preload("res://view/icon_art.gd")
 
 const CELL := 40.0
 const GAP := 6.0
@@ -58,14 +61,14 @@ func set_curses(items: Array) -> void:
 	if items == _curse_items and _curses_row.get_child_count() == items.size():
 		return
 	_curse_items = items.duplicate()
-	_rebuild(_curses_row, _curse_items)
+	_rebuild(_curses_row, _curse_items, "curses")
 
 
 func set_upgrades(items: Array) -> void:
 	if items == _upgrade_items and _upgrades_row.get_child_count() == items.size():
 		return
 	_upgrade_items = items.duplicate()
-	_rebuild(_upgrades_row, _upgrade_items)
+	_rebuild(_upgrades_row, _upgrade_items, "upgrades")
 
 
 func toggle_collapsed() -> void:
@@ -86,15 +89,14 @@ func upgrade_count() -> int:
 	return _upgrade_items.size()
 
 
-func _rebuild(row: HBoxContainer, items: Array) -> void:
+func _rebuild(row: HBoxContainer, items: Array, kind: String) -> void:
 	for c in row.get_children():
 		row.remove_child(c)   # queue_free alone leaves the old cell drawn this frame
 		c.queue_free()
 	for item in items:
 		var id := str(item.get("id", ""))
 		var stacks := int(item.get("stacks", 1))
-		var cell: Control = _placeholder_script.new()
-		cell.setup(id, CELL)
+		var cell: Control = _make_cell(id, kind)
 		var badge := Label.new()
 		badge.text = "x%d" % stacks
 		badge.add_theme_font_size_override("font_size", 14)
@@ -107,3 +109,34 @@ func _rebuild(row: HBoxContainer, items: Array) -> void:
 		if stacks > 1:
 			cell.add_child(badge)
 		row.add_child(cell)
+
+
+## One CELL-square cell: the item's own icon on a dark backing, or the placeholder when
+## this id has no art yet. set_meta("icon_kind") lets a test tell the two apart.
+func _make_cell(id: String, kind: String) -> Control:
+	var tex := IconArtScript.texture_for(kind, id)
+	if tex == null:
+		var ph: Control = _placeholder_script.new()
+		ph.setup(id, CELL)
+		ph.set_meta("icon_kind", "placeholder")
+		return ph
+	var back := Panel.new()
+	back.custom_minimum_size = Vector2(CELL, CELL)
+	back.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.0, 0.0, 0.0, 0.45)
+	sb.set_corner_radius_all(4)
+	back.add_theme_stylebox_override("panel", sb)
+	var tr := TextureRect.new()
+	tr.texture = tex
+	tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tr.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	tr.offset_left = 2.0
+	tr.offset_top = 2.0
+	tr.offset_right = -2.0
+	tr.offset_bottom = -2.0
+	back.add_child(tr)
+	back.set_meta("icon_kind", "art")
+	return back
