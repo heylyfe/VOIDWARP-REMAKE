@@ -308,6 +308,16 @@ static func move_body(w: Dictionary, x: float, y: float, z: float,
 		if s != -INF and s >= ny - SKIN:
 			ny = s
 			grounded = true
+		elif was_grounded and s != -INF and s >= y - step_up - SKIN:
+			# Item 13: the snap-down. A standing body always arrives here with
+			# dy = -g x dt (0.0089 u at 60 Hz), never dy == 0, so the dy == 0 branch
+			# below could not catch a descent: a ramp drops 0.075 u per tick at run
+			# speed, and stairs 0.5 u per tread, both below one tick of gravity, so the
+			# body went ballistic and hopped down the slope (grounded flickering, the
+			# body 0.0-0.28 u over the surface). A body that stood last tick follows a
+			# surface up to one step below, the mirror of the step-up.
+			ny = s
+			grounded = true
 	elif was_grounded:
 		# dy == 0 and was standing: snap onto whatever surface is within a step
 		var s3: Dictionary = support_at(w, x, z, y, step_up, true)
