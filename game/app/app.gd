@@ -31,7 +31,8 @@ extends Node
 #                       Retry tears the world down and starts a NEW RUN pinned to the same seed
 #                       (the same class falls out of the seeded level-1 replay), straight into
 #                       the loading screen and the level - never back to the menu. Play starts
-#                       the next run from there on a fresh seed (J1).
+#                       the next run from there on a fresh seed (J1). BACK TO LOBBY
+#                       (item 12) tears the dead run down and shows the menu.
 #   quit_requested   -> get_tree().quit()
 #   ESC / the pause binding -> mid-run (WORLD / LOBBY) the pause overlay: the run freezes,
 #                       RESUME continues it, ABANDON ends it (the old ESC path: everything
@@ -439,6 +440,7 @@ func _show_run_over() -> void:
 	if _run_over == null:
 		_run_over = RunOverScript.new()
 		_run_over.retried.connect(_on_retry_requested)
+		_run_over.lobby_requested.connect(_on_back_to_lobby)
 		add_child(_run_over)   # run_over.gd builds its own layout in _init
 	_run_over.show_run_over(_death_info)
 
@@ -476,6 +478,16 @@ func _on_retry_requested() -> void:
 	if _menu == null:
 		_show_menu()
 	start_run(retry_seed)
+
+
+## BACK TO LOBBY on the death screen: the run is over - free it and go back to the
+## pre-run lobby (the menu; PLAY there opens the class altar for the next run). The
+## same teardown ESC does on this screen; the screen is queue_free'd there (the signal
+## is emitted from inside its own Button).
+func _on_back_to_lobby() -> void:
+	if _state != STATE_RUN_OVER:
+		return
+	_return_to_menu()
 
 
 # ---- bests + run telemetry (DESIGN.md section 9 / T-080) ----------------------------------
