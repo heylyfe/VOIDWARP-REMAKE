@@ -22,9 +22,9 @@ wired in full, the entry is marked `"tbd": true` in its JSON, and the row appear
 
 | # | ticket | what is TBD | why | owner action |
 |---|---|---|---|---|
-| 1 | T-033 | isagi: `isagi_voice_direct_shot` - each burst's audio cue (ENEMIES.md Isagi "New sound": direct shot voice lines) | no audio files exist yet in the build | drop the hook file in, view wires it |
-| 2 | T-033 | isagi: `isagi_shoot_sae_math_final_shot` - the shoot line per release (ENEMIES.md Isagi "New sound": Isagi shoot sae math final shot gun-shot sound) | no audio files exist yet | drop the hook file in, view wires it |
-| 3 | T-033 | isagi: `isagi_gunshot` - per ball release, layered under the shoot line | no audio files exist yet | drop the hook file in, view wires it |
+| 1 | T-033 | isagi: `isagi_voice_direct_shot` - each burst's audio cue (ENEMIES.md Isagi "New sound": direct shot voice lines) | CLOSED - the file landed (T-055) and `view/vfx/telegraph_view.gd`'s TELL_CUES plays it on the `aim` telegraph | nothing - wired |
+| 2 | T-033 | isagi: `isagi_shoot_sae_math_final_shot` - the shoot line per release (ENEMIES.md Isagi "New sound": Isagi shoot sae math final shot gun-shot sound) | the file landed (T-055) but nothing plays it: `projectile_spawn` plays `isagi_gunshot` only, and the shoot line is a second layer on the same event | wire the layer in `telegraph_view.gd`'s projectile branch (one more `play()`), or drop the cue |
+| 3 | T-033 | isagi: `isagi_gunshot` - per ball release, layered under the shoot line | CLOSED - the file landed (T-055) and `telegraph_view.gd`'s PROJECTILE_CUE plays it on every `projectile_spawn` | nothing - wired |
 
 ## 1. The 17 enemy images - 4 MISSING (coil, thicc ben, kiwi cat, isagi, YOU?!, toucher, gin, gift Larper, seal, the Claude logo and address me are real art since 2026-11-17; only the clawd Crab plushie and the four remaining source rows are still TBD)
 
@@ -170,9 +170,9 @@ The hooks above that said "T-055 has not landed" are superseded by this section.
 | 35 | T-055 | coil: `coil_boing`, `coil_landing_twang` - synthesized spring boing / inharmonic-sine twang | brand-new audio | replace with real spring samples, keep the cue names stable |
 | 36 | T-055 | thicc ben: `thicc_ben_chime`, `thicc_ben_bell` - synthesized bell stand-in (Westminster-flavoured four-note figure compressed to 0.5 s; never the real recording) | ENEMIES.md names the real Big Ben chime - cannot ship | replace with licensed/real bell art, keep the cue names stable |
 | 37 | T-055 | Isagi: `isagi_voice_direct_shot`, `isagi_shoot_sae_math_final_shot`, `isagi_gunshot` - synthesized rising whoosh / formant yell / noise-burst gunshot | ENEMIES.md names Isagi voice lines and a gunshot - no recordings ship; Isagi's `enemy.json` lists NO `audio_cues` yet, so these are named per the T-033 rows, not wired by any enemy.json | wire the cue list in T-087; replace the stand-ins with real (or owner-approved) art |
-| 38 | T-055 | nuke: `lock_on_beep`, `rocket_booster_roar`, `impact_boom` - synthesized 1200 Hz square blip / falling-cutoff noise roar / 45 Hz sine boom | brand-new audio; nuke's `enemy.json` lists NO `audio_cues` yet; these are named per the TBD audio hooks in `nuke/sprites.json` | wire the cue list in T-087; replace with real art |
+| 38 | T-055 | nuke: `lock_on_beep`, `rocket_booster_roar`, `impact_boom` - synthesized 1200 Hz square blip / falling-cutoff noise roar / 45 Hz sine boom | brand-new audio; the cue list is wired (T-087). CLOSED for `impact_boom` this pass: it had a file and no player (its `enemy.json` row names a `blast` event the sim never raises), so `view/audio/enemy_cue.gd` now plays it on the `attack_explosion` state edge; `lock_on_beep` / `locked` / `rocket_booster_roar` ride the `ground_ring` telegraph | replace with real art, keep the cue names stable |
 | 39 | T-055 | gift Larper: `explosion`, `pff` - synthesized click+noise blast / falling-pff puff | ENEMIES.md names the Roblox tripmine explosion - cannot ship | replace with real art, keep the cue names stable |
-| 40 | T-055 | YOU?!: `you_corrupted_rumble` - synthesized gated-noise rumble + reversed-envelope tone | brand-new audio | replace with real art, keep the cue name stable |
+| 40 | T-055 | YOU?!: `you_corrupted_rumble` - synthesized gated-noise rumble + reversed-envelope tone | brand-new audio. CLOSED for `ring_release` this pass: it had a file and no player (its `enemy.json` row names a `release` event the sim never raises), so `view/audio/enemy_cue.gd` now plays it on the `attack` state edge; `you_corrupted_rumble` rides the `you_rumble` telegraph | replace with real art, keep the cue names stable |
 | 41 | T-055 | seal: `bark`, `flipper_flap` - synthesized sawtooth yelps / filtered noise slaps | brand-new audio | replace with real seal art, keep the cue names stable |
 | 42 | T-055 | address me: `spawn_trumpet`, `rumble_build`, `explode_boom` - synthesized sawtooth trumpet / 40 Hz build-up rumble / 41 Hz boom | brand-new audio | replace with real art, keep the cue names stable |
 | 43 | T-055 | Claude: `ui_chime`, `keystroke_tick`, `notification_ping`, `squeak_pop` - synthesized UI chimes, ticks, ping, squeak-pop | brand-new audio | replace with real art, keep the cue names stable |
@@ -183,3 +183,21 @@ The hooks above that said "T-055 has not landed" are superseded by this section.
 | 47 | T-087 | Isagi: `isagi_voice_direct_shot`, `isagi_shoot_sae_math_final_shot`, `isagi_gunshot` now listed in enemy.json (`audio_cues`) with "tbd_audio": true - synthesized voice / sae-math-final-shot / gun-shot stand-ins | ENEMIES.md names Isagi's direct-shot voice lines and the gun-shot - no recordings ship; enemy.json listed NO cues until T-087 wired them | the owner drops real (or owner-approved) voice/gun-shot art; cue names stay stable |
 | 48 | T-087 | gift Larper: `explosion` (section 3 `mine_blast` row) now flagged "tbd_audio": true in enemy.json - the Roblox tripmine explosion stand-in | ENEMIES.md names the Roblox tripmine explosion sound - cannot ship; the synthesized stand-in keeps the cue wired | the owner replaces it (or never does) - cue name stays stable |
 | 49 | T-087 | thicc ben: `thicc_ben_chime` - the Westminster stand-in (restated for T-087; section 2 and row 36) stays "tbd_audio": true, now with the binding math wired in enemy.json (anchor telegraph/teleport, offset 45, binding 30, ends on the arrival tick 75) | ENEMIES.md names Big Ben's real chime - cannot ship | the owner replaces it with licensed bell art; cue name + the 30-tick binding window stay stable |
+
+## 9. The player / UI / world / ambience cue set (synthesized, WIRED)
+
+The owner's "the game is too quiet" pass. Every cue below is synthesized from code by
+`game/tools/audio/synth_cues.gd` (one command rebuilds the whole set; see SOURCES.md) and is
+played by a module under `game/view/audio/`. Nothing here is a placeholder waiting on a file:
+the files exist, the hooks are wired, and `tests/test_audio_cues_synth.gd` proves every name
+resolves through `ResourceLoader.exists` and loads as an `AudioStream`.
+
+| # | ticket | what is TBD | why | owner action |
+|---|---|---|---|---|
+| 50 | AUDIO | player: `footstep_01..04`, `land`, `dash`, `glide` - synthesized, wired in `app/world.gd` (`_player_audio_pass`, the `land` / `dash_start` events) | CLOSED - the recipes are `[CONTESTABLE]` sound design, not missing assets | rewrite the recipes in `synth_cues.gd` if the owner wants a different feel; cue names stay stable |
+| 51 | AUDIO | world: `gift_pickup_01..03`, `level_complete`, `death`, `collapse_crack`, `collapse_fall` - synthesized, wired in `app/world.gd` (`_fx_events`, the death and completion latches) | CLOSED - same `[CONTESTABLE]` recipes | rewrite the recipes; cue names stay stable |
+| 52 | AUDIO | UI: `menu_hover`, `menu_click` - synthesized, wired in `app/menu.gd` (hover, keyboard nav, activate) | CLOSED | rewrite the recipes; cue names stay stable |
+| 53 | AUDIO | ambience: `lobby_ambience` (the Antechamber bed) and `music_bed` (the menu bed) - synthesized loops, wired in `view/lobby/lobby_scene.gd` and `app/menu.gd` | CLOSED - both are 4 s / 8 s loops with the tail crossfaded into the head | rewrite the recipes; cue names stay stable |
+| 54 | AUDIO | gift Larper: `mine_hum` - the file exists (T-055) and nothing plays it | its `enemy.json` row names a `proximity_6u` event the sim never raises, and it is a proximity LOOP (ambience), not a telegraph or an attack - wiring it is a new distance-driven bed per mine, not a missing hook | decide whether a per-mine hum bed is wanted; if so it needs a sim proximity event first |
+| 55 | AUDIO | toucher: `prowl` - the file exists (T-055) and nothing plays it | same shape as row 54: a `proximity_14u` LOOP with no sim event | same as row 54 |
+| 56 | AUDIO | kiwi cat: `meow_double` - the file exists (T-055) and nothing plays it | its `enemy.json` row names a `zoomies` event that does not exist anywhere in the sim or the curse set | implement the Zoomies curse (or drop the cue) |

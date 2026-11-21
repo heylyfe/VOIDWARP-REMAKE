@@ -77,6 +77,7 @@ const ClassAltarScript := preload("res://app/class_altar.gd")
 const ContentApiScript := preload("res://core/content_api.gd")
 const IntermissionScript := preload("res://sim/intermission.gd")
 const VoidRngScript := preload("res://terrain/void_rng.gd")
+const SettingsScript := preload("res://app/settings.gd")
 
 const DT := 1.0 / 60.0   # fixed 60 Hz sim step (sim/ contract)
 const FIRST_LEVEL := 1
@@ -127,7 +128,18 @@ func _ready() -> void:
 	_records = RecordsScript.new()
 	_records.load_from(records_path)
 	_pause_codes = _load_pause_codes()
+	_apply_saved_volume()
 	_show_menu()
+
+
+## The saved master volume reaches the audio bus at BOOT, not only when the settings screen
+## is opened: a player who set 30 % last session hears 30 % from the menu's first cue. A
+## missing or corrupt settings file reads as the default (settings.gd's contract), so this
+## can never block boot.
+func _apply_saved_volume() -> void:
+	var sett := SettingsScript.new()
+	sett.load_from()
+	sett.apply_volume()
 
 
 func _process(delta: float) -> void:

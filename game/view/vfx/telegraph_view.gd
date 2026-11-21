@@ -341,7 +341,10 @@ func on_events(events: Array) -> void:
 			play(cue, Vector3(float(shape.get("cx", shape.get("fx", 0.0))),
 					float(shape.get("y0", shape.get("fy", 0.0))),
 					float(shape.get("cz", shape.get("fz", 0.0)))), 1.0, at)
-		elif kind == "audio" or kind == "coil_land":
+		elif e.has("cue"):
+			# any sim event that carries its own cue (coil's boing, the coil landing twang,
+			# toucher's squelch, and whatever a later behavior raises): the event names the
+			# file, so a new cue needs no change here
 			var c := str(e.get("cue", ""))
 			if c != "":
 				played.append(c)

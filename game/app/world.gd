@@ -106,6 +106,16 @@ const StragglerBeamScript := preload("res://view/straggler_beam.gd")
 const DangerTextScript := preload("res://view/hud/danger_text.gd")
 const ScreenBlurScript := preload("res://view/hud/screen_blur.gd")
 const RespawnViewScript := preload("res://view/respawn_view.gd")
+# The player's and the world's own cues (the "too quiet" pass): footsteps, landing, dash,
+# the glide bed, the gift pickup, the level-complete and death stings, the collapse crack
+# and fall. Every file is synthesized by game/tools/audio/synth_cues.gd; a missing file is
+# silent, never an error (view/audio/cue_audio.gd's house shape).
+const PlayerAudioScript := preload("res://view/audio/player_audio.gd")
+const WorldAudioScript := preload("res://view/audio/world_audio.gd")
+# The enemy cues that ride a row state edge (the blast frame, the ring release): their
+# enemy.json rows name sim events the sim never raises, so the edge is the hook. The
+# id/state table lives in view/audio/enemy_cue.gd - app/ names no content id.
+const EnemyCueScript := preload("res://view/audio/enemy_cue.gd")
 # The curse hook dispatcher (W9-A): every held SCRIPT curse's module hooks (on_level_start /
 # on_tick / on_beacon_open / on_void_fall) and its build-time queries run through it. The
 # declarative "modifiers" half of a curse still goes through _run_modifiers below.
@@ -176,6 +186,17 @@ var player_model: Node3D = null # the T-015 player figure, feet on the controlle
 var _player_yaw := 0.0          # facing yaw, follows the camera's forward while captured
 var _player_light: OmniLight3D = null   # palette.json player_fill_light, rides the figure
 var glider_view: Node3D = null   # view/glider_view.gd, child of player_model; shown while gliding
+
+# The player's own cue state (view/audio/player_audio.gd): the step clock and its variant
+# counter, and the glide bed the glide engagement owns. Tick-driven, never wall clock, so
+# two identical runs step on the same ticks.
+const STEP_PERIOD := 0.34        # s between footsteps at a run
+const STEP_MIN_SPEED := 1.0      # u/s: below this the player is standing, not walking
+var _step_clock := STEP_PERIOD   # armed: the first moving tick lands a step
+var _step_variant := 0
+var _glide_player: AudioStreamPlayer = null
+# enemy index -> the anim_state last seen, for the state-edge cues (view/audio/enemy_cue.gd)
+var _row_anim_state := {}
 
 # --- J5: mouse-lock and the procedural figure pose (view side; sim is never touched) -----
 # MOUSE-LOOK (J5, supersedes D-T082-4's "no turn"): Ctrl toggles capture. Captured, the
@@ -737,6 +758,7 @@ func step(dt: float) -> void:
 	if rig != null:
 		rig.update_rig(Vector3(float(ctl.x), float(ctl.y), float(ctl.z)), dt)
 	_player_pass()
+	_player_audio_pass()
 	_billboard_pass(dt, ev)
 	_view_pass()
 	_sync_hud()
@@ -753,10 +775,12 @@ func step(dt: float) -> void:
 			purse = int(_economy.purse_centi)   # centi, the same integer the HUD shows
 		var info: Dictionary = DeathScript.screen_data(ctl, _level_number, purse)
 		info["charges"] = int(ctl.charges)
+		WorldAudioScript.play_death(self)
 		run_over.emit(info)
 		return
 	if not _completed_emitted and lstate.beacon != null and bool(lstate.beacon.completed):
 		_completed_emitted = true
+		WorldAudioScript.play_level_complete(self)
 		level_completed.emit()
 
 
@@ -1059,6 +1083,12 @@ func teardown() -> void:
 	glider_view = null   # freed with player_model
 	_player_light = null
 	_player_yaw = 0.0
+	# the glide bed is a long-lived player: stop it with the level it belongs to
+	PlayerAudioScript.stop_glide(_glide_player)
+	_glide_player = null
+	_step_clock = STEP_PERIOD
+	_step_variant = 0
+	_row_anim_state.clear()
 	# J5: back to the menu = release the mouse, drop the pose/lock state.
 	_mouse_locked = false
 	_prev_mouse_toggle = false
@@ -1578,6 +1608,30 @@ func _player_pass() -> void:
 		glider_view.sync(bool(ctl.gliding), v_local)
 
 
+## The player's own cues, once per sim tick: the glide bed follows ctl.gliding (started on
+## the engage edge, stopped when the glide ends) and a footstep lands every STEP_PERIOD
+## while the player is grounded and actually moving. Read-only on the controller; the step
+## clock is tick-driven, so the cadence is identical on every run of the same seed.
+func _player_audio_pass() -> void:
+	if ctl == null:
+		return
+	if bool(ctl.gliding):
+		if _glide_player == null:
+			_glide_player = PlayerAudioScript.start_glide(self)
+	elif _glide_player != null:
+		PlayerAudioScript.stop_glide(_glide_player)
+		_glide_player = null
+	var speed := sqrt(float(ctl.vx) * float(ctl.vx) + float(ctl.vz) * float(ctl.vz))
+	if bool(ctl.grounded) and speed > STEP_MIN_SPEED:
+		_step_clock += DT
+		if _step_clock >= STEP_PERIOD:
+			_step_clock = 0.0
+			PlayerAudioScript.play_footstep(self, _step_variant)
+			_step_variant += 1
+	else:
+		_step_clock = STEP_PERIOD   # the next step lands on the first moving tick
+
+
 ## The figure's yaw follows the captured camera's forward (D-T082-4's character/camera
 ## coupling kept; the MOUSE-LOOK part of D-T082-4 is superseded by J5, see the header of
 ## this file and camera_rig.gd): the character always faces away from the viewer and strafes instead
@@ -1804,6 +1858,8 @@ func _billboard_pass(dt: float, ev: Array = []) -> void:
 		# rt.enemies so every index here keeps pointing at it, but nothing should keep
 		# animating 40 u below the level.
 		var gone: bool = bool(e.get("gone", false))
+		if not gone:
+			_state_cue_pass(i, e)
 		if enemy_views[i] != null:
 			enemy_views[i].set_shown(not gone)
 			if not gone:
@@ -1818,6 +1874,18 @@ func _billboard_pass(dt: float, ev: Array = []) -> void:
 		bd.set_animation(str(e.get("anim_state", "")))
 		bd.advance_animation(dt)
 		bd.face_camera(cam_pos)
+
+
+## The state-edge cues: a row entering an anim_state that carries a cue (view/audio/
+## enemy_cue.gd's table) plays it once, on the edge.
+## Read-only on the row; the last state per index is view state, never sim state.
+func _state_cue_pass(i: int, e: Dictionary) -> void:
+	var state := str(e.get("anim_state", ""))
+	if str(_row_anim_state.get(i, "")) == state:
+		return
+	_row_anim_state[i] = state
+	EnemyCueScript.play_state(self, str(e.get("id", "")), state,
+			Vector3(float(e.get("x", 0.0)), float(e.get("y", 0.0)), float(e.get("z", 0.0))))
 
 
 ## The row's bespoke view host, added as a child of this node, or null (no bespoke view
@@ -1931,6 +1999,17 @@ func _fx_events(ev: Array) -> void:
 	for e in ev:
 		var kind := str(e.get("e", e.get("type", "")))
 		match kind:
+			"land":
+				PlayerAudioScript.play_land(self)
+			"dash_start":
+				PlayerAudioScript.play_dash(self)
+			"gift_collected":
+				# the slot id picks the variant, so a chain of gifts never repeats one
+				WorldAudioScript.play_gift_pickup(self, int(e.get("slot", 0)))
+			"platforms_cracked":
+				WorldAudioScript.play_collapse_crack(self)
+			"platforms_fell":
+				WorldAudioScript.play_collapse_fall(self)
 			"coil_land":
 				if coil_view != null:
 					coil_view.impact(Vector3(float(e.get("x", 0.0)), float(e.get("y", 0.0)),
