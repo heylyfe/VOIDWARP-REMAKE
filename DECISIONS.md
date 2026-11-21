@@ -7672,10 +7672,14 @@ on the measurement, not on the argument. The comment's claim ("`_safe_dir`-rotat
 steer the arc off its footing") is false and is recorded here so nobody re-adds it on the same
 reasoning.
 
-**THE MINE REGRESSION IS REAL AND IS THE NEXT TICKET.** D-MINE went 0 -> 2. The mechanism is
-that the band fix makes the bot dodge while AIRBORNE, and `_mine_guard` checks the commanded
-heading for ~1.2 u ahead - it never checks the LANDING point. A bot that dodges a ring mid-jump
-now lands on a mine it never looked at. The guard is applied to the final heading on every path
-(`bot_run.gd` `move = _mine_guard(...)`), so this is not a bypass; it is a missing airborne case.
-Recorded as PARKED row 33. Until it is fixed the README's "the bot's mine deaths are ZERO" is no
-longer true and has been corrected.
+**THE MINE REGRESSION IS REAL AND IS THE NEXT TICKET.** D-MINE went 0 -> 2. I first wrote the
+mechanism down as "the bot dodges while airborne and lands on a mine it never looked at", and
+then traced both deaths instead of trusting it - the guess was wrong. Seed 60732 dies at tick 545
+with the feet at y = -1.00; seed 60731 dies at tick 4408 with the feet at y = -6.05. In BOTH the
+player was already BELOW the platform it had been standing on. So the bot is not landing on a
+mine on the same tier: it is falling off an upper tier and coming down on a lower one that has a
+mine on it, and the extra dodging this fix bought is what takes it off the ledge. The guard is
+applied to the final heading on every path (`bot_run.gd` `move = _mine_guard(...)`), so this is
+not a bypass - it is a dodge that leaves the platform. Recorded as PARKED row 33 with the traced
+numbers. Until it is fixed the README's "the bot's mine deaths are ZERO" is no longer true and
+has been corrected.

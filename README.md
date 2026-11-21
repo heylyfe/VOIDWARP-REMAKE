@@ -183,9 +183,9 @@ Known gaps, stated plainly:
   unsupported tiles and fell into the void in 5 of 20 runs. With both fixed, D-VOID went to ZERO
   and every remaining death was a genuine enemy kill. A later bot fix (D-B9-1) took level 6 from
   15% to 20% and coil deaths from 8 to 5 — the bot had been standing in coil rings it had decided
-  were out of reach — and cost 2 mine deaths, because it now dodges a ring while airborne and
-  lands on a mine it never looked at (PARKED row 33). The current table is Coil 5, Kiwi 6,
-  YOU?! 5, Toucher 1, Mine 2.
+  were out of reach — and cost 2 mine deaths, because the extra dodging takes it off a ledge and
+  it comes down on a lower tier that has a mine on it (PARKED row 33). The current table is Coil
+  5, Kiwi 6, YOU?! 5, Toucher 1, Mine 2.
   The bands still fail because survival collapses in the middle of the run, not because of a bug:
   per-level survival — the share of runs that survive level N — is 95 / 80 / 65 / **35** / **15**
   percent for levels 1–5, measured in the same 20-run sweep as the band numbers above. Levels 3
@@ -218,14 +218,17 @@ Known gaps, stated plainly:
   which delivers no key state without a window), so a proof has to drive the level loop directly.
   That loop is now proven: a driver that builds the real world and the real lobby, buys from the
   shop and carries the ledger forward completes **10 consecutive levels** and dies on the 11th —
-  `deepest=11 completed=10 lobbies=10 purchases=2 stack_types_carried=5 purse=224 class=glider`.
+  `deepest=11 completed=10 lobbies=10 purchases=2 stack_types_carried=5 purse=216 class=glider`,
+  both legs identical to the tick.
   So the intermission handoff, the purchase path and the carried stacks all work at depth.
   What is not proven is 30 levels, and the reason is the bot rather than the harness: it is a
   simple heuristic and it dies on level 11. A second, simpler harness (`BotRun.play_run`, which
   does not shop between levels) does worse — across 24 seeds it enters a median of 4 levels, best
   8, worst 2 — which is itself the useful signal: shopping between levels roughly doubles the
   depth the same bot reaches. Proving a 30-level run now needs a better bot or a human
-  playthrough, not more driver work.
+  playthrough, not more driver work. What IS proven at depth is that the sim survives it:
+  `test_depth_smoke.gd` builds a real world at levels 1, 12, 18, 24 and 30 and steps each for
+  600 ticks, so the content above level 11 is exercised even though no run reaches it.
 - **PARKED.md rows 25, 26, 27 and 28 are closed.** Row 25 (the Last Light body push now reaches
   the live enemy rows), row 26 (ramp kinds 3 and 4 report the slope the mesh draws, with
   `test_classes.gd` covering all four kinds), row 27 (every enemy body mirror is refreshed each
@@ -237,9 +240,10 @@ Known gaps, stated plainly:
   contact cylinder is 0.9 u and the player runs 9.0 u/s, so the warning is 1.23 s against a human
   reaction-plus-decision budget of 0.75 s. The tell ramps in rather than popping, fog leaves 87% of
   it at 12 u, and the minimum mine-to-mine distance across 200 levels is 2.000 u, so no wall can
-  form. The bot's mine deaths were ZERO until D-B9-1 taught it to dodge a coil ring while
-  airborne; it now lands on mines it never looked at, which is a gap in the bot's guard and not in
-  the mine (PARKED row 33). Mines are absent for levels 1–4 and appear at level 5
+  form. The bot's mine deaths were ZERO until D-B9-1 taught it to dodge a coil ring it had been
+  ignoring; the extra dodging now takes it off a ledge and it comes down on a lower tier that has
+  a mine on it, which is a gap in the bot's dodge and not in the mine (PARKED row 33). Mines are
+  absent for levels 1–4 and appear at level 5
   (`gift_larper` carries `min_level: 5`), which is a deliberate staircase: the counter-play (Defuse
   Kit) is first buyable at the post-L4 shop, exactly before the hazard appears.
 - One exe-related row was closed by the v0.1.0-alpha.1 export.
