@@ -18,6 +18,9 @@ extends RefCounted
 #     Shift+Tab move focus between the two; Enter / Space / a click activate them, and
 #     each one lands where it says (RESTART -> a new run; BACK TO LOBBY -> the menu).
 #
+#   - the screen draws on a canvas layer strictly above the dead world's black-out and
+#     every other world CanvasLayer (the 78fc9e4 regression, caught by shot_death.gd).
+#
 # Negative control: this test against the pre-item-12 run_over.gd (see the report).
 
 const AppScript := preload("res://app/app.gd")
@@ -114,7 +117,52 @@ func _die_into_run_over(f: Array[String], app, tag: String, code: String) -> boo
 	if app._run_over == null or not app._run_over.visible:
 		f.append("%s: no run-over screen after the black-out" % tag)
 		return false
+	_check_layer(f, app, tag)
 	return true
+
+
+## The canvas layer a CanvasItem actually draws on: its nearest CanvasLayer ancestor's
+## layer, or 0 (the viewport's default canvas) when it has none.
+static func _effective_layer(p_node: Node) -> int:
+	var n := p_node.get_parent()
+	while n != null:
+		if n is CanvasLayer:
+			return (n as CanvasLayer).layer
+		n = n.get_parent()
+	return 0
+
+
+static func _canvas_layers(p_node: Node, p_out: Array) -> void:
+	for c in p_node.get_children():
+		if c is CanvasLayer:
+			p_out.append(c)
+		_canvas_layers(c, p_out)
+
+
+## The 78fc9e4 regression: the run-over screen was a Control parented straight to the app
+## (canvas layer 0) while the dead world's HUD sits on a CanvasLayer (layer 1) with its
+## black-out still up, so the player saw black instead of The Master. The screen must draw
+## STRICTLY above the black-out and above every canvas layer the dead world still owns
+## (equal layers fall back to tree order, which is not a contract).
+func _check_layer(f: Array[String], app, tag: String) -> void:
+	var mine := _effective_layer(app._run_over)
+	var world = app._world
+	if world == null or not is_instance_valid(world):
+		f.append("%s: the dead world is gone, so the layer check proves nothing" % tag)
+		return
+	var fx_layer := _effective_layer(world.hud.screen_fx)
+	if fx_layer < 1:
+		f.append("%s: the world's black-out draws on layer %d - the HUD layout changed, "
+				% [tag, fx_layer] + "re-check this guard")
+	if mine <= fx_layer:
+		f.append("%s: the run-over screen draws on canvas layer %d, not above the black-out's %d"
+				% [tag, mine, fx_layer])
+	var layers: Array = []
+	_canvas_layers(world, layers)
+	for cl in layers:
+		if (cl as CanvasLayer).visible and mine <= (cl as CanvasLayer).layer:
+			f.append("%s: the run-over screen (layer %d) is not above the world's %s (layer %d)"
+					% [tag, mine, (cl as Node).name, (cl as CanvasLayer).layer])
 
 func _case(f: Array[String], root: Window, c: Array) -> void:
 	var tag := str(c[0])

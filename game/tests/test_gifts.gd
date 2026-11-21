@@ -26,6 +26,7 @@ const BeaconScript := preload("res://sim/beacon.gd")
 const EventsScript := preload("res://sim/events.gd")
 const ControllerScript := preload("res://sim/controller.gd")
 const MinesScript := preload("res://sim/mines.gd")
+const HashScript := preload("res://sim/state_hash.gd")
 
 const SEED_COUNT := 100
 const FIRST_SEED := 9900
@@ -37,6 +38,7 @@ func run() -> Array[String]:
 	_test_a5_100_seeds(f)
 	_test_beacon_entry_charges(f)
 	_test_pickup_radius_stat(f)
+	_test_hash_pins_pickup_radius(f)
 	_test_other_volumes(f)
 	_test_straggler_threshold(f)
 	_test_slot_pos_confinement(f)
@@ -325,15 +327,26 @@ func _test_pickup_radius_stat(f: Array[String]) -> void:
 	# the pickup flips the phase (single real gift); check the black bitset
 	if not GiftsScript.bit_get(lv2.gifts.black_taken, 0) or lv2.gifts.phase != GiftsScript.PHASE_GOLD:
 		f.append("pickup radius: stat multiplier 2.0 did not widen the pickup")
-	# the base radius boundary: 0.38 u horizontal + 0.1 vertical = 0.393 <= 0.4
+	# the base radius boundary, bracketed tightly around the shipped 0.7 u (the body centre
+	# sits 0.1 u below the gift, so the distance is sqrt(dx^2 + 0.01)):
+	#   inside:  0.69 u horizontal -> 0.6972 u <= 0.7
+	#   outside: 0.70 u horizontal -> 0.7071 u >  0.7
 	var lv3: RefCounted = LevelStateScript.build(level, 1, 1)
 	var p3: Dictionary = lv3.players[0]
-	p3["x"] = 3.5 - 0.38
+	p3["x"] = 3.5 - 0.69
 	p3["y"] = 0.0
 	p3["z"] = 0.5
 	GiftsScript.tick(lv3, 0, ev)
 	if not GiftsScript.bit_get(lv3.gifts.black_taken, 0):
-		f.append("pickup radius: 0.4 u ring not collected from inside")
+		f.append("pickup radius: 0.6972 u (just inside the 0.7 u ring) not collected")
+	var lv3b: RefCounted = LevelStateScript.build(level, 1, 1)
+	var p3b: Dictionary = lv3b.players[0]
+	p3b["x"] = 3.5 - 0.70
+	p3b["y"] = 0.0
+	p3b["z"] = 0.5
+	GiftsScript.tick(lv3b, 0, ev)
+	if GiftsScript.bit_get(lv3b.gifts.black_taken, 0):
+		f.append("pickup radius: 0.7071 u (just outside the 0.7 u ring) was collected")
 	# The old 0.4 radius misses this point; the new radius collects it.
 	var lv4: RefCounted = LevelStateScript.build(level, 1, 1)
 	lv4.players[0]["x"] = 2.95
@@ -347,6 +360,56 @@ func _test_pickup_radius_stat(f: Array[String]) -> void:
 	GiftsScript.tick(lv4, 0, [])
 	if not GiftsScript.bit_get(lv4.gifts.black_taken, 0):
 		f.append("pickup radius: expanded radius missed at 0.559")
+
+
+# ---- the state hash pins the pickup ring (C4 review finding 1) ------------------
+
+## The dump's GIFTS line and the hash of a fresh level-1 RunState whose gift ring is
+## `base` x `mult`. Everything else is identical, so only the ring can move the hash.
+func _ring_hash(base: float, mult: float) -> Array:
+	var lvl: Dictionary = VoidGenScript.generate(1, 1, 1, 0)
+	var rs = RunStateScript.new_run(1, 1, [])
+	rs.load_level(lvl, 1)
+	if base >= 0.0:
+		rs.level.gifts.base_pickup_radius = base
+	rs.level.gifts.pickup_mult = mult
+	var gline := ""
+	for line in HashScript.dump(rs):
+		if line.begins_with("GIFTS "):
+			gline = line
+	return [HashScript.sha256(rs), gline]
+
+
+## Item 6 moved the base radius from a constant to economy.json, but the GIFTS line carried
+## only phase and bitsets: two states with base radii 0.4 and 0.7 hashed the same while the
+## same input between those radii collected in only one. Same bug class as the B10 collapse
+## collision - the hash must pin the configuration, not just the live schedule.
+func _test_hash_pins_pickup_radius(f: Array[String]) -> void:
+	var shipped := _ring_hash(-1.0, 1.0)   # -1: keep the radius create() read from the data
+	var a := _ring_hash(0.4, 1.0)
+	var b := _ring_hash(0.7, 1.0)
+	if str(shipped[1]) == "":
+		f.append("ring hash: no GIFTS line in the dump")
+		return
+	if a[0] == b[0]:
+		f.append("ring hash: base radii 0.4 and 0.7 hash the same (the review collision)")
+	if _ring_hash(0.7, 1.4)[0] == b[0]:
+		f.append("ring hash: stat multipliers 1.4 and 1.0 hash the same")
+	if _ring_hash(0.7, 1.0)[0] != b[0]:
+		f.append("ring hash: the same ring hashed differently twice")
+	# the shipped value is what is hashed: the economy.json number, as float bits
+	var econ: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(GiftsScript.ECONOMY_DATA))
+	var want := float(econ["gold_phase"]["gift_pickup_radius"])
+	var parts := str(shipped[1]).split(" ")
+	if parts.size() != 6:
+		f.append("ring hash: GIFTS line has %d fields, want 6: %s" % [parts.size(), shipped[1]])
+	elif parts[4] != HashScript.bits(want) or parts[5] != HashScript.bits(1.0):
+		f.append("ring hash: GIFTS line %s does not carry the shipped radius %s x 1.0"
+				% [shipped[1], HashScript.bits(want)])
+	if absf(want - 0.7) > 1e-9:
+		f.append("ring hash: shipped gift_pickup_radius %.4f, want 0.7" % want)
+	if shipped[0] != b[0]:
+		f.append("ring hash: the shipped state and an explicit 0.7 ring hash differently")
 
 
 # ---- straggler rule: the last 20% of REAL gifts, hazards never ------------------
