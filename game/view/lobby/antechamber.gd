@@ -73,7 +73,9 @@ const BAR_KEY_X := 0.80                    # the F's centre, from the slab's lef
 const BAR_TEXT_X := 1.55                   # the name/description left edge, from the slab's left edge
 const BAR_RIGHT_PAD := 0.35                # the watermark's strip at the right end
 const BAR_NAME_DY := 0.36                  # the name's line, above the slab's centre
-const BAR_DESC_DY := -0.45                 # the description's line, below it
+const BAR_DESC_DY := -0.38                 # the description's line, below it
+const BAR_PRICE_DY := -0.74                # the price line, under the description
+const BAR_FONT_PRICE := 44                 # the price line's font
 const BAR_KEY_GROW := 0.22                 # the F's scale ramp at a full hold
 const SIGIL_R := 4.5                       # the 9 u star sigil (diameter)
 const HOLD_S := 0.35                       # hold F to confirm (radial fill)
@@ -118,6 +120,18 @@ const GATE_LABEL_Y := 5.4
 const DISCLAIMER := "VOIDWRAP RUN is a personal, non-commercial project — no money is involved, and it is not affiliated with, endorsed by, or connected to any person, brand, character, or IP referenced or depicted in the game."
 const ABOUT_PLAQUE_TEXT := "ABOUT\n\n" + DISCLAIMER
 
+## The About plaque's board and its label box. The label is CENTRE-aligned and its box is
+## the board's inner width, because a Label3D's box origin follows its alignment: LEFT
+## starts the box AT the node origin, CENTER centres it on the origin. The plaque faces the
+## hall through a 180-degree yaw (it hangs on the south wall), so a LEFT-aligned box put the
+## whole text block to one side of the board and ran it off the panel's edge - the owner's
+## screenshot. CENTRE keeps every wrapped line, the short last one included, in the panel.
+const PLAQUE_W := 4.2
+const PLAQUE_H := 2.4
+const PLAQUE_PAD := 0.3
+const PLAQUE_FONT := 30
+const PLAQUE_PIXEL := 0.004
+
 const IntermissionScript := preload("res://sim/intermission.gd")
 const NO_SELECT := -1
 
@@ -134,6 +148,9 @@ var _altars: Array = []              # live altar wrappers, one per altar_table(
 var _holds: Dictionary = {}          # slot key -> hold seconds this press
 var _fired: Dictionary = {}          # slot key -> 1 once this press has confirmed
 var _last_stamp: int = -1
+## The purse the price lines were drawn against: a purse move redraws them even if the
+## stamp did not (affordability is a function of the purse, not of the stamp).
+var _last_purse: int = -1
 var _t: float = 0.0                  # seconds, for the bob
 var _colours: Dictionary = {}        # resolved role name -> Color
 var _pal: Dictionary = {}            # the resolved palette dict (emission factors)
@@ -196,6 +213,7 @@ func refresh(p_lobby: RefCounted) -> void:
 			_altars.append(_build_selectable(lobby, i, int(table[i]["bay_index"]),
 					int(table[i]["altar"]), str(table[i]["kind"]), slots))
 	_last_stamp = lobby.stamp if lobby != null else _last_stamp
+	_last_purse = int(lobby.purse) if lobby != null else _last_purse
 	_banner_refresh(lobby)
 	_gate_refresh()
 
@@ -462,20 +480,61 @@ func _flat(p_colour: Color, p_emission: float = 1.0) -> StandardMaterial3D:
 
 
 ## The About plaque on the south wall, readable up close, disclaimer VERBATIM (section 14).
+## The label's box is the board's inner width and CENTRE-aligned, so the wrapped block - the
+## short last line included - is centred in the panel instead of hanging off one edge.
 func _plaque() -> void:
-	var board := _box(Vector3(4.2, 2.4, 0.1), Vector3(0.0, 3.2, HALL_Z * 0.5 - 0.06), "prop_block")
+	var board_pos := Vector3(0.0, 3.2, HALL_Z * 0.5 - 0.06)
+	var board := _box(Vector3(PLAQUE_W, PLAQUE_H, 0.1), board_pos, "prop_block")
 	board.set_meta("about", true)
 	var label := Label3D.new()
+	label.set_meta("about_label", true)
 	label.text = ABOUT_PLAQUE_TEXT
-	label.font_size = 30
-	label.pixel_size = 0.004
-	label.width = 1000
+	label.font_size = PLAQUE_FONT
+	label.pixel_size = PLAQUE_PIXEL
+	label.width = plaque_width_px()
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	label.position = Vector3(0.0, 3.2, HALL_Z * 0.5 - 0.12)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	# The label's origin IS the board's centre: a CENTRE-aligned box is centred on it, so
+	# the text block is centred in the panel on both axes.
+	label.position = board_pos + Vector3(0.0, 0.0, -0.06)
 	label.rotation.y = PI
 	label.modulate = Color(0.9, 1.0, 1.0)
 	add_child(label)
+
+
+## The About text broken into lines exactly as the plaque's Label3D breaks it: the same
+## font (the theme fallback the Label3D draws with), size, box width and WORD_SMART flags.
+static func plaque_lines(p_width_px: int = -1) -> PackedStringArray:
+	var w := p_width_px if p_width_px > 0 else plaque_width_px()
+	var ts := TextServerManager.get_primary_interface()
+	var rid := ts.create_shaped_text()
+	ts.shaped_text_add_string(rid, ABOUT_PLAQUE_TEXT, ThemeDB.fallback_font.get_rids(), PLAQUE_FONT)
+	var flags := TextServer.BREAK_MANDATORY | TextServer.BREAK_WORD_BOUND | TextServer.BREAK_ADAPTIVE
+	var br := ts.shaped_text_get_line_breaks(rid, w, 0, flags)
+	var out := PackedStringArray()
+	for i in range(0, br.size(), 2):
+		out.append(ABOUT_PLAQUE_TEXT.substr(br[i], br[i + 1] - br[i]).strip_edges())
+	ts.free_rid(rid)
+	return out
+
+
+## The plaque label's wrap box in pixels: the board's width less a pad on each side.
+static func plaque_width_px() -> int:
+	return int(round((PLAQUE_W - PLAQUE_PAD * 2.0) / PLAQUE_PIXEL))
+
+
+## Where a Label3D's text block sits along its own local x, in world units, for an
+## alignment and a widest line of p_text_w: LEFT starts at the origin, CENTER straddles it,
+## RIGHT ends at it (measured in-engine on 4.7.2 via get_aabb() after a frame). Returns
+## Vector2(min_x, max_x).
+static func label_box_x(p_align: int, p_text_w: float) -> Vector2:
+	match p_align:
+		HORIZONTAL_ALIGNMENT_CENTER:
+			return Vector2(-p_text_w * 0.5, p_text_w * 0.5)
+		HORIZONTAL_ALIGNMENT_RIGHT:
+			return Vector2(-p_text_w, 0.0)
+	return Vector2(0.0, p_text_w)
 
 
 ## The Descent Gate at (0, -9.5) in the north wall: the shipped descent_gate.glb (frame +
@@ -675,7 +734,7 @@ func _build_selectable(p_lobby: RefCounted, p_index: int, p_bay_index: int, p_al
 	# its id), so the prompt string and the bar agree on what the altar offers.
 	var lines: Array = altar_details(p_lobby, p_bay_index, p_altar, bay_kind, kind)
 	wrap["label"] = str(lines[0]) if not lines.is_empty() else str(wrap["name"])
-	_bar(wrap, lines)
+	_bar(wrap, lines, altar_price(p_lobby, p_bay_index, p_altar, kind), int(p_lobby.purse))
 	# Sealed Deals (T-051): while the run holds the curse the reroll plinth never
 	# draws (reroll_plinth_visible() false, held_stacks 0 = neutral true). The panel is
 	# root's child, so one visible flag covers the whole plinth. The wrapper STAYS in
@@ -766,6 +825,37 @@ func _exhibit_class(p_anchor: Node3D, p_class: String) -> String:
 	return p_class
 
 
+## The gold the shop will charge for one selectable, or -1 when it costs nothing (a class,
+## enemy or curse pick, or the C bay's free reroll). The number is read from the SAME field
+## the sim deducts - altar["price"] for an upgrade (sim/intermission.gd _select_upgrade),
+## OffersSim.tithe_cost / reroll_cost for the two plinths - so the plaque can never show a
+## price the shop does not charge. shop_price_mul already moved altar["price"] at draw time
+## (sim/offers.gd draw_shop) and again on set_stats() (_reprice_shop_bays), so the bargain /
+## inflation curses show up here with no second price calculation.
+func altar_price(p_lobby: RefCounted, p_bay_index: int, p_altar: int,
+		p_row_kind: String = "") -> int:
+	var bay: Dictionary = p_lobby.bays[p_bay_index]
+	if p_altar < 0:
+		if p_row_kind == "tithe":
+			return OffersSim.tithe_cost(int(p_lobby.tithes), p_lobby.content)
+		if str(bay["kind"]) == "C":
+			return -1      # the C bay's one reroll is free (DESIGN.md section 7)
+		return OffersSim.reroll_cost(int(bay.get("rerolls_used", 0)), p_lobby.content)
+	var kind := str(bay["kind"])
+	if kind != "U" and kind != "REST":
+		return -1
+	var altar: Dictionary = (bay["altars"] as Array)[p_altar]
+	return int(altar.get("price", 0))
+
+
+## The price line's text: the gold, and the cannot-afford state spelled out - the colour
+## alone is not enough for a colour-blind player.
+static func price_text(p_price: int, p_affordable: bool) -> String:
+	if p_affordable:
+		return "PRICE %d g" % p_price
+	return "PRICE %d g - CANNOT AFFORD" % p_price
+
+
 ## The bar's text lines for one selectable: [name, description, ...detail]. p_kind is the
 ## BAY kind ("E" / "C" / "U" / "REST" / "CLASS"); p_row_kind is the altar_table() row kind
 ## ("offer" / "tithe" / "reroll"). The two extra plinths both arrive with p_altar < 0, so
@@ -775,12 +865,11 @@ func altar_details(p_lobby: RefCounted, p_bay_index: int, p_altar: int,
 		p_kind: String, p_row_kind: String = "") -> Array:
 	var bay: Dictionary = p_lobby.bays[p_bay_index]
 	if p_altar < 0:
+		var cost: int = altar_price(p_lobby, p_bay_index, p_altar, p_row_kind)
 		if p_row_kind == "tithe":
-			var cost: int = OffersSim.tithe_cost(int(p_lobby.tithes), p_lobby.content)
 			return ["PAY THE TITHE", "Walk past - no curse taken.", "Cost: %d g" % cost]
-		var rc: int = OffersSim.reroll_cost(int(bay.get("rerolls_used", 0)), p_lobby.content)
 		return ["REROLL", "Re-draw this bay.",
-				"Free once" if str(bay["kind"]) == "C" else "Cost: %d g" % rc]
+				"Free once" if cost < 0 else "Cost: %d g" % cost]
 	var altar: Dictionary = (bay["altars"] as Array)[p_altar]
 	match str(p_kind):
 		"E":
@@ -806,7 +895,8 @@ func altar_details(p_lobby: RefCounted, p_bay_index: int, p_altar: int,
 			return [
 				str(u.get("name", str(altar.get("id", "")))),
 				str(u.get("effect", "")),
-				"Price: %d g   Owned: %d/max %d" % [int(altar.get("price", 0)),
+				"Price: %d g   Owned: %d/max %d" % [
+						altar_price(p_lobby, p_bay_index, p_altar),
 						int(altar.get("stacks", 0)), int(u.get("max_stacks", 1))],
 			]
 		"CLASS":
@@ -828,7 +918,11 @@ func _enemy_doc(p_id: String) -> Dictionary:
 ## It CROSSES the exhibit body rather than floating above it (the owner's ask: the text
 ## overlaps the enemy and the name still reads), the big F IS the keybind glyph, and the
 ## name/description come from altar_details() - no new name source.
-func _bar(p_wrap: Dictionary, p_lines: Array) -> void:
+##
+## p_price is altar_price()'s answer for this selectable (-1 = it costs nothing) and p_purse
+## the lobby's purse: together they draw the price line, in the gold role while the purse
+## covers it and the danger role when it does not. The number is the one the sim deducts.
+func _bar(p_wrap: Dictionary, p_lines: Array, p_price: int = -1, p_purse: int = 0) -> void:
 	var name := str(p_lines[0]) if not p_lines.is_empty() else str(p_wrap.get("name", ""))
 	var desc := str(p_lines[1]) if p_lines.size() > 1 else ""
 	var band: Vector2 = _body_band(p_wrap)
@@ -856,6 +950,17 @@ func _bar(p_wrap: Dictionary, p_lines: Array) -> void:
 			BAR_FONT_DESC, HORIZONTAL_ALIGNMENT_CENTER)
 	_bar_fit(sub, -BAR_W * 0.5 + BAR_TEXT_X, BAR_DESC_DY, text_w)
 	sub.modulate = Color(0.82, 0.84, 0.95)
+	# the price line: what the shop charges, and whether the purse covers it
+	if p_price >= 0:
+		var affordable: bool = p_purse >= p_price
+		var price := _bar_label(bar, price_text(p_price, affordable), BAR_FONT_PRICE,
+				HORIZONTAL_ALIGNMENT_CENTER)
+		_bar_fit(price, -BAR_W * 0.5 + BAR_TEXT_X, BAR_PRICE_DY, text_w)
+		price.modulate = _c("gold_gift", Color(1.0, 0.84, 0.35)) if affordable \
+				else _c("danger", Color(1.0, 0.16, 0.16))
+		p_wrap["price_label"] = price
+		p_wrap["price"] = p_price
+		p_wrap["affordable"] = affordable
 	bar.visible = false
 	panel.visible = false
 	p_wrap["bar"] = bar
@@ -978,7 +1083,7 @@ func tick(p_dt: float, p_player_pos: Vector3, p_look_dir: Vector3,
 	_t += p_dt
 	var out := {"select": NO_SELECT, "prompt": ""}
 	if lobby != null:
-		if int(lobby.stamp) != _last_stamp:
+		if int(lobby.stamp) != _last_stamp or int(lobby.purse) != _last_purse:
 			refresh(lobby)
 		out = _interaction(p_dt, p_player_pos, p_look_dir, p_interact_held)
 	for a in _altars:
