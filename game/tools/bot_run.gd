@@ -543,6 +543,9 @@ static func _play_level(api: RefCounted, ledger: Dictionary, seed: int, level: i
 	if L.is_empty():
 		return {"result": "stuck"}
 	var rs = RunStateScript.new_run(seed, 1, api.content_ids())
+	# the run's carried enemy set rides the RunState, so the state hash pins it
+	rs.run_votes = votes.duplicate()
+	rs.run_hunger = int(ledger.get("hunger", 0))
 	rs.load_level(L, level)
 	var lv = rs.level
 	var w := CollisionScript.make_world(L["tiles"], L["props"], L["pads"], {"dais": L["beacon"]})

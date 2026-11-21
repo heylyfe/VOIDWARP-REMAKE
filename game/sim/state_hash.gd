@@ -10,6 +10,9 @@ extends RefCounted
 #   PLAYERS <n>                       player count
 #   CONTENT <id> ...                  sorted content ids, space separated, one line
 #   LEVELNUM <n>                      current level number (0 = none)
+#   VOTES <id>:<n> ...                the run's carried enemy set (rs.run_votes), ids sorted,
+#                                       zero counts dropped; only when non-empty
+#   HUNGER <n>                        rs.run_hunger; only when VOTES is written or n > 0
 #   LEVELHASH <hex>                   canonical hash of the Level object (terrain parity hash)
 #   TICK <tick>                       per-level tick counter
 #   RNG <name> <s>                    one line per sim sub-stream, names sorted (D-T010-3)
@@ -53,6 +56,15 @@ static func dump(rs: RefCounted) -> PackedStringArray:
 		content += " %s" % id
 	out.append("CONTENT%s" % content)
 	out.append("LEVELNUM %d" % rs.level_number)
+	# The carried enemy set is run state (DESIGN.md section 6: a vote stays in play for the
+	# rest of the run). Absent when the run has voted nothing, so every pre-existing dump
+	# (the bare sim, the random-input replay) is byte-identical.
+	var vline := _votes_line(rs.get("run_votes"))
+	var hunger := int(rs.get("run_hunger")) if rs.get("run_hunger") != null else 0
+	if vline != "":
+		out.append(vline)
+	if vline != "" or hunger > 0:
+		out.append("HUNGER %d" % hunger)
 	var lv: RefCounted = rs.level
 	if lv == null:
 		return out
@@ -103,6 +115,22 @@ static func dump(rs: RefCounted) -> PackedStringArray:
 			str(cst.get("partition", "")),
 		])
 	return out
+
+
+## "VOTES id:n id:n" over the positive counts, ids sorted; "" when there are none.
+static func _votes_line(v: Variant) -> String:
+	if not (v is Dictionary):
+		return ""
+	var ids: Array = (v as Dictionary).keys()
+	ids.sort()
+	var parts := PackedStringArray()
+	for id in ids:
+		var n := int((v as Dictionary)[id])
+		if n > 0:
+			parts.append("%s:%d" % [str(id), n])
+	if parts.is_empty():
+		return ""
+	return "VOTES " + " ".join(parts)
 
 
 ## The 16 hex digits of the double's IEEE-754 64-bit pattern, most significant byte first (D-T010-1).
