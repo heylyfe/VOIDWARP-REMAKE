@@ -20,6 +20,9 @@ extends RefCounted
 
 const WorldScript := preload("res://app/world.gd")
 const LobbyPlayerScript := preload("res://view/lobby/lobby_player.gd")
+const Collision := preload("res://sim/collision.gd")
+const Hash := preload("res://sim/state_hash.gd")
+const RunState := preload("res://sim/run_state.gd")
 
 const DT := 1.0 / 60.0
 const SEED := 1
@@ -33,7 +36,225 @@ func run() -> Array[String]:
 	_leg_view_pass(f)
 	_leg_ability_poses(f)
 	_leg_materials(f)
+	_leg_render_smoothness(f)
+	_leg_gaits(f)
+	_leg_sim_purity(f)
 	return f
+
+
+class MovingWorld extends "res://app/world.gd":
+	func _capture_input() -> Dictionary:
+		return {"move_x": 0, "move_z": -1, "buttons": 0, "aim_x": 0, "aim_z": -1}
+
+
+func _leg_render_smoothness(f: Array[String]) -> void:
+	var world := MovingWorld.new()
+	(Engine.get_main_loop() as SceneTree).root.add_child(world)
+	if not world.build(SEED, LEVEL):
+		f.append("smoothness: world failed to build")
+		world.free()
+		return
+	var previous: Array[Basis] = []
+	var peaks: Array[float] = []
+	var limbs: Array = world._limbs.duplicate()
+	var names: Array = WorldScript.LIMB_NAMES.duplicate()
+	var rig = world.get("_leg_rig")
+	if rig != null:
+		limbs.append_array(rig.forearms + rig.shins + rig.boots)
+		names.append_array(["ElbowL", "ElbowR", "KneeL", "KneeR", "BootL", "BootR"])
+	for limb in limbs:
+		previous.append(limb.global_basis.orthonormalized())
+		peaks.append(0.0)
+	var idle_frames := 0
+	for frame in 120:
+		var tick := frame % 2 == 0
+		if tick:
+			world.step(DT)
+		if world.has_method("_process"):
+			world.call("_process", DT * 0.5)
+		var changed := false
+		for i in limbs.size():
+			var basis: Basis = limbs[i].global_basis.orthonormalized()
+			var angle := previous[i].get_rotation_quaternion().angle_to(
+					basis.get_rotation_quaternion())
+			if frame >= 20:
+				peaks[i] = maxf(peaks[i], angle)
+			changed = changed or not basis.is_equal_approx(previous[i])
+			previous[i] = basis
+		if frame >= 20 and not tick and not changed:
+			idle_frames += 1
+	print("ANIM 120 Hz peaks (rad) %s, frozen no-tick frames %d/50" % [peaks, idle_frames])
+	for i in peaks.size():
+		var limit := 0.30 if i < WorldScript.LIMB_NAMES.size() else 0.40
+		if peaks[i] >= limit:
+			f.append("smoothness: %s changed %.3f rad in one frame" % [names[i], peaks[i]])
+	if idle_frames > 0:
+		f.append("smoothness: pose froze on %d no-tick frames" % idle_frames)
+	world.teardown()
+	world.free()
+
+
+func _leg_gaits(f: Array[String]) -> void:
+	var world := MovingWorld.new()
+	(Engine.get_main_loop() as SceneTree).root.add_child(world)
+	if not world.build(SEED, LEVEL):
+		f.append("gait: world failed to build")
+		world.free()
+		return
+	var walk := _sample_gait(world, 3.0, 0)
+	var run := _sample_gait(world, 9.0, 0)
+	var ramp := _sample_gait(world, 3.0, 4)
+	var stairs := _sample_gait(world, 3.0, 5)
+	print("ANIM walk %s, run %s, ramp %s, stairs %s" % [walk, run, ramp, stairs])
+	if run.cadence < walk.cadence * 1.4 or run.stride < walk.stride * 1.3:
+		f.append("gait: run cadence and stride must exceed walking")
+	if run.arm < walk.arm * 1.4 or run.lean < walk.lean + 0.12 or run.bob < walk.bob * 1.5:
+		f.append("gait: running must swing the arms more, lean further and bob higher")
+	if ramp.stride > walk.stride * 0.85 or ramp.bob > walk.bob * 0.35:
+		f.append("gait: uphill stride and body bob must shrink")
+	if ramp.knee < walk.knee + 0.07 or ramp.lift < walk.lift + 0.09:
+		f.append("gait: uphill swing must carry the knee and boot higher")
+	if ramp.peak_frame_angle > 0.30 or stairs.peak_frame_angle > 0.36:
+		f.append("gait: a rising surface caused a single-frame thigh snap")
+	for gait in [walk, run, ramp, stairs]:
+		if gait.contacts < 5 or gait.slide > 0.015 or gait.sink > 0.005:
+			f.append("plant: expected repeated stationary soles above the floor: %s" % gait)
+		if gait.swing_bend < gait.plant_bend + 0.35:
+			f.append("gait: the knee should straighten on plant and flex during swing: %s" % gait)
+	world.teardown()
+	world.free()
+
+
+func _sample_gait(world: MovingWorld, speed: float, surface: int) -> Dictionary:
+	var tiles: Array = []
+	for x in range(-1, 2):
+		for z in range(-30, 1):
+			var height := -z - 1 if surface == 4 else (-z if surface == 5 else 0)
+			tiles.append([x, z, height, 4 if surface == 4 else 0, 0])
+	world.w = Collision.make_world(tiles, [], [])
+	world.ctl.C["run_speed"] = speed
+	world.ctl.x = 0.5
+	world.ctl.z = -1.5
+	world.ctl.y = Collision.support_at(world.w, 0.5, -1.5, 0.0, 1.0)
+	world.ctl.vx = 0.0
+	world.ctl.vy = 0.0
+	world.ctl.vz = -speed
+	world.ctl.grounded = true
+	# Snap the render history onto the new course and allow the gait to settle.
+	world._anim_next.clear()
+	world._anim_height = INF
+	world._leg_rig.reset_contacts()
+	var previous: Array[bool] = [false, false]
+	var plants: Array[Vector3] = [Vector3.ZERO, Vector3.ZERO]
+	var thighs: Array[Quaternion] = [Quaternion.IDENTITY, Quaternion.IDENTITY]
+	var m := {"cadence": 0.0, "stride": 0.0, "contacts": 0, "slide": 0.0,
+			"sink": 0.0, "arm": 0.0, "lean": 0.0, "knee": -INF, "lift": 0.0, "bob": 0.0,
+			"plant_bend": INF, "swing_bend": 0.0, "peak_frame_angle": 0.0}
+	var min_y := INF
+	var max_y := -INF
+	var advance := 0.0
+	for frame in 300:
+		if frame % 2 == 0:
+			world.ctl.step(DT, world._capture_input(), world.w)
+			world._player_pass()
+		var phase := world._anim_phase
+		world._process(DT * 0.5)
+		if frame < 60:
+			continue
+		advance += fposmod(world._anim_phase - phase, TAU)
+		min_y = minf(min_y, world._pose.body_y)
+		max_y = maxf(max_y, world._pose.body_y)
+		m.arm = maxf(m.arm, absf(world._pose.arm_l))
+		m.lean = maxf(m.lean, -float(world._pose.torso))
+		for side in 2:
+			var basis: Basis = world._limbs[side + 4].basis
+			var rotation := basis.get_rotation_quaternion()
+			if frame > 60:
+				m.peak_frame_angle = maxf(m.peak_frame_angle, thighs[side].angle_to(rotation))
+			thighs[side] = rotation
+		_measure_feet(world, surface, m, previous, plants)
+	m.cadence = advance / TAU / 2.0
+	m.stride = speed / m.cadence
+	m.bob = max_y - min_y
+	return m
+
+
+func _measure_feet(world: MovingWorld, surface: int, m: Dictionary,
+		previous: Array[bool], plants: Array[Vector3]) -> void:
+	var rig = world._leg_rig
+	for side in 2:
+		var boot: MeshInstance3D = rig.boots[side]
+		var bounds := boot.get_aabb()
+		var sole := boot.to_global(Vector3(0.0, bounds.position.y, 0.0))
+		var limb := world._limbs[side + 4] as Node3D
+		var shin: MeshInstance3D = rig.shins[side]
+		var bend := limb.global_basis.y.angle_to(shin.global_basis.y)
+		var planted: bool = rig.stance[side]
+		if planted:
+			m.plant_bend = minf(m.plant_bend, bend)
+			if not previous[side]:
+				m.contacts += 1
+				plants[side] = sole
+			m.slide = maxf(m.slide, sole.distance_to(plants[side]))
+			for z in [bounds.position.z, bounds.end.z]:
+				var edge := boot.to_global(Vector3(0.0, bounds.position.y, z))
+				m.sink = maxf(m.sink, _course_height(surface, edge.z) - edge.y)
+		else:
+			var hip := limb.to_global(world._limb_mounts[side + 4])
+			m.knee = maxf(m.knee, shin.global_position.y - hip.y)
+			m.lift = maxf(m.lift, sole.y - _course_height(surface, sole.z))
+			m.swing_bend = maxf(m.swing_bend, bend)
+		previous[side] = planted
+
+
+func _course_height(surface: int, z: float) -> float:
+	if surface == 4:
+		return -z * 0.5
+	if surface == 5:
+		return -floorf(z) * 0.5
+	return 0.0
+
+
+func _leg_sim_purity(f: Array[String]) -> void:
+	var animated := _sim_trace(true, f)
+	var disabled := _sim_trace(false, f)
+	if animated.size() != 75 or animated != disabled:
+		f.append("purity: animation on and off must produce identical controller and hash traces")
+	else:
+		print("ANIM purity: %d identical tick hashes and controller samples" % animated.size())
+
+
+func _sim_trace(animated: bool, f: Array[String]) -> Array:
+	var world := MovingWorld.new()
+	(Engine.get_main_loop() as SceneTree).root.add_child(world)
+	var trace: Array = []
+	if not world.build(SEED, LEVEL):
+		world.free()
+		return trace
+	var state := RunState.new_run(SEED, 1, [])
+	state.level_number = LEVEL
+	state.level = world.lstate
+	for tick in 75:
+		world.step(DT)
+		var before := _controller_bits(world.ctl)
+		var hash_before := Hash.sha256(state)
+		if animated:
+			world._process(DT * 0.5)
+			world._process(DT * 0.5)
+		if before != _controller_bits(world.ctl) or hash_before != Hash.sha256(state):
+			f.append("purity: rendering mutated the controller or state hash at tick %d" % tick)
+			break
+		trace.append([hash_before, before])
+	world.teardown()
+	world.free()
+	return trace
+
+
+func _controller_bits(ctl: RefCounted) -> PackedStringArray:
+	var bits := PackedStringArray()
+	for value in [ctl.x, ctl.y, ctl.z, ctl.vx, ctl.vy, ctl.vz]:
+		bits.append(Hash.bits(value))
+	return bits
 
 
 ## Leg 1: the model itself - six limb nodes, every one a MeshInstance3D under PlayerBody.

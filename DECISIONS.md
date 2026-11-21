@@ -8164,3 +8164,37 @@ bright accents against the cloud sky (the reference mood). Fog check: unchanged 
 light energy), FOGCHECK OK 550 checks over 5 biomes. Before/after shots:
 `game/out/shots_atmosphere/{before,after}_{spawn,walk,horizon,sky}.png`
 (`tools/shot_atmosphere.gd`).
+
+## D-PLAYER-ANIM-1 (2026-11-21): interpolate the figure on the render clock
+
+At 120 Hz with the 60 Hz world step, the original figure froze on all 50 sampled
+frames without a sim tick. Its largest single-frame joint change was 0.186 rad.
+The smoothness regression counted one failure. The world now captures adjacent
+controller samples on its existing tick callback and evaluates the figure pose
+on each render frame. It interpolates the root and yaw one tick behind the sim
+and eases visible vertical changes at stair risers. Pausing freezes that clock.
+Detached tools that explicitly drive the player view can still sample at 60 Hz.
+The controller, terrain generator and serialized state stay independent of the pose.
+
+## D-PLAYER-ANIM-2 (2026-11-21): articulate the existing meshes and plant the soles
+
+The view derives thighs, shins, boots and forearms from the authored coloured limb
+meshes at runtime. Grounded locomotion uses speed-dependent stride, cadence and
+stance duration, counter-swinging arms, torso twist and a stabilized head.
+Each stance keeps a fixed world-space sole position and heading. A two-joint
+solve bends the swing knee and extends the stance leg. Body bob peaks at
+mid-stance, with a separate idle breathing phase. Dash, glide, jump and fall
+retain their target silhouettes and blend through the same render pass.
+
+## D-PLAYER-ANIM-3 (2026-11-21): shorten and lift the gait on uphill ground
+
+When grounded, sample the tile surface beneath the controller and ahead along
+its horizontal velocity. Rising ground uses shorter, quicker strides, more
+swing clearance and less body bob. Boot corners sample the tile surface at
+lift-off, including the upper edge of a tread. Holding the landing target
+through swing cut the largest measured stair thigh change from 1.399 to
+0.339 rad per 120 Hz frame. On the test ramp, walk stride
+shortened from 1.630 to 1.255 u and bob fell from 0.0240 to 0.0024 u. The
+controlled tests exercise flat walking, flat running, a ramp and a 0.5 u
+staircase. The capture tool uses separate fixed-camera walk, run and ramp
+sequences at 30 samples per second.

@@ -215,13 +215,13 @@ var _prev_mouse_toggle := false  # last tick's APP_MOUSE_TOGGLE, for the edge de
 var _prev_app_pause := false     # last tick's APP_PAUSE, for the edge detect
 var _mouse_sens := CameraRigScript.MOUSE_SENS_DEFAULT  # settings.mouse_sensitivity
 
-# Procedural limb pose: the .glb is one object per limb (joint origin at hip/shoulder/
-# neck), so animating is rotating those nodes. Targets come from the pure _pose_* statics
-# off the SIM STATE (grounded / horizontal speed / vertical velocity) read here in the view
-# pass - nothing is fed back into sim/, and no AnimationPlayer is involved (J5's Part B).
+# The fixed tick captures controller samples. The render pass owns all pose clocks and
+# contacts, and applies them to the articulated figure only.
+const Locomotion := preload("res://view/player_locomotion.gd")
 const LIMB_NAMES := ["Torso", "Head", "ArmL", "ArmR", "LegL", "LegR"]
 const POSE_KEYS := ["torso", "head", "arm_l", "arm_r", "leg_l", "leg_r"]  # same order
 const ANIM_BLEND_TIME := 0.08    # s, pose blend constant (1 - e^(-dt/tau) toward target)
+const POSE_EXTRAS := ["arm_spread", "elbow_l", "elbow_r", "twist", "body_y"]
 ## Field Dressing (DESIGN.md section 8, D-086): the controller's free-fall budget. It has no
 ## module for the upgrade dispatcher to call, so the app grants the budget itself at level
 ## start (controller apply_field_dressing). No content id is named here (test_boundaries.gd): the upgrade is
@@ -229,12 +229,21 @@ const ANIM_BLEND_TIME := 0.08    # s, pose blend constant (1 - e^(-dt/tau) towar
 ## content module of its own (a hook with a module is that module's job, not this grant).
 const FREE_FALL_HOOK := "on_void_fall"
 const ANIM_PHASE_IDLE := 1.6     # rad/s idle sway rate
-const ANIM_PHASE_RUN := 10.5     # rad/s full-speed gait rate (per stride radian pair)
 var _limbs: Array = []           # LIMB_NAMES order -> limb nodes of player_model (or null)
 var _limb_rest: Array[Vector3] = []
 var _limb_mounts: Array[Vector3] = []
 var _pose := {}                  # currently blended pose, _pose_run()'s shape
 var _anim_phase := 0.0           # gait/sway phase (view-side clock, view-legal)
+var _breath_phase := 0.0
+var _leg_rig: Locomotion
+var _anim_prev := {}
+var _anim_next := {}
+var _anim_ticks := 0
+var _anim_remainder := 0.0
+var _anim_height := INF
+var _contact_weight := 0.0
+var _climb_weight := 0.0
+var _feet: Array[Vector3] = [Vector3.ZERO, Vector3.ZERO]
 var _run_speed := 9.0            # data/player.json shared_kit.run_speed (read in build())
 
 var _economy: RefCounted = null   # the gold-phase economy (purse / chain / upgrade stats)
@@ -1688,16 +1697,9 @@ static func _apply_player_body_material(p_root: Node3D) -> void:
 				mi.set_surface_override_material(s, mat)
 
 
-## Animation state -> pose target (radians), the pure half of Part B. Returned shape:
-## {torso, head, arm_l, arm_r, leg_l, leg_r} - limb pitch about X (positive = the limb's
-## tip swings BACKWARD, since the figure's forward is Godot -Z), except head (sway about
-## Z). Non-root only: the figure's position/yaw stay in _position_player. Everything lerps
-## toward the target, never snaps.
-## Sign convention: a limb node hangs along -Y; rotating +X swings its tip toward +Z =
-## backward, -X forward. An arm swung up over the shoulder is ~+2.6.
-
-## Gait: legs swing sin(phase) apart scaled by amp (0 = idle sway, 1 = full run), arms
-## counter the same-side leg, torso leans into the run. amp normalises by the run speed.
+## Pose values are local pitch in radians, except head roll and the optional extras.
+## The base run pose sets the lean. The articulated gait derives counter-swing and
+## hip and knee angles from the foot contacts.
 static func _pose_run(phase: float, amp: float) -> Dictionary:
 	var swing := sin(phase) * 0.9 * amp
 	var counter := -swing * 0.85
@@ -1714,12 +1716,13 @@ static func _pose_run(phase: float, amp: float) -> Dictionary:
 ## Idle: a slow phase-driven sway, the head drifting a little, arms loose at the sides.
 static func _pose_idle(phase: float) -> Dictionary:
 	return {
-		"torso": -0.02,
-		"head": sin(phase * 0.5) * 0.10,
-		"arm_l": sin(phase * 0.5) * 0.06,
-		"arm_r": -sin(phase * 0.5) * 0.06,
+		"torso": -0.02 + sin(phase) * 0.014,
+		"head": sin(phase) * 0.023,
+		"arm_l": sin(phase) * 0.035,
+		"arm_r": -sin(phase) * 0.035,
 		"leg_l": 0.0,
 		"leg_r": 0.0,
+		"body_y": -0.03 + sin(phase) * 0.006,
 	}
 
 
@@ -1757,47 +1760,151 @@ static func _pose_glide() -> Dictionary:
 			"leg_l": -0.28, "leg_r": -0.28, "arm_spread": 1.20}
 
 
-## The pose applier: pick the state from the sim body state (read ONLY here), advance the
-## phase, blend the current pose toward the target, write the limb rotations. Pure in ->
-## nodes out; nothing in the pose feeds back into the sim.
+## Capture one sample per fixed tick. Detached tools can still drive the view manually.
 func _anim_pass() -> void:
 	if _limbs.is_empty() or ctl == null:
 		return
-	var speed := sqrt(float(ctl.vx) * float(ctl.vx) + float(ctl.vz) * float(ctl.vz))
-	var grounded := bool(ctl.grounded)
-	var vy := float(ctl.vy)
-	var target: Dictionary
-	if ctl.dash_ticks > 0:
-		target = _pose_dash()
-	elif ctl.gliding:
-		target = _pose_glide()
-	elif not grounded:
-		target = _pose_jump() if vy >= -0.4 else _pose_fall()
+	_anim_prev = _anim_next
+	_anim_next = _anim_sample()
+	if _anim_prev.is_empty():
+		_anim_prev = _anim_next
+	var movement: Vector3 = _anim_next.position - _anim_prev.position
+	if movement.length() > maxf(0.8, (_anim_next.velocity as Vector3).length() * DT * 2.0):
+		_anim_prev = _anim_next
+		_anim_height = INF
+		_leg_rig.reset_contacts()
+	if is_inside_tree():
+		_anim_ticks += 1
 	else:
-		var amp := clampf(speed / maxf(_run_speed, 0.001), 0.0, 1.0)
-		if amp < 0.05:
-			_anim_phase = fmod(_anim_phase + ANIM_PHASE_IDLE, TAU)
-			target = _pose_idle(_anim_phase)
-		else:
-			_anim_phase = fmod(_anim_phase + (ANIM_PHASE_IDLE
-					+ (ANIM_PHASE_RUN - ANIM_PHASE_IDLE) * amp), TAU)
-			target = _pose_run(_anim_phase, amp)
-	# Blend: exponential toward the target with time constant ANIM_BLEND_TIME; at 60 Hz
-	# (the only rate step() is driven at) the per-tick factor is 1 - e^(-dt/tau).
-	var k := 1.0 - exp(-1.0 / 60.0 / ANIM_BLEND_TIME)
+		_render_animation(DT, 1.0)
+
+
+func _anim_sample() -> Dictionary:
+	return {
+		"position": Vector3(ctl.x, ctl.y, ctl.z),
+		"velocity": Vector3(ctl.vx, ctl.vy, ctl.vz),
+		"grounded": bool(ctl.grounded),
+		"dash": ctl.dash_ticks > 0,
+		"glide": bool(ctl.gliding),
+		"yaw": _player_yaw,
+	}
+
+
+func _process(delta: float) -> void:
+	if player_model == null or ctl == null or _run_over_emitted:
+		return
+	# App owns pause and drops its fixed-step remainder on a five-tick catch-up.
+	if get_parent().get("_paused") == true:
+		_anim_remainder = 0.0
+		_anim_ticks = 0
+		return
+	_anim_remainder = 0.0 if _anim_ticks >= 5 else clampf(
+			_anim_remainder + delta - _anim_ticks * DT, 0.0, DT)
+	_anim_ticks = 0
+	_render_animation(delta, _anim_remainder / DT)
+
+
+func _render_animation(delta: float, alpha: float) -> void:
+	if _anim_next.is_empty():
+		_anim_next = _anim_sample()
+		_anim_prev = _anim_next
+	var root_pos := (_anim_prev.position as Vector3).lerp(_anim_next.position, alpha)
+	var velocity := (_anim_prev.velocity as Vector3).lerp(_anim_next.velocity, alpha)
+	var dash: bool = _anim_next.dash
+	var glide: bool = _anim_next.glide
+	var on_ground: bool = _anim_next.grounded and not dash and not glide
+	if _anim_height == INF:
+		_anim_height = root_pos.y
+	# Spread the vertical displacement of a stair riser over several render frames.
+	# Soles remain in world space while the body catches up to the new tread.
+	_anim_height = lerpf(_anim_height, root_pos.y, 1.0 - exp(-delta / 0.038))
+	if not on_ground and not _anim_prev.grounded:
+		_anim_height = move_toward(_anim_height, root_pos.y, absf(velocity.y) * delta)
+	player_model.position = Vector3(root_pos.x, _anim_height, root_pos.z)
+	player_model.rotation.y = lerp_angle(_anim_prev.yaw, _anim_next.yaw, alpha)
+	var k := 1.0 - exp(-delta / ANIM_BLEND_TIME)
+	var contact := 1.0 if on_ground else 0.0
+	_contact_weight = contact if _pose.is_empty() else lerpf(_contact_weight, contact, k)
+	if absf(_contact_weight - contact) < 0.001:
+		_contact_weight = contact
+
+	var target: Dictionary
+	if dash:
+		target = _pose_dash()
+	elif glide:
+		target = _pose_glide()
+	elif not on_ground:
+		target = _pose_jump() if velocity.y >= -0.4 else _pose_fall()
+	else:
+		target = _pose_locomotion(root_pos, velocity, delta, k)
+	if not on_ground:
+		_leg_rig.reset_contacts()
 	if _pose.is_empty():
-		_pose = target.duplicate()
-		_pose["arm_spread"] = 0.0
 		k = 1.0
-	for key in _pose.keys():
-		_pose[key] = float(_pose[key]) + (float(target.get(key, 0.0)) - float(_pose[key])) * k
+	elif _contact_weight == 1.0:
+		k = 1.0 - exp(-delta / 0.025)
+	for key in POSE_KEYS + POSE_EXTRAS:
+		_pose[key] = lerpf(float(_pose.get(key, 0.0)), float(target.get(key, 0.0)), k)
+	if _contact_weight == 1.0:
+		_pose["body_y"] = target.body_y
 	_apply_pose()
+
+
+func _pose_locomotion(root_pos: Vector3, velocity: Vector3, delta: float, blend: float) -> Dictionary:
+	velocity.y = 0.0
+	var speed := velocity.length()
+	var moving := smoothstep(Locomotion.MIN_SPEED, 1.0, speed)
+	var direction := velocity.normalized()
+	var rise := Locomotion.grade(w, root_pos, direction,
+			(_anim_next.velocity as Vector3).y)
+	_climb_weight = lerpf(_climb_weight, rise, blend)
+	var gait := Locomotion.profile(speed, _run_speed, _climb_weight)
+	if speed < Locomotion.MIN_SPEED:
+		gait.x = 0.0
+		velocity = Vector3.ZERO
+	_anim_phase = fposmod(_anim_phase + gait.x * TAU * delta, TAU)
+	_breath_phase = fposmod(_breath_phase + ANIM_PHASE_IDLE * delta, TAU)
+	var target := _pose_idle(_breath_phase)
+	var run_pose := _pose_run(_anim_phase, gait.z)
+	target["torso"] = lerpf(target.torso, float(run_pose.torso) - 0.06 - 0.12 * _climb_weight, moving)
+	target["twist"] = sin(_anim_phase) * lerpf(0.11, 0.19, gait.z) * moving
+	target["head"] = float(target.head) * (1.0 - moving)
+	if _leg_rig.boots.size() != 2:
+		return target
+	var yaw := player_model.rotation.y
+	var forward := Vector3.FORWARD.rotated(Vector3.UP, yaw)
+	var bob := 0.0
+	for side in 2:
+		var phase := fposmod(_anim_phase / TAU + side * 0.5, 1.0)
+		var hip := _limb_rest[side + 4] + _limb_mounts[side + 4]
+		var neutral := root_pos + Vector3(hip.x, 0.0, hip.z).rotated(Vector3.UP, yaw)
+		var sole: Vector3 = _leg_rig.place_foot(side, neutral, velocity, phase, gait, _climb_weight, yaw, w, delta)
+		_feet[side] = (sole - player_model.position).rotated(Vector3.UP, -yaw)
+		var key := "arm_l" if side == 0 else "arm_r"
+		var travel := (sole - neutral).dot(forward)
+		var counter := clampf(-travel / 0.34, -1.0, 1.0) * lerpf(0.30, 0.79, gait.z)
+		target[key] = lerpf(float(target[key]), counter, moving)
+		target["elbow_l" if side == 0 else "elbow_r"] = 0.10 + moving * (
+				lerpf(0.12, 0.42, gait.z) + 0.16 * maxf(0.0, counter))
+		if phase < gait.y:
+			bob = maxf(bob, pow(sin(PI * phase / gait.y), 2.0))
+	bob *= lerpf(0.024, 0.064, gait.z) * (1.0 - 0.90 * _climb_weight)
+	target["body_y"] = lerpf(float(target.body_y), -0.065 + bob, moving)
+	return target
 
 
 func _cache_player_limbs(figure: Node3D) -> void:
 	_limbs.clear()
 	_limb_rest.clear()
 	_limb_mounts.clear()
+	_anim_prev.clear()
+	_anim_next.clear()
+	_anim_ticks = 0
+	_anim_remainder = 0.0
+	_anim_height = INF
+	_climb_weight = 0.0
+	_contact_weight = 0.0
+	_breath_phase = 0.0
 	for i in LIMB_NAMES.size():
 		var node := figure.find_child(LIMB_NAMES[i], true, false) as MeshInstance3D if figure != null else null
 		_limbs.append(node)
@@ -1808,19 +1915,24 @@ func _cache_player_limbs(figure: Node3D) -> void:
 			mount = bounds.get_center()
 			mount.y = bounds.position.y if i == 0 else bounds.end.y
 		_limb_mounts.append(mount)
+	_leg_rig = Locomotion.new()
+	_leg_rig.build(_limbs, _limb_mounts)
 
 
 func _apply_pose() -> void:
-	var body := Basis(Vector3.RIGHT, float(_pose["torso"]))
+	var body := Basis.from_euler(Vector3(_pose.torso, _pose.twist, 0.0))
 	var waist := _limb_rest[0] + _limb_mounts[0]
+	var offset := Vector3.UP * float(_pose.body_y)
 	for i in LIMB_NAMES.size():
 		var node = _limbs[i]
 		if node == null or not _pose.has(POSE_KEYS[i]):
 			continue
 		var angle := float(_pose[POSE_KEYS[i]])
 		var rotation := Basis(Vector3.RIGHT, angle)
-		if i == 1:   # Head: the sway rides Z, every other limb pitches about X
-			rotation = Basis(Vector3.BACK, angle)
+		if i == 1:
+			# Keep the gaze steady as the neck is carried by the chest.
+			var stabilize := _contact_weight * 0.87
+			rotation = body.inverse().slerp(Basis.IDENTITY, 1.0 - stabilize) * Basis(Vector3.BACK, angle)
 		elif i == 2 or i == 3:
 			var spread := float(_pose.get("arm_spread", 0.0))
 			rotation = Basis.from_euler(Vector3(angle, 0.0, -spread if i == 2 else spread))
@@ -1831,7 +1943,18 @@ func _apply_pose() -> void:
 		if i > 0 and i < 4:
 			joint = waist + body * (joint - waist)
 			rotation = body * rotation
+		elif i == 0:
+			rotation = body
+		elif _leg_rig.shins.size() == 2:
+			joint.y += Locomotion.HIP_RISE
+		joint += offset
 		node.transform = Transform3D(rotation, joint - rotation * mount)
+		if (i == 2 or i == 3) and _leg_rig.forearms.size() == 2:
+			var bend: float = _pose.elbow_l if i == 2 else _pose.elbow_r
+			_leg_rig.pose_arm(i - 2, node, mount, bend)
+		elif i >= 4 and _leg_rig.shins.size() == 2:
+			_leg_rig.pose_leg(i - 4, node, joint, mount, _feet[i - 4],
+					player_model.rotation.y, _contact_weight)
 
 
 ## The enemy body pass: every live runtime row gets ONE body - its bespoke view host when
