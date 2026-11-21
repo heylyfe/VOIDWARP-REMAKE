@@ -242,8 +242,10 @@ Known gaps, stated plainly:
 
 1. **Spawn** on a causeway over the void. Two void charges in hand.
 2. **Collect** every black gift on the level. The beacon stays shut until the last one.
-3. **Decide** — walk into the open beacon and bank the run, or stay out for gold while the enemies
-   get faster and the fog closes in.
+3. **Decide** — walk into the open beacon and bank the run, or stay out for gold. Staying out is on
+   a clock: the platform starts to crack the moment the beacon opens and every tile off the hub is
+   gone five seconds later, so the gold phase is a dash, not a stroll. Enemies get faster and the
+   fog closes in while you are out there.
 4. **Fall** and you spend a charge. Fall with none left and the run ends.
 
 Between levels the design calls for a lobby: class choice, enemy votes, curses, upgrades. That is
