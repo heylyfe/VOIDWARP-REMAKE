@@ -62,3 +62,6 @@ assets_src/enemies/*
 # kept locally and never published. It was tracked by mistake; untracked in cycle 2 after a
 # fresh-eyes review found a home-directory path in it.
 GUARDIAN.md
+
+# B10 collapse screenshot pass output (tests/shot_collapse.gd): re-rendered evidence, not assets
+shots_b10/
