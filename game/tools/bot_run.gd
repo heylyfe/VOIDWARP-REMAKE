@@ -110,6 +110,12 @@ const BODY_H := 1.8
 ## a jump arc may not pass within MINE_ARC_SAFE u of one at ANY height.
 const MINE_SAFE := 0.97
 const MINE_ARC_SAFE := 0.95
+## How far ahead the steering guard looks while AIRBORNE (D-B9-2). On the ground a step
+## is 1.2 u; an airborne arc covers more, and mine contact is height-blind, so a mine 2-3 u
+## ahead is one the arc can still come down on. The planned-jump scan already refuses an
+## arc that passes within MINE_ARC_SAFE of a mine; this is the same rule for the arcs the
+## bot did not plan (the emergency dodge jump).
+const AIR_MINE_REACH := 3.0
 const MINE_COL_COST := 100000   # route cost of a tile in a live mine's column (lethal ground)
 const MINE_NEAR_COST := 8       # the 8 neighbour columns: a diagonal cut passes 0.71 u away
 
@@ -943,19 +949,25 @@ static func _live_mines(lv) -> Array:
 
 
 ## True when the straight run from the feet toward `dir` keeps the centre clear of
-## every live mine over the next ~1.2 u: each sample must stay >= MINE_SAFE from a
+## every live mine over the next `reach` u: each sample must stay >= MINE_SAFE from a
 ## mine, or (when the feet are already closer than that) must not get any closer.
-static func _mine_clear(px: float, pz: float, dir: Vector2, mines: Array) -> bool:
+## `reach` is 1.2 u on the ground (a step) and longer in the air (D-B9-2): an airborne
+## arc covers more ground than a step, and mine contact is height-blind (DESIGN.md 3.3),
+## so a mine 2-3 u ahead is one the arc can still come down on.
+static func _mine_clear(px: float, pz: float, dir: Vector2, mines: Array,
+		reach: float = 1.2) -> bool:
 	for m in mines:
 		var mp: Vector2 = m
 		var cur := Vector2(px, pz).distance_to(mp)
-		if cur > 3.0:
+		if cur > reach + 1.8:
 			continue
 		var need := minf(MINE_SAFE, cur - 1e-3)
-		for d in [0.3, 0.6, 0.9, 1.2]:
+		var d := 0.3
+		while d <= reach + 1e-6:
 			var q := Vector2(px + dir.x * d, pz + dir.y * d)
 			if q.distance_to(mp) < need:
 				return false
+			d += 0.3
 	return true
 
 
@@ -971,14 +983,15 @@ static func _mine_guard(w, ctl, move: Vector2, mines: Array) -> Vector2:
 	var pz := float(ctl.z)
 	var mag := move.length()
 	var n := move / mag
-	if _mine_clear(px, pz, n, mines):
-		return move
 	var grounded := bool(ctl.grounded)
+	var reach := 1.2 if grounded else AIR_MINE_REACH
+	if _mine_clear(px, pz, n, mines, reach):
+		return move
 	for k in range(1, 12):
 		var ang := float(k) * PI / 12.0
 		for s in [1.0, -1.0]:
 			var d2 := n.rotated(ang * s)
-			if not _mine_clear(px, pz, d2, mines):
+			if not _mine_clear(px, pz, d2, mines, reach):
 				continue
 			if grounded and not _step_safe(w, ctl, d2):
 				continue

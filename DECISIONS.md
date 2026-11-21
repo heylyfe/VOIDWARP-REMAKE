@@ -7706,3 +7706,50 @@ not a mine defect and not a guard bypass. It only appears now because the bot su
 landings more often (D-COIL 8 -> 5), so it is a side effect of the fix working, not of the fix
 being wrong. Recorded as PARKED row 33 with the traced numbers. Until it is fixed the README's
 "the bot's mine deaths are ZERO" is no longer true and has been corrected.
+
+## D-B9-2: the mine guard's lookahead matches an airborne arc, and the landing pick is not the place to fix it
+
+**Ruling.** `tools/bot_run.gd` only. `_mine_clear` takes a `reach` parameter (default 1.2 u,
+the ground step) and `_mine_guard` passes `AIR_MINE_REACH` (3.0 u) while the player is
+airborne. Nothing else changes: the guard still keeps `MINE_SAFE` 0.97 u, still rotates in
+15-degree steps, still refuses a heading that leaves ground support when grounded.
+
+**Why.** Mine contact is height-blind - DESIGN.md §3.3, "at **any height** - jumping over a
+mine does NOT avoid contact" - so a mine 2-3 u ahead is one an airborne arc can still come
+down on, while a 1.2 u ground step cannot reach it. The planned-jump scan already refuses an
+arc that passes within `MINE_ARC_SAFE` (0.95) of a live mine at any height; this is the same
+rule for the arcs the bot did not plan, which is where D-B9-1's second death came from.
+
+**Measured** on 60 seeds (base 60717, `--max-level 18`), the same seeds on both sides - the
+baseline is the same tree with `AIR_MINE_REACH` set to 1.2, which reproduces the old code
+exactly (same cutoff `reach + 1.8`, same 0.3 u sample step):
+
+| | baseline (reach 1.2) | airborne reach 3.0 |
+|---|---|---|
+| level 6 reach | 18.3% (11/60) | **20.0% (12/60)** |
+| D-MINE | 3 | **2** |
+| D-KIWI | 23 | 25 |
+| D-COIL | 18 | 18 |
+| D-YOU | 9 | 8 |
+| D-TOUCH | 1 | 0 |
+| D-SEAL | 1 | 2 |
+| D-NUKE | 1 | 2 |
+| A3 (level 1) | 58/60 | 58/60 |
+
+**Honest reading: both moves are ONE run.** On the 20-seed pinned sweep the same change read
+as level 6 20.0% -> 30.0% and D-MINE 2 -> 0, which is exactly why the 60-seed run exists - the
+20-seed numbers were noise. This is a correctness fix (the guard's reach now matches the arc
+it is guarding), not a cure for PARKED row 33, and it is not claimed as one.
+
+**A FIRST ATTEMPT WAS WRITTEN AND REJECTED.** Adding the live mine points to the airborne
+landing pick's `avoid` list (`_nearest_landing`, the same list the body term uses) took level 6
+from 20.0% to **0.0% (0/20)** on the pinned sweep. That is the failure mode B5B's worker
+already recorded for the body term: hard-rejecting landing columns makes the bot pick worse
+ones, and with no fallback it steers off its footing. Reverted, not shipped. The lesson is the
+same one row 33 already carries - the landing pick is a point test and is not where a path
+constraint belongs.
+
+**The remaining gap.** The emergency dodge jump does not go through the planned-jump arc scan,
+so a dodge arc can still cross a mine. Closing row 33 means making the dodge consult the arc
+model (`_jump_arc`'s `MINE_ARC_SAFE` check) instead of the landing pick. That is the next
+thing to try, and it is a bigger change than this one.

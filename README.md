@@ -188,7 +188,10 @@ Known gaps, stated plainly:
   0.97 guard, so the guard held. One was **standing** when the shockwave shoved it in; the other
   was **rising** when the jump it chose to leave the ring carried it in, and mine contact is
   height-blind by design. The coil's forced movement is what puts it in the cylinder, not a
-  dodge that leaves the platform (PARKED row 33). The current table is Coil
+  dodge that leaves the platform (PARKED row 33). A follow-up (D-B9-2) made the mine guard look
+  3 u ahead while airborne instead of 1.2 u, since an arc covers more ground than a step: on 60
+  seeds with the same seeds both sides that is level 6 18.3% → 20.0% and mine deaths 3 → 2, both
+  one run, so it is a correctness fix and not a cure. The current table is Coil
   5, Kiwi 6, YOU?! 5, Toucher 1, Mine 2.
   The bands still fail because survival collapses in the middle of the run, not because of a bug:
   per-level survival — the share of runs that survive level N — is 95 / 80 / 65 / **35** / **15**

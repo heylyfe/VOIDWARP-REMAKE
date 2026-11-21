@@ -293,6 +293,24 @@ func _chaser_survival_pins(f: Array[String]) -> void:
 	# the control that stops the rule being "never hop": a low body IS clearable
 	if not BotRun._hop_clears(0.0, {"y": 0.0, "height_u": 0.5}, apex):
 		f.append("hop: a 0.5 u body read as unclearable - the rule is too wide")
+	# (c) D-B9-2: the steering guard looks further ahead while AIRBORNE. Mine contact is
+	# height-blind (DESIGN.md 3.3), so a mine 2.5 u ahead is one an airborne arc can still
+	# come down on, while a 1.2 u ground step cannot reach it. The planned-jump scan
+	# already refuses an arc within MINE_ARC_SAFE; this is the same rule for the arcs the
+	# bot did not plan (the emergency dodge jump).
+	var ahead: Array = [Vector2(2.5, 0.0)]
+	if not BotRun._mine_clear(0.0, 0.0, Vector2(1.0, 0.0), ahead, 1.2):
+		f.append("mine guard: a mine 2.5 u ahead read as blocking a 1.2 u ground step")
+	if BotRun._mine_clear(0.0, 0.0, Vector2(1.0, 0.0), ahead, BotRun.AIR_MINE_REACH):
+		f.append("mine guard: a mine 2.5 u ahead read as clear of a 3.0 u airborne arc")
+	# the control that stops the rule being "always block": a mine off the heading is clear
+	var aside: Array = [Vector2(2.5, 2.5)]
+	if not BotRun._mine_clear(0.0, 0.0, Vector2(1.0, 0.0), aside, BotRun.AIR_MINE_REACH):
+		f.append("mine guard: a mine 2.5 u off the heading read as blocking it")
+	# ...and the ground reach still blocks a mine the step actually reaches
+	var near: Array = [Vector2(0.8, 0.0)]
+	if BotRun._mine_clear(0.0, 0.0, Vector2(1.0, 0.0), near, 1.2):
+		f.append("mine guard: a mine 0.8 u ahead read as clear of a 1.2 u ground step")
 
 
 class _StubCtl:
