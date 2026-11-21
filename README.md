@@ -183,8 +183,12 @@ Known gaps, stated plainly:
   unsupported tiles and fell into the void in 5 of 20 runs. With both fixed, D-VOID went to ZERO
   and every remaining death was a genuine enemy kill. A later bot fix (D-B9-1) took level 6 from
   15% to 20% and coil deaths from 8 to 5 — the bot had been standing in coil rings it had decided
-  were out of reach — and cost 2 mine deaths, because the extra dodging takes it off a ledge and
-  it comes down on a lower tier that has a mine on it (PARKED row 33). The current table is Coil
+  were out of reach — and cost 2 mine deaths. Both were traced: in each the bot was inside a
+  coil's 6 u shockwave when the mine killed it, at a mine distance of 0.90 and 0.89 against a
+  0.97 guard, so the guard held. One was **standing** when the shockwave shoved it in; the other
+  was **rising** when the jump it chose to leave the ring carried it in, and mine contact is
+  height-blind by design. The coil's forced movement is what puts it in the cylinder, not a
+  dodge that leaves the platform (PARKED row 33). The current table is Coil
   5, Kiwi 6, YOU?! 5, Toucher 1, Mine 2.
   The bands still fail because survival collapses in the middle of the run, not because of a bug:
   per-level survival — the share of runs that survive level N — is 95 / 80 / 65 / **35** / **15**
@@ -241,8 +245,9 @@ Known gaps, stated plainly:
   reaction-plus-decision budget of 0.75 s. The tell ramps in rather than popping, fog leaves 87% of
   it at 12 u, and the minimum mine-to-mine distance across 200 levels is 2.000 u, so no wall can
   form. The bot's mine deaths were ZERO until D-B9-1 taught it to dodge a coil ring it had been
-  ignoring; the extra dodging now takes it off a ledge and it comes down on a lower tier that has
-  a mine on it, which is a gap in the bot's dodge and not in the mine (PARKED row 33). Mines are
+  ignoring; the two deaths that appeared are the coil's own forced movement — one a shockwave
+  shove while standing, one a jump-dodge that carried it into a height-blind cylinder — and not a
+  gap in the mine (PARKED row 33). Mines are
   absent for levels 1–4 and appear at level 5
   (`gift_larper` carries `min_level: 5`), which is a deliberate staircase: the counter-play (Defuse
   Kit) is first buyable at the post-L4 shop, exactly before the hazard appears.

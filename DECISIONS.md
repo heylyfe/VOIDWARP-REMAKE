@@ -7672,14 +7672,37 @@ on the measurement, not on the argument. The comment's claim ("`_safe_dir`-rotat
 steer the arc off its footing") is false and is recorded here so nobody re-adds it on the same
 reasoning.
 
-**THE MINE REGRESSION IS REAL AND IS THE NEXT TICKET.** D-MINE went 0 -> 2. I first wrote the
-mechanism down as "the bot dodges while airborne and lands on a mine it never looked at", and
-then traced both deaths instead of trusting it - the guess was wrong. Seed 60732 dies at tick 545
-with the feet at y = -1.00; seed 60731 dies at tick 4408 with the feet at y = -6.05. In BOTH the
-player was already BELOW the platform it had been standing on. So the bot is not landing on a
-mine on the same tier: it is falling off an upper tier and coming down on a lower one that has a
-mine on it, and the extra dodging this fix bought is what takes it off the ledge. The guard is
-applied to the final heading on every path (`bot_run.gd` `move = _mine_guard(...)`), so this is
-not a bypass - it is a dodge that leaves the platform. Recorded as PARKED row 33 with the traced
-numbers. Until it is fixed the README's "the bot's mine deaths are ZERO" is no longer true and
-has been corrected.
+**THE MINE REGRESSION IS REAL, AND ITS MECHANISM IS THE COIL'S FORCED MOVEMENT.** D-MINE went
+0 -> 2. I guessed the mechanism wrong TWICE before tracing it: first "the bot dodges while
+airborne and lands on a mine it never looked at", then "the bot falls off an upper tier and comes
+down on a lower one that has a mine on it". Both are wrong and both are corrected here. The
+extended trace (`--trace`, with `grounded` / `vy` on the DEATHFORENSIC line and a mine-distance
+loop) gives the truth for both deaths:
+
+| seed | tick | position | grounded | vy | nearest mine | coil |
+|---|---|---|---|---|---|---|
+| 60732 | 545 | (2.24, -1.00, 28.00) | **true** | 0.00 | (1.50, 27.50) **d = 0.90** | **4.78 u** |
+| 60731 | 4408 | (-30.50, -6.05, 36.61) | false | **+5.73** | (-30.50, 37.50) **d = 0.89** | **4.16 u** |
+
+Three things follow from the numbers, and none of them is a fall onto a lower tier.
+
+1. **The mine guard did not fail.** Both distances are `CONTACT_R` (0.9) to two decimals, and
+   `MINE_SAFE` is 0.97. The guard is a *steering* guard on the ground path and it held; the
+   player was put inside the cylinder by something other than its own steering.
+2. **A coil is inside `SHOCK_RADIUS` (6.0) in both.** `content/enemies/coil/enemy.gd`
+   `_tick_shock` calls `api.push(idx, dir, speed)` every tick for `SHOCK_TICKS` (30) at up to
+   `SHOCK_PUSH` (8 u/s), and `sim/enemy_runtime.gd` `push` writes `ctl.vx` / `ctl.vy` / `ctl.vz`
+   directly. A steering guard cannot resist a velocity write. In seed 60732 the player was
+   **standing** (`grounded = true`, `vy = 0.00`) when the shockwave shoved it into the mine.
+3. **In seed 60731 the player was RISING** (`vy = +5.73`, `vy` positive is up). Mine contact is
+   height-blind by canon - DESIGN.md §3.3, "at **any height** - jumping over a mine does NOT
+   avoid contact" - so the jump the bot made to leave the coil ring carried it horizontally into
+   the mine's cylinder and the height did not save it.
+
+So the common root is one interaction, not two bugs: **the coil's landing forces the bot to move
+- a shove it cannot resist, or a jump-dodge it chose - and that movement ends inside a mine's
+0.9 u height-blind cylinder.** That is the game working as designed (DESIGN.md §3.3 and §5.2),
+not a mine defect and not a guard bypass. It only appears now because the bot survives coil
+landings more often (D-COIL 8 -> 5), so it is a side effect of the fix working, not of the fix
+being wrong. Recorded as PARKED row 33 with the traced numbers. Until it is fixed the README's
+"the bot's mine deaths are ZERO" is no longer true and has been corrected.
