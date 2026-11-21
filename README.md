@@ -9,7 +9,7 @@ one back, and the third fall ends the run.
 
 The world is serious. The enemies are not.
 
-> **Status: alpha — `v0.1.10-alpha.3`.** Playable end to end, level after level, with the lobby, the
+> **Status: alpha — `v0.1.11-alpha.3`.** Playable end to end, level after level, with the lobby, the
 > shop and the collapse all wired. Not yet a proven 30-level run — see
 > [What works today](#what-works-today) for the honest list.
 
@@ -298,6 +298,57 @@ texture variants: Godot refuses an arm64 export without them. The desktop preset
 variants, so their builds are unchanged by it.
 
 ## Changelog
+
+<details>
+<summary><b>What changed in v0.1.11-alpha.3</b> — the owner's fourteen, and the collapse becomes a shrinking safe zone</summary>
+
+The first release built from a play-test rather than a spec. Fourteen defects the owner filed after
+playing `v0.1.10-alpha.3`, plus the review and screenshot passes that followed.
+
+**The collapse is now a shrinking safe zone.** It used to drop every non-hub platform at once, five
+seconds after the beacon opened. Now the level is cut into rings by distance from the hub: the
+farthest ring cracks, falls five seconds later, the next ring inward cracks ten seconds after that,
+and so on until only the hub is left. Nothing cracks for the first twenty seconds. Rings are 8 u
+wide, at most twelve of them, so a small level gets few and a big one gets many — 4 to 12 across the
+90 measured levels, and the whole collapse runs 70 to 190 seconds instead of 20 to 80. Every number
+lives in `game/data/collapse.json`. `game/tools/collapse_reach.gd` re-runs the winnability check
+from the repo: 0 of 90 levels unwinnable, worst slack 99 s.
+
+**Sound.** The game was nearly silent. Eighteen synthesized cues — footsteps, landing, dash, glide,
+three gift-pickup variants, level complete, death, menu hover and click, collapse crack and fall,
+the missing enemy telegraphs, lobby ambience — plus a looping ambience bed, all generated from code
+by `game/tools/audio/synth_cues.gd`, with a volume control in settings. The beacon cue that was
+silent in the exported build was a `FileAccess.file_exists` check against a raw `.mp3` that an
+export never packs; every cue now loads through `ResourceLoader.exists`.
+
+**The class menu works.** It used to pick for you about half the time: the altar opened during
+loading, and if the loading clock finished before you clicked, the seeded replay silently chose.
+The run now waits for your pick. Cards carry the class icon, the name, a plain sentence and the real
+numbers, the cursor is released, and the menu is centred. A test drives the real path 100 times and
+the clicked card is the chosen class 100 times.
+
+**Enemies stack.** A voted-in enemy used to vanish after one level. `DESIGN.md` section 6 settles it
+— the in-play column rises monotonically and the offer draw has a REPEAT altar — so the carried vote
+set now accumulates for the rest of the run, and the HUD shows one row per active type with its
+sprite and count.
+
+**Art.** Every upgrade (36) and every curse (46) now has an icon, drawn from code by
+`game/tools/art/icons.gd` in the class-icon house style. The Nullscape curse icons were used only as
+inspiration for what each depicts; every one is redrawn, and `SOURCES.md` records it.
+
+**The rest of the list.** The lobby shows your purse. Upgrade altars show their price and spell out
+`CANNOT AFFORD`. Platform sides and undersides are solid instead of see-through. The About plaque is
+centred. The gift pickup ring is 0.7 u instead of 0.4, data-driven, and gifts only. Walking up a ramp
+no longer bobs the pickup point — the cause was a snap-down that only ran when `dy == 0`, which a
+standing body never has. The run ends on a death screen with The Master, who names what killed you,
+with RESTART and BACK TO LOBBY.
+
+**Review fixes.** The gift pickup ring is now in the state hash, so two runs whose economy data
+differ no longer hash the same. The schedule walk's event sink was typed `Array[String]` and silently
+dropped every dictionary pushed into it. The run-over screen is pinned above the dead world's
+black-out, which had been drawing it in pure black.
+
+</details>
 
 <details>
 <summary><b>What changed in v0.1.10-alpha.3</b> — the README rebuild and the class icons</summary>
