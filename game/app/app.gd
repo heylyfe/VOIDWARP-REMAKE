@@ -97,6 +97,13 @@ var _loading: Control = null
 var _world: Node3D = null
 var _lobby: Node3D = null     # the Antechamber (view/lobby/lobby_scene.gd)
 var _run_over: Control = null
+## The run-over screen's own canvas. The dead world's HUD is a CanvasLayer (layer 1) and its
+## black-out is still up when the screen opens, so a Control parented straight to the app
+## (layer 0) draws UNDER that black and the player sees nothing but black. Layer 2 puts the
+## screen on top of the black-out, which is where it was always meant to be. Created lazily
+## and kept: an empty CanvasLayer costs nothing, and the three places that free the screen
+## only have to free the Control.
+var _run_over_layer: CanvasLayer = null
 var _death_info: Dictionary = {}   # sim/death.gd's row for the screen (world.run_over)
 var _step_acc := 0.0
 var _first_launch := true   # the two-duration law: 5 s on the session's first launch, 2.0 s after
@@ -453,7 +460,11 @@ func _show_run_over() -> void:
 		_run_over = RunOverScript.new()
 		_run_over.retried.connect(_on_retry_requested)
 		_run_over.lobby_requested.connect(_on_back_to_lobby)
-		add_child(_run_over)   # run_over.gd builds its own layout in _init
+		if _run_over_layer == null:
+			_run_over_layer = CanvasLayer.new()
+			_run_over_layer.layer = 2   # above the dead world's HUD (layer 1) and its black-out
+			add_child(_run_over_layer)
+		_run_over_layer.add_child(_run_over)   # run_over.gd builds its own layout in _init
 	_run_over.show_run_over(_death_info)
 
 
