@@ -29,6 +29,44 @@
     },
     "checker": {"type": "object"},
     "slab": {"type": "object"},
+    "sky": {
+      "$comment": "view/sky_dome.gd cloud dome (DECISIONS D-ATMO-1)",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["zenith", "horizon", "cloud", "cloud_dark", "drift_speed"],
+      "properties": {
+        "_doc": {"type": "string"},
+        "zenith": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
+        "horizon": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
+        "cloud": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
+        "cloud_dark": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
+        "drift_speed": {"type": "number", "minimum": 0.0},
+        "radius": {"type": "number", "minimum": 50.0}
+      }
+    },
+    "debris": {
+      "$comment": "view/debris.gd floating contour rocks (DECISIONS D-ATMO-2)",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["count", "min_radius", "max_radius", "min_size", "max_size", "drift_speed", "outline_hex", "outline_width"],
+      "properties": {
+        "_doc": {"type": "string"},
+        "count": {"type": "integer", "minimum": 0, "maximum": 1000},
+        "variants": {"type": "integer", "minimum": 1, "maximum": 32},
+        "min_radius": {"type": "number", "minimum": 0.0},
+        "max_radius": {"type": "number", "minimum": 0.0},
+        "min_height": {"type": "number"},
+        "max_height": {"type": "number"},
+        "min_size": {"type": "number", "minimum": 0.0},
+        "max_size": {"type": "number", "minimum": 0.0},
+        "drift_speed": {"type": "number"},
+        "spin_speed": {"type": "number", "minimum": 0.0},
+        "bob": {"type": "number", "minimum": 0.0},
+        "body_hex": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
+        "outline_hex": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
+        "outline_width": {"type": "number", "minimum": 0.0}
+      }
+    },
     "source": {"type": "string"}
   }
 }

@@ -8112,3 +8112,55 @@ The icon rows had lost the `Rows/CursesRow` node path that test_polish_cycle2.gd
 keep that path, and the panel is a backing sized by hand. `shot_hud.gd` adds hud_03 to hud_07 (black phase, gold phase,
 collapse warning, 1920x1080, bottom zoom). Each shot checks the engine's own laid-out panel rects for
 bounds and overlap, and they match the test's anchor math to the pixel.
+## D-ATMO-1 (2026-11-21): a procedural cloud dome replaces the flat void colour behind the level
+
+**Owner request.** "i actually prefer this lighting, skybox, and like the little rocks with the
+contour around them floating in the sky, could u copy that?" (a reference screenshot of a pale
+storm-cloud sky). Look only: no reference code was copied; the reference is another engine.
+
+**Ruling.** `view/sky_dome.gd` is a 450 u sphere drawn from the inside with a spatial shader:
+a horizon -> zenith gradient, a hard-edged billow layer (5-octave fbm value noise through a
+narrow 0.42..0.62 smoothstep), a broad low-frequency dark mass in the lower sky and a
+horizontal streak band. Render contract: unshaded, cull_front, depth_draw_never, fog_disabled,
+shadows off, RENDER_PRIORITY_MIN, never culled, and the node follows the active camera every
+frame. Its colours, radius and drift speed are data: `data/palette.json` "sky" (zenith #8F8B95,
+horizon #4A464F, cloud #C9C5CF, cloud_dark #2A2630, drift 1.0, radius 450). The sky is one
+block for every biome for now; the fog colour, density and every section 12.3 row are
+untouched, so `tools/fog_check.gd` is unchanged (550 checks OK). Distant platforms fade into
+the biome fog and read as dark silhouettes against the lighter sky. The palette schema
+(`core/schemas/palette.schema.json`) gained strict `sky` / `debris` entries (the registry
+refused the new keys); no existing schema rule was loosened.
+
+## D-ATMO-2 (2026-11-21): floating contour rocks, inverted hull grown in screen space
+
+`view/debris.gd` draws `count` (110) low-poly rocks in a ring 170..300 u from the level
+origin (the widest level is 130 u), -70..+80 u in height. Each of 6 shapes per level is the
+convex hull of 14 jittered sphere points (24 flat-shaded triangles); a rock is one of those
+shapes with its own axis stretch, size (0.8..4 u, squared bias = mostly small), rotation,
+tumble and bob. Placement and shapes are a pure function of `hash([seed, level])`; the motion
+runs on `_process` wall time and the whole field orbits Y at 0.006 rad/s.
+
+**Outline: inverted hull, not fresnel.** A 24-triangle flat-shaded rock has so few faces that
+a fresnel rim lights whole faces, not an edge, and the reference look is a thin even contour.
+The hull is a second MultiMesh of the same shape with cull_front and an unshaded outline colour.
+It is grown in SCREEN space (`outline_width` = 1.6 px) in its vertex shader, because a
+world-space grow is under a pixel at 170-300 u (measured in the first pass: the outlines did
+not show). The hull is convex and centred, so the radial push opens no cracks. The outline is
+#E6E2FF, a pale lavender-white: pink is reserved for the tripmine tell and #7CFFF4 for the
+gift rim, so neither is used. Rocks are fog-disabled (at 200 u the 0.012 fog would erase them).
+No collision node, no sim state: test_atmosphere.gd leg 5 hashes the sim per tick with the
+atmosphere on and off and the hashes are identical over 240 ticks.
+
+## D-ATMO-3 (2026-11-21): the ambient energy is read for the first time; ambient 1.0, void glow 0.3
+
+**Found.** `fog_env.resolve_palette` copied only hex/emission (+ sigil/trim) per role, so the
+ambient role's `energy` (2.6) never reached `configure()`: every level rendered with
+`ambient_light_energy` = the 1.0 fallback. `energy` is now carried through.
+
+**Ruling.** ambient energy 2.6 -> **1.0** (what the owner has actually been seeing, so fixing the
+read changes nothing on screen, and the lobby antechamber's ambient x 2.0 stays 2.0) and
+void_glow 0.55 -> **0.3**, so the level is dimmer and the emissive tiles, gifts and beacon are the
+bright accents against the cloud sky (the reference mood). Fog check: unchanged (it reads no
+light energy), FOGCHECK OK 550 checks over 5 biomes. Before/after shots:
+`game/out/shots_atmosphere/{before,after}_{spawn,walk,horizon,sky}.png`
+(`tools/shot_atmosphere.gd`).

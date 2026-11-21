@@ -70,6 +70,8 @@ const EnemyRuntimeScript := preload("res://sim/enemy_runtime.gd")
 const StatsScript := preload("res://core/stats.gd")
 const BillboardScript := preload("res://view/billboard.gd")
 const FogEnvScript := preload("res://view/fog_env.gd")
+const SkyDomeScript := preload("res://view/sky_dome.gd")   # D-ATMO-1
+const DebrisScript := preload("res://view/debris.gd")      # D-ATMO-2
 const HudScript := preload("res://view/hud/hud.gd")
 # The core-loop views (DESIGN.md section 3): the black/gold gifts, the tripmine tell and
 # the beacon with its progress ring + light column. Nothing under app/ drew them.
@@ -153,6 +155,9 @@ var rt = null
 var rig: Node3D = null
 var camera: Camera3D = null
 var fog: WorldEnvironment = null
+# Atmosphere (D-ATMO-1/2): the sky dome + floating rocks. View-only; false skips both
+# (test_atmosphere.gd hashes the sim with it on and off). Found by name: SkyDome / Debris.
+var atmosphere := true
 var hud: Control = null
 # The core-loop views: built in build(), driven from step(), freed by teardown().
 var gifts_view: Node3D = null
@@ -455,6 +460,13 @@ func build(seed_value: int, level: int, p_ledger: Dictionary = {}) -> bool:
 	fog = FogEnvScript.new()
 	fog.configure(FogEnvScript.biome_id_for_level(level), level)
 	add_child(fog)
+	if atmosphere:   # D-ATMO-1/2: cloud dome + contour rocks, placed from (seed, level)
+		var dome := SkyDomeScript.new()
+		dome.configure()
+		add_child(dome)
+		var rocks := DebrisScript.new()
+		rocks.configure(hash([seed_value, level]))
+		add_child(rocks)
 
 	# The void's own glow: one soft overhead light, shadows OFF (palette.json ambient's
 	# "no sun, no directional shadows" still holds - this casts nothing). Without it the

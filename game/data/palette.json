@@ -25,9 +25,9 @@
     "beacon_closed": { "hex": "#3A4A55", "emission": 0.0 },
     "beacon_open": { "hex": "#E8FFFF", "emission": 4.0, "note": "light column to Y +60 u" },
     "danger": { "hex": "#FF2A2A", "note": "danger text / kill indicators" },
-    "ambient": { "hex": "#0B3A3C", "energy": 2.6, "note": "no sun, no directional shadows; energy raised from 1.0 so ALBEDO reads and the slab detail is visible - at 1.0 the level rendered near-black and the tiles looked untextured" },
+    "ambient": { "hex": "#0B3A3C", "energy": 1.0, "note": "no sun, no directional shadows. D-ATMO-3: 2.6 -> 1.0. The 2.6 never reached the scene - fog_env.resolve_palette dropped the energy key, so every level rendered at the 1.0 fallback (now fixed). 1.0 is what the owner has been seeing, it reads the slab detail next to the void glow and the player fill, and it keeps the lobby antechamber (ambient x 2.0) exactly as lit as before. With the cloud dome the scene is dim and the emissive tiles, gifts and beacon are the bright accents (the reference mood)" },
     "player_fill_light": { "hex": "#BFFFF8", "type": "omni", "range": 26.0, "energy": 1.5, "note": "follows the player; range 18 -> 26 so the lit pool covers a causeway span, not just the player's feet" },
-    "void_glow": { "hex": "#8FE8E0", "energy": 0.55, "note": "one soft overhead directional light, shadows OFF (the ambient note's 'no directional shadows' still holds). Added because the near-black ambient plus an 18 u fill left everything past the player's feet black, so the slab detail could not be seen" }
+    "void_glow": { "hex": "#8FE8E0", "energy": 0.3, "note": "one soft overhead directional light, shadows OFF (the ambient note's 'no directional shadows' still holds). Added because the near-black ambient plus an 18 u fill left everything past the player's feet black, so the slab detail could not be seen. 0.55 -> 0.3 with the cloud dome (D-ATMO-3): a dim key, not a flat wash" }
   },
   "checker": {
     "tile_squares": 1,
@@ -39,5 +39,31 @@
     "source": "TERRAIN_SPEC.md section 12.2"
   },
   "slab": { "side_height": 1.0, "trim_band_height": 0.125, "source": "TERRAIN_SPEC.md section 12.2" },
+  "sky": {
+    "_doc": "Procedural cloud dome (view/sky_dome.gd, DECISIONS D-ATMO-1). A vertical horizon -> zenith gradient, hard-edged fbm cloud billows in `cloud`, a broad dark mass in the lower sky and a horizontal streak band in `cloud_dark`. Drawn unfogged behind everything; it follows the camera. drift_speed scales the cloud scroll (1.0 = the reference rate). View-only: never read by the sim, the state hash or tools/fog_check.gd.",
+    "zenith": "#8F8B95",
+    "horizon": "#4A464F",
+    "cloud": "#C9C5CF",
+    "cloud_dark": "#2A2630",
+    "drift_speed": 1.0,
+    "radius": 450.0
+  },
+  "debris": {
+    "_doc": "Floating contour-outlined rocks (view/debris.gd, DECISIONS D-ATMO-2). Placed from the level seed in a ring around the level origin, min_radius..max_radius u out (the level radius is 70 + 2t <= 130 u, voidgen tuning) and min_height..max_height u up/down. size = the rock's radius in u. drift_speed = the whole field's orbit about Y in rad/s; spin_speed = max per-rock tumble in rad/s; bob = vertical bob amplitude in u. outline = an inverted hull grown outline_width SCREEN pixels (a world-space width is sub-pixel at 170-300 u), unshaded outline_hex. No collision, no sim state, no fog (they sit past the fog's reach).",
+    "count": 110,
+    "variants": 6,
+    "min_radius": 170.0,
+    "max_radius": 300.0,
+    "min_height": -70.0,
+    "max_height": 80.0,
+    "min_size": 0.8,
+    "max_size": 4.0,
+    "drift_speed": 0.006,
+    "spin_speed": 0.25,
+    "bob": 1.2,
+    "body_hex": "#141016",
+    "outline_hex": "#E6E2FF",
+    "outline_width": 1.6
+  },
   "source": "TERRAIN_SPEC.md section 12.2"
 }

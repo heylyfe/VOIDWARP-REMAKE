@@ -83,7 +83,9 @@ static func resolve_palette(biome_id: String, level: int = -1) -> Dictionary:
 			"hex": entry["hex"],
 			"emission": float(entry.get("emission", 0.0)),
 		}
-		for extra in ["sigil_hex", "trim_hex"]:
+		# "energy" rides along too: without it the ambient row's energy never reached
+		# configure() and the scene always rendered at the 1.0 fallback (D-ATMO-3).
+		for extra in ["sigil_hex", "trim_hex", "energy"]:
 			if entry.has(extra):
 				roles[role_name][extra] = entry[extra]
 	var fog: Dictionary = pal["fog"]
