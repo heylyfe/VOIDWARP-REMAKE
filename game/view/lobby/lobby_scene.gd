@@ -36,6 +36,7 @@ const CameraRigScript := preload("res://app/camera_rig.gd")
 const SettingsScript := preload("res://app/settings.gd")
 const VoidRngScript := preload("res://terrain/void_rng.gd")
 const FogEnvScript := preload("res://view/fog_env.gd")
+const LobbyHudScript := preload("res://view/lobby/lobby_hud.gd")
 
 ## The gate's walk-in zone: past this z, inside this half-width, the level ends. The door
 ## slab is 3.0 u wide (assets_src/blender/descent_gate.py), so 1.4 keeps the player inside
@@ -54,6 +55,7 @@ signal back_requested()
 var lobby: RefCounted = null
 var hall: Node3D = null
 var player: Node3D = null
+var hud: Control = null        # view/lobby/lobby_hud.gd: the purse, top-right
 var seed_value := 0
 var level_completed := 0
 var prompt := ""
@@ -113,6 +115,14 @@ func build(p_seed: int, p_completed: int, p_ledger: Dictionary = {}) -> bool:
 	player = LobbyPlayerScript.new()
 	add_child(player)
 	player.build(AntechamberScript.SPAWN)
+	# The purse HUD (owner defect: the lobby showed no gold at all). On its own CanvasLayer
+	# so it draws over the 3D hall; synced from the lobby state every tick.
+	var hud_layer := CanvasLayer.new()
+	hud_layer.name = "LobbyHudLayer"
+	add_child(hud_layer)
+	hud = LobbyHudScript.new()
+	hud_layer.add_child(hud)
+	hud.sync(int(lobby.purse))
 	# Lights Out reaches the hall too: the world-computed stats drive both fill lights.
 	hall.apply_stats(_run_stats())
 	player.apply_stats(_run_stats())
@@ -183,6 +193,9 @@ func tick(p_dt: float, p_move_x: int, p_move_z: int, p_interact: bool) -> Dictio
 		# with fresh altars that no pass has seen yet. Idempotent per bay.
 		_draw_curse_bays()
 		out["select"] = sel
+	# the purse after this tick's pick (a purchase, a tithe, a reroll or a curse bounty)
+	if hud != null:
+		hud.sync(int(lobby.purse))
 	_refresh_gate()
 	out["gate_open"] = gate_open
 	out["unresolved"] = unresolved.duplicate()
@@ -230,6 +243,7 @@ func teardown() -> void:
 		child.free()
 	hall = null
 	player = null
+	hud = null
 	lobby = null
 	_api = null
 	prompt = ""
