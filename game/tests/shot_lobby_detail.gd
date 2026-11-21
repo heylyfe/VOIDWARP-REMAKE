@@ -13,6 +13,8 @@ extends SceneTree
 #        <out_dir>/detail_03_about.png           (the About plaque, square-on)
 #        <out_dir>/detail_04_icons_eye.png       (the upgrade bay from standing eye height)
 #        <out_dir>/detail_05_icons_above.png     (the same bay from above, 45 degrees)
+#        <out_dir>/detail_06_purse_max.png       (completed 999, purse 999999: the purse pill and
+#                                                 the price line at their widest - D-GUI-1)
 # Prints a DIAG line per shot (the stood-at altar's label, price, afford state and the
 # price line's text; the icon quads' facing) so a blank shot is not mistaken for a fixed
 # one. Named shot_*, not test_*, so tests/run_all.gd skips it. Prints "SHOT <path>" per PNG
@@ -68,6 +70,12 @@ func _run() -> void:
 		cam.global_position = Vector3(p.x, 6.5, p.z + 4.0)
 		cam.look_at(Vector3(p.x, 2.8, p.z), Vector3.UP)
 		await _shot("detail_05_icons_above")
+	# the widest real numbers: a 6-digit purse in the corner pill (the level is the pause
+	# pill's, shot by shot_gui.gd)
+	if await _build(1, 999999):
+		print("DIAG purse_pill text='%s' rect=%s" % [_scene.hud._label.text,
+				str(_scene.hud.get_global_rect())])
+		await _at_altar("U", "detail_06_purse_max", true)
 	_finish()
 
 

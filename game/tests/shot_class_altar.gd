@@ -9,8 +9,10 @@ extends SceneTree
 #   <godot> --path game --script res://tests/shot_class_altar.gd -- <out_dir>
 #
 # Writes <out_dir>/altar_00_first.png  (as opened: no card selected, CONFIRM dead)
-#        <out_dir>/altar_01_selected.png (card 2 selected: gold frame, CONFIRM live)
+#        <out_dir>/altar_01_selected.png (card 2 selected: the focus ring, CONFIRM live)
 #        <out_dir>/altar_02_held.png    (5 s later: the loading clock ran out, the run waits)
+#        <out_dir>/altar_03_focus_confirm.png (two Tabs walk the ring from card 2 over card 3 to
+#                                        CONFIRM; card 3 stays selected - D-GUI-1 focus)
 # Prints a DIAG line per shot (mouse mode, card count, per-card icon/name/desc, confirm
 # state, the card row's centre vs the viewport centre) so a blank or off-centre shot is not
 # mistaken for a fixed one. Named shot_*, not test_*, so tests/run_all.gd skips it. Prints
@@ -80,6 +82,18 @@ func _run() -> void:
 	if not altar.is_open() or _app.state() != "LOADING":
 		_fail = "the altar did not hold the run (state %s)" % _app.state()
 	await _shot("altar_02_held")
+
+	var tab := InputEventKey.new()
+	tab.pressed = true
+	tab.keycode = KEY_TAB
+	altar.handle_input(tab)                  # card 2 -> card 3
+	altar.handle_input(tab)                  # card 3 -> CONFIRM (card 3 stays selected)
+	await process_frame
+	var on: Control = altar.focus_cycle().current() if altar.has_method("focus_cycle") else null
+	print("DIAG focus ring on %s, selected '%s'" % [str(on.name) if on != null else "?", altar.selected_id()])
+	if on != altar.confirm_button():
+		_fail = "two Tabs from card 2 did not put the ring on CONFIRM"
+	await _shot("altar_03_focus_confirm")
 	_finish()
 
 

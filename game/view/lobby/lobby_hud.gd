@@ -79,5 +79,11 @@ func purse_text() -> String:
 func _refresh() -> void:
 	if _label != null:
 		_label.text = "%d g" % _purse_gold
+		# Pin the right edge to the corner and grow leftwards to the new width now, not next
+		# frame (set_size grows to the right, past the screen edge, on a 6-digit purse).
 		update_minimum_size()
-		reset_size()   # grow leftwards from the corner to the new width now, not next frame
+		var m := get_combined_minimum_size()
+		offset_right = -EDGE
+		offset_left = -EDGE - m.x
+		offset_top = EDGE
+		offset_bottom = EDGE + m.y

@@ -72,7 +72,7 @@ func _init() -> void:
 
 func _build() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	var bg := UiStyle.backdrop(Color(0, 0, 0, 0.92))
+	var bg := UiStyle.backdrop(Color(0, 0, 0, 0.96))
 	bg.name = "Void"
 	add_child(bg)
 	var center := CenterContainer.new()

@@ -23,12 +23,17 @@ extends Control
 # run's state sits in compact pills in the top-left corner (LEVEL, PURSE); the one focal
 # element is the centred column - PAUSED, a 1 px accent rule, then RESUME (the primary
 # action, focused when the overlay opens), SETTINGS and ABANDON RUN (secondary). The key
-# hints sit at the bottom centre. Keys (view/ui_focus.gd): Tab / Shift+Tab / Up / Down
+# hints sit at the bottom centre. Everything is drawn on its own CanvasLayer (PAUSE_LAYER),
+# above the level HUD (layer 1), the run-over screen (2) and address_me_view's overlay
+# (128): a pause must dim the HUD, never sit under it. Keys (view/ui_focus.gd): Tab / Shift+Tab / Up / Down
 # move the ring, Enter / Space press the focused button; ESC stays app.gd's (resume).
 
 const UiStyle := preload("res://view/ui_style.gd")
 const UiFocus := preload("res://view/ui_focus.gd")
 const SettingsMenuScript := preload("res://view/settings_menu.gd")
+
+## Above every in-run canvas layer (see the header).
+const PAUSE_LAYER := 129
 
 signal resumed
 signal abandon_requested
@@ -41,6 +46,7 @@ var _abandon: Button
 var _settings_button: Button
 var _settings: Control = null   # view/settings_menu.gd, built on first open
 var _focus: UiFocus = UiFocus.new()
+var _layer: CanvasLayer          # every drawn node lives here (PAUSE_LAYER)
 
 
 func _init() -> void:
@@ -48,18 +54,23 @@ func _init() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	visible = false
-	add_child(UiStyle.backdrop(UiStyle.SCRIM))
+	_layer = CanvasLayer.new()
+	_layer.name = "PauseLayer"
+	_layer.layer = PAUSE_LAYER
+	_layer.visible = false
+	add_child(_layer)
+	_layer.add_child(UiStyle.backdrop(UiStyle.SCRIM))
 	_pills = HBoxContainer.new()
 	_pills.name = "Pills"
 	_pills.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_pills.add_theme_constant_override("separation", UiStyle.SP_2)
 	_pills.position = Vector2(UiStyle.EDGE, UiStyle.EDGE)
-	add_child(_pills)
+	_layer.add_child(_pills)
 	var center := CenterContainer.new()
 	center.name = "Center"
 	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(center)
+	_layer.add_child(center)
 	var col := VBoxContainer.new()
 	col.name = "Column"
 	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -81,14 +92,14 @@ func _init() -> void:
 	_snapshot = UiStyle.label("", "small")
 	_snapshot.name = "Snapshot"
 	_snapshot.visible = false
-	add_child(_snapshot)
+	_layer.add_child(_snapshot)
 	var hints := UiStyle.key_hints([["TAB", "move"], ["ENTER", "select"], ["ESC", "resume"]])
 	hints.alignment = BoxContainer.ALIGNMENT_CENTER
 	hints.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
 	hints.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	hints.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	hints.offset_bottom = -UiStyle.EDGE
-	add_child(hints)
+	_layer.add_child(hints)
 
 
 func _button(p_parent: Control, p_name: String, p_text: String, p_kind: String,
@@ -120,10 +131,19 @@ func open(p_snapshot: String = "") -> void:
 			_pills.add_child(UiStyle.pill(words.left(cut), words.substr(cut + 1)))
 	_focus.focus(0)          # RESUME: the primary action is one Enter away
 	visible = true
+	_layer.visible = true
 
 
 func close() -> void:
 	visible = false
+	_layer.visible = false
+
+
+## A CanvasLayer does not follow its parent's visibility: keep the layer in step however
+## the overlay is shown or hidden (open/close, or a parent hiding it).
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_VISIBILITY_CHANGED and _layer != null:
+		_layer.visible = is_visible_in_tree()
 
 
 func is_open() -> bool:
@@ -155,7 +175,7 @@ func focus_cycle() -> UiFocus:
 func open_settings() -> void:
 	if _settings == null:
 		_settings = SettingsMenuScript.new()
-		add_child(_settings)
+		_layer.add_child(_settings)
 		_settings.closed.connect(func() -> void: _focus.focus_control(_settings_button))
 	_settings.show_settings()
 

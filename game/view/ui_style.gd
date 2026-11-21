@@ -269,7 +269,7 @@ static func focus_box(p_pad_x: float = PAD_X, p_pad_y: float = PAD_Y) -> StyleBo
 static func rest_box(p_kind: String, p_pad_x: float = PAD_X, p_pad_y: float = PAD_Y) -> StyleBoxFlat:
 	match p_kind:
 		PRIMARY:
-			return box(Color(ACCENT.r, ACCENT.g, ACCENT.b, 0.10), ACCENT, BORDER, 0, p_pad_x, p_pad_y)
+			return box(Color(ACCENT.r, ACCENT.g, ACCENT.b, 0.18), ACCENT, BORDER, 0, p_pad_x, p_pad_y)
 		GHOST:
 			return box(Color(0, 0, 0, 0), Color(0, 0, 0, 0), 0, 0, p_pad_x, p_pad_y)
 		ROW:

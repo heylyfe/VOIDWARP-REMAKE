@@ -46,6 +46,10 @@ var _holder: Control
 func run() -> Array[String]:
 	var f: Array[String] = []
 	_root = (Engine.get_main_loop() as SceneTree).root
+	# a screen drawn on its own CanvasLayer (the pause overlay) lays out against the root
+	# viewport, which --headless leaves tiny: measure everything at the reference size
+	var old_size := _root.size
+	_root.size = Vector2i(SCREEN)
 	_holder = Control.new()
 	_holder.name = "UiStyleHolder"
 	_holder.size = SCREEN
@@ -62,6 +66,7 @@ func run() -> Array[String]:
 	_loading(f)
 	_root.remove_child(_holder)
 	_holder.free()
+	_root.size = old_size
 	for p in [RECORDS, SETTINGS]:
 		var d := DirAccess.open("user://")
 		if d != null and d.file_exists(str(p).get_file()):
@@ -222,9 +227,15 @@ func _contained(f: Array[String], p_tag: String, c: Control) -> void:
 			break
 		p = p.get_parent()
 	var r := c.get_global_rect()
-	if r.position.x < box.position.x - 0.5 or r.position.y < box.position.y - 0.5 \
-			or r.end.x > box.end.x + 0.5 or r.end.y > box.end.y + 0.5:
+	if not _inside(r, box):
 		f.append("%s fit: %s rect %s spills out of %s %s" % [p_tag, _name(c), str(r), what, str(box)])
+	elif what != "the screen" and not _inside(r, Rect2(Vector2.ZERO, SCREEN)):
+		f.append("%s fit: %s rect %s (in %s) is off the 1280x720 screen" % [p_tag, _name(c), str(r), what])
+
+
+func _inside(r: Rect2, box: Rect2) -> bool:
+	return r.position.x >= box.position.x - 0.5 and r.position.y >= box.position.y - 0.5 \
+			and r.end.x <= box.end.x + 0.5 and r.end.y <= box.end.y + 0.5
 
 
 ## 2. HEIGHT.
