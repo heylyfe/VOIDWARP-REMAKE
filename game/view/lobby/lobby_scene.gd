@@ -37,6 +37,10 @@ const SettingsScript := preload("res://app/settings.gd")
 const VoidRngScript := preload("res://terrain/void_rng.gd")
 const FogEnvScript := preload("res://view/fog_env.gd")
 const LobbyHudScript := preload("res://view/lobby/lobby_hud.gd")
+# The Antechamber's ambience bed (the "too quiet" pass): synthesized by
+# game/tools/audio/synth_cues.gd, looped for as long as the hall is in the tree. A missing
+# file is silent, never an error (view/audio/cue_audio.gd's house shape).
+const AmbienceAudioScript := preload("res://view/audio/ambience_audio.gd")
 
 ## The gate's walk-in zone: past this z, inside this half-width, the level ends. The door
 ## slab is 3.0 u wide (assets_src/blender/descent_gate.py), so 1.4 keeps the player inside
@@ -70,11 +74,18 @@ var _mouse_locked := true
 var _mouse_sens := CameraRigScript.MOUSE_SENS_DEFAULT
 var _prev_mouse_toggle := false
 var _prev_app_pause := false
+var _ambience: AudioStreamPlayer = null   # the lobby bed loop; started in _ready
 
 
 func _ready() -> void:
 	if _bindings.is_empty():
 		_bindings = InputCaptureScript.load_bindings()
+	_ambience = AmbienceAudioScript.start_lobby(self)
+
+
+func _exit_tree() -> void:
+	AmbienceAudioScript.stop(_ambience)
+	_ambience = null
 
 
 ## Builds the hall for the level just completed. p_ledger is the run's carried state

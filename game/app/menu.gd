@@ -51,6 +51,11 @@ const StageScript := preload("res://app/menu_stage.gd")
 const HowToScript := preload("res://app/menu_howto.gd")
 const InputCaptureScript := preload("res://app/input_capture.gd")
 const RecordsScript := preload("res://core/records.gd")
+# The menu's own cues (the "too quiet" pass): the hover tick, the click and the music bed.
+# Every file is synthesized by game/tools/audio/synth_cues.gd; a missing file is silent,
+# never an error (view/audio/cue_audio.gd's house shape).
+const UiAudioScript := preload("res://view/audio/ui_audio.gd")
+const AmbienceAudioScript := preload("res://view/audio/ambience_audio.gd")
 
 ## Palette (data/palette.json roles; D-MENU-2).
 const C_VOID := Color(0.0078, 0.0118, 0.0588)        # #02030F the void backdrop
@@ -72,6 +77,7 @@ var ui_scale := 1.0
 ## Tests point this at a scratch file (app.gd's records_path pattern); "" = the player's real file.
 var records_path := ""
 var _records: RefCounted = null
+var _music: AudioStreamPlayer = null    # the music bed loop; started in _ready, stopped on exit
 
 var _entries: Array[Button] = []
 var _entry_anim: Array[float] = []      # 0 = unselected look, 1 = selected look (eased)
@@ -119,6 +125,14 @@ func _init() -> void:
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_apply_scale()
+	# the music bed: a loop that lives as long as the menu does (null when the cue is
+	# missing - the menu is never silent-blocked by audio)
+	_music = AmbienceAudioScript.start_music(self)
+
+
+func _exit_tree() -> void:
+	AmbienceAudioScript.stop(_music)
+	_music = null
 
 
 func _notification(what: int) -> void:
@@ -479,10 +493,12 @@ func _set_selected(i: int, snap: bool = false) -> void:
 
 func move_selection(step: int) -> void:
 	_set_selected(selected + step)
+	UiAudioScript.play_hover(self)
 
 
 func activate(i: int) -> void:
 	_set_selected(i)
+	UiAudioScript.play_click(self)
 	match selected:
 		ENTRY_PLAY:
 			play_requested.emit()
@@ -544,6 +560,8 @@ func howto_text() -> String:
 
 func _on_entry_hover(i: int) -> void:
 	if not _howto_open:
+		if i != selected:
+			UiAudioScript.play_hover(self)
 		_set_selected(i)
 
 

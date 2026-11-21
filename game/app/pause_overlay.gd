@@ -23,6 +23,8 @@ const C_WHITE := Color(0.910, 1.0, 1.0)              # #E8FFFF beacon_open
 const C_GOLD := Color(1.0, 0.784, 0.239)             # #FFC83D gold_gift
 const C_MUTED := Color(0.545, 0.620, 0.718)
 
+const SettingsMenuScript := preload("res://view/settings_menu.gd")
+
 signal resumed
 signal abandon_requested
 
@@ -30,6 +32,8 @@ var _title: Label
 var _snapshot: Label
 var _resume: Button
 var _abandon: Button
+var _settings_button: Button
+var _settings: Control = null   # view/settings_menu.gd, built on first open
 
 
 func _init() -> void:
@@ -80,6 +84,15 @@ func _init() -> void:
 	_abandon.custom_minimum_size = Vector2(280, 40)
 	_abandon.pressed.connect(func() -> void: abandon_requested.emit())
 	col.add_child(_abandon)
+	_settings_button = Button.new()
+	_settings_button.name = "SettingsButton"
+	_settings_button.text = "SETTINGS"
+	_settings_button.focus_mode = Control.FOCUS_ALL
+	_settings_button.add_theme_font_size_override("font_size", 20)
+	_settings_button.add_theme_color_override("font_color", C_MUTED)
+	_settings_button.custom_minimum_size = Vector2(280, 40)
+	_settings_button.pressed.connect(open_settings)
+	col.add_child(_settings_button)
 	var hint := Label.new()
 	hint.text = "ESC resumes - the run is frozen while this is open"
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -108,3 +121,23 @@ func resume_button() -> Button:
 
 func abandon_button() -> Button:
 	return _abandon
+
+
+func settings_button() -> Button:
+	return _settings_button
+
+
+## Opens the settings screen over the frozen run (the volume control's way in: the screen
+## existed but nothing in the game referenced it). Built on first use and kept, so the
+## sliders hold their state across pauses; show_settings() reloads the saved values and
+## re-applies every consumer, so the volume the player set last session is live again.
+func open_settings() -> void:
+	if _settings == null:
+		_settings = SettingsMenuScript.new()
+		add_child(_settings)
+	_settings.show_settings()
+
+
+## The settings screen, or null before it was first opened (tests read it).
+func settings_screen() -> Control:
+	return _settings
