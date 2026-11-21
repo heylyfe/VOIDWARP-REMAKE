@@ -182,14 +182,18 @@ Known gaps, stated plainly:
   read a mine position, so 37 of 99 deaths were tripmines it could not see. It also routed over
   unsupported tiles and fell into the void in 5 of 20 runs. With both fixed, D-MINE and D-VOID are
   ZERO and every remaining death is a genuine enemy kill (Coil 8, Kiwi 6, YOU?! 4, Toucher 1).
-  The bands still fail because of arithmetic, not a bug: per-level survival is 95 / 84 / 88 / **43**
-  / **33** percent, and reaching 80% at level 6 needs about 96% survival on each of levels 1–5.
-  Levels 3 and 4 differ only by one extra enemy body, and survival drops 45 points. No enemy-data
-  change closes that. The one band-safe change identified — moving the third enemy vote from lobby
-  3 to lobby 5, which preserves every DESIGN §9 row and would take level 6 to roughly 48% — is
-  recorded in `PARKED.md` row 31 and NOT applied, because tuning the game to satisfy an instrument
-  that cannot play it is the mistake the mine model already exposed. The bands are a target for a
-  competent human and this probe cannot validate them.
+  The bands still fail because survival collapses in the middle of the run, not because of a bug:
+  per-level survival — the share of runs that survive level N — is 95 / 80 / 65 / **35** / **15**
+  percent for levels 1–5, measured in the same 20-run sweep as the band numbers above. Levels 3
+  and 4 differ only by one extra enemy body, and survival drops 30 points; levels 4 and 5 drop 20
+  more. No enemy-data change closes that. These are not independent trials — the ledger accumulates
+  purchases and stacks as the run goes deeper, so multiplying them understates the real depth (the
+  product is 2.6%, while the measured level-6 rate is 15%). The one band-safe change identified —
+  moving the third enemy vote from lobby 3 to lobby 5, which preserves every DESIGN §9 row and
+  would take level 6 to roughly 48% — is recorded in `PARKED.md` row 31 and NOT applied, because
+  tuning the game to satisfy an instrument that cannot play it is the mistake the mine model
+  already exposed. The bands are a target for a competent human and this probe cannot validate
+  them.
 - **Every enemy now has its own view, and the screen effects are fed.** This was the last
   presentation gap and it closed in cycle 2. Nine per-enemy view files (2,219 lines) had existed
   with nothing instantiating them, so every enemy rendered as a generic billboard; `view/enemies/
