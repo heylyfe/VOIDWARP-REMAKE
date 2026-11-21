@@ -52,6 +52,9 @@ func _leg_flow(f: Array[String]) -> void:
 	app.start_run(SEED)
 	app._ready()
 	app._on_play_requested()
+	# the run waits at the class altar until the player confirms or skips (item 7)
+	if app._class_altar != null and app._class_altar.is_open():
+		app._class_altar.skip()
 	var loading = app._loading
 	var guard := 0
 	while app.state() == "LOADING" and loading != null and guard < 400:
