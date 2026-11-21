@@ -24,8 +24,8 @@ extends RefCounted
 const EventsScript := preload("res://sim/events.gd")
 const CollisionScript := preload("res://sim/collision.gd")
 
-## Pickup radius at pickup_radius stat 1.0 (TERRAIN_SPEC.md section 6.7: 0.4 u).
-const PICKUP_RADIUS := 0.4
+## Pickup tuning is shared by both gift phases.
+const ECONOMY_DATA := "res://data/economy.json"
 ## The pickup test point is the player's centre, feet + half the 1.8 u body
 ## (D-T020-2): the gift hovers 1.0 u over the tile top, so a feet-anchored
 ## radius could never reach it.
@@ -71,6 +71,7 @@ var black_quota: int = -1
 ## Multiplier on the pickup radius, fed from the pickup_radius stat (core/stats.gd)
 ## by the content layer; 1.0 until the shop wiring (T-022) sets it.
 var pickup_mult: float = 1.0
+var base_pickup_radius: float = 0.0
 ## Whole-percent band for the straggler beam (20 = canon). The late-game residual
 ## band upgrade sets it to 35; anything else leaves the canon 20.
 var straggler_pct: int = STRAGGLER_PCT_BASE
@@ -78,6 +79,8 @@ var straggler_pct: int = STRAGGLER_PCT_BASE
 
 static func create(level: Dictionary) -> RefCounted:
 	var g := new()
+	var data: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(ECONOMY_DATA))
+	g.base_pickup_radius = float(data["gold_phase"]["gift_pickup_radius"])
 	g.slots = level.get("gifts", [])
 	var n: int = g.slots.size()
 	g.black_taken.resize((n + 7) >> 3)
@@ -131,13 +134,13 @@ func is_real(i: int) -> bool:
 
 ## Effective pickup radius for the current pickup_radius stat multiplier.
 func pickup_radius() -> float:
-	return PICKUP_RADIUS * pickup_mult
+	return base_pickup_radius * pickup_mult
 
 
 ## Feed the run's stats dict (the same dict the controller consumes via its own
 ## apply_stats; core/stats.gd semantics). The pickup_radius stat is a MULTIPLIER
 ## on the base radius (Long Reach: x1.4 per stack; the drop-in curse fixture:
-## x1.1). A dict without the key (or no stats at all) leaves the canon 0.4 u
+## x1.1). A dict without the key (or no stats at all) leaves the data radius
 ## ring. The value is clamped at 0: a negative radius reads as "never picks up",
 ## never as a bigger ring.
 func apply_stats(p_stats: Dictionary) -> void:

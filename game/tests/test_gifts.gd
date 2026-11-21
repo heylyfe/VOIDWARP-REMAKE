@@ -25,6 +25,7 @@ const GiftsScript := preload("res://sim/gifts.gd")
 const BeaconScript := preload("res://sim/beacon.gd")
 const EventsScript := preload("res://sim/events.gd")
 const ControllerScript := preload("res://sim/controller.gd")
+const MinesScript := preload("res://sim/mines.gd")
 
 const SEED_COUNT := 100
 const FIRST_SEED := 9900
@@ -36,6 +37,7 @@ func run() -> Array[String]:
 	_test_a5_100_seeds(f)
 	_test_beacon_entry_charges(f)
 	_test_pickup_radius_stat(f)
+	_test_other_volumes(f)
 	_test_straggler_threshold(f)
 	_test_slot_pos_confinement(f)
 	_test_views(f)
@@ -285,16 +287,27 @@ func _test_beacon_entry_charges(f: Array[String]) -> void:
 
 # ---- pickup radius from stats ----------------------------------------------------
 
+func _test_other_volumes(f: Array[String]) -> void:
+	var c := ControllerScript.load_constants()
+	if float(c["half_width"]) != 0.4 or float(c["height"]) != 1.8:
+		f.append("body collision dimensions changed")
+	if float(c["kill_plane_y"]) != -40.0:
+		f.append("kill plane changed")
+	if MinesScript.CONTACT_R != 0.9 or MinesScript.CONTACT_R2 != 0.81:
+		f.append("mine contact changed")
+	if BeaconScript.RADIUS != 1.5 or BeaconScript.HEIGHT != 3.0:
+		f.append("beacon cylinder changed")
+
 func _test_pickup_radius_stat(f: Array[String]) -> void:
 	var level := _synthetic([0])
 	level["gifts"][0]["x"] = 3   # slot at (3, 0): world (3.5, 1.0, 0.5)
 	var lv: RefCounted = LevelStateScript.build(level, 1, 1)
 	var g: RefCounted = lv.gifts
-	if absf(g.pickup_radius() - 0.4) > 1e-9:
-		f.append("pickup radius: base %.4f, want 0.4" % g.pickup_radius())
-	# 0.559 u away (0.55 horizontal + 0.1 vertical): outside the 0.4 u base radius
+	if absf(g.pickup_radius() - 0.7) > 1e-9:
+		f.append("pickup radius: base %.4f, want 0.7" % g.pickup_radius())
+	# 0.806 u away: outside the base radius, inside the doubled radius.
 	var p: Dictionary = lv.players[0]
-	p["x"] = 2.95
+	p["x"] = 2.7
 	p["y"] = 0.0
 	p["z"] = 0.5
 	var ev: Array = []
@@ -305,7 +318,7 @@ func _test_pickup_radius_stat(f: Array[String]) -> void:
 	var lv2: RefCounted = LevelStateScript.build(level, 1, 1)
 	lv2.gifts.pickup_mult = 2.0
 	var p2: Dictionary = lv2.players[0]
-	p2["x"] = 2.95
+	p2["x"] = 2.7
 	p2["y"] = 0.0
 	p2["z"] = 0.5
 	GiftsScript.tick(lv2, 0, ev)
@@ -321,6 +334,19 @@ func _test_pickup_radius_stat(f: Array[String]) -> void:
 	GiftsScript.tick(lv3, 0, ev)
 	if not GiftsScript.bit_get(lv3.gifts.black_taken, 0):
 		f.append("pickup radius: 0.4 u ring not collected from inside")
+	# The old 0.4 radius misses this point; the new radius collects it.
+	var lv4: RefCounted = LevelStateScript.build(level, 1, 1)
+	lv4.players[0]["x"] = 2.95
+	lv4.players[0]["y"] = 0.0
+	lv4.players[0]["z"] = 0.5
+	lv4.gifts.pickup_mult = 0.4 / 0.7
+	GiftsScript.tick(lv4, 0, [])
+	if GiftsScript.bit_get(lv4.gifts.black_taken, 0):
+		f.append("pickup radius: old-radius control collected outside 0.4")
+	lv4.gifts.pickup_mult = 1.0
+	GiftsScript.tick(lv4, 0, [])
+	if not GiftsScript.bit_get(lv4.gifts.black_taken, 0):
+		f.append("pickup radius: expanded radius missed at 0.559")
 
 
 # ---- straggler rule: the last 20% of REAL gifts, hazards never ------------------

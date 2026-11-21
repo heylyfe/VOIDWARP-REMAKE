@@ -235,12 +235,10 @@ static func _gift_state() -> RefCounted:
 	return LevelStateScript.build(_synthetic([0]), 1, 1)
 
 
-## Tick the pickup at the probe point used across this test: 0.55 u horizontal +
-## 0.1 u vertical off the slot (world 3.5, 1.0, 0.5) - outside the canon 0.4 u
-## ring, inside a x1.4 Long Reach ring (0.56). Returns true when slot 0 collected.
+## Probe 0.8 u horizontally and 0.1 vertically away: outside 0.7, inside 0.98.
 static func _probe(g_level: RefCounted) -> bool:
 	var p: Dictionary = g_level.players[0]
-	p["x"] = 2.95
+	p["x"] = 2.7
 	p["y"] = 0.0
 	p["z"] = 0.5
 	var ev: Array = []
@@ -254,19 +252,19 @@ func _test_pickup_radius(f: Array[String]) -> void:
 	_check(f, not base_stats.has("pickup_radius"),
 			"pickup_radius: the base stats dict unexpectedly carries the stat")
 
-	# BASE BEHAVIOUR HOLDS: no stats applied -> the canon 0.4 u ring, and the
+	# BASE BEHAVIOUR HOLDS: no stats applied -> the 0.7 u ring, and the
 	# probe point is out of reach
 	var base := _gift_state()
-	_check(f, absf(float(base.gifts.pickup_radius()) - 0.4) <= 1e-9,
-			"pickup_radius: base ring %.4f, want 0.4" % float(base.gifts.pickup_radius()))
+	_check(f, absf(float(base.gifts.pickup_radius()) - 0.7) <= 1e-9,
+			"pickup_radius: base ring %.4f, want 0.7" % float(base.gifts.pickup_radius()))
 	_check(f, not _probe(base),
-			"pickup_radius: the probe point collected inside the base 0.4 u ring")
+			"pickup_radius: the probe point collected outside the base 0.7 u ring")
 
 	# ... and a stats dict WITHOUT the stat keeps the canon ring
 	var plain := _gift_state()
 	plain.gifts.apply_stats({"run_speed": 1.0})
-	_check(f, absf(float(plain.gifts.pickup_radius()) - 0.4) <= 1e-9,
-			"pickup_radius: a dict without the stat widened the ring to %.4f, want 0.4"
+	_check(f, absf(float(plain.gifts.pickup_radius()) - 0.7) <= 1e-9,
+			"pickup_radius: a dict without the stat widened the ring to %.4f, want 0.7"
 					% float(plain.gifts.pickup_radius()))
 	_check(f, not _probe(plain),
 			"pickup_radius: the probe point collected with no pickup_radius stat")
@@ -277,33 +275,33 @@ func _test_pickup_radius(f: Array[String]) -> void:
 			"long_reach x1: the stats dict carries pickup_radius %s, want 1.4" % str(reach1.get("pickup_radius")))
 	var r1 := _gift_state()
 	r1.gifts.apply_stats(reach1)
-	_check(f, absf(float(r1.gifts.pickup_radius()) - 0.56) <= 1e-9,
-			"long_reach x1: the ring is %.4f, want 0.56 (0.4 x 1.4)" % float(r1.gifts.pickup_radius()))
+	_check(f, absf(float(r1.gifts.pickup_radius()) - 0.98) <= 1e-9,
+			"long_reach x1: the ring is %.4f, want 0.98 (0.7 x 1.4)" % float(r1.gifts.pickup_radius()))
 	_check(f, _probe(r1),
-			"long_reach x1: the probe point did NOT collect inside the 0.56 u ring")
+			"long_reach x1: the probe point did NOT collect inside the 0.98 u ring")
 
 	var reach2 := _stats_for({"long_reach": 2}, {})
 	var r2 := _gift_state()
 	r2.gifts.apply_stats(reach2)
-	_check(f, absf(float(r2.gifts.pickup_radius()) - 0.4 * 1.96) <= 1e-9,
-			"long_reach x2: the ring is %.4f, want 0.784 (0.4 x 1.4 x 1.4)" % float(r2.gifts.pickup_radius()))
+	_check(f, absf(float(r2.gifts.pickup_radius()) - 0.7 * 1.96) <= 1e-9,
+			"long_reach x2: the ring is %.4f, want 1.372" % float(r2.gifts.pickup_radius()))
 
 	var reach3 := _stats_for({"long_reach": 3}, {})
 	var r3 := _gift_state()
 	r3.gifts.apply_stats(reach3)
-	_check(f, absf(float(r3.gifts.pickup_radius()) - 0.4 * 2.744) <= 1e-9,
-			"long_reach x3: the ring is %.4f, want 1.0976 (0.4 x 1.4^3)" % float(r3.gifts.pickup_radius()))
+	_check(f, absf(float(r3.gifts.pickup_radius()) - 0.7 * 2.744) <= 1e-9,
+			"long_reach x3: the ring is %.4f, want 1.9208" % float(r3.gifts.pickup_radius()))
 
 	# curse-shaped stats (the drop-in fixture curse runs 1.1 x per stack): a
 	# widening curse widens the ring the same way, a shrinking one narrows it
 	var cur := _gift_state()
 	cur.gifts.apply_stats({"pickup_radius": 1.1})
-	_check(f, absf(float(cur.gifts.pickup_radius()) - 0.44) <= 1e-9,
-			"pickup_radius: a 1.1 curse stat gave a %.4f ring, want 0.44" % float(cur.gifts.pickup_radius()))
+	_check(f, absf(float(cur.gifts.pickup_radius()) - 0.77) <= 1e-9,
+			"pickup_radius: a 1.1 curse stat gave a %.4f ring, want 0.77" % float(cur.gifts.pickup_radius()))
 	var shrink := _gift_state()
 	shrink.gifts.apply_stats({"pickup_radius": 0.5})
-	_check(f, absf(float(shrink.gifts.pickup_radius()) - 0.2) <= 1e-9,
-			"pickup_radius: a 0.5 curse stat gave a %.4f ring, want 0.2" % float(shrink.gifts.pickup_radius()))
+	_check(f, absf(float(shrink.gifts.pickup_radius()) - 0.35) <= 1e-9,
+			"pickup_radius: a 0.5 curse stat gave a %.4f ring, want 0.35" % float(shrink.gifts.pickup_radius()))
 	var clamped := _gift_state()
 	clamped.gifts.apply_stats({"pickup_radius": -2.0})
 	_check(f, absf(float(clamped.gifts.pickup_radius())) <= 1e-9,
@@ -314,8 +312,8 @@ func _test_pickup_radius(f: Array[String]) -> void:
 	var reset := _gift_state()
 	reset.gifts.apply_stats(reach1)
 	reset.gifts.apply_stats({})
-	_check(f, absf(float(reset.gifts.pickup_radius()) - 0.4) <= 1e-9,
-			"pickup_radius: re-applying an empty dict gave %.4f, want the 0.4 reset" % float(reset.gifts.pickup_radius()))
+	_check(f, absf(float(reset.gifts.pickup_radius()) - 0.7) <= 1e-9,
+			"pickup_radius: re-applying an empty dict gave %.4f, want the 0.7 reset" % float(reset.gifts.pickup_radius()))
 
 	# the pickup through tick() really flips the slot (the only real gift -> gold)
 	var flipped := _gift_state()
