@@ -29,6 +29,7 @@ func run() -> Array[String]:
 	_route_honours_menace(f)
 	_replan_keeps_goal_markers(f)
 	_goal_stale_reads_present(f)
+	_threats_skip_out_of_play(f)
 	return f
 
 
@@ -220,6 +221,41 @@ func _goal_stale_reads_present(f: Array[String]) -> void:
 	var bmem: Dictionary = {"goal_kind": "beacon", "goal_slot": -1}
 	if BotRun._goal_stale(bmem, lv):
 		f.append("a beacon goal reads stale while the beacon is shut")
+
+
+## A body that is out of play cannot kill - sim/enemy_runtime.gd skips it in _contact_kills
+## by is_out_of_play() - so the bot must not route around it either. The collapse starts on
+## the beacon-open tick, so a fallen body is exactly what the gold phase is full of. Both
+## threat readers (_enemy_points for the menace cost and the landing avoid set, _enemy_reach
+## for the D-B5B-1 corridor) must agree with the sim's own predicate.
+func _threats_skip_out_of_play(f: Array[String]) -> void:
+	var rt := _StubRuntime.new()
+	rt.enemies = [
+		{"x": 10.0, "z": 0.0, "diameter_u": 1.0, "contact_kill": true},
+		{"x": 20.0, "z": 0.0, "diameter_u": 1.0, "contact_kill": true, "falling": true},
+		{"x": 30.0, "z": 0.0, "diameter_u": 1.0, "contact_kill": true, "gone": true},
+	]
+	var pts: Array = BotRun._enemy_points(rt)
+	if pts.size() != 1:
+		f.append("_enemy_points returned %d points, want 1: a falling or gone body cannot kill, so routing around it is routing around nothing" % pts.size())
+	elif (pts[0] as Vector2).x != 10.0:
+		f.append("_enemy_points kept the wrong body (x=%s, want 10.0)" % str((pts[0] as Vector2).x))
+	# the reach is the widest LIVE contact radius: 1.0 * 0.5 + 0.4 = 0.9. A gone body with a
+	# huge diameter must not widen it, or the landing pick refuses columns for nothing.
+	rt.enemies.append({"x": 40.0, "z": 0.0, "diameter_u": 20.0, "contact_kill": true, "gone": true})
+	var reach: float = BotRun._enemy_reach(rt)
+	if not is_equal_approx(reach, 0.9):
+		f.append("_enemy_reach %.3f, want 0.9: an out-of-play body widened the landing corridor" % reach)
+	# the control that stops the leg passing by returning nothing: a live body IS a threat
+	rt.enemies = [{"x": 5.0, "z": 5.0, "diameter_u": 1.0, "contact_kill": true}]
+	if (BotRun._enemy_points(rt) as Array).size() != 1:
+		f.append("_enemy_points dropped a LIVE body: the filter is too wide")
+	if not is_equal_approx(BotRun._enemy_reach(rt), 0.9):
+		f.append("_enemy_reach dropped a LIVE body's radius")
+
+
+class _StubRuntime:
+	var enemies: Array = []
 
 
 class _StubBeacon:

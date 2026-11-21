@@ -1193,9 +1193,16 @@ static func _near_any(c: Vector2, pts: Array, r: float) -> bool:
 ## XZ of every enemy body in play (the air layer never picks a landing column under
 ## one: a contact-kill body kills on touch, a non-killing ejector relaunches the bot
 ## from the same column for ever - seed 60717's 600-tick bounce).
+## The XZ points the router must treat as dangerous. A body that is out of play
+## (sim/enemy_runtime.gd is_out_of_play: falling with its platform, or gone past the kill
+## plane) cannot kill - the runtime skips it in _contact_kills by the same predicate - so
+## routing around it is routing around nothing. The collapse starts on the beacon-open tick,
+## so this is exactly the gold phase, when the bot is choosing where to run.
 static func _enemy_points(rt) -> Array:
 	var out: Array = []
 	for e in rt.enemies:
+		if EnemyRuntime.is_out_of_play(e):
+			continue
 		out.append(Vector2(float(e["x"]), float(e["z"])))
 	return out
 
@@ -1203,10 +1210,13 @@ static func _enemy_points(rt) -> Array:
 ## The widest contact radius in play: sim/enemy_runtime.gd body_contact's own test
 ## (diameter_u * 0.5 + the player's 0.4 half-width). A fall that passes inside it is a
 ## kill, so it is the corridor the landing pick must keep clear (D-B5B-1). 0.0 when no
-## contact-kill body is in play.
+## contact-kill body is in play. Out-of-play rows are skipped for the same reason as
+## _enemy_points: a body that cannot kill does not widen the corridor.
 static func _enemy_reach(rt) -> float:
 	var r := 0.0
 	for e in rt.enemies:
+		if EnemyRuntime.is_out_of_play(e):
+			continue
 		if not bool(e.get("contact_kill", true)):
 			continue
 		r = maxf(r, float(e.get("diameter_u", 0.0)) * 0.5 + 0.4)
