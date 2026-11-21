@@ -12,12 +12,22 @@ extends SceneTree
 #        <out_dir>/hud_01_full.png     (all 12 enemy types, 12 curses, 12 upgrades: the
 #                                       worst case the corners must still hold)
 #        <out_dir>/hud_02_zoom.png     (hud_00's top-left counter, cropped 3x)
+#   D-GUI-1 (the reference-panel rebuild):
+#        <out_dir>/hud_03_black_phase.png  (no curses: the gift counter + CTRL hint)
+#        <out_dir>/hud_04_gold_phase.png   (every black gift taken, 3 gold: the gold counter)
+#        <out_dir>/hud_05_collapse.png     (beacon open, the first ring cracking: the
+#                                           collapse warning under the full icon rows)
+#        <out_dir>/hud_06_full_1080.png    (hud_01's ledger at 1920x1080)
+#        <out_dir>/hud_07_bottom_zoom.png  (hud_04's bottom-centre counter + hint, 2x)
+# Every shot also checks the REAL laid-out panel rects (hud.panel_elements(), global
+# rects after the engine's own layout pass): inside the window, no two visible overlap.
 # Prints a DIAG line per shot: the counter's cells, which ones carry real sprite art, their
 # badges, and the on-screen rects of the counter, the icon rows and the purse, with an
 # overlap check. Named shot_*, not test_*, so tests/run_all.gd skips it. Prints
 # "SHOT <path>" per PNG and "SHOTX OK" / "SHOTX FAIL <why>"; exit 1 on failure.
 
 const WorldScript := preload("res://app/world.gd")
+const CollapseScript := preload("res://sim/collapse.gd")
 
 const SHOT_SIZE := Vector2i(1280, 720)
 const DT := 1.0 / 60.0
@@ -78,11 +88,25 @@ func _run() -> void:
 	full["stacks"] = {}
 	for id in MANY_UPGRADES:
 		full["stacks"][id] = 1
-	await _capture("hud_01_full", full)
+	if not await _capture("hud_01_full", full):
+		_finish()
+		return
+	await _d_gui_shots(full)
 	_finish()
 
 
 func _capture(name: String, ledger: Dictionary) -> bool:
+	if not await _boot(name, ledger):
+		return false
+	await process_frame
+	await process_frame
+	_diag(name, ledger)
+	await _shot(name)
+	return _fail == ""
+
+
+## Build the real world on the ledger and run it until enemies are on the field.
+func _boot(name: String, ledger: Dictionary) -> bool:
 	if _world != null:
 		_world.teardown()
 		_world.queue_free()
@@ -101,11 +125,7 @@ func _capture(name: String, ledger: Dictionary) -> bool:
 		_world.step(DT)
 		t += 1
 	print("DIAG %s ticks=%d" % [name, t])
-	await process_frame
-	await process_frame
-	_diag(name, ledger)
-	await _shot(name)
-	return _fail == ""
+	return true
 
 
 func _diag(tag: String, ledger: Dictionary) -> void:
@@ -123,6 +143,7 @@ func _diag(tag: String, ledger: Dictionary) -> void:
 	var r_roster: Rect2 = er._row.get_global_rect()
 	var r_icons: Rect2 = hud.icon_rows.get_global_rect()
 	var r_purse: Rect2 = hud.purse_chain.get_global_rect()
+	_panel_check(tag)
 	print("DIAG %s cells=%d [%s] roster_rect=%s icon_rows_rect=%s curses=%d upgrades=%d purse_rect=%s roster_x_icons=%s icons_x_purse=%s live_enemies=%d" % [
 			tag, er._items.size(), "; ".join(cells), str(r_roster), str(r_icons),
 			hud.icon_rows.curse_count(), hud.icon_rows.upgrade_count(), str(r_purse),
@@ -180,3 +201,102 @@ func _finish() -> void:
 		return
 	print("SHOTX OK")
 	quit(0)
+
+
+# ---- D-GUI-1 shots ----------------------------------------------------------------
+
+## The real laid-out panels (global rects after the engine's layout pass): inside the
+## window, and no two visible ones overlapping. Prints every rect.
+func _panel_check(tag: String) -> void:
+	var vp := Rect2(Vector2.ZERO, Vector2(root.size))
+	var shown: Array = []
+	var parts: PackedStringArray = []
+	var panels: Dictionary = _world.hud.panel_elements()
+	for key in panels:
+		var c: Control = panels[key]
+		if not c.is_visible_in_tree():
+			continue
+		var r := c.get_global_rect()
+		parts.append("%s=(%d,%d %dx%d)" % [key, r.position.x, r.position.y, r.size.x, r.size.y])
+		if not vp.encloses(r):
+			_fail = "%s: %s %s leaves the %s window" % [tag, key, str(r), str(vp.size)]
+		for other in shown:
+			if r.intersects(other[1]):
+				_fail = "%s: %s %s overlaps %s %s" % [tag, key, str(r), other[0], str(other[1])]
+		shown.append([key, r])
+	print("DIAG %s panels %s" % [tag, " ".join(parts)])
+
+
+func _d_gui_shots(full: Dictionary) -> void:
+	var plain := {"class": "dasher", "purse": 500, "tithes": 0, "hunger": 0, "last_vote": "",
+			"votes": {"kiwi_cat": 1}, "curses": {}, "stacks": {}}
+	if not await _capture("hud_03_black_phase", plain):
+		return
+	var hud = _world.hud
+	print("DIAG hud_03_black_phase gift='%s' gift_vis=%s gold_vis=%s hint='%s'" % [
+			hud.gift_counter.counter_text(), str(hud.gift_counter.visible),
+			str(hud.gold_counter.visible), hud.mouse_hint.hint_text()])
+	if hud.gold_counter.visible or not hud.gift_counter.visible:
+		_fail = "hud_03: the black phase shows the gold counter"
+		return
+	# gold phase: take every black gift through the sim, then three gold ones
+	if not await _boot("hud_04_gold_phase", TYPICAL.duplicate(true)):
+		return
+	var g: RefCounted = _world.lstate.gifts
+	for i in g.slots.size():
+		if g.is_real(i) and not g.collected(i):
+			g.collect(i, int(_world.lstate.tick), 0, [])
+	var took := 0
+	for i in g.slots.size():
+		if took < 3 and g.present(i):
+			g.collect(i, int(_world.lstate.tick), 0, [])
+			took += 1
+	_world.ctl.invuln = 1.0
+	_world.step(DT)
+	await process_frame
+	await process_frame
+	hud = _world.hud
+	print("DIAG hud_04_gold_phase phase=%s gold='%s' gold_vis=%s gift_vis=%s" % [
+			g.phase, hud.gold_counter.counter_text(), str(hud.gold_counter.visible),
+			str(hud.gift_counter.visible)])
+	if not hud.gold_counter.visible or hud.gift_counter.visible \
+			or hud.gold_counter.counter_text() != "3 / %d" % int(g.total_real):
+		_fail = "hud_04: the gold counter is not up at 3 / %d" % int(g.total_real)
+		return
+	_diag("hud_04_gold_phase", TYPICAL)
+	await _shot("hud_04_gold_phase")
+	var img: Image = root.get_texture().get_image()
+	var sz := root.size
+	var crop := img.get_region(Rect2i(sz.x / 2 - 200, sz.y - 110, 400, 110))
+	crop.resize(800, 220, Image.INTERPOLATE_NEAREST)
+	_save(crop, "hud_07_bottom_zoom")
+	# collapse: the full icon rows, the beacon open, the first ring cracking
+	if not await _boot("hud_05_collapse", full):
+		return
+	# as in play: the last black gift flips the phase, then the beacon opens
+	g = _world.lstate.gifts
+	for i in g.slots.size():
+		if g.is_real(i) and not g.collected(i):
+			g.collect(i, int(_world.lstate.tick), 0, [])
+	_world.lstate.beacon.open(int(_world.lstate.tick))
+	_world.step(DT)
+	var st: Dictionary = _world._collapse
+	var target := CollapseScript.zone_crack_tick(st, 0) + int(st["crack_ticks"]) / 2
+	while int(_world.lstate.tick) < target:
+		_world.ctl.invuln = 1.0
+		_world.step(DT)
+	await process_frame
+	await process_frame
+	hud = _world.hud
+	print("DIAG hud_05_collapse warning='%s' vis=%s" % [hud.collapse_warning.warning_text(),
+			str(hud.collapse_warning.visible)])
+	if not hud.collapse_warning.visible:
+		_fail = "hud_05: the collapse warning is not up"
+		return
+	_diag("hud_05_collapse", full)
+	await _shot("hud_05_collapse")
+	# the same full ledger at 1920x1080
+	root.size = Vector2i(1920, 1080)
+	await process_frame
+	await _capture("hud_06_full_1080", full)
+	root.size = SHOT_SIZE

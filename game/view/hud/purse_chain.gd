@@ -6,13 +6,16 @@ extends Control
 # Format per section 3.2's worked example: `149.00  1.50x` - centi-gold rendered
 # as whole.cents (integer math, floor semantics, matching data/economy.json
 # gold_arithmetic), then the chain as x with two decimals. The purse comes from
-# economy.purse_centi; the chain from economy.chain_display().
+# economy.purse_centi; the chain from economy.chain_display(). Styled as a dark rounded
+# pill (D-GUI-1, view/hud/hud_style.gd).
 
-const EDGE := 24.0
-const WIDTH := 260.0
-const HEIGHT := 36.0
-const ICON_SIZE := 28.0
-const ICON_GAP := 6.0
+const HudStyle := preload("res://view/hud/hud_style.gd")
+
+const EDGE := HudStyle.MARGIN
+const WIDTH := 240.0
+const HEIGHT := HudStyle.PILL_H
+const ICON_SIZE := 22.0
+const ICON_GAP := 8.0
 const GOLD_BALANCE_ICON := preload("res://assets/icons/gold_balance.png")
 
 var _purse_centi := 0
@@ -32,11 +35,15 @@ func _init() -> void:
 	offset_top = EDGE
 	offset_bottom = EDGE + HEIGHT
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# D-GUI-1: a dark rounded pill (the reference's top-right panels)
+	HudStyle.add_background(self)
 	# icon glued to the left of the number: an end-aligned row that sizes to its
 	# content, so the gap never opens up as the purse value's width changes
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_END
 	row.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	row.offset_left = HudStyle.PAD_X
+	row.offset_right = -HudStyle.PAD_X
 	row.add_theme_constant_override("separation", int(ICON_GAP))
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(row)
@@ -51,10 +58,8 @@ func _init() -> void:
 	_label = Label.new()
 	_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_label.add_theme_font_size_override("font_size", 22)
-	_label.add_theme_color_override("font_color", Color(1.0, 0.956, 0.8, 1.0))
-	_label.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.9))
-	_label.add_theme_constant_override("outline_size", 4)
+	_label.size_flags_vertical = Control.SIZE_FILL
+	HudStyle.style_label(_label, HudStyle.FONT_BODY, HudStyle.GOLD_TEXT)
 	row.add_child(_label)
 	_refresh()
 

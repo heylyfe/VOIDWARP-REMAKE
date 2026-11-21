@@ -13,10 +13,11 @@ extends Control
 # - view reads content through core, so the caller passes the two Colors in).
 
 const CartographerContent := preload("res://content/upgrades/cartographer.gd")
+const HudStyle := preload("res://view/hud/hud_style.gd")
 
 const SIZE := 220.0
-const EDGE := 24.0
-const GAP := 8.0
+const EDGE := HudStyle.MARGIN   # D-GUI-1: the shared screen margin and gap
+const GAP := HudStyle.GAP
 const GIFT_DOT_R := 1.0
 const MINE_DOT_R := 2.0
 const PLAYER_COLOR := Color(1.0, 1.0, 1.0, 1.0)
@@ -35,8 +36,9 @@ func _init() -> void:
 	anchor_bottom = 0.0
 	offset_left = -EDGE - SIZE
 	offset_right = -EDGE
-	offset_top = EDGE + 36.0 + GAP   # the purse row: EDGE + HEIGHT(36), one gap below
-	offset_bottom = EDGE + 36.0 + GAP + SIZE
+	offset_top = EDGE + HudStyle.PILL_H + GAP   # the purse pill, one gap below
+	offset_bottom = EDGE + HudStyle.PILL_H + GAP + SIZE
+	clip_contents = true
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 
@@ -158,7 +160,7 @@ static func _player_tri(c: Vector2, facing: float) -> PackedVector2Array:
 
 
 func _draw() -> void:
-	draw_rect(Rect2(Vector2.ZERO, Vector2(SIZE, SIZE)), Color(0.0, 0.0, 0.0, 0.45), true)
+	draw_style_box(_panel_box(), Rect2(Vector2.ZERO, Vector2(SIZE, SIZE)))
 	for item in _model:
 		if item.has("rect"):
 			draw_rect(item["rect"], item["color"] as Color, true)
@@ -166,3 +168,13 @@ func _draw() -> void:
 			draw_circle(item["dot"], float(item["r"]), item["color"] as Color)
 		elif item.has("triangle"):
 			draw_colored_polygon(item["triangle"], PLAYER_COLOR)
+
+
+var _box: StyleBoxFlat = null
+
+
+## D-GUI-1: the map's backing is the shared dark rounded panel.
+func _panel_box() -> StyleBoxFlat:
+	if _box == null:
+		_box = HudStyle.panel()
+	return _box

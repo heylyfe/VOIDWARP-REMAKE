@@ -19,10 +19,17 @@ extends Control
 #
 # The world re-sends the roster every frame; the cells are rebuilt only when the
 # (id, count) list actually changed.
+#
+# D-GUI-1: the grid sits in one dark rounded panel (hud_style.gd) that shrinks to the
+# cells it holds; the element's own rect is the 4 x 3 worst case plus the panel padding.
+# The block must stay within 200 x 140 (test_enemy_stacking.gd), so the roster cell is
+# 38 px with a 5 px gap: 4 x 3 cells + the standard 14/8 padding = 195 x 140.
 
-const CELL := 40.0
-const GAP := 6.0
-const EDGE := 16.0
+const HudStyle := preload("res://view/hud/hud_style.gd")
+
+const CELL := 38.0
+const GAP := 5.0
+const EDGE := HudStyle.MARGIN
 const COLUMNS := 4
 const MAX_ROWS := 3   # 12 cells: the whole enemy roster
 const ICON_FRAMES := ["idle_00.png", "cycle_00.png", "idle_chase_00.png", "spawn_00.png"]
@@ -30,6 +37,7 @@ const ICON_FRAMES := ["idle_00.png", "cycle_00.png", "idle_chase_00.png", "spawn
 static var _icon_cache: Dictionary = {}   # id -> Texture2D or null (presentation cache only)
 
 var _row: GridContainer   # named _row since T-025 (test_hud reads it); a wrapping grid now
+var _panel: PanelContainer
 var _items: Array = []
 var _placeholder_script: GDScript
 
@@ -42,16 +50,21 @@ func _init() -> void:
 	anchor_top = 0.0
 	anchor_bottom = 0.0
 	offset_left = EDGE
-	offset_right = EDGE + CELL * COLUMNS + GAP * (COLUMNS - 1)
+	offset_right = EDGE + CELL * COLUMNS + GAP * (COLUMNS - 1) + HudStyle.PAD_X * 2.0
 	offset_top = EDGE
-	offset_bottom = EDGE + CELL * MAX_ROWS + GAP * (MAX_ROWS - 1)
+	offset_bottom = EDGE + CELL * MAX_ROWS + GAP * (MAX_ROWS - 1) + HudStyle.PAD_Y * 2.0
+	_panel = PanelContainer.new()
+	_panel.name = "Panel"
+	_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_panel.add_theme_stylebox_override("panel", HudStyle.panel())
+	_panel.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+	add_child(_panel)
 	_row = GridContainer.new()
 	_row.columns = COLUMNS
 	_row.add_theme_constant_override("h_separation", int(GAP))
 	_row.add_theme_constant_override("v_separation", int(GAP))
 	_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_row.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(_row)
+	_panel.add_child(_row)
 	visible = false
 
 
@@ -99,16 +112,15 @@ func set_roster(items: Array) -> void:
 		var cell := _make_icon(str(item["id"]))
 		var badge := Label.new()
 		badge.text = "x%d" % int(item["count"])
-		badge.add_theme_font_size_override("font_size", 14)
-		badge.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 1.0))
-		badge.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.9))
-		badge.add_theme_constant_override("outline_size", 3)
+		HudStyle.style_label(badge, HudStyle.FONT_SMALL)
 		badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		badge.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
 		badge.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		cell.add_child(badge)
 		_row.add_child(cell)
+	# re-fit the panel to the new cell count (a free-standing container only grows)
+	_panel.call_deferred("reset_size")
 
 
 ## One CELL-square icon cell: the sprite art on a dark backing, or the placeholder.
@@ -122,10 +134,7 @@ func _make_icon(id: String) -> Control:
 	var back := Panel.new()
 	back.custom_minimum_size = Vector2(CELL, CELL)
 	back.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0.0, 0.0, 0.0, 0.45)
-	sb.set_corner_radius_all(4)
-	back.add_theme_stylebox_override("panel", sb)
+	back.add_theme_stylebox_override("panel", HudStyle.cell())
 	var tr := TextureRect.new()
 	tr.texture = tex
 	tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -156,6 +165,13 @@ func icon_kind_for(id: String) -> String:
 		if str(_items[i]["id"]) == id and i < _row.get_child_count():
 			return str(_row.get_child(i).get_meta("icon_kind", ""))
 	return ""
+
+
+## The on-screen panel rect (global), or an empty Rect2 when hidden.
+func panel_rect() -> Rect2:
+	if not _panel.is_visible_in_tree():
+		return Rect2()
+	return _panel.get_global_rect()
 
 
 ## The badge text of the id's cell ("x3"); "" when the id has no cell.

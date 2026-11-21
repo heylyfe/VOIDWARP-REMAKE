@@ -11,12 +11,20 @@ extends Control
 # class. A radial sweep shows the fraction remaining; the seconds text shows the
 # exact number.
 
+const HudStyle := preload("res://view/hud/hud_style.gd")
+const VoidPipsScript := preload("res://view/hud/void_pips.gd")
+
 const ICON := 48.0
 const BAR_W := 110.0
 const BAR_H := 10.0
 const GAP := 12.0
 const READY_COLOR := Color(0.486, 1.0, 0.957)   # #7CFFF4
 const CD_COLOR := Color(1.0, 0.85, 0.4, 1.0)
+# D-GUI-1: a dark rounded panel the same height as the pips panel, one GAP to its right
+# (the pips panel is measured at the normal 2-pip cap; under Hungry Void the gap widens).
+const PAD_X := HudStyle.PAD_X
+const PANEL_H := HudStyle.BOTTOM_ROW_H
+const PAD_TOP := (PANEL_H - ICON) * 0.5
 
 var kit := "dasher"
 var remaining := 0.0
@@ -27,33 +35,32 @@ var _seconds: Label
 
 
 func _init() -> void:
-	custom_minimum_size = Vector2(ICON + GAP + BAR_W, ICON)
+	custom_minimum_size = Vector2(PAD_X * 2.0 + ICON + GAP + BAR_W, PANEL_H)
 	anchor_left = 0.0
 	anchor_right = 0.0
 	anchor_top = 1.0
 	anchor_bottom = 1.0
-	offset_left = 24.0 + 40.0 * 2.0 + 16.0 + 28.0 + 24.0   # right of pips + Last Light
+	# right of the pips + Last Light panel, one GAP over
+	offset_left = HudStyle.MARGIN + VoidPipsScript.panel_width(2) + HudStyle.GAP
 	offset_right = offset_left + custom_minimum_size.x
-	offset_top = -24.0 - ICON
-	offset_bottom = -24.0
+	offset_top = -HudStyle.MARGIN - PANEL_H
+	offset_bottom = -HudStyle.MARGIN
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	HudStyle.add_background(self)
 	_icon = _AbilityIcon.new()
 	_icon.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
-	_icon.position = Vector2(0.0, 0.0)
+	_icon.position = Vector2(PAD_X, PAD_TOP)
 	_icon.size = Vector2(ICON, ICON)
 	add_child(_icon)
 	_bar = _CooldownBar.new()
 	_bar.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
-	_bar.position = Vector2(ICON + GAP, ICON * 0.5 - BAR_H * 0.5)
+	_bar.position = Vector2(PAD_X + ICON + GAP, PAD_TOP + ICON * 0.5 - BAR_H - 1.0)
 	_bar.size = Vector2(BAR_W, BAR_H)
 	add_child(_bar)
 	_seconds = Label.new()
 	_seconds.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
-	_seconds.position = Vector2(ICON + GAP, ICON * 0.5 + BAR_H * 0.5 + 2.0)
-	_seconds.add_theme_font_size_override("font_size", 14)
-	_seconds.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 0.9))
-	_seconds.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.9))
-	_seconds.add_theme_constant_override("outline_size", 3)
+	_seconds.position = Vector2(PAD_X + ICON + GAP, PAD_TOP + ICON * 0.5 + 1.0)
+	HudStyle.style_label(_seconds, HudStyle.FONT_SMALL)
 	add_child(_seconds)
 
 
@@ -99,9 +106,7 @@ class _AbilityIcon extends Control:
 
 	func _draw() -> void:
 		var s := size
-		var bg := Color(0.09, 0.11, 0.13, 0.85)
-		draw_rect(Rect2(Vector2.ZERO, s), bg, true)
-		draw_rect(Rect2(Vector2.ZERO, s), Color(0.3, 0.35, 0.4, 1.0), false, 2.0)
+		draw_style_box(HudStyle.cell(), Rect2(Vector2.ZERO, s))
 		# sweep: the dim sector is the cooling part (full circle when ready)
 		var c := Vector2(s.x * 0.5, s.y * 0.5)
 		var r := s.x * 0.28
@@ -132,8 +137,7 @@ class _CooldownBar extends Control:
 
 	func _draw() -> void:
 		var s := size
-		draw_rect(Rect2(Vector2.ZERO, s), Color(0.09, 0.11, 0.13, 0.9), true)
+		draw_rect(Rect2(Vector2.ZERO, s), Color(1.0, 1.0, 1.0, 0.10), true)
 		var w := s.x * clampf(fraction, 0.0, 1.0)
 		if w > 0.5:
 			draw_rect(Rect2(Vector2.ZERO, Vector2(w, s.y)), READY_COLOR if charged else CD_COLOR, true)
-		draw_rect(Rect2(Vector2.ZERO, s), Color(0.3, 0.35, 0.4, 1.0), false, 1.5)

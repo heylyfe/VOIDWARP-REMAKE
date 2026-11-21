@@ -3,7 +3,11 @@ extends Control
 # HUD root (ticket T-025; DESIGN.md section 14). One Control that builds and lays
 # out exactly the elements section 14 lists, and nothing else:
 #
-#   gifts counter  bottom-centre  ("collected / REAL total")
+#   gifts counter  bottom-centre  ("collected / REAL total"; the black phase)
+#   gold counter   bottom-centre  (D-GUI-1: gold gifts collected / gold total; the
+#                  gold phase - it takes the gifts counter's slot on the flip)
+#   mouse hint     bottom-centre  (D-GUI-1: "CTRL TO LOCK MOUSE" / "CTRL TO UNLOCK
+#                  MOUSE", always the true state; under the counter)
 #   purse + chain  top-right      ("149.00  1.50x")
 #   void charge pips  bottom-left (2, or 1 under Hungry Void; filled = held)
 #     + Last Light icon right of the pips (section 3.1 mandate, fable 2.4)
@@ -19,6 +23,12 @@ extends Control
 #   screen_fx  full-screen void flash / Last Light bloom / death black-out (T-086);
 #              drawn topmost; re-emits blackout_finished for the app layer
 #
+# D-GUI-1 (the owner's reference build): every element is a dark rounded panel in one
+# type scale, padding and margin (view/hud/hud_style.gd holds the numbers and the layout
+# grid). panel_elements() lists the screen-fixed panels; tests/test_hud_gui.gd checks they
+# stay inside the viewport and never overlap at 1280x720 and 1920x1080. The radar
+# chevrons and screen_fx are overlays, not panels: they are drawn above every panel.
+#
 # The other two section 14 elements are separate top-level nodes, because they
 # are not screen-fixed 2D: danger_text.gd (Node3D, world spawn points) and
 # run_over.gd (shown on death). Both live in this folder.
@@ -26,6 +36,10 @@ extends Control
 # sync(snapshot) takes one dictionary (all fields optional, sane empties):
 #   gifts_collected: int, gifts_total: int   (REAL gifts only - pass
 #                      total_real - remaining() / total_real from sim/gifts.gd)
+#   gold: Dictionary  {active, collected, total} from gold_counter.gd read(gifts); an
+#                      absent dict or active == false is the black phase: the gold
+#                      counter hides and the gifts counter shows
+#   mouse_locked: bool  the app's real mouse-lock flag (world.gd _mouse_locked)
 #   purse_centi: int, chain: float           (economy.purse_centi / chain_display())
 #   charges: int, charge_cap: int, last_light: String   (controller.charges /
 #                      .charge_cap / .hud_last_light())
@@ -50,6 +64,8 @@ const ScreenFxScript := preload("res://view/hud/screen_fx.gd")
 const RadarArrowsScript := preload("res://view/hud/radar_arrows.gd")
 const CartographerMapScript := preload("res://view/hud/cartographer_map.gd")
 const CollapseWarningScript := preload("res://view/hud/collapse_warning.gd")
+const GoldCounterScript := preload("res://view/hud/gold_counter.gd")
+const MouseHintScript := preload("res://view/hud/mouse_hint.gd")
 
 var gift_counter: Control
 var purse_chain: Control
@@ -60,6 +76,8 @@ var enemy_roster: Control
 var radar_arrows: Control
 var cartographer_map: Control
 var collapse_warning: Control   # D-B12-1: the outside-in collapse countdown, top-centre
+var gold_counter: Control   # D-GUI-1: the gold-phase counter, gift_counter's slot
+var mouse_hint: Control     # D-GUI-1: the CTRL mouse-lock hint under the counter
 var screen_fx: Control   # T-086: full-screen void flash / white bloom / death black-out
 
 signal blackout_finished
@@ -70,6 +88,10 @@ func _init() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	gift_counter = GiftCounterScript.new()
 	add_child(gift_counter)
+	gold_counter = GoldCounterScript.new()
+	add_child(gold_counter)
+	mouse_hint = MouseHintScript.new()
+	add_child(mouse_hint)
 	purse_chain = PurseChainScript.new()
 	add_child(purse_chain)
 	void_pips = VoidPipsScript.new()
@@ -80,13 +102,14 @@ func _init() -> void:
 	add_child(icon_rows)
 	enemy_roster = EnemyRosterScript.new()
 	add_child(enemy_roster)
-	radar_arrows = RadarArrowsScript.new()
-	add_child(radar_arrows)
 	cartographer_map = CartographerMapScript.new()
 	cartographer_map.visible = false   # until sync() says the run owns the footprint map
 	add_child(cartographer_map)
 	collapse_warning = CollapseWarningScript.new()
 	add_child(collapse_warning)
+	# the radar chevrons are an overlay: drawn above every panel (D-GUI-1)
+	radar_arrows = RadarArrowsScript.new()
+	add_child(radar_arrows)
 	# T-086: the screen-wide effects draw over every other HUD element
 	screen_fx = ScreenFxScript.new()
 	add_child(screen_fx)
@@ -95,6 +118,12 @@ func _init() -> void:
 
 func sync(snapshot: Dictionary) -> void:
 	gift_counter.sync(int(snapshot.get("gifts_collected", 0)), int(snapshot.get("gifts_total", 0)))
+	# D-GUI-1: the two counters share one slot - gifts in the black phase, gold after it
+	var gold: Dictionary = snapshot.get("gold", {})
+	var gold_on := bool(gold.get("active", false))
+	gold_counter.sync_gold(gold_on, int(gold.get("collected", 0)), int(gold.get("total", 0)))
+	gift_counter.visible = not gold_on
+	mouse_hint.sync(bool(snapshot.get("mouse_locked", false)))
 	purse_chain.sync(int(snapshot.get("purse_centi", 0)), float(snapshot.get("chain", 1.0)))
 	void_pips.set_charges(int(snapshot.get("charges", 2)), int(snapshot.get("charge_cap", 2)))
 	void_pips.set_last_light(str(snapshot.get("last_light", "lit")))
@@ -119,6 +148,18 @@ func sync(snapshot: Dictionary) -> void:
 				float(cart.get("facing", -PI / 2.0)))
 	else:
 		cartographer_map.sync(null, 0, 2.75, {}, -PI / 2.0)
+
+
+## The screen-fixed panels by name (D-GUI-1): every element that must sit inside the
+## viewport and clear of every other. Overlays (radar_arrows, screen_fx) are not listed.
+func panel_elements() -> Dictionary:
+	return {
+		"gift_counter": gift_counter, "gold_counter": gold_counter, "mouse_hint": mouse_hint,
+		"purse_chain": purse_chain, "void_pips": void_pips,
+		"ability_cooldown": ability_cooldown, "icon_rows": icon_rows,
+		"enemy_roster": enemy_roster, "cartographer_map": cartographer_map,
+		"collapse_warning": collapse_warning,
+	}
 
 
 ## Begin the 18-tick death black-out (section 2.4); blackout_finished fires when it

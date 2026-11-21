@@ -25,14 +25,22 @@ extends Control
 #   last_light_trigger()  on the Last Light save; the bloom lives in screen_fx.gd
 # All four are wired by app/world.gd and pinned by tests/test_world_stat_wiring.gd.
 
+const HudStyle := preload("res://view/hud/hud_style.gd")
+
 const HELD_COLOR := Color(0.486, 1.0, 0.957)    # #7CFFF4
 const SPENT_COLOR := Color(0.227, 0.290, 0.333) # #3A4A55
 const PIP_STEP := 40.0    # 28 px diamond + 12 px gap
-const EDGE := 24.0
+const EDGE := HudStyle.MARGIN   # D-GUI-1: the shared screen margin (was 24)
 const PIP := 28.0
 const LL_SIZE := 28.0
 const LL_GAP := 16.0      # gap between the last pip and the Last Light icon
 const ROW_HEIGHT := 28.0
+# D-GUI-1: the row sits inside a dark rounded panel, BOTTOM_ROW_H tall like the class
+# ability panel beside it. The diamonds are drawn PAD_X / PAD_TOP in from the panel corner;
+# the panel's lower padding leaves room for the "FREE" tick under a pip.
+const PAD_X := HudStyle.PAD_X
+const PANEL_H := HudStyle.BOTTOM_ROW_H
+const PAD_TOP := (PANEL_H - ROW_HEIGHT) * 0.5
 const TICKS_PER_SECOND := 60.0
 const SPEND_TICKS := 18.0       # binding (section 2.4): pip drains downward over 18 ticks
 const RESTORE_TICKS := 24.0     # binding (section 2.4): first hollow pip fills upward
@@ -59,16 +67,21 @@ var _shatter_t := -1.0    # < 0 idle; else elapsed ticks of the Last Light shatt
 
 
 func _init() -> void:
-	custom_minimum_size = Vector2(EDGE * 2 + PIP_STEP * 2 + LL_GAP + LL_SIZE, ROW_HEIGHT)
+	custom_minimum_size = Vector2(panel_width(2), PANEL_H)
 	anchor_left = 0.0
 	anchor_right = 0.0
 	anchor_top = 1.0
 	anchor_bottom = 1.0
 	offset_left = EDGE
-	offset_right = EDGE + PIP_STEP * 2.0 + LL_GAP + LL_SIZE
-	offset_top = -EDGE - ROW_HEIGHT
+	offset_right = EDGE + panel_width(2)
+	offset_top = -EDGE - PANEL_H
 	offset_bottom = -EDGE
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+
+## The panel width for a cap of p_cap pips: the pips, the Last Light icon, the padding.
+static func panel_width(p_cap: int) -> float:
+	return PAD_X * 2.0 + PIP_STEP * float(p_cap) + LL_GAP + LL_SIZE
 
 
 ## held: charges currently held; p_cap: the holdable cap (Hungry Void => 1).
@@ -78,8 +91,8 @@ func set_charges(p_held: int, p_cap: int) -> void:
 	if _free_t >= 0.0:
 		# a charge spent inside the FREE window: the flash follows the held count
 		_free_index = maxi(held - 1, 0)
-	offset_right = EDGE + PIP_STEP * float(charge_cap) + LL_GAP + LL_SIZE
-	custom_minimum_size = Vector2(EDGE + offset_right, ROW_HEIGHT)
+	custom_minimum_size = Vector2(panel_width(charge_cap), PANEL_H)
+	offset_right = EDGE + panel_width(charge_cap)
 	queue_redraw()
 
 
@@ -285,6 +298,9 @@ func _diamond_half_width(y: float) -> float:
 
 
 func _draw() -> void:
+	# D-GUI-1: the panel first, then everything else in panel-content coordinates
+	draw_style_box(_panel_box(), Rect2(Vector2.ZERO, size))
+	draw_set_transform(Vector2(PAD_X, PAD_TOP))
 	var pulse := 0.0
 	if _pulse_t >= 0.0:
 		pulse = sin(PI * (1.0 - _pulse_t / PULSE_TICKS))
@@ -346,6 +362,15 @@ func _draw() -> void:
 		_draw_shatter(ll_cx, ROW_HEIGHT * 0.5)
 	else:
 		_draw_last_light(ll_cx, ROW_HEIGHT * 0.5)
+
+
+var _box: StyleBoxFlat = null
+
+
+func _panel_box() -> StyleBoxFlat:
+	if _box == null:
+		_box = HudStyle.panel()
+	return _box
 
 
 static func _scale_pts(pts: PackedVector2Array, cx: float, cy: float, s: float) -> PackedVector2Array:

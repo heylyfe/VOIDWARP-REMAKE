@@ -2193,16 +2193,21 @@ static func _role_hex(roles: Dictionary, role: String, fallback: String) -> Colo
 ## total_real - remaining(): since the platform collapse (sim/gifts.gd lose()) a gift can
 ## leave the level without being collected, and the subtraction would count it as taken.
 func _sync_hud() -> void:
+	# D-GUI-1: the gold counter's numbers come from its own pure reader (the gold_taken
+	# bitset over REAL slots, total_real, the phase); the hint reads the real lock flag.
+	const GoldCounterScript := preload("res://view/hud/gold_counter.gd")
 	if hud == null or ctl == null or rt == null:
 		return
 	var total := 0
 	var collected := 0
+	var gold: Dictionary = {}
 	if lstate != null and lstate.gifts != null:
 		var g: RefCounted = lstate.gifts
 		total = int(g.total_real)
 		for i in g.slots.size():
 			if g.is_real(i) and g.collected(i):
 				collected += 1
+		gold = GoldCounterScript.read(g)
 	var purse := 0
 	var chain := 1.0
 	if _economy != null:
@@ -2225,6 +2230,8 @@ func _sync_hud() -> void:
 		"radar_entries": _radar_entries(),
 		"footprint_map": _footprint_feed(),
 		"collapse": _collapse_feed(),
+		"gold": gold,
+		"mouse_locked": _mouse_locked,
 	})
 
 

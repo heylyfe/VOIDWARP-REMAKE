@@ -8042,3 +8042,73 @@ re-measured in the ticket report.
 20 s / 1200; leg 19 is new and pins the HUD feed and the three warning strings. Nothing was deleted,
 skipped or loosened. `shot_collapse_timeline.gd` (a tool, not a gate step) now asserts the 5 s delay
 and takes its quiet shot at 2 s.
+
+## D-GUI-1: the HUD is rebuilt in the reference panel language, with a gold counter and a CTRL hint (2026-11-21)
+
+**Owner report.** The GUI "is kinda bad". From a reference build the owner likes three things: the gold
+gift counter at the bottom, the "CTRL TO LOCK/UNLOCK MOUSE" hint, and the dark rounded pill panels.
+Only the screenshot was used as a reference. No code was copied.
+
+**Ruling: one panel language.** `view/hud/hud_style.gd` is new and holds every number the HUD draws
+with. Panels are dark and translucent (`#0E0E16` at 74%), with a 1 px faint border, a 10 px corner
+radius, 14/8 px padding, a 16 px screen margin and an 8 px gap between neighbours. There are three
+type sizes and no others: 13 (badges, radar distances, the hint, seconds), 18 (pill text) and 34 (the
+counter). The counter and the hint use a monospace face, as in the reference. Every element in
+DESIGN.md section 14 now uses these panels: the gift counter, the purse and chain, the void pips with
+Last Light, the ability cooldown, the curse and upgrade rows, the enemy roster, the cartographer map
+and the collapse warning. The radar chevrons and `screen_fx` are overlays, not panels. They are now
+drawn above every panel and are not part of the overlap rule, because a chevron has to sit at its
+true bearing on the screen edge.
+
+**Layout (any viewport; all anchored).**
+- Top-left: the roster, 195x140 at most (38 px cells, 5 px gap, so that test_enemy_stacking.gd's
+  existing 200x140 limit still holds).
+- Top-centre: the icon rows, 574x102 at y 16-118, then the collapse warning, 460x40 at y 126. It moved
+  from y 100 because the rows' panel now ends at 118.
+- Top-right: the purse pill, 240x40, with the map under it at y 64.
+- Bottom-left: the pips pill, 152x64, with the ability pill, 198x64, 8 px to its right.
+- Bottom-centre: the counter pill, 240x60, and under it the hint, 320x18, 10 px from the bottom edge.
+
+The icon rows hold at most 12 cells. A row with more items shows 11 cells and a "+N" cell, because
+the curse catalogue has more than 100 entries and an unbounded row would walk into the purse.
+`curse_count()` and `upgrade_count()` still report the full count.
+
+**Ruling: the gold counter.** `view/hud/gold_counter.gd` is new and subclasses the gift counter, using
+a gold gift icon and gold text. `read(gifts)` is the only reader. It counts the `gold_taken` bitset
+over REAL slots only, so a bit on an occ == 1 slot is never counted. The total is `total_real`,
+because the black-to-gold flip puts a gold gift at every real slot. `active` is `phase == gold`. The
+gold counter and the black-phase gift counter share one slot. Through the black phase the gift counter
+shows and the gold counter is hidden and zeroed. On the flip tick they swap, so both are never visible
+at once. The denominator stays `total_real` even after the collapse takes gifts, which matches the
+existing gift counter. A shrinking denominator was rejected as harder to read. [CONTESTABLE]
+
+**Ruling: the hint says what CTRL will do now.** When the mouse is locked it reads "CTRL TO UNLOCK
+MOUSE", and when it is free it reads "CTRL TO LOCK MOUSE". The reference's combined wording was
+rejected because a hint that states the current action is always true. The state comes from world.gd's
+own `_mouse_locked`, the same flag it passes to `camera_rig.mouse_mode_for`, through `_sync_hud()`'s
+snapshot (`"mouse_locked"`, plus `"gold"` from `read()`). Nothing else in world.gd changed. The HUD
+writes no sim state. While the game is frozen (paused), the hint updates on the next step.
+
+**Tests.** `test_hud.gd` is unchanged and passes. `test_hud_gui.gd` is new and covers:
+- the gold reader on a real seed 42 / level 25 sim: hidden before the flip, the bitset exactly, a
+  mine bit ignored, and no writes;
+- the counter swap;
+- a real `world.build()` and `step()`: the counter follows the sim, and the hint follows
+  `_mouse_lock_pass` with the real CTRL edge in both states;
+- bounds and no overlap for every panel at 1280x720 and 1920x1080 in both phases, with every row full
+  and the warning up, plus a check that the content-sized panels fit their slots (574x102 and
+  195x140, exact);
+- built-in negative controls.
+
+Mutation controls were also run by hand:
+- warning back at y 100: 5 failures;
+- the reader counts `black_taken`: 6;
+- an inverted hint: 5;
+- world feeds `mouse_locked: false`: 2.
+
+All passed again once restored. The first full run caught two of my own breaks, and both were fixed in
+the HUD code, not in the tests. The roster was 206x148, over test_enemy_stacking.gd's 200x140 limit.
+The icon rows had lost the `Rows/CursesRow` node path that test_polish_cycle2.gd reads. The rows now
+keep that path, and the panel is a backing sized by hand. `shot_hud.gd` adds hud_03 to hud_07 (black phase, gold phase,
+collapse warning, 1920x1080, bottom zoom). Each shot checks the engine's own laid-out panel rects for
+bounds and overlap, and they match the test's anchor math to the pixel.

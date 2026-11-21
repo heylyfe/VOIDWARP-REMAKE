@@ -12,9 +12,11 @@ extends Control
 # top-down-on-screen: +x right, +z down), no camera yaw folding - the same contract
 # the T-025 HUD elements use.
 
+const HudStyle := preload("res://view/hud/hud_style.gd")
+
 const CHEVRON := 24.0
 const EDGE_MARGIN := 4.0
-const FONT_SIZE := 12
+const FONT_SIZE := HudStyle.FONT_SMALL   # D-GUI-1: the HUD type scale
 const LABEL_COLOR := Color(1.0, 1.0, 1.0, 0.9)
 const CHEVRON_COLOR := Color(1.0, 1.0, 1.0, 1.0)
 
@@ -38,10 +40,7 @@ func sync(p_entries: Array) -> void:
 		var pos := _chevron_pos(float(entry["angle"]), vp)
 		var label := Label.new()
 		label.text = "%d u" % int(round(float(entry["dist"])))
-		label.add_theme_font_size_override("font_size", FONT_SIZE)
-		label.add_theme_color_override("font_color", LABEL_COLOR)
-		label.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.9))
-		label.add_theme_constant_override("outline_size", 3)
+		HudStyle.style_label(label, FONT_SIZE, LABEL_COLOR)
 		label.position = pos + Vector2(-14.0, CHEVRON * 0.5 + 2.0)
 		add_child(label)
 		_items.append({"pos": pos, "angle": float(entry["angle"]),
