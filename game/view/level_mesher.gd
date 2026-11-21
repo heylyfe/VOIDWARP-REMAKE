@@ -498,7 +498,8 @@ static func _top_mat_name(role: int) -> String:
 	return "platform_top"
 
 
-## Face factory: winding-verified axis faces (outward normals, CCW from outside).
+## Face factory: axis faces with outward normals, wound CLOCKWISE seen from outside - Godot's
+## front-face order (tests/test_slab_solid.gd pins it on the mesh data).
 static func _face_x(s: Surf, x: float, y0: float, y1: float, z0: float, z1: float, dir_i: int, top_ref: float) -> void:
 	_side(s, dir_i, x, y0, z0, x, y1, z1, top_ref)
 
@@ -520,17 +521,23 @@ static func _face_y(s: Surf, y: float, x0: float, x1: float, z0: float, z1: floa
 
 ## Vertical quad on one plane with the outward normal of dir_i. uv.y = top_ref - world y (the
 ## side shader reads the trim band from it: trim where uv.y < trim_height); uv.x unused.
+## ROOT CAUSE of "platforms look hollow" (owner report): these four corner orders used to be
+## counter-clockwise seen from outside - the OpenGL convention. Godot's front faces are
+## clockwise, so every outward slab/prop/pad/spike side was back-facing and culled by
+## cull_back, and what drew was the inside of the FAR wall (clockwise from the interior), lit
+## from behind: a dark see-through box. The same defect _face_y had on the tile tops (alpha.3).
+## Each list below is the old one reversed; the authored normal is unchanged.
 static func _side(s: Surf, dir_i: int, x0: float, y0: float, z0: float, x1: float, y1: float, z1: float, top_ref: float) -> void:
 	var pts: Array
 	match dir_i:
 		0:
-			pts = [Vector3(x0, y0, z0), Vector3(x0, y1, z0), Vector3(x0, y1, z1), Vector3(x0, y0, z1)]
-		2:
 			pts = [Vector3(x0, y0, z1), Vector3(x0, y1, z1), Vector3(x0, y1, z0), Vector3(x0, y0, z0)]
+		2:
+			pts = [Vector3(x0, y0, z0), Vector3(x0, y1, z0), Vector3(x0, y1, z1), Vector3(x0, y0, z1)]
 		1:
-			pts = [Vector3(x0, y0, z0), Vector3(x1, y0, z0), Vector3(x1, y1, z0), Vector3(x0, y1, z0)]
+			pts = [Vector3(x0, y1, z0), Vector3(x1, y1, z0), Vector3(x1, y0, z0), Vector3(x0, y0, z0)]
 		_:
-			pts = [Vector3(x1, y0, z0), Vector3(x0, y0, z0), Vector3(x0, y1, z0), Vector3(x1, y1, z0)]
+			pts = [Vector3(x1, y1, z0), Vector3(x0, y1, z0), Vector3(x0, y0, z0), Vector3(x1, y0, z0)]
 	var n := Vector3(DX[dir_i], 0, DZ[dir_i])
 	var uvs: Array = []
 	for p in pts:
@@ -637,8 +644,13 @@ static func _wedge(s_top: Surf, s_side: Surf, x: int, z: int, y: int, d: int, co
 	var az: float = DZ[d]
 	var lx: float = DX[(d + 1) % 4]
 	var lz: float = DZ[(d + 1) % 4]
-	var fx := float(x)
-	var fz := float(z)
+	# (a, l) = (0, 0) is the cell corner the a and l axes grow from: a negative axis starts on the
+	# cell's far edge. This used to be (x, z) for every d, so ramps ascending +z, -x and -z had
+	# their top and lateral walls one cell over from their collision cell (only +x was right).
+	var fx := float(x) + (1.0 if ax < 0.0 else 0.0) + (1.0 if lx < 0.0 else 0.0)
+	var fz := float(z) + (1.0 if az < 0.0 else 0.0) + (1.0 if lz < 0.0 else 0.0)
+	var cx0 := float(x)    # the cell box, for the axis-aligned edge faces
+	var cz0 := float(z)
 	var ry := float(y) * HU
 	var rh := float(y + 1) * HU
 	var zero := Vector2.ZERO
@@ -647,21 +659,29 @@ static func _wedge(s_top: Surf, s_side: Surf, x: int, z: int, y: int, d: int, co
 	# sloped top; normal opposes the rise direction. Winding: low edge first, then the high
 	# edge in the same lateral order - the reverse of that order is back-facing from above
 	# (the same defect _face_y had, which culled every tile top).
+	var top_n := Vector3(-0.5 * ax, 1.0, -0.5 * az).normalized()
 	s_top.quad([_wpt(fx, fz, ax, az, lx, lz, 0.0, 0.0, ry), _wpt(fx, fz, ax, az, lx, lz, 1.0, 0.0, rh), _wpt(fx, fz, ax, az, lx, lz, 1.0, 1.0, rh), _wpt(fx, fz, ax, az, lx, lz, 0.0, 1.0, ry)],
-		[zero, zero, zero, zero], Vector3(-0.5 * ax, 1.0, -0.5 * az).normalized())
+		[zero, zero, zero, zero], top_n)
+	# sloped underside, 1 u below the top, reverse order (front face looks down). The wedge had
+	# none, so a ramp was an open box from below (owner report "platforms look hollow").
+	var u_bot := Vector2(0.0, 1.0)
+	s_side.quad([_wpt(fx, fz, ax, az, lx, lz, 0.0, 0.0, ry - SLAB), _wpt(fx, fz, ax, az, lx, lz, 0.0, 1.0, ry - SLAB), _wpt(fx, fz, ax, az, lx, lz, 1.0, 1.0, rh - SLAB), _wpt(fx, fz, ax, az, lx, lz, 1.0, 0.0, rh - SLAB)],
+		[u_bot, u_bot, u_bot, u_bot], -top_n)
 
 	# high edge face (top edge = rh): covered by a tile at y+1 exactly
 	if not _edge_covered(cols, x, z, y + 1, d):
-		_side_rect(s_side, d, fx, fx + 1.0, rh - SLAB, rh, fz, fz + 1.0, rh)
+		_side_rect(s_side, d, cx0, cx0 + 1.0, rh - SLAB, rh, cz0, cz0 + 1.0, rh)
 	# low edge face (top edge = ry)
 	var back := (d + 2) % 4
 	if not _edge_covered(cols, x, z, y, back):
-		_side_rect(s_side, back, fx, fx + 1.0, ry - SLAB, ry, fz, fz + 1.0, ry)
+		_side_rect(s_side, back, cx0, cx0 + 1.0, ry - SLAB, ry, cz0, cz0 + 1.0, ry)
 
-	# lateral walls: (a, y) corners of the side plane, trim band hugging the surface line
+	# lateral walls: (a, y) corners of the side plane, trim band hugging the surface line.
+	# The flag picks the clockwise-from-outside order for that wall; it was inverted (both
+	# walls back-facing and culled - the same root cause as _side above).
 	var u_lo := Vector2(0.0, 1.0)
 	var u_hi := Vector2(0.0, 0.0)
-	for lat_side in [[(d + 1) % 4, 1.0, true], [(d + 3) % 4, 0.0, false]]:
+	for lat_side in [[(d + 1) % 4, 1.0, false], [(d + 3) % 4, 0.0, true]]:
 		var sdir: int = lat_side[0]
 		var lo: float = lat_side[1]
 		var nl := Vector3(DX[sdir], 0, DZ[sdir])
