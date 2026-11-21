@@ -304,7 +304,7 @@ powershell -File tools\gate.ps1
 powershell -File tools\harness.ps1
 ```
 
-The gate is the contract: 90 test files, terrain parity, sprite validation, fog readability across
+The gate is the contract: 124 test files, terrain parity, sprite validation, fog readability across
 five biomes, and a zero-`SCRIPT ERROR` requirement. Nothing merges red.
 
 ### Build
