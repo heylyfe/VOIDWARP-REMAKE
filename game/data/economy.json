@@ -8,6 +8,7 @@
     "bounty": "floor(base * (20 + level) / 20)"
   },
   "gold_phase": {
+    "gift_pickup_radius": 0.7,
     "gold_gift_base_value": 2.0,
     "chain": {
       "start": 1.0,
