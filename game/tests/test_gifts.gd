@@ -39,6 +39,7 @@ func run() -> Array[String]:
 	_test_beacon_entry_charges(f)
 	_test_pickup_radius_stat(f)
 	_test_hash_pins_pickup_radius(f)
+	_test_hash_pins_lost_gifts(f)
 	_test_other_volumes(f)
 	_test_straggler_threshold(f)
 	_test_slot_pos_confinement(f)
@@ -401,8 +402,8 @@ func _test_hash_pins_pickup_radius(f: Array[String]) -> void:
 	var econ: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(GiftsScript.ECONOMY_DATA))
 	var want := float(econ["gold_phase"]["gift_pickup_radius"])
 	var parts := str(shipped[1]).split(" ")
-	if parts.size() != 6:
-		f.append("ring hash: GIFTS line has %d fields, want 6: %s" % [parts.size(), shipped[1]])
+	if parts.size() != 9:
+		f.append("ring hash: GIFTS line has %d fields, want 9: %s" % [parts.size(), shipped[1]])
 	elif parts[4] != HashScript.bits(want) or parts[5] != HashScript.bits(1.0):
 		f.append("ring hash: GIFTS line %s does not carry the shipped radius %s x 1.0"
 				% [shipped[1], HashScript.bits(want)])
@@ -410,6 +411,54 @@ func _test_hash_pins_pickup_radius(f: Array[String]) -> void:
 		f.append("ring hash: shipped gift_pickup_radius %.4f, want 0.7" % want)
 	if shipped[0] != b[0]:
 		f.append("ring hash: the shipped state and an explicit 0.7 ring hash differently")
+
+
+## The collapse drops a gift whose tile fell (world.gd _collapse_sweep -> gifts.lose()), which
+## moves remaining(), all_black_collected() and the pickup loop - but the GIFTS line carried
+## only the taken bitsets, so a run that lost a gift hashed the same as one that did not.
+## Same hole the pickup ring had; found by the C4 review-fixes worker and left for this leg.
+func _test_hash_pins_lost_gifts(f: Array[String]) -> void:
+	var lvl: Dictionary = VoidGenScript.generate(1, 1, 1, 0)
+	var rs = RunStateScript.new_run(1, 1, [])
+	rs.load_level(lvl, 1)
+	var before: String = HashScript.sha256(rs)
+	var gline_before := ""
+	for line in HashScript.dump(rs):
+		if line.begins_with("GIFTS "):
+			gline_before = line
+	# lose the first real slot, exactly as the collapse sweep does
+	var lost_one := -1
+	for i in rs.level.gifts.slots.size():
+		if rs.level.gifts.is_real(i):
+			lost_one = i
+			break
+	if lost_one < 0:
+		f.append("lost hash: the level has no real gift slot to lose")
+		return
+	if not rs.level.gifts.lose(lost_one):
+		f.append("lost hash: lose(%d) refused a real slot" % lost_one)
+		return
+	var after: String = HashScript.sha256(rs)
+	var gline_after := ""
+	for line in HashScript.dump(rs):
+		if line.begins_with("GIFTS "):
+			gline_after = line
+	if before == after:
+		f.append("lost hash: losing gift slot %d did not move the state hash" % lost_one)
+	if gline_before == gline_after:
+		f.append("lost hash: the GIFTS line is identical after a loss: %s" % gline_before)
+	# the lost bitset is the field that moved, and it is the 7th (index 6)
+	var pb := gline_before.split(" ")
+	var pa := gline_after.split(" ")
+	if pb.size() == 9 and pa.size() == 9:
+		if pb[6] == pa[6]:
+			f.append("lost hash: the lost bitset field did not change (%s)" % pb[6])
+		if pb[1] != pa[1] or pb[2] != pa[2]:
+			f.append("lost hash: a loss changed the taken bitsets, which it must not")
+	# and the same loss twice hashes the same
+	var again: String = HashScript.sha256(rs)
+	if again != after:
+		f.append("lost hash: the same lost state hashed differently twice")
 
 
 # ---- straggler rule: the last 20% of REAL gifts, hazards never ------------------

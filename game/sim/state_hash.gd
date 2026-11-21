@@ -20,7 +20,7 @@ extends RefCounted
 #   X <hex> Y <hex> Z <hex> VX <hex> VY <hex> VZ <hex>
 #   GROUNDED <0|1>
 #   PREV_BUTTONS <int>
-#   GIFTS <phase> <black hex> <gold hex> <base_r bits> <mult bits>
+#   GIFTS <phase> <black hex> <gold hex> <base_r bits> <mult bits> <lost hex> <quota> <straggler>
 #                                          (T-020) phase + the two slot-id bitsets, hex encoded;
 #                                          (C4 review finding 1) then the base pickup radius
 #                                          (economy.json gold_phase.gift_pickup_radius) and the
@@ -28,6 +28,9 @@ extends RefCounted
 #                                          CONFIG, not a function of the Level: without them two
 #                                          runs whose economy data differed hashed the same until
 #                                          a pickup at a distance between the radii diverged.
+#                                          Then the lost bitset (a gift whose tile fell in the
+#                                          collapse) and the two quota knobs, which change what
+#                                          the gift machine does without touching the taken bits.
 #   BEACON <opened> <completed>            (T-020) the beacon machine flags
 #   MINES <consumed hex>                   (T-021) the tripmine consumed bitset, hex encoded
 #   COLLAPSE <enabled> <phase> <start> <cur> <fallen_n> <removed_n> <crack_ticks> <gap_ticks>
@@ -93,7 +96,7 @@ static func dump(rs: RefCounted) -> PackedStringArray:
 	# T-020: the gift bitsets + phase and the beacon flags are live state, so they
 	# join the dump (D-T020-7); PackedByteArray.hex_encode() is deterministic.
 	if lv.gifts != null:
-		out.append("GIFTS %s %s %s %s %s" % [
+		out.append("GIFTS %s %s %s %s %s %s %d %d" % [
 			str(lv.gifts.phase),
 			(lv.gifts.black_taken as PackedByteArray).hex_encode(),
 			(lv.gifts.gold_taken as PackedByteArray).hex_encode(),
@@ -101,6 +104,14 @@ static func dump(rs: RefCounted) -> PackedStringArray:
 			# multiplier; both decide which input collects, so both are pinned here.
 			bits(float(lv.gifts.base_pickup_radius)),
 			bits(float(lv.gifts.pickup_mult)),
+			# The collapse drops a gift whose tile fell (world.gd _collapse_sweep -> lose()),
+			# which moves remaining(), all_black_collected() and the pickup loop. Without
+			# this bitset two runs differing only in a lost gift hashed the same - the same
+			# hole the ring had. black_quota and straggler_pct are the other two knobs that
+			# change what the gift machine does, so they are pinned with it.
+			(lv.gifts.lost as PackedByteArray).hex_encode(),
+			int(lv.gifts.black_quota),
+			int(lv.gifts.straggler_pct),
 		])
 	if lv.beacon != null:
 		out.append("BEACON %d %d" % [
