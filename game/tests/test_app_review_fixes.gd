@@ -11,8 +11,11 @@ extends RefCounted
 #     loading world down twice. Now the second activation early-returns; the loading
 #     screen is queue_free'd, never free()'d inside the handler.
 #   BUG-3: the altar's SKIP used to emit skipped that nothing connected to - a dead
-#     button. SKIP now closes the altar, the same outcome as letting the pick window
-#     expire: the seeded replay decides the class.
+#     button. SKIP now closes the altar and the seeded replay decides the class.
+#     (Item 7 retired "the same outcome as letting the pick window expire": the window
+#     expiring WAS the "it picks for you" bug. With no pick the run is now held at the
+#     altar, and SKIP is checked against the seeded replay itself - the pinned
+#     start_run, which never shows the altar.)
 #
 # Headless, outside the scene tree, like test_app_lobby.gd / test_app_death.gd: the app
 # node is not added to the tree; the test calls _ready() itself and drives the world
@@ -43,7 +46,11 @@ func run() -> Array[String]:
 
 # ---- helpers -------------------------------------------------------------------------------
 
-func _drive_to_world(f: Array[String], app) -> void:
+func _drive_to_world(f: Array[String], app, p_skip_altar := true) -> void:
+	# the run waits at the class altar until the player confirms or skips (item 7): a run with no pick
+	# yet presses SKIP, the seeded replay's class - what the old expiring window did
+	if p_skip_altar:
+		_skip_open_altar(app)
 	var loading = app._loading
 	var guard := 0
 	while app.state() == "LOADING" and loading != null and guard < 400:
@@ -391,8 +398,21 @@ func _altar_run(f: Array[String], scratch: String, use_skip: bool) -> Dictionary
 			f.append("skip leg: the altar is still open after SKIP - the label promises it closes")
 		if chose[0] != "":
 			f.append("skip leg: skip() reported a pick '%s', want none" % chose[0])
-	_drive_to_world(f, app)
 	var out := {}
+	if not use_skip:
+		# no pick, no SKIP: the clock runs out (400 x 0.25 s) and the run must still be
+		# held at the open altar, the world not yet live
+		var guard := 0
+		while app.state() == "LOADING" and app._loading != null and guard < 400:
+			app._loading.advance(0.25)
+			guard += 1
+		out["held"] = app.state() == "LOADING" and app._class_altar != null 				and app._class_altar.is_open() and app._world != null 				and app._world.get_parent() == null
+		out["state"] = app.state()
+		app._return_to_menu()
+		app.free()
+		_rm(scratch)
+		return out
+	_drive_to_world(f, app)
 	if app._world == null:
 		f.append("skip leg: the run never went live")
 	else:
@@ -400,6 +420,28 @@ func _altar_run(f: Array[String], scratch: String, use_skip: bool) -> Dictionary
 		out["ledger"] = str(app._world.run_ledger().get("class", ""))
 	out["skipped"] = skipped[0]
 	out["chosen"] = chose[0]
+	app.free()
+	_rm(scratch)
+	return out
+
+
+## The seeded replay itself: a pinned start_run from MENU never shows the altar, so the
+## class is world._resolve_run's own seeded pick. Returns the kit / ledger class.
+func _seeded_replay_run(f: Array[String], scratch: String) -> Dictionary:
+	_rm(scratch)
+	var app = AppScript.new()
+	app.records_path = scratch
+	app._ready()
+	app.start_run(SEED)
+	var out := {}
+	if app._class_altar != null:
+		f.append("skip leg: the pinned start_run showed the altar")
+	_drive_to_world(f, app, false)
+	if app._world == null:
+		f.append("skip leg: the seeded replay run never went live")
+	else:
+		out["kit"] = str(app._world.ctl.kit)
+		out["ledger"] = str(app._world.run_ledger().get("class", ""))
 	app.free()
 	_rm(scratch)
 	return out
@@ -435,15 +477,19 @@ func _altar_pick_run(f: Array[String], scratch: String, pick: String) -> Diction
 
 func _leg_bug3_skip_matches_expiry(f: Array[String]) -> void:
 	var via_skip := _altar_run(f, "user://test_review_fixes_b3skip_scratch.json", true)
-	var via_expiry := _altar_run(f, "user://test_review_fixes_b3exp_scratch.json", false)
-	if via_skip.is_empty() or via_expiry.is_empty():
+	var no_pick := _altar_run(f, "user://test_review_fixes_b3exp_scratch.json", false)
+	var seeded := _seeded_replay_run(f, "user://test_review_fixes_b3seed_scratch.json")
+	if via_skip.is_empty() or no_pick.is_empty() or seeded.is_empty():
 		return
-	if str(via_skip["kit"]) != str(via_expiry["kit"]):
-		f.append("skip leg: SKIP kit '%s' != the expired window's kit '%s'"
-				% [via_skip["kit"], via_expiry["kit"]])
-	if str(via_skip["ledger"]) != str(via_expiry["ledger"]):
-		f.append("skip leg: SKIP ledger class '%s' != the expired window's '%s'"
-				% [via_skip["ledger"], via_expiry["ledger"]])
+	if not bool(no_pick["held"]):
+		f.append("skip leg: with no pick the clock ran out and the run went on (state=%s) - "
+				% str(no_pick["state"]) + "a timer decided the class")
+	if str(via_skip["kit"]) != str(seeded["kit"]):
+		f.append("skip leg: SKIP kit '%s' != the seeded replay's kit '%s'"
+				% [via_skip["kit"], seeded["kit"]])
+	if str(via_skip["ledger"]) != str(seeded["ledger"]):
+		f.append("skip leg: SKIP ledger class '%s' != the seeded replay's '%s'"
+				% [via_skip["ledger"], seeded["ledger"]])
 	if str(via_skip["ledger"]) != str(via_skip["kit"]):
 		f.append("skip leg: the SKIP run's kit '%s' does not match its ledger class '%s'"
 				% [via_skip["kit"], via_skip["ledger"]])
@@ -468,3 +514,9 @@ func _leg_bug3_skip_matches_expiry(f: Array[String]) -> void:
 		f.append("skip leg n/c: the explicit pick did not change the run's kit")
 	if str(picked["chosen"]) != other:
 		f.append("skip leg n/c: choose('%s') emitted class_chosen '%s'" % [other, picked["chosen"]])
+
+
+## The player presses SKIP at a still-open class altar (no-op once a pick closed it).
+func _skip_open_altar(app) -> void:
+	if app._class_altar != null and app._class_altar.is_open():
+		app._class_altar.skip()

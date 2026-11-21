@@ -46,6 +46,9 @@ func _boot(f: Array[String], p_records: String):
 
 
 func _drive_to_world(f: Array[String], app) -> void:
+	# the run waits at the class altar until the player confirms or skips (item 7): a run with no pick
+	# yet presses SKIP, the seeded replay's class - what the old expiring window did
+	_skip_open_altar(app)
 	var loading = app._loading
 	var guard := 0
 	while app.state() == "LOADING" and loading != null and guard < 400:
@@ -335,3 +338,9 @@ func _leg_lobby_pause(f: Array[String]) -> void:
 	if bool(lobby._mouse_locked) != locked_before:
 		f.append("lobby pause: resume did not restore the lobby's capture state")
 	app.free()
+
+
+## The player presses SKIP at a still-open class altar (no-op once a pick closed it).
+func _skip_open_altar(app) -> void:
+	if app._class_altar != null and app._class_altar.is_open():
+		app._class_altar.skip()

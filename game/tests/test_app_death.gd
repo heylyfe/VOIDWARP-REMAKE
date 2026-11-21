@@ -195,6 +195,9 @@ func _leg_c_app(f: Array[String]) -> void:
 	app._menu.play_requested.emit()
 	if app.run_seed() != SEED_A:
 		f.append("leg C: the run used seed %d, want the pinned %d" % [app.run_seed(), SEED_A])
+	# the run waits at the class altar until the player confirms or skips (item 7)
+	if app._class_altar != null and app._class_altar.is_open():
+		app._class_altar.skip()
 	var loading = app._loading
 	var guard := 0
 	while app.state() == "LOADING" and loading != null and guard < 400:

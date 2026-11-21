@@ -77,6 +77,9 @@ func run() -> Array[String]:
 		failures.append("world reports level %d, want 1" % world.level_number())
 
 	# ---- 3. drive the loading clock -> WORLD ----------------------------------------------
+	# the run waits at the class altar until the player confirms or skips (item 7): SKIP
+	if app._class_altar != null and app._class_altar.is_open():
+		app._class_altar.skip()
 	if loading != null:
 		var guard := 0
 		while app.state() == "LOADING" and guard < 400:

@@ -39,7 +39,10 @@ extends Node
 #                       MENU directly; in MENU it is a no-op.
 #   PLAY -> the class altar (gap 2, DESIGN.md section 4) shows over the loading screen:
 #                       the pick rebuilds the level with the chosen class and persists for
-#                       the session; SKIP / no pick keeps the seeded replay's pick.
+#                       the session; SKIP keeps the seeded replay's pick. The run WAITS for
+#                       the altar: a loading clock that runs out first is held until the
+#                       player confirms or skips - a timer never decides the class. The
+#                       cursor is free while the altar is up and re-captured as play starts.
 #
 # The run seed (J1, supersedes D-APPFLOW-1's fixed DEFAULT_SEED 1): start_run(seed)'s argument
 # when one was passed - that run reproduces exactly that level, since voidgen is a pure function
@@ -114,6 +117,9 @@ var _pause_overlay: Control = null
 # (the old behaviour). A pick persists across runs of the session until changed.
 var _chosen_class := ""
 var _class_altar: Control = null
+# The loading clock ran out while the altar was still open: the run is held (state stays
+# LOADING, the world stays out of the tree) until the player confirms or skips.
+var _held_for_altar := false
 
 
 func _ready() -> void:
@@ -297,6 +303,21 @@ func _build_world_node(p_level: int, p_ledger: Dictionary) -> Node:
 
 
 func _on_loading_finished() -> void:
+	# gap 2: the altar holds the run. Before this guard the clock running out freed the
+	# open altar and went live with the seeded replay's class - the "it picks for you"
+	# bug: 5 s on the first launch, 2 s on every later PLAY, and a player still reading
+	# the cards lost the choice to the timer.
+	if _class_altar != null and _class_altar.is_open():
+		_held_for_altar = true
+		return
+	_go_live()
+
+
+## The run goes live: the loading screen and the altar leave, the world enters the tree,
+## and the world's own capture (a level begins CAPTURED, world.gd J5) is re-applied -
+## the altar had released it so the cursor could reach the cards.
+func _go_live() -> void:
+	_held_for_altar = false
 	if _loading != null:
 		# queue_free, not free(): loading_finished is emitted from inside advance();
 		# freeing the screen synchronously would pull the object from under its own
@@ -310,6 +331,8 @@ func _on_loading_finished() -> void:
 		_class_altar = null
 	if _world != null:
 		add_child(_world)
+		_world._mouse_locked = true
+		_world.apply_mouse_mode()
 	_ever_entered_world = true   # the run is live: a later _end_run() records it
 	_state = STATE_WORLD
 
@@ -582,6 +605,7 @@ func _return_to_menu() -> void:
 	if _class_altar != null:
 		_class_altar.queue_free()
 		_class_altar = null
+	_held_for_altar = false
 	_end_run()   # ESC abandons the run in progress; the records only ratchet up
 	# queue_free: retried is emitted from inside the run-over screen's own Button.
 	if _run_over != null:
@@ -620,9 +644,13 @@ func _load_pause_codes() -> Array[int]:
 
 # ---- the class altar (gap 2, DESIGN.md section 4) -------------------------------------------
 
-## The altar shows over the loading screen, before the run starts. A pick rebuilds the
-## not-yet-in-tree world with the chosen class; outliving the loading clock (or SKIP)
-## leaves the seeded replay's pick, exactly the pre-altar behaviour. start_run() never
+## The altar shows over the loading screen, before the run starts. A confirmed pick
+## rebuilds the not-yet-in-tree world with the chosen class; SKIP leaves the seeded
+## replay's pick. The run waits for one of the two (_on_loading_finished holds it).
+## world.build() captured the mouse when the world was built a moment ago (a level
+## begins CAPTURED) - with the cursor hidden and locked to the window centre no click
+## could reach a card, so the altar releases it through the world's own
+## apply_mouse_mode() (the single Input.mouse_mode writer). start_run() never
 ## shows the altar: a pinned seed must reproduce the run it pins (the bot, Retry), and
 ## Retry reruns the dead run's own class (the pick persists in _chosen_class).
 func _open_class_altar() -> void:
@@ -631,10 +659,27 @@ func _open_class_altar() -> void:
 	if _class_altar != null:
 		_class_altar.queue_free()
 		_class_altar = null
+	_held_for_altar = false
 	_class_altar = ClassAltarScript.new()
 	_class_altar.class_chosen.connect(_on_class_chosen)
+	_class_altar.skipped.connect(_on_class_skipped)
 	add_child(_class_altar)   # after the loading screen: the altar draws on top
 	_class_altar.open(_chosen_class)
+	_release_cursor_for_altar()
+
+
+## The cursor is free while the altar is up: the not-yet-live world holds the capture
+## state, so release it there (a rebuild after a pick captures again - call again).
+func _release_cursor_for_altar() -> void:
+	if _world != null:
+		_world._mouse_locked = false
+		_world.apply_mouse_mode()
+
+
+## SKIP: the seeded replay's class stands. If the clock already ran out, go live now.
+func _on_class_skipped() -> void:
+	if _state == STATE_LOADING and _held_for_altar:
+		_go_live()
 
 
 ## One pick at the altar: remember it for every later run of the session, and in LOADING
@@ -647,12 +692,14 @@ func _on_class_chosen(class_id: String) -> void:
 		return
 	var ledger := _resolve_pre_run(_chosen_class)
 	var fresh := _build_world_node(FIRST_LEVEL, ledger)
-	if fresh == null:
-		return
-	_world.teardown()
-	_world.free()
-	_world = fresh
-	_run_class = str(_world.run_ledger().get("class", _run_class))
+	if fresh != null:
+		_world.teardown()
+		_world.free()
+		_world = fresh
+		_run_class = str(_world.run_ledger().get("class", _run_class))
+	_release_cursor_for_altar()
+	if _held_for_altar:
+		_go_live()   # the clock already ran out: the confirmed pick starts the run now
 
 
 ## The pre-run lobby (level_completed 0) resolved with the PLAYER'S class: the CLASS bay's
