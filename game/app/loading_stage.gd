@@ -11,10 +11,14 @@ extends Control
 
 const GagsScript := preload("res://app/loading_gags.gd")
 
-const BG_TOP := Color(0.10, 0.07, 0.22)
-const BG_BOTTOM := Color(0.02, 0.02, 0.06)
-const FLOOR_TOP := Color(0.486, 1.0, 0.957, 0.9)
-const FLOOR_BODY := Color(0.06, 0.07, 0.16)
+## D-GUI-1: a flat backdrop in the house void (#010B0C, data/palette.json `void`) - no
+## gradient - and a deep-teal floor slab under the bright lip. The gags keep their own
+## colours (the cartoon register, D-LOAD-1); only the room around them is the house's.
+const BG_TOP := Color(0.0039, 0.0431, 0.0471)       # #010B0C
+const BG_BOTTOM := BG_TOP
+const FLOOR_TOP := Color(0.486, 1.0, 0.957, 0.9)    # #7CFFF4
+const FLOOR_BODY := Color(0.0392, 0.1804, 0.1882)   # #0A2E30
+const CONFETTI_SOFT := Color(0.5608, 0.9098, 0.8784)  # #8FE8E0
 
 var gag_id: String = ""
 var stage_time: float = 0.0
@@ -114,13 +118,13 @@ func _draw_backdrop(origin: Vector2, sc: float) -> void:
 	var pts := PackedVector2Array([Vector2.ZERO, Vector2(size.x, 0.0), size, Vector2(0.0, size.y)])
 	var cols := PackedColorArray([BG_TOP, BG_TOP, BG_BOTTOM, BG_BOTTOM])
 	draw_polygon(pts, cols)
-	# drifting confetti in the palette: cyan, pink, white
+	# drifting motes in the house palette: bright, soft, white
 	for i in 46:
 		var fx := fposmod(float(i) * 197.0 + stage_time * (9.0 + float(i % 7) * 5.0), GagsScript.STAGE_W)
 		var fy := fposmod(float(i) * 91.0 + stage_time * 6.0, GagsScript.GROUND_Y - 20.0)
 		var c := GagsScript.CYAN
 		if i % 3 == 1:
-			c = GagsScript.PINK
+			c = CONFETTI_SOFT
 		elif i % 3 == 2:
 			c = GagsScript.PAPER
 		c.a = 0.10 + 0.10 * (0.5 + 0.5 * sin(stage_time * 2.0 + float(i)))

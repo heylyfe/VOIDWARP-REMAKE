@@ -3,8 +3,10 @@ extends Control
 # view/lobby/lobby_hud.gd - the Antechamber's HUD (owner defect: the lobby showed no purse
 # at all, so a player could not see the gold the altars were asking for).
 #
-# One line, top-right, in the level HUD's own purse language (view/hud/purse_chain.gd): the
-# gold-balance icon, then the purse in whole gold. The purse is the lobby state's own field
+# One compact pill, top-right (D-GUI-1, view/ui_style.gd: the front end's pill language):
+# the tracked PURSE label, the gold-balance icon, then the purse in whole gold in the mono
+# face, so the number never jitters as it changes. The pill grows leftwards from the
+# corner, so a 6-digit purse keeps its padding. The purse is the lobby state's own field
 # (sim/intermission.gd `purse`) - the integer a curse bounty adds to and a purchase, a tithe
 # or a reroll deducts from - so the number on screen is the number the shop spends.
 #
@@ -13,39 +15,32 @@ extends Control
 #
 # Pure view: nothing here writes sim state.
 
+const UiStyle := preload("res://view/ui_style.gd")
 const EDGE := 24.0
-const WIDTH := 300.0
-const HEIGHT := 44.0
-const ICON_SIZE := 30.0
-const ICON_GAP := 8.0
-const FONT_SIZE := 24
-const TEXT_COLOR := Color(1.0, 0.956, 0.8, 1.0)
+const ICON_SIZE := 18.0
 const GOLD_BALANCE_ICON := preload("res://assets/icons/gold_balance.png")
 
 var _purse_gold := 0
-var _label: Label
+var _label: Label            # the value ("999999 g")
 var _icon: TextureRect
 
 
 func _init() -> void:
-	custom_minimum_size = Vector2(WIDTH, HEIGHT)
 	anchor_left = 1.0
 	anchor_right = 1.0
 	anchor_top = 0.0
 	anchor_bottom = 0.0
-	offset_left = -EDGE - WIDTH
+	grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	offset_left = -EDGE
 	offset_right = -EDGE
 	offset_top = EDGE
-	offset_bottom = EDGE + HEIGHT
+	offset_bottom = EDGE
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	# icon glued to the left of the number: an end-aligned row that sizes to its content,
-	# so the gap never opens up as the purse value's width changes
-	var row := HBoxContainer.new()
-	row.alignment = BoxContainer.ALIGNMENT_END
-	row.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	row.add_theme_constant_override("separation", int(ICON_GAP))
-	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(row)
+	var pill := UiStyle.pill("PURSE", "")
+	pill.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	add_child(pill)
+	var row: HBoxContainer = pill.get_node("Row")
+	_label = pill.get_node("Row/Value")
 	_icon = TextureRect.new()
 	_icon.texture = GOLD_BALANCE_ICON
 	_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -54,15 +49,12 @@ func _init() -> void:
 	_icon.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(_icon)
-	_label = Label.new()
-	_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_label.add_theme_font_size_override("font_size", FONT_SIZE)
-	_label.add_theme_color_override("font_color", TEXT_COLOR)
-	_label.add_theme_color_override("font_outline_color", Color(0.0, 0.0, 0.0, 0.9))
-	_label.add_theme_constant_override("outline_size", 4)
-	row.add_child(_label)
+	row.move_child(_icon, _label.get_index())
 	_refresh()
+
+
+func _get_minimum_size() -> Vector2:
+	return get_child(0).get_combined_minimum_size() if get_child_count() > 0 else Vector2.ZERO
 
 
 ## The purse in whole gold (sim/intermission.gd `purse`). No-op when it has not moved.
@@ -79,11 +71,13 @@ func purse_gold() -> int:
 	return _purse_gold
 
 
-## The exact HUD string.
+## The exact HUD string (the pill shows the PURSE label and this value).
 func purse_text() -> String:
 	return "PURSE  %d g" % _purse_gold
 
 
 func _refresh() -> void:
 	if _label != null:
-		_label.text = purse_text()
+		_label.text = "%d g" % _purse_gold
+		update_minimum_size()
+		reset_size()   # grow leftwards from the corner to the new width now, not next frame

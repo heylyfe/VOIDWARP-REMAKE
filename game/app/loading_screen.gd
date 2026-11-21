@@ -27,6 +27,7 @@ extends Control
 
 const LoadingGagsScript := preload("res://app/loading_gags.gd")
 const LoadingStageScript := preload("res://app/loading_stage.gd")
+const UiStyle := preload("res://view/ui_style.gd")
 
 ## The first launch of a session: the loading screen is also the onboarding (D-LOAD-5).
 const FIRST_LAUNCH_SECONDS := 5.0
@@ -38,6 +39,9 @@ const TIP_ROTATION_SECONDS := 5.0
 const HAZARD_TELL_WEIGHT := 3
 const TIPS_PATH := "res://data/tips.json"
 const PROGRESS_EPSILON := 0.000001
+## The chrome's widths (D-GUI-1): the tip's wrap width and the bar's length.
+const TIP_W := 820.0
+const BAR_W := 480.0
 ## Float slack on "the hold is reached" so 40 accumulated 0.05 steps count as 2.0 s.
 const HOLD_EPSILON := 0.000000001
 
@@ -262,6 +266,10 @@ func _process(delta: float) -> void:
 	advance(delta)
 
 
+## D-GUI-1 (view/ui_style.gd): the wordmark is the top focal line in the display face with
+## a 1 px accent rule; the bottom block is the FIELD NOTE label (tracked, accent), the tip
+## in body text, a flat 6 px bar (1 px MID edge, ACCENT fill, no rounding) and the status
+## line in the mono face so the percentage never jitters.
 func _build_view() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_stage = LoadingStageScript.new()
@@ -269,66 +277,58 @@ func _build_view() -> void:
 	add_child(_stage)
 	var top := VBoxContainer.new()
 	top.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
-	top.offset_top = 22.0
+	top.offset_top = float(UiStyle.SP_6)
+	top.add_theme_constant_override("separation", UiStyle.SP_2)
+	top.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(top)
-	var title := Label.new()
-	title.text = "VOIDWRAP RUN"
+	var title := UiStyle.label("VOIDWRAP RUN", "display", UiStyle.TEXT_STRONG)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 56)
-	title.add_theme_color_override("font_color", Color(0.97, 0.97, 1.0))
-	title.add_theme_color_override("font_outline_color", Color(0.03, 0.03, 0.08))
-	title.add_theme_constant_override("outline_size", 12)
+	title.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	top.add_child(title)
-	var sub := Label.new()
-	sub.text = "the world is serious. the enemies are not."
+	top.add_child(UiStyle.rule(32.0, Control.SIZE_SHRINK_CENTER))
+	var sub := UiStyle.label("the world is serious. the enemies are not.", "body")
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	sub.add_theme_font_size_override("font_size", 18)
-	sub.add_theme_color_override("font_color", Color(0.486, 1.0, 0.957))
+	sub.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	top.add_child(sub)
 	var bottom := VBoxContainer.new()
 	bottom.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
-	bottom.offset_top = -190.0
-	bottom.offset_bottom = -24.0
+	bottom.offset_top = -200.0
+	bottom.offset_bottom = -float(UiStyle.SP_6)
 	bottom.alignment = BoxContainer.ALIGNMENT_END
+	bottom.add_theme_constant_override("separation", UiStyle.SP_2)
+	bottom.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(bottom)
-	var tip_header := Label.new()
-	tip_header.text = "FIELD NOTE"
+	var tip_header := UiStyle.label("FIELD NOTE", "label", UiStyle.ACCENT)
 	tip_header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	tip_header.add_theme_font_size_override("font_size", 13)
-	tip_header.add_theme_color_override("font_color", Color(1.0, 0.31, 0.847))
+	tip_header.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	bottom.add_child(tip_header)
-	_tip_label = Label.new()
-	_tip_label.custom_minimum_size = Vector2(820, 0)
+	_tip_label = UiStyle.label("", "body")
+	_tip_label.add_theme_font_size_override("font_size", 17)
+	_tip_label.custom_minimum_size = Vector2(TIP_W, 0)
 	_tip_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_tip_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_tip_label.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	_tip_label.add_theme_font_size_override("font_size", 20)
-	_tip_label.add_theme_color_override("font_color", Color(0.93, 0.93, 1.0))
 	bottom.add_child(_tip_label)
 	var gap := Control.new()
-	gap.custom_minimum_size = Vector2(0, 14)
+	gap.custom_minimum_size = Vector2(0, UiStyle.SP_2)
+	gap.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bottom.add_child(gap)
 	_bar = ProgressBar.new()
-	_bar.custom_minimum_size = Vector2(560, 22)
+	_bar.custom_minimum_size = Vector2(BAR_W, 6)
 	_bar.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_bar.max_value = 100.0
 	_bar.value = 0.0
 	_bar.show_percentage = false
-	var bar_bg := StyleBoxFlat.new()
-	bar_bg.bg_color = Color(0.03, 0.03, 0.09)
-	bar_bg.set_border_width_all(3)
-	bar_bg.border_color = Color(0.486, 1.0, 0.957)
-	bar_bg.set_corner_radius_all(11)
-	var bar_fill := StyleBoxFlat.new()
-	bar_fill.bg_color = Color(1.0, 0.31, 0.847)
-	bar_fill.set_corner_radius_all(11)
-	_bar.add_theme_stylebox_override("background", bar_bg)
-	_bar.add_theme_stylebox_override("fill", bar_fill)
+	_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_bar.add_theme_stylebox_override("background",
+			UiStyle.box(UiStyle.PANEL_FILL, UiStyle.MID, UiStyle.BORDER, 0, 0, 0))
+	_bar.add_theme_stylebox_override("fill",
+			UiStyle.box(UiStyle.ACCENT, UiStyle.ACCENT, 0, 0, 0, 0))
 	bottom.add_child(_bar)
-	_status_label = Label.new()
+	_status_label = UiStyle.label("", "num", UiStyle.TEXT_MUTED)
+	_status_label.add_theme_font_size_override("font_size", UiStyle.FS_SMALL)
 	_status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_status_label.add_theme_font_size_override("font_size", 14)
-	_status_label.add_theme_color_override("font_color", Color(0.75, 0.75, 0.9))
+	_status_label.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	bottom.add_child(_status_label)
 
 
