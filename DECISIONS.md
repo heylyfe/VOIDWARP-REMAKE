@@ -7863,3 +7863,81 @@ above were too strong and one was a real defect. The text above is kept as writt
    construction in `voidgen.gd`, so this is a malformed-level edge case. Fixing it properly means
    passing a key set to the mesher instead of a piece set; that is not worth the API churn until
    a level is shown to trigger it.
+
+**PARTLY SUPERSEDED 2026-11-21 by D-B11-1** (owner retune after playing: the first crack came
+far too early and each fall took far too much). D-B11-1 replaces the 16 u zone width, the cap of
+6, and "zone 0 cracks on the beacon-open tick" with a 20 s start delay. The zone rule, the 5.0 s
+crack, the 10.0 s gap, one zone at a time, outside in, and everything that falls with a zone
+still stand. The text above is kept as written (R9).
+
+## D-B11-1: a 20 s grace before the first crack, and thinner zones (supersedes D-B10-1's width and cap)
+
+**Ruling.** The owner played the sequential collapse and found that the first crack came far too
+early and that each fall took far too much. The rule stays the same; the data changes, and one
+field is new. Everything is in `game/data/collapse.json`:
+
+- **`start_delay_s` 20.0 (new).** The beacon opening starts the schedule's clock, but nothing
+  cracks for 20 s (1200 ticks). Zone i cracks on open + 1200 + 900 i and falls on
+  open + 1200 + 900 i + 300. During the delay the state is `PHASE_WAITING` with `cur` 0, so
+  nothing is cracked, removed, or shown. A delay of 0 restores D-B10-1's crack-on-open path
+  exactly (leg 18).
+- **`zone_width_u` 16.0 -> 8.0, `zone_max` 6 -> 12** (the guardian's ruling, kept as given).
+  `zone_min` 1 is unchanged.
+- **Unchanged:** `crack_to_fall_s` 5.0 and `gap_after_fall_s` 10.0 (the owner's numbers); one zone
+  cracking at a time, outside in, whole pieces only; the hub never falls; tick-driven, with no RNG
+  and no clock.
+- **State hash.** The `COLLAPSE` line gains a trailing `<delay_ticks>`, because the delay is data
+  and not a function of the Level (the same reasoning as B10 review finding 1). Leg 17 fails if
+  the shipped 20 s delay hashes the same as a 0 s or a 19 s one.
+
+**Why 8 u / 12 and not something else.** Measured with `game/out/zone_reach.gd` (gitignored,
+rewritten this cycle; seeds 1/7/42 x levels 1-30; run through `out/one.gd`):
+
+| config | zones min / median / max | collapse time min / median / max | tiles per fall (median) | biggest fall per level (median) |
+|---|---|---|---|---|
+| D-B10-1: 16 u, cap 6, no delay | 2 / 4 / 6 | 20 / 50 / 80 s | 220 | 368 |
+| **D-B11-1: 8 u, cap 12, 20 s** | **4 / 7 / 12** | **70 / 115 / 190 s** | **126** | **228.5** |
+| for comparison: 8 u, no cap, 20 s | 4 / 7 / 16 | 70 / 115 / 250 s | 123 | 228.5 |
+
+Each fall takes about 43% fewer tiles (median 220 -> 126), and the median collapse lasts 2.3x as
+long (50 -> 115 s). The cap of 12 binds on only 3 of the 90 levels (uncapped they would have 13,
+14 and 16 zones). Its job is to stop the largest levels from running to 250 s, not to shape the
+typical level, so the guardian's numbers stand untuned. (D-B10-1's "35 to 80 s" understated the
+low end: with 16 u, two levels had only 2 zones, which is 20 s.)
+
+**Measured: no level is unwinnable by the straight-line bound** (9 u/s, XZ distance, jumps,
+height, obstacles and enemies ignored; the same caveat as the D-B10-1 correction, item 2):
+
+- WIN rule (the best last black gift runs to the dais before its own zone falls): **0 of 90
+  unwinnable.** In 87 of 90 levels a real black gift sits on the hub. The worst of the other
+  three still has 892 u of slack.
+- STRAND rule (from every non-hub tile, reach a later-falling tile or the hub before your own
+  zone falls): **0 of 91,770 tiles fail**, under both budgets. The "open" budget is the time from
+  the beacon opening to the tile's fall; the worst slack is 200.8 u. The stricter "chain" budget
+  assumes the player only just arrived as the zone outside them fell, so they get 25 s for zone 0
+  and 15 s for every later zone; the worst slack is 103.1 u (seed 1 level 23, zone 2). Under
+  D-B10-1 the same probe gives 11.0 u (seed 42 level 11, zone 0), reproducing that entry's figure.
+
+**Measured: bot** (`tools/bot_run.gd --dodge --runs 20 --max-level 2`, five chunks from seed
+base 60717): 19 + 20 + 19 + 20 + 19 = **97/100** level-1 completions, unchanged. As the D-B10-1
+correction (item 3) says, `bot_run.gd` never runs `sim/collapse.gd`, so this number cannot move
+with the collapse, and it is not evidence about it.
+
+**Measured: purse** (app-world driver `old_driver_single_free.gd`, seed 38, glider, the driver
+that does run the collapse): before (this tree with the D-B10-1 data) deepest 8, completed 7,
+purse **97**, 33,130 ticks; after (D-B11-1) deepest 8, completed 7, purse **97**, 33,130 ticks,
+with identical per-level tick counts. **No purse impact.** The bot walks to the beacon as soon as
+it opens and banks within the old window, so the collapse never touches it on this seed. The
+driver's own "deepest >= 10" floor fails both before and after; that is the pre-existing D-B10-1
+regression (kiwi cat on level 8), not this change.
+
+**Tests.** `test_platform_collapse.gd` asserts the new contract: leg 2 checks every tick of the
+1200-tick delay; legs 3-13 are timed from open + 1200; leg 14 pins 20.0 / 8.0 / 12 in the data;
+leg 17 hashes the delay; new leg 18 checks 0 s / 20 s / 0.5 s delays on the pure state. Negative
+controls: with `start_delay_s` 0 the test fails 51 times, and with the D-B10-1 16 u / cap 6 it
+fails 2 times. No assertion was removed or loosened. Leg 17's width check now compares 16 u
+against the shipped 8 u (it compared 8 u against the shipped 16 u), and its overrides are merged
+over the shipped data, so each check still moves exactly one number.
+
+**[CONTESTABLE]** 8 u and the cap of 12 are the guardian's ruling. 20 s, 5 s and 10 s are the
+owner's numbers.

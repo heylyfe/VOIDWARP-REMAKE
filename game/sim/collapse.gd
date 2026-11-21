@@ -8,9 +8,12 @@ extends RefCounted
 # SEQUENTIAL, outside in, like a shrinking safe zone. The level is cut into ZONES by distance
 # from the hub; the farthest zone cracks, falls 5.0 s later, then 10.0 s of nothing, then the
 # next-closer zone cracks, and so on inward until only the hub is left. One zone cracks at a time.
+# Owner retune 2026-11-21 (D-B11-1, supersedes D-B10-1's 16 u width and cap of 6): nothing
+# cracks for start_delay_s (20.0 s) after the beacon opens, and the zones are thinner (8 u)
+# and up to 12 of them, so each fall takes less and the hub is reached much later.
 #
-# Every number lives in res://data/collapse.json (crack_to_fall_s, gap_after_fall_s, the zone
-# width and the zone-count clamp); this file only holds the rule.
+# Every number lives in res://data/collapse.json (start_delay_s, crack_to_fall_s,
+# gap_after_fall_s, the zone width and the zone-count clamp); this file only holds the rule.
 #
 # The zone rule (create): every non-hub piece - a platform or a bridge, never a single tile -
 # goes into exactly one zone, by the XZ distance from the dais centre to the piece's NEAREST
@@ -22,19 +25,22 @@ extends RefCounted
 # Pure, tick-driven state (a Dictionary; static functions only; no engine clock, no RNG):
 #   create(level)        - built once per level from the Level dict. The hub (voidgen ROLE_HUB,
 #                          the one spawn platform) is excluded at the source.
-#   start(st, tick)      - the beacon-open tick: zones[0] cracks on this tick.
-#   tick(st, tick, w, ev)- zone i cracks on start + i * (crack + gap) and falls `crack` ticks
+#   start(st, tick)      - the beacon-open tick: the schedule's clock starts. zones[0] cracks
+#                          `delay` ticks later (on this tick only when the delay is 0).
+#   tick(st, tick, w, ev)- zone i cracks on start + delay + i * (crack + gap) and falls `crack` ticks
 #                          later: its tile keys are written into w["removed"] (collision
 #                          tile_alive / support_at already honour it) and its prop boxes leave
 #                          w["prop_cols"]. Nothing here touches a player: a body left without
 #                          support drops through the controller's own kill plane.
 #
 # Timing at the fixed 60 Hz (collision.gd header, world.gd DT = 1/60): with the shipped data
-# a zone is cracked on [crack_tick, crack_tick + 299] and gone from crack_tick + 300; the next
-# zone cracks 600 ticks after that, so zone i cracks at start + 900 i.
+# nothing is cracked on [start, start + 1199] (the 20 s delay, phase WAITING with cur 0); a
+# zone is cracked on [crack_tick, crack_tick + 299] and gone from crack_tick + 300; the next
+# zone cracks 600 ticks after that, so zone i cracks at start + 1200 + 900 i.
 #
 # The schedule is a pure function of (level, start_tick); the live fields (phase, cur,
-# fallen_n, removed_n, start_tick) are dumped by sim/state_hash.gd's COLLAPSE line.
+# fallen_n, removed_n, start_tick) and the timing data (delay, crack, gap ticks) are dumped by
+# sim/state_hash.gd's COLLAPSE line.
 
 const VoidGenScript := preload("res://terrain/voidgen.gd")
 const CollisionScript := preload("res://sim/collision.gd")
@@ -48,7 +54,7 @@ const EV_FELL := "platforms_fell"         # + zone: int, n: int (tiles removed f
 const PHASE_IDLE := 0       # beacon not open yet
 const PHASE_CRACKING := 1   # zones[cur] is cracking
 const PHASE_FALLEN := 2     # every zone is gone; only the hub is left
-const PHASE_WAITING := 3    # the gap after a fall; zones[cur] cracks at crack_tick
+const PHASE_WAITING := 3    # the start delay or the gap after a fall; zones[cur] cracks at crack_tick
 
 const ZONE_IDLE := 0
 const ZONE_CRACKING := 1
@@ -85,9 +91,9 @@ static func hub_piece(level: Dictionary) -> int:
 ## The zone count for a level of radius r_u (the data's rule; pure, for tests and probes).
 static func zone_count_for(r_u: float, cfg: Dictionary = {}) -> int:
 	var c: Dictionary = cfg if not cfg.is_empty() else config()
-	var width: float = maxf(float(c.get("zone_width_u", 16.0)), 0.001)
+	var width: float = maxf(float(c.get("zone_width_u", 8.0)), 0.001)
 	var n := ceili(r_u / width) if r_u > 0.0 else 1
-	return clampi(n, int(c.get("zone_min", 1)), int(c.get("zone_max", 6)))
+	return clampi(n, int(c.get("zone_min", 1)), int(c.get("zone_max", 12)))
 
 
 ## A fresh collapse state for one level. cfg overrides res://data/collapse.json (tests).
@@ -170,6 +176,7 @@ static func create(level: Dictionary, cfg: Dictionary = {}) -> Dictionary:
 		zones.append(z)
 	var crack := maxi(1, roundi(float(c.get("crack_to_fall_s", 5.0)) * TICK_HZ))
 	var gap := maxi(0, roundi(float(c.get("gap_after_fall_s", 10.0)) * TICK_HZ))
+	var delay := maxi(0, roundi(float(c.get("start_delay_s", 20.0)) * TICK_HZ))
 	return {
 		"enabled": true,
 		"hub_piece": hub,
@@ -183,6 +190,7 @@ static func create(level: Dictionary, cfg: Dictionary = {}) -> Dictionary:
 		"bands": n,
 		"crack_ticks": crack,
 		"gap_ticks": gap,
+		"delay_ticks": delay,   # beacon open -> zones[0]'s cracks (D-B11-1)
 		"partition": _partition_digest(zones),   # pins the zone assignment in the state hash
 		"phase": PHASE_IDLE,
 		"start_tick": -1,
@@ -209,8 +217,10 @@ static func _partition_digest(zones: Array) -> String:
 	return ctx.finish().hex_encode().substr(0, 16)
 
 
-## The beacon-open tick: zones[0] cracks now. Returns its platforms_cracked event ({} when
-## the state is disabled, already started, or has nothing to crack).
+## The beacon-open tick: the schedule starts. With a start delay nothing cracks yet - the state
+## waits (PHASE_WAITING, cur 0) and tick() cracks zones[0] on start + delay; with no delay
+## zones[0] cracks now. Returns the platforms_cracked event raised on this tick ({} when the
+## state is disabled, already started, has nothing to crack, or is in its start delay).
 static func start(st: Dictionary, tick: int) -> Dictionary:
 	if st.is_empty() or not bool(st.get("enabled", true)):
 		return {}
@@ -221,7 +231,16 @@ static func start(st: Dictionary, tick: int) -> Dictionary:
 		st["phase"] = PHASE_FALLEN
 		return {}
 	st["cur"] = 0
+	if _delay(st) > 0:
+		st["phase"] = PHASE_WAITING
+		st["crack_tick"] = zone_crack_tick(st, 0)
+		st["fall_tick"] = int(st["crack_tick"]) + int(st["crack_ticks"])
+		return {}
 	return _crack(st, tick)
+
+
+static func _delay(st: Dictionary) -> int:
+	return int(st.get("delay_ticks", 0))
 
 
 static func _crack(st: Dictionary, tick: int) -> Dictionary:
@@ -319,7 +338,7 @@ static func zone_of(st: Dictionary, key: String) -> int:
 static func zone_crack_tick(st: Dictionary, i: int) -> int:
 	if st.is_empty() or int(st["start_tick"]) < 0:
 		return -1
-	return int(st["start_tick"]) + i * (int(st["crack_ticks"]) + int(st["gap_ticks"]))
+	return int(st["start_tick"]) + _delay(st) + i * (int(st["crack_ticks"]) + int(st["gap_ticks"]))
 
 
 ## The tick zone i falls on (-1 before the collapse started).
@@ -330,7 +349,14 @@ static func zone_fall_tick(st: Dictionary, i: int) -> int:
 
 ## Ticks from the start to zone i's fall, known before the collapse starts (probes, bot).
 static func zone_fall_offset(st: Dictionary, i: int) -> int:
-	return i * (int(st["crack_ticks"]) + int(st["gap_ticks"])) + int(st["crack_ticks"])
+	return _delay(st) + i * (int(st["crack_ticks"]) + int(st["gap_ticks"])) + int(st["crack_ticks"])
+
+
+## Ticks from the start to the last zone's fall (0 for a level with no zone): the whole
+## collapse, beacon open to only the hub left.
+static func total_ticks(st: Dictionary) -> int:
+	var n := zone_count(st)
+	return 0 if n <= 0 else zone_fall_offset(st, n - 1)
 
 
 ## The fall tick of tile key `key` (-1 for a hub tile or before the start).

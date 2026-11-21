@@ -72,10 +72,11 @@ func _run() -> void:
 		_finish()
 		return
 
-	# Open the beacon through its own API and take the open edge: zone 0 cracks now.
+	# Open the beacon through its own API and take the open edge. Zone 0 cracks after the
+	# start delay (D-B11-1), so t0 is zone 0's crack tick, not the open tick.
 	_world.lstate.beacon.open(int(_world.lstate.tick))
 	_world.step(DT)
-	var t0 := int(_world.lstate.tick)
+	var t0 := CollapseScript.zone_crack_tick(st, 0)
 	var crack := int(st["crack_ticks"])
 	var gap := int(st["gap_ticks"])
 

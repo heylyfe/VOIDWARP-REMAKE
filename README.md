@@ -91,10 +91,12 @@ toucher's floor.
 1. **Spawn** on a causeway over the void with two void charges in hand.
 2. **Collect** every black gift on the level. The beacon stays shut until the last one.
 3. **Decide** — walk into the open beacon and bank the run, or stay out for gold. Staying out is on
-   a clock that closes in like a shrinking safe zone: the moment the beacon opens, the farthest ring
-   of platforms cracks and falls into the void five seconds later; ten seconds after that the next
-   ring inward cracks, and so on until only the hub is left (2 to 6 rings by level size, 35 to 80 s
-   in all; the numbers are in `game/data/collapse.json`). Gold on a ring that falls is gone with it.
+   a clock that closes in like a shrinking safe zone: for twenty seconds after the beacon opens
+   nothing cracks; then the farthest ring of platforms cracks and falls into the void five seconds
+   later; ten seconds after that the next ring inward cracks, and so on until only the hub is left.
+   Rings are 8 u thin, so each fall takes a slice rather than a chunk: 4 to 12 rings by level size,
+   70 to 190 s from the beacon opening to the last ring gone (median 115 s; the numbers are in
+   `game/data/collapse.json`, ruling D-B11-1). Gold on a ring that falls is gone with it.
    Enemies get faster and the fog closes in while you are out there.
 4. **Fall** and you spend a charge. Fall with none left and the run ends.
 
