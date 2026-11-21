@@ -15,9 +15,13 @@ extends SceneTree
 #
 # test_terrain_parity.gd is deliberately NOT discovered here: it is a standalone SceneTree
 # script with no run() function; tools/gate.ps1 runs it as its own step 2.
+# test_beacon_audio_export.gd is the same shape for a different reason: it mounts a real
+# exported pack (ProjectSettings.load_resource_pack) to prove the beacon cue survives the
+# export, so it needs an export to point at and cannot run inside the suite. Its in-suite
+# counterpart is test_beacon_audio.gd's export-guard leg.
 
 const TESTS_DIR := "res://tests"
-const EXCLUDED := ["test_terrain_parity.gd"]
+const EXCLUDED := ["test_terrain_parity.gd", "test_beacon_audio_export.gd"]
 
 
 var _ran := false

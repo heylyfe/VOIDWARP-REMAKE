@@ -16,6 +16,10 @@ extends RefCounted
 #          ONE started player on the beacon view, and stepping well past the
 #          open does not start a second (the played-guard leg)
 #   leg 5  the stream does not loop (a full-length cue plays through once)
+#   leg 6  the export guard: _load_stream gates on ResourceLoader.exists, never on
+#          FileAccess.file_exists (cycle 4, item 1 - the owner heard nothing in the
+#          exported build because an export packs the IMPORTED stream and its remap,
+#          not the raw .mp3, so the file check answered false and the cue went silent)
 #
 # Registered like every other test: extends RefCounted, run() -> Array[String],
 # preloads by path (no class_name). Nodes that must be in the tree go under
@@ -39,6 +43,7 @@ func run() -> Array[String]:
 	_missing_leg(f)
 	_world_leg(f)
 	_loop_leg(f)
+	_export_guard_leg(f)
 	return f
 
 
@@ -203,3 +208,32 @@ func _loop_leg(f: Array[String]) -> void:
 		f.append("loop: the cue stream has loop on, want off")
 
 
+
+# ---- leg 6: the export guard ------------------------------------------------------------------
+
+## The owner heard nothing when the beacon opened in the EXPORTED build (cycle 4, item 1).
+## Cause: _load_stream() gated on FileAccess.file_exists(), and an export packs the IMPORTED
+## stream plus its remap, not the raw .mp3 - so the guard answered false and the cue returned
+## null silently, with no error. The fix gates on ResourceLoader.exists(), which follows the
+## remap. This leg pins the guard itself: in a project run both checks answer true for the raw
+## file, so only the source can tell them apart here. The exported-pack proof is the standalone
+## probe tests/test_beacon_audio_export.gd (EXCLUDED from the suite: it needs a real export).
+func _export_guard_leg(f: Array[String]) -> void:
+	var src := FileAccess.get_file_as_string("res://view/audio/beacon_audio.gd")
+	if src == "":
+		f.append("export guard: could not read view/audio/beacon_audio.gd")
+		return
+	var at := src.find("static func _load_stream")
+	if at < 0:
+		f.append("export guard: _load_stream is gone - the cue has no loader")
+		return
+	var body := src.substr(at)
+	var next_at := body.find("\nstatic func ")
+	if next_at > 0:
+		body = body.substr(0, next_at)
+	if body.contains("FileAccess.file_exists"):
+		f.append("export guard: _load_stream gates on FileAccess.file_exists - an export packs "
+			+ "the imported stream, not the raw file, so the cue is silent there (item 1)")
+	if not body.contains("ResourceLoader.exists"):
+		f.append("export guard: _load_stream does not gate on ResourceLoader.exists - a missing "
+			+ "cue would reach load() and a packed cue would never resolve")
