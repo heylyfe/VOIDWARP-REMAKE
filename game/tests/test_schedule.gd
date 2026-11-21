@@ -11,6 +11,7 @@ extends RefCounted
 
 const ContentApiScript := preload("res://core/content_api.gd")
 const Intermission := preload("res://sim/intermission.gd")
+const EventsScript := preload("res://sim/events.gd")
 
 ## DESIGN.md section 6, compactly: level -> [bay, E vote count when != 1, REST discount].
 ## Row = the lobby AFTER completing that level (0 = pre-run).
@@ -64,6 +65,11 @@ const SCHEDULE_PATH := "res://data/offering_schedule.json"
 const BACKUP_PATH := "user://offering_schedule_test_backup.json"
 
 
+## altar_selected events the walk actually received (see _select): a walk that resolves
+## 41 lobbies through the Select path and sees none is a broken sink, not a pass.
+var _events_seen := 0
+
+
 func run() -> Array[String]:
 	var f: Array[String] = []
 	var api := ContentApiScript.load()
@@ -72,7 +78,11 @@ func run() -> Array[String]:
 		return f
 	_rows(f, api)
 	_repeat_block(f, api)
+	_events_seen = 0
 	_walk(f, api)
+	if _events_seen == 0:
+		f.append("walk: no altar_selected event reached the sink in 41 lobbies")
+	print("SCHEDULE walk received %d altar_selected events" % _events_seen)
 	_data_edit_changes_the_lobby(f, api)
 	return f
 
@@ -161,30 +171,59 @@ func _walk(f: Array[String], api: RefCounted) -> void:
 
 
 ## Resolves every mandatory bay of one lobby (select altar 0 of each; a C bay picks
-## the first curse or pays the tithe when its draw is somehow empty).
+## the first curse or pays the tithe when its draw is somehow empty). ONE select per pass,
+## then the table is re-read: a select resolves or re-draws a bay and so shifts every later
+## flat index, and a stale index would select the wrong altar or be refused. (The old loop
+## reused one table for a whole pass; its refused selects were invisible while the event
+## sink was the typed failure list.)
 func _resolve_all(lb: RefCounted, f: Array[String], level: int) -> void:
-	for _round in range(4):
+	for _pass in range(32):
 		var table: Array = lb.altar_table()
-		var done := true
+		var picked := -1
+		var picked_kind := ""
 		for entry in table:
-			var bi := int(entry["bay_index"])
-			var bay: Dictionary = lb.bays[bi]
+			var bay: Dictionary = lb.bays[int(entry["bay_index"])]
 			var kind := str(bay["kind"])
-			if str(entry["kind"]) == "offer" and (kind == "E" or kind == "CLASS"):
-				if not bool(bay["resolved"]):
-					lb.apply_select(0, _offset(table, entry), f)
-					done = false
-			elif str(entry["kind"]) == "offer" and kind == "C" and not bool(bay["resolved"]):
-				lb.apply_select(0, _offset(table, entry), f)
-				done = false
-			elif str(entry["kind"]) == "tithe" and kind == "C" and not bool(bay["resolved"]):
+			if bool(bay["resolved"]):
+				continue
+			if str(entry["kind"]) == "offer" and (kind == "E" or kind == "CLASS" or kind == "C"):
+				picked = _offset(table, entry)
+			elif str(entry["kind"]) == "tithe" and kind == "C" 					and (bay["altars"] as Array).is_empty() and lb.purse >= int(bay.get("tithe", 0)):
 				# a C bay with an empty draw can only be tithe-passed
-				if (bay["altars"] as Array).is_empty() and lb.purse >= int(bay.get("tithe", 0)):
-					lb.apply_select(0, _table_index(table, entry, "tithe"), f)
-					done = false
-		if done:
+				picked = _table_index(table, entry, "tithe")
+			if picked >= 0:
+				picked_kind = kind
+				break
+		if picked < 0:
 			return
+		_select(lb, picked, picked_kind, f, level)
 	f.append("level %d: mandatory bays never resolved" % level)
+
+
+## One apply_select with its OWN untyped event sink. The test used to pass its typed
+## Array[String] failure list as the sink: intermission._emit pushes event Dictionaries,
+## which a typed String array rejects (a script error, not a failure), so every event was
+## dropped and the run still reported failures=0. The select must succeed and emit exactly
+## one EV_ALTAR_SELECTED event naming the bay it resolved.
+func _select(lb: RefCounted, p_index: int, p_bay_kind: String, f: Array[String],
+		level: int) -> void:
+	var ev: Array = []
+	if not lb.apply_select(0, p_index, ev):
+		f.append("level %d: apply_select(%d) on a %s bay was refused" % [level, p_index, p_bay_kind])
+	var sel := 0
+	for e in ev:
+		if str(e.get("type", "")) != EventsScript.EV_ALTAR_SELECTED:
+			continue
+		sel += 1
+		if str(e.get("bay", "")) != p_bay_kind:
+			f.append("level %d: altar_selected names bay %s, want %s"
+					% [level, str(e.get("bay", "")), p_bay_kind])
+		if str(e.get("id", "")) == "":
+			f.append("level %d: altar_selected on a %s bay has no id" % [level, p_bay_kind])
+	if sel != 1:
+		f.append("level %d: a %s select emitted %d altar_selected events, want 1"
+				% [level, p_bay_kind, sel])
+	_events_seen += sel
 
 
 ## Flat-table index of a (bay_index, altar) offer pair.
