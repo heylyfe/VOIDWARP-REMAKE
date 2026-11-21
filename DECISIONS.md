@@ -7833,3 +7833,33 @@ the bot through the app-world driver above.
 **[CONTESTABLE]** zone width 16 u and the cap of 6 zones are the fleet's choice, not the
 owner's. 5.0 s and 10.0 s are the owner's numbers.
 
+**CORRECTION 2026-11-21 (independent adversarial review, B10 review findings 1-4).** Three claims
+above were too strong and one was a real defect. The text above is kept as written (R9).
+
+1. **The hash collision was real.** The COLLAPSE line carried only the live schedule, so two runs
+   whose `collapse.json` differed - or one with the collapse enabled and one with it disabled -
+   hashed the same until the first zone fell and then diverged. `enabled` decides whether
+   `start()` changes the world at all, and the crack/gap seconds and the zone width are DATA, not
+   a function of the Level, so none of them was pinned. The line now also carries `enabled`,
+   `crack_ticks`, `gap_ticks` and a `partition` digest computed once at `create()` (sorted keys
+   per zone, so it does not depend on the Level dict's tile order). Leg 17 fails on each of the
+   five collisions; reverting the line produces exactly 5 failures.
+2. **"No level becomes unwinnable" is a straight-line bound, not a proof.** The probe uses XZ
+   distance at 9 u/s and ignores jumps, height, routes around obstacles, enemies and the player
+   being airborne. What is measured is that no level is unwinnable BY THAT MEASURE and that no
+   tile is stranded by it. A level could still be unwinnable in play. The same caveat applies to
+   the 0 of 91,770 stranded-tile figure.
+3. **The bot percentages are not evidence about the collapse.** `bot_run.gd` never runs it, so
+   they belong in this entry as a statement that the feature is untested there, not as a pass.
+   The app-world driver regression (level 10 -> 8) is the relevant counterevidence.
+4. **Leg 16's partition claim is strengthened.** It compared mesh-category totals, so a dropped
+   piece and a duplicated one could cancel. It now also checks the piece-level partition: every
+   piece that has tiles is in exactly one zone, and the hub is in none.
+5. **Known limitation, not fixed (review finding 5).** `create()` deduplicates tile keys and gives
+   a shared key to the first piece, while `level_mesher` `PART_ZONE` filters by piece id without
+   that dedup. If two pieces ever shared a tile key and landed in different zones, that tile could
+   be meshed twice and one copy could stay visible after its collision was removed. The reviewer
+   found no evidence that generated levels produce such a key, and a tile belongs to one piece by
+   construction in `voidgen.gd`, so this is a malformed-level edge case. Fixing it properly means
+   passing a key set to the mesher instead of a piece set; that is not worth the API churn until
+   a level is shown to trigger it.

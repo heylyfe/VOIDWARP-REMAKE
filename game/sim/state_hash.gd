@@ -20,11 +20,14 @@ extends RefCounted
 #   GIFTS <phase> <black hex> <gold hex>   (T-020) phase + the two slot-id bitsets, hex encoded
 #   BEACON <opened> <completed>            (T-020) the beacon machine flags
 #   MINES <consumed hex>                   (T-021) the tripmine consumed bitset, hex encoded
-#   COLLAPSE <phase> <start> <cur> <fallen_n> <removed_n>  (B10, D-B10-1) the sequential
-#                                          platform-collapse schedule; only when the level
-#                                          carries one (lstate.collapse non-empty). The zone
-#                                          partition is a pure function of the Level, so the
-#                                          live fields alone pin every zone's crack/fall tick.
+#   COLLAPSE <enabled> <phase> <start> <cur> <fallen_n> <removed_n> <crack_ticks> <gap_ticks>
+#            <partition>                 (B10, D-B10-1) the sequential platform-collapse
+#                                          schedule; only when the level carries one
+#                                          (lstate.collapse non-empty). enabled and the
+#                                          timing/partition fields are hashed because they are
+#                                          DATA, not a function of the Level: without them two
+#                                          runs whose collapse.json differed would hash the same
+#                                          until the first zone fell (B10 review finding 1).
 # Level content itself is NOT dumped: it is a pure function of the seed and enters the hash once,
 # via LEVELHASH.
 
@@ -87,10 +90,18 @@ static func dump(rs: RefCounted) -> PackedStringArray:
 		out.append("MINES %s" % (lv.mines.consumed as PackedByteArray).hex_encode())
 	# B10: the collapse schedule is live state (D-B10-1). Absent for a level with no
 	# collapse, so every pre-B10 dump (the bare sim, the replay goldens) is unchanged.
+	# enabled and the timing/partition fields are hashed too: they are data, not a function
+	# of the Level, so without them two runs whose collapse.json differed would hash the
+	# same until the first zone fell and then diverge (B10 review finding 1).
 	var cst: Dictionary = lv.collapse
 	if not cst.is_empty():
-		out.append("COLLAPSE %d %d %d %d %d" % [int(cst["phase"]), int(cst["start_tick"]),
-				int(cst["cur"]), int(cst["fallen_n"]), int(cst["removed_n"])])
+		out.append("COLLAPSE %d %d %d %d %d %d %d %d %s" % [
+			(1 if bool(cst.get("enabled", true)) else 0),
+			int(cst["phase"]), int(cst["start_tick"]), int(cst["cur"]),
+			int(cst["fallen_n"]), int(cst["removed_n"]),
+			int(cst["crack_ticks"]), int(cst["gap_ticks"]),
+			str(cst.get("partition", "")),
+		])
 	return out
 
 

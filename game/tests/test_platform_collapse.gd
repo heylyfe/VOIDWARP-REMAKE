@@ -27,6 +27,8 @@ extends RefCounted
 #   leg 15 the state hash carries the schedule (COLLAPSE line) and is replay-deterministic
 #   leg 16 the per-zone meshes partition the non-hub level: summed over the zones they mesh
 #          exactly what the one PART_REST build meshes (tile tops, ramps, props, pads, spikes)
+#   leg 17 the hash pins the collapse CONFIG, not just the live schedule: enabled, the crack
+#          and gap seconds and the zone width each change the hash (B10 review finding 1)
 
 const WorldScript := preload("res://app/world.gd")
 const CollapseScript := preload("res://sim/collapse.gd")
@@ -61,6 +63,7 @@ func run() -> Array[String]:
 	_leg_14(f)
 	_leg_15(f)
 	_leg_16(f)
+	_leg_17(f)
 	return f
 
 
@@ -892,7 +895,66 @@ func _leg_16(f: Array[String]) -> void:
 			if int(sums[k]) != want:
 				f.append("leg 16 s%d l%d: zones mesh %s=%d, PART_REST meshes %d"
 						% [c[0], c[1], k, int(sums[k]), want])
+		# The count check above cannot see a dropped piece cancelled by a duplicated one, and
+		# the mesher filters by PIECE id, so the partition has to hold at piece level too
+		# (B10 review finding 4): every piece that has tiles is in exactly one zone, and the
+		# hub is in none. A prop-only piece has no tiles and is legitimately in no zone.
+		var hub := CollapseScript.hub_piece(lv)
+		var has_tile := {}
+		for t in lv["tiles"]:
+			has_tile[int(t[4])] = true
+		var seen_piece := {}
+		for zi in CollapseScript.zone_count(st):
+			for pid in (st["zones"][zi]["pieces"] as Dictionary):
+				if seen_piece.has(pid):
+					f.append("leg 16 s%d l%d: piece %d is in zone %d and zone %d"
+							% [c[0], c[1], int(pid), int(seen_piece[pid]), zi])
+				seen_piece[pid] = zi
+		for p in lv["pieces"]:
+			var pid2 := int(p["id"])
+			if pid2 == hub:
+				if seen_piece.has(pid2):
+					f.append("leg 16 s%d l%d: the hub piece %d is in a zone" % [c[0], c[1], pid2])
+				continue
+			if has_tile.has(pid2) and not seen_piece.has(pid2):
+				f.append("leg 16 s%d l%d: piece %d has tiles but is in no zone (it never falls)"
+						% [c[0], c[1], pid2])
 		# negative control: an empty zone set meshes nothing
 		var none: Dictionary = MesherScript.build(lv, {}, MesherScript.PART_ZONE, {})
 		if int(none["tiles_top"]) != 0 or int(none["props"]) != 0:
 			f.append("leg 16 s%d l%d: an empty zone set still meshed geometry" % [c[0], c[1]])
+
+
+# ---- leg 17: the hash pins the collapse CONFIG, not just the live schedule -----------------
+
+## The state hash of a level whose collapse was created with `cfg` and `enabled`. No world is
+## needed: the dump reads only the LevelState fields.
+func _hash_cfg(lvl_dict: Dictionary, cfg: Dictionary, enabled: bool) -> String:
+	var rs = RunStateScript.new_run(1, 1, [])
+	rs.load_level(lvl_dict, 5)
+	var st: Dictionary = CollapseScript.create(lvl_dict, cfg)
+	st["enabled"] = enabled
+	rs.level.collapse = st
+	return HashScript.sha256(rs)
+
+
+## B10 review finding 1: the COLLAPSE line used to carry only the live schedule, so two runs
+## whose collapse.json differed hashed the same until the first zone fell and then diverged.
+## enabled decides whether start() changes the world at all, and the crack/gap seconds and the
+## zone width are DATA, not a function of the Level - each must move the hash on its own.
+func _leg_17(f: Array[String]) -> void:
+	var lv: Dictionary = VoidGenScript.generate(1, 5, 1, 0)
+	var base := _hash_cfg(lv, {}, true)
+	if _hash_cfg(lv, {}, false) == base:
+		f.append("leg 17: collapse enabled and disabled hash the same (the review collision)")
+	if _hash_cfg(lv, {"crack_to_fall_s": 4.0}, true) == base:
+		f.append("leg 17: a 4 s crack and a 5 s crack hash the same")
+	if _hash_cfg(lv, {"gap_after_fall_s": 9.0}, true) == base:
+		f.append("leg 17: a 9 s gap and a 10 s gap hash the same")
+	if _hash_cfg(lv, {"zone_width_u": 8.0}, true) == base:
+		f.append("leg 17: an 8 u zone width and a 16 u zone width hash the same")
+	if _hash_cfg(lv, {"zone_max": 2}, true) == base:
+		f.append("leg 17: a 2-zone cap and a 6-zone cap hash the same")
+	# and the same config twice must agree, or the digest is not deterministic
+	if _hash_cfg(lv, {}, true) != base:
+		f.append("leg 17: the same collapse config hashed differently twice")

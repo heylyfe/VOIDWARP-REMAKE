@@ -183,6 +183,7 @@ static func create(level: Dictionary, cfg: Dictionary = {}) -> Dictionary:
 		"bands": n,
 		"crack_ticks": crack,
 		"gap_ticks": gap,
+		"partition": _partition_digest(zones),   # pins the zone assignment in the state hash
 		"phase": PHASE_IDLE,
 		"start_tick": -1,
 		"cur": 0,               # the zone cracking now, or next to crack
@@ -191,6 +192,21 @@ static func create(level: Dictionary, cfg: Dictionary = {}) -> Dictionary:
 		"fallen_n": 0,          # zones gone so far
 		"removed_n": 0,         # tiles gone so far
 	}
+
+
+## A 16-hex digest of the zone assignment, computed once at create() and carried in the state so
+## sim/state_hash.gd can pin it. Without this the hash would only pin the live schedule, and two
+## runs whose collapse.json differed (zone width, the clamp, the crack/gap seconds) would hash
+## the same until the first zone fell, then diverge - a real collision, not a theoretical one.
+## Keys are sorted per zone so the digest does not depend on the Level dict's tile order.
+static func _partition_digest(zones: Array) -> String:
+	var ctx := HashingContext.new()
+	ctx.start(HashingContext.HASH_SHA256)
+	for zi in zones.size():
+		var ks: Array = (zones[zi]["keys"] as Array).duplicate()
+		ks.sort()
+		ctx.update(("Z%d|%s\n" % [zi, ",".join(ks)]).to_utf8_buffer())
+	return ctx.finish().hex_encode().substr(0, 16)
 
 
 ## The beacon-open tick: zones[0] cracks now. Returns its platforms_cracked event ({} when
