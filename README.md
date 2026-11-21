@@ -9,7 +9,7 @@ one back, and the third fall ends the run.
 
 The world is serious. The enemies are not.
 
-> **Status: alpha — `v0.1.9-alpha.3`.** Playable end to end, level after level, with the lobby, the
+> **Status: alpha — `v0.1.10-alpha.3`.** Playable end to end, level after level, with the lobby, the
 > shop and the collapse all wired. Not yet a proven 30-level run — see
 > [What works today](#what-works-today) for the honest list.
 
@@ -296,6 +296,28 @@ texture variants: Godot refuses an arm64 export without them. The desktop preset
 variants, so their builds are unchanged by it.
 
 ## Changelog
+
+<details>
+<summary><b>What changed in v0.1.10-alpha.3</b> — the README rebuild and the class icons</summary>
+
+A documentation release. The binaries are functionally identical to `v0.1.9-alpha.3` — nothing under
+`game/` changed. What changed is how the project presents itself.
+
+- **The README leads with the game instead of its changelog.** Four release-note sections — about
+  130 lines — used to sit between the pitch and "Play it", so a reader met a wall of history before
+  learning what the game is. They are now collapsed under a Changelog heading at the bottom, with
+  every word kept.
+- **Two new tables.** A **Classes** table with the real numbers from `game/data/player.json` and an
+  icon per class, and an **Enemies** table giving all twelve what each one does and how to beat it,
+  taken from `DESIGN.md` section 5 rather than invented.
+- **Three class icons** — `docs/classes/{dasher,glider,athletic}.svg`: blocky rounded prisms with a
+  single bright cyan outline, in the game's own palette. The outline is `#7CFFF4`, the black-gift
+  rim, and the fills are the four teal roles.
+- **Two stale claims corrected against measurement.** The driver completes 7 levels and dies on the
+  8th (`deepest=8 completed=7 purse=97`), not 10; and the bot completes level 1 in 97 of 100 seeds,
+  not 98.
+
+</details>
 
 <details>
 <summary><b>What changed in v0.1.9-alpha.3</b> — the collapse state hash</summary>
