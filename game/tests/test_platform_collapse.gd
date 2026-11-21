@@ -492,7 +492,16 @@ func _leg_10(f: Array[String]) -> void:
 		f.append("leg 10: the falling probe has no board (the view leg proves nothing)")
 	elif not (world.boards[ia] as Node3D).visible:
 		f.append("leg 10: a falling body was hidden before it reached the kill plane")
-	_steps(world, 90)
+	# Step until both are retired instead of for a fixed count. The assertion at the end is
+	# about what the view does to a RETIRED body, so the test should wait for the retirement
+	# rather than assume a tick count: the fall is FALL_SPEED from the tile top, so a fixed
+	# count silently couples the view assertion to the level's height. 300 ticks is 200 u of
+	# travel - past the kill plane from any tile in the level - so the cap cannot hide a body
+	# that never falls; the `gone` assertion below still fires for that.
+	var waited := 0
+	while waited < 300 and not (bool(a.get("gone", false)) and bool(b.get("gone", false))):
+		world.step(DT)
+		waited += 1
 	if not bool(a.get("gone", false)) or not bool(b.get("gone", false)):
 		f.append("leg 10: an enemy never reached the kill plane (a=%s b=%s)"
 				% [str(a.get("gone", false)), str(b.get("gone", false))])
