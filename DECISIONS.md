@@ -7564,6 +7564,23 @@ failure on the bot's side and exactly the kind of thing a human does better. The
 together are the whole rule: the collapse converts "far from the beacon when the last black
 gift is taken" into "one void charge", and only a player already at zero dies to it.
 
+**CORRECTION 2026-11-21: the level is not unwinnable even at zero charges, and a bot change
+CAN fix it.** The paragraph above still left the geometry as the limit. It is not. Measured
+across 90 levels (seeds 1, 7 and 42 x levels 1-30) with `game/out/collapse_reach.gd`, the
+distance from the dais to the NEAREST real black gift slot is at most **10.05 u** (worst case,
+seed 7 level 9) and 0.00 u at best (seed 7 level 13, a gift on the dais). The 5.0 s window at
+the 9.0 u/s base run covers **45 u**, so on every level there is a gift the player can leave
+for last and still reach the beacon in 1.12 s at the worst - a fifth of the window. The beacon
+opens on the LAST black gift (`sim/gifts.gd` `all_black_collected`), so which gift is last is
+the player's own choice.
+
+So the 64.70 u above is not the level's geometry: it is where the bot happened to be when it
+took its last gift. The lever is the bot's gift ORDER - leave a near gift for last - and that
+makes this a bot ticket after all, not an owner decision. The owner decision this entry asked
+for is still needed for the gold phase being a dash (D-B6-2), which is a different question:
+that one is about how much gold is reachable in 5 s, not about whether the beacon can be
+reached at all.
+
 ## D-B7-1: a gift or a tripmine on a tile a curse removed is hidden by the view, never swept
 
 **Ruling.** A gift or a tripmine whose supporting tile is currently in the world's
