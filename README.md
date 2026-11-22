@@ -9,7 +9,7 @@ one back, and the third fall ends the run.
 
 The world is serious. The enemies are not.
 
-> **Status: alpha — `v0.1.12-alpha.3`.** Playable end to end, level after level, with the lobby, the
+> **Status: alpha — `v0.1.13-alpha.3`.** Playable end to end, level after level, with the lobby, the
 > shop and the collapse all wired. Not yet a proven 30-level run — see
 > [What works today](#what-works-today) for the honest list.
 
@@ -359,15 +359,55 @@ variants, so their builds are unchanged by it.
 ## Changelog
 
 <details open>
-<summary><b>Unreleased</b> — the collapse actually starts now</summary>
+<summary><b>What changed in v0.1.13-alpha.3</b> — the run cycle, rebuilt so the legs cannot stretch</summary>
 
-**"The platforms don't collapse."** They did — the schedule was right — but the first crack came
-twenty seconds after the beacon opened, and the walk from the last black gift to the dais is 3 to 15
-seconds (mean 6.8 s across 90 measured levels). A player heading for the beacon always finished the
-level before anything fell. The grace is now five seconds, so the first ring cracks while you are
-still out there and falls at ten. A countdown at the top of the screen names the next ring and its
-timer. The rest of the schedule is unchanged: 8 u rings, 5 s crack, 10 s gap, 55 to 175 s to reach
-the hub. Ruling D-B12-1.
+**"What the absolute fuck is this... the legs are so messed up when going side to side or up and down
+stairs."** The legs were not badly animated. They were being *scaled*. `pose_leg()` in
+`view/player_locomotion.gd` measured the hip-to-ankle distance, and whenever a foot target sat further
+away than the leg could reach — which is exactly what a sideways step or a stair riser does — it grew
+the shin past its own length and then stretched the shin mesh along its axis to match. Measured on the
+old rig: the shin scaled by up to **3.65x**, a leg bone changed length by up to **1.13 u** on 1 HU
+stairs, and the legs crossed the body midline by up to **0.30 u** when strafing. That is the long
+diagonal black wedge in the screenshot.
+
+**The rule now: a bone never changes length.** Every thigh, shin, boot and forearm is placed by a pure
+rotation, and no basis carries scale. The two-bone solve clamps its reach — past 0.56 u it eases toward
+full extension instead of snapping the knee straight — and a foot target that cannot be reached is
+*missed* along the hip-to-target line rather than dragged there. A planted foot that falls out of reach
+lifts off early instead of pulling the leg longer. Ruling D-ANIM-1.
+
+**A real run cycle.** Alternating legs with a clear stride, knees that bend, arms counter-swinging, a
+torso lean into forward running and a bob that peaks at mid-stance. Cadence and stride scale with
+speed, with a walk-to-run blend between them. The hips sit 0.05 u lower at a full run than at a walk,
+and the swing foot kicks up to 0.15 u behind the body early in the swing instead of trailing straight
+back along the ground. Ruling D-ANIM-3.
+
+**Direction-correct.** The figure keeps its facing and the feet step along the actual velocity, so
+backpedalling steps backward, strafing steps sideways, and a diagonal steps diagonally. A foot never
+comes nearer the body midline than 0.035 u, only the leading knee turns outward toward a sideways step,
+and the torso twist fades by 70% sideways. Turning in place holds a planted foot for 0.55 rad and then
+pivots it. Ruling D-ANIM-2.
+
+**Stairs and ramps move the body, not the leg.** The hips ease to the sim's feet over 0.085 s instead
+of 0.038 s, so a 0.5 u riser no longer yanks them a third of the way in one 120 Hz frame. The climb
+rate is read from the ground across one unit of course and fed forward, so the hips climb a ramp or a
+flight *with* the feet instead of lagging up to 0.38 u below them at 9 u/s. A swinging sole is held
+above a clearance envelope sampled along its path, so it never passes down through a surface it was
+over last frame. Ruling D-ANIM-4.
+
+**Proof, not claims.** `test_player_anim.gd` drives all 16 poses through the real controller on a
+staged course — flat, a 1:2 ramp, 1 HU stairs — and checks **every 120 Hz render frame**: each leg bone
+within 0.002 u of 0.31 u, every leg segment and forearm at unit scale within 0.001, knees never
+hyperextending and folding at most 2.75 rad, elbows never inverting, no sole corner more than 0.005 u
+under the tile beneath it, knee and ankle never inside the torso block, the left leg always on the
+body's −x side and the right on +x, and the controller trace bit-identical with the animation pass on
+and off. **Negative control: 40 failures** against the previous animation — stretched and scaled legs
+on all 16 poses, midline crossing on both strafes and the diagonal, soles in the floor on ramps,
+stairs, landing and dash. Ruling D-ANIM-5.
+
+**And you can look at it.** `tools/shot_player_anim.gd` renders the 16 poses from two fixed cameras —
+side-on for the gait, rear three-quarter for the owner's angle — with the pose name and frame burned
+into every PNG and one labelled sheet per pose. Ruling D-ANIM-6.
 
 </details>
 
@@ -412,10 +452,16 @@ lower-bob stride uphill. Measured: 0 of 50 frames frozen at 120 Hz against 50 of
 D-PLAYER-ANIM-1..3.
 
 **Also in this release, from after the last tag:** the ambience bed is no longer stopped through a
-freed node on teardown; the state hash now pins lost gifts, the black quota and the straggler band,
-so a run that lost a gift to the collapse no longer hashes the same as one that did not; and the
-collapse's first crack now comes 5 s after the beacon opens instead of 20, because 20 s was longer
-than the entire gold phase and the collapse was therefore never visible. Ruling D-B12-1.
+freed node on teardown, and the state hash now pins lost gifts, the black quota and the straggler
+band, so a run that lost a gift to the collapse no longer hashes the same as one that did not.
+
+**"The platforms don't collapse."** They did — the schedule was right — but the first crack came
+twenty seconds after the beacon opened, and the walk from the last black gift to the dais is 3 to 15
+seconds (mean 6.8 s across 90 measured levels). A player heading for the beacon always finished the
+level before anything fell. The grace is now five seconds, so the first ring cracks while you are
+still out there and falls at ten. A countdown at the top of the screen names the next ring and its
+timer. The rest of the schedule is unchanged: 8 u rings, 5 s crack, 10 s gap, 55 to 175 s to reach
+the hub. Ruling D-B12-1.
 
 **And the version badge on the main menu** no longer says `v0.1.6-alpha.3`.
 
