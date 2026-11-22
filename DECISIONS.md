@@ -8375,3 +8375,89 @@ jump, land, dash, glide, idle, plus a walk) from two fixed-offset cameras, side-
 owner's angle), 10 frames over one gait cycle for the cyclic poses, with the pose name and frame burned into every
 PNG and one labelled sheet per pose. It shares the course staging with the test (test_player_anim.gd `stage`,
 `tick`, `warm_up`, `buttons_at`), so the sheet and the gate show the same motion.
+
+## D-ANIM-7 (2026-11-22): the review gate - independent floor oracle, full volume, full sim state
+
+**Why.** The independent visual review of v0.1.13-alpha.3 objected to down ramp, up stairs, down stairs and land,
+and named gaps in test_player_anim.gd leg 6. **Ruling.** Leg 7 (`_check_review`, `_judge_pose`) runs on every
+120 Hz frame of all 16 poses, next to leg 6 (unchanged, no check weakened):
+(1) every limb part's global basis is orthonormal and right-handed (axis lengths, pairwise dots and det - 1 within
+0.001; leg 6's scale check alone cannot see a shear). (2) The floor check against an ORACLE independent of the
+animation's sampler and of the controller: `course_floor` reads the staged tile table directly (flat: hu x 0.5 u;
+kind 4: +0.5 u falling to its +z edge). Old: only the 4 sole corners, and a tile counted only if its top was within
+0.3 u above the corner (a deeper sink was invisible). New: all 8 boot corners and all 8 shin corners, no depth cap,
+0.005 u tolerance (unchanged value). (3) A planted sole (stance, full contact, 0.07 s past a touchdown) rests on the
+highest oracle ground under its sole corners: not below it by more than 0.005 u, not above it by more than 0.012 u
+(physical reason: a planted foot is released at RELEASE = 0.595 u, where the soft reach falls 0.0084 u short, plus the
+0.002 u plant clearance; the shin-peel lift of D-ANIM-8 is bounded by it too). Each stance start is a landing; each
+1 s descent must show at least 6 (the v0.1.13 down ramp showed 0: its feet never planted). (4) Land: the hips (above
+the oracle floor) must drop at least 0.12 u below both the last airborne frame and the run_forward mean within 0.15 s
+of touchdown, and end the span within 0.04 u of the run mean. (5) The torso check covers the FULL volume of each
+thigh, shin and boot (a 3 x 5 x 3 grid of its exact box; the parts are 8-vertex boxes) - see D-ANIM-9 for its limits.
+(6) Purity: the animation-off comparison now also hashes EVERY script variable of the controller (floats as IEEE bits
+through sim/state_hash.gd's `bits`) and the collision world's `removed` table per tick. The staged worlds have no
+LevelState/RunState, so `Hash.sha256` itself is not reachable there; the built-level purity leg runs it and the full
+controller hash together. **Negative control:** the strengthened file run against 77661c5's player_locomotion.gd +
+world.gd fails 68 checks (the same 40 as D-ANIM-5, plus 28 new: non-orthonormal bases, soles and shins under the
+oracle surface, soles through it, legs inside the torso, a too-shallow touchdown).
+
+## D-ANIM-8 (2026-11-22): a controlled descent - the body sits on the slope and follows the leading foot down
+
+**Root causes found by the D-ANIM-7 checks.** (a) The sim stands its 0.8 u footprint on the HIGHEST ground under it,
+so on a 1:2 ramp the drawn body rode 0.2 u above the slope under its centre; (b) the climb feed-forward's uphill sample
+had a +0.05 u height limit, exactly where that ground sits going down, so it read 0 and the body lagged a further
+0.1-0.2 u; (c) pose_leg clamped every foot above the floor under the body's CENTRE (meant for airborne legs), lifting
+a foot planted downhill or on a lower tread off its ground. Together the v0.1.13 down-ramp legs hung at full reach and
+never planted. **Ruling.** The drawn body is seated on the ground under its centre going downhill (at most
+ANIM_SEAT_MAX 0.22 u, scaled by the descent weight); both feed-forward samples reach 0.55 u up; the floor guard uses
+the floor under the foot's own sole while the gait places it (the centre floor only for airborne/dash legs). The
+descent quickens the cadence by up to 55 % (eased over 0.25 s so no foot changes stance in one frame), no longer
+shrinks the stance share, drops the heel kick 80 % and crouches 0.10 u (was 0.06). A planted foot more than
+STANCE_REACH (RELEASE - 0.04 u) from its hip lowers the hips (at up to 12 u/s, settling back over 0.12 s) - the body
+follows the leading foot down; a foot set down on its landing holds 0.05 s before reach can lift it, but only if it
+is already down (within 0.05 u, a normal swing's last frame); a foot still being lowered off a ledge is released as
+before, since holding it snapped the thigh 0.46 rad in one frame on level 1. Going down, a swinging foot lowers at up
+to twice MAX_DROP. A planted foot whose solved shin block would reach within 0.004 u of the tread peels off, and the
+drawn shin's lowest corner is held 0.002 u above the floor under the foot (a tightly folded leg sank 1.2 cm). A
+trailing foot's fold step-up is scaled out on descents (it held the hips up against the leading foot).
+
+## D-ANIM-9 (2026-11-22): legs against the torso - fixed where the pose was wrong, a disclosed residual where the proportions are
+
+**Finding (objection 2).** The full-volume check shows the up-stairs "dark block" was a real 3D intersection, not only
+a 2D overlap: on 1 HU stairs at a run the raised thigh went 0.137 u into the torso and a boot 0.057 u; on a flat run
+the swinging shin went 0.08 u into it. Cause: the leaning torso pivots on its bottom centre, so its front-bottom edge
+drops onto a thigh raised to level, and the heel-kick fold put the knee forward at waist height with the shin running
+back under the body. **Fixes (torso pivot unchanged, the shoulder-attachment test still passes).** SWING_DROP 0.27 ->
+0.36 u, now also a ceiling: a swinging ankle stays 0.36 u below its hip, the ground permitting (then the body steps
+up, as before); on stairs and slopes the run lean eases to 0.4 of itself. Worst now: boots 0 (none in any pose),
+thigh past its socket 0.030 u (up stairs, land), shin 0.062 u (down stairs). **Residual, disclosed, NOT a pass.**
+The hip joint sits 0.166 u inside the torso (HIP_RISE) and the thigh is 0.31 u, so a straight knee is only 0.144 u
+below the torso's bottom face; once a thigh rises past ~50 degrees, the knee's block corners (shin half-depth
+0.104 u) enter the torso's bottom. The authored airborne poses do it too (jump/glide tuck 0.024 u). It cannot be
+removed without changing the approved figure (a shorter thigh, or a lower hip socket that makes the drawn figure
+shorter), which is the owner's call. The gate therefore pins: boots <= 0.01 u inside the torso (D-ANIM-5's 1 cm face
+margin), thighs past the socket and shins <= 0.065 u (TORSO_LEG_TOL, a regression ceiling just above the measured
+0.062 u worst; it catches the v0.1.13 0.137 u thigh). **Overrule** by approving a proportion change, then tighten
+TORSO_LEG_TOL.
+
+## D-ANIM-10 (2026-11-22): the landing is a compression, and the land sheet actually contains it
+
+**Root cause (objection 4).** warm_up pressed jump 30 ticks before its end and the jump came down INSIDE the warm-up,
+so the land sheet began 0.24 s after touchdown and showed only the following run. **Ruling.** warm_up (shared by the
+gate and the sheet tool) now jumps after the run-up and stops 3 ticks before touchdown. The dip is LAND_DEPTH 0.20 u
+(was 0.11 u): down in LAND_DOWN 0.07 s, eased back up by LAND_TIME 0.42 s (was 0.30 s); the chest pitches 0.18 rad
+further forward and the arms come forward with it. At touchdown the gait restarts with the left foot at the start of
+its stance (the old phase left both feet mid-swing for 0.1 s, so nothing took the weight), the cadence slows 30 % and
+the heel kick is held back while compressing; a touching-down foot lands 0.025 s of travel ahead of its hip and holds
+0.06 s before reach can lift it; the fall pose carries its hips 0.10 u low (knees braced) so both soles are in reach on
+contact; the airborne tuck is shed over 0.05 s. Measured: hips 0.711 u above the floor on the last airborne frame,
+0.469 u at the deepest, 0.624 u at the end against a 0.602 u run mean.
+
+## D-ANIM-11 (2026-11-22): contact-sheet framing a reviewer can judge
+
+**Ruling.** Ground poses follow the figure's height exactly (the lagging camera dropped the feet off the frame on
+descents). Ramps and stairs are framed 3.1 u wide (was 2.4), centred 0.70 u up, the side camera looks down ~20 degrees,
+and the course is DRAWN only 3 u wide (collision unchanged), so the slope or stair profile is a silhouette under the
+feet instead of a wall of treads behind them. Every sheet gains a third row: "downhill" (low, from the downhill side)
+for descents, "xray" (torso and arms see-through) for climbs, else "front". The land sheet carries a red bar at the
+running waistline.
