@@ -8293,3 +8293,85 @@ under app/, and the existing paths already free the cursor on every menu screen:
 way to the menu, apply_mouse_mode() when the altar opens and when the pause opens, lobby_scene's own
 release, and the capture comes back only when play starts (test_class_altar_pick asserts both ends).
 shot_gui.gd prints the mouse mode on the menu and on the pause: 0 (visible) on both.
+
+## D-ANIM-1 (2026-11-22): the legs are rigid; an out-of-reach foot is missed, never stretched to (supersedes D-PLAYER-ANIM-2's "extends the stance leg")
+
+**Root cause of the owner's "legs merged into one long diagonal wedge" (bad_leg_pose.png).** The old
+`pose_leg()` in view/player_locomotion.gd let the shin grow past SEGMENT whenever the hip-to-ankle distance
+passed 2 x SEGMENT (`extra` > 0, `shin_length` > SEGMENT), then scaled the shin mesh along its axis by
+`knee.distance_to(ankle) / SEGMENT`. The new rigid-geometry test measured the old rig: the shin scaled by up to
+3.65x and a leg bone changed length by up to 1.13 u on 1 HU stairs, and by 0.25x on a flat run. `pose_arm()`
+was checked as well and is not detached: the forearm is a child of the upper arm and follows it.
+**Ruling.** Every thigh, shin, boot and forearm is placed by a pure rotation; no basis carries scale. The two-bone
+solve clamps the reach: past REACH - SOFT (0.62 - 0.06 u) the reach eases toward full extension instead of
+snapping the knee straight, and an unreachable target is missed along the hip-to-target line. A planted foot that
+falls out of reach (RELEASE = REACH - 0.025 u) or crosses its lane lifts off early instead of dragging the leg
+longer. A sole drawn up within MIN_FOLD (0.24 u) of the hip is pushed out forward-down rather than letting the
+leg spin about a target on the hip joint. **Overrule** by changing the constants at the top of
+view/player_locomotion.gd; test_player_anim.gd leg 6 pins the rigidity.
+
+## D-ANIM-2 (2026-11-22): the figure keeps its facing; the feet step along the actual velocity
+
+**Ruling.** The landing for each swing is committed at lift-off along the actual horizontal velocity, so
+backpedalling, strafing and diagonals step the right way while the body keeps the camera's facing. Planted-foot
+travel per stance is capped per direction (REACH_FORE 0.25 u forward/back, REACH_SIDE 0.13 u sideways, an
+ellipse between), which sets the stance share (duty); sideways movement raises cadence by up to 30 % and widens
+the stance by 0.05 u. A foot never comes nearer the body midline than LANE (0.035 u), and only the LEADING knee
+turns outward toward a sideways step (up to 0.45 rad); the trailing knee stays forward. Turning in place: a
+planted foot holds its spot for 0.55 rad of body turn, then pivots with the body; an idle foot off its rest spot
+by 0.07 u, or twisted 0.30 rad, re-plants with a 0.22 s step, one foot at a time. **Why.** Measured on the old
+rig, the legs crossed the body midline by up to 0.30 u when strafing.
+
+## D-ANIM-3 (2026-11-22): the run shape (crouch, heel kick, lean, airborne knees)
+
+**Ruling.** The hips sit 0.05 u lower at a full run than at a walk (the bob's mid-stance peak then leaves the
+stance leg inside its reach). Running adds a heel kick: the swing foot rises up to 0.15 u behind the body early
+in the swing instead of trailing straight back along the ground, which read as one long block in the first
+contact sheet. The forward run lean applies to forward running only; a backpedal leans back at up to 0.35 of
+it, a strafe stays upright, and the torso twist fades by 70 % sideways. Airborne poses gain knee flex (`knee_l` /
+`knee_r` in POSE_EXTRAS): jump tucks (1.35 rad), fall bends both knees with one raised (thighs -0.20 / +0.30,
+knees 0.85 / 1.20; the old -0.35 / -0.10 straight legs overlapped into one column from the side), dash lunges
+(thighs -0.45 / +0.60), glide trails (knees 0.35 / 0.75). The existing pose-static tests still hold (jump legs
+equal and positive, fall leg_l negative, every jump/fall pair 0.2 rad apart). Any airborne or dash leg is kept
+above the floor under the figure (a pointed boot reaches 0.14 u below its ankle).
+
+## D-ANIM-4 (2026-11-22): stairs and ramps move the body, not the leg length
+
+**Ruling.** (a) The body height eases to the sim feet with ANIM_RISE_TIME 0.085 s (was 0.038 s), so a 0.5 u
+riser no longer yanks the hips a third of the way in one 120 Hz frame. (b) The climb rate is read from the ground
+across one unit of course centred on the body times the ground speed (the controller snaps its feet onto treads
+and keeps vy at 0), low-passed over 0.10 s and fed forward, so the hips climb a ramp or a 1 HU flight WITH the
+feet instead of lagging up to 0.38 u below them at 9 u/s. (c) A planted sole the hips have caught up on, or a
+swinging sole held up by a tread near hip height (SWING_DROP 0.27 u), raises the hips at up to 5 u/s; they settle
+back over 0.12 s. (d) A swinging sole is held above a clearance envelope of the ground sampled along its path at
+lift-off (9 samples, 0.05 u clear, 0.24 u footprint plateau, rising 1.2 u per u ahead and dropping 3.5 u per u
+behind). Where the ground already forces the foot up, that clearance replaces the lift arc instead of adding to
+it; a riser right in front of the lifting foot holds the travel while the foot rises; a swinging sole never
+passes down through a surface it was over last frame and lowers at most 7 u/s. (e) The landing search reaches
+0.51 u plus 0.55 u per u of stride above the body's tread (it stopped at 0.51 u, so a long stride up a ramp
+planted the foot INSIDE the slope). (f) Grade detection no longer reads the sim's vy (always 0 on the ground).
+Slopes lower the hips by 0.10 u uphill and 0.06 u downhill; the climb adds only 0.04 rad of lean (was 0.12).
+
+## D-ANIM-5 (2026-11-22): the rigid-geometry gate and its tolerances
+
+**Ruling.** test_player_anim.gd leg 6 drives all 16 contact-sheet poses through the REAL controller on a staged
+course (flat, a 1:2 ramp, 1 HU stairs, all 25 u wide) and checks EVERY 120 Hz render frame: each leg bone within
+0.002 u of 0.31 u and every leg segment and forearm at unit scale within 0.001; the forearm one upper-arm length
+below the shoulder within 0.002 u; knees never hyperextend (hinge sign) and fold at most 2.75 rad; elbows never
+invert; no sole corner more than 0.005 u under the tile surface beneath it; knee and ankle never inside the torso
+block shrunk by 1 cm; the shin midpoint never inside it shrunk by 3 cm (the thigh enters the torso at the hip by
+design, and the leaning block's lower front edge grazes a raised shin by 2-4 mm); the left knee and ankle stay on
+the body's -x side and the right on +x; and the controller trace (position, velocity bit-exact, grounded,
+gliding, dash ticks) is identical with the animation pass on and off for every pose. Negative control: the same
+file run against the previous animation (77661c5's player_locomotion.gd + world.gd) reports 40 failures
+(stretched/scaled legs on all 16 poses, midline crossing on both strafes and the diagonal, soles in the floor on
+ramps, stairs, landing and dash). Legs 1-5, the smoothness gate and the gait gate are unchanged and pass.
+
+## D-ANIM-6 (2026-11-22): the contact sheet is the visual proof
+
+**Ruling.** tools/shot_player_anim.gd (windowed, one absolute out dir, optional pose name) renders the 16 poses
+(run forward / backward, strafe left / right, diagonal, turn in place, up / down ramp, up / down 1 HU stairs,
+jump, land, dash, glide, idle, plus a walk) from two fixed-offset cameras, side-on and rear three-quarter (the
+owner's angle), 10 frames over one gait cycle for the cyclic poses, with the pose name and frame burned into every
+PNG and one labelled sheet per pose. It shares the course staging with the test (test_player_anim.gd `stage`,
+`tick`, `warm_up`, `buttons_at`), so the sheet and the gate show the same motion.
