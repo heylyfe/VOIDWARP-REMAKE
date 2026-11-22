@@ -26,6 +26,18 @@ const VIEW := Vector2i(640, 640)
 const THUMB := 256
 const NARROW_LAYER := 2         # render layer of the narrow sloped course (side, third, climb rear)
 const WIDE_LAYER := 4           # render layer of the full-width sloped course (descent rear)
+## Poses whose legs are drawn in proof colours (_leg_tint). The body material is UNSHADED
+## vertex colour (world.gd _player_body_material), so a light cannot help: the robe hem,
+## the thighs, the shins and the boots are all near-black and merge into one shape on the
+## sheet (review of 3a77375 - no knee, no boot edge, no left/right in the descent rear
+## views or the jump tuck). The tint is a material_override on the shot's own figure only.
+const LEG_TINT_POSES := ["down_ramp", "down_stairs", "jump", "land"]
+## [thigh, shin, boot] per side: left warm, right cool; each segment a different value, so
+## the knee and the ankle are colour edges and the two feet never share a colour.
+const LEG_TINT := [
+	[Color("#ffb066"), Color("#e2701e"), Color("#7a2e00")],
+	[Color("#8fe8ff"), Color("#1ea7d6"), Color("#004a78")],
+]
 
 ## name, kit, speed, move (world x/z input), course, start (x, z), yaw (facing, rad),
 ## warm (ticks before capture), span (s captured; 0 = one gait cycle), and an optional
@@ -53,6 +65,7 @@ const POSES := [
 var _out := ""
 var _fail := ""
 var _label: Label
+var _legend: Label
 
 
 class StillRig extends Node3D:
@@ -84,6 +97,13 @@ func _run() -> void:
 	_label.add_theme_color_override("font_outline_color", Color.BLACK)
 	_label.add_theme_constant_override("outline_size", 6)
 	overlay.add_child(_label)
+	_legend = Label.new()
+	_legend.position = Vector2(12, VIEW.y - 44)
+	_legend.add_theme_font_size_override("font_size", 22)
+	_legend.add_theme_color_override("font_color", Color("#ffe066"))
+	_legend.add_theme_color_override("font_outline_color", Color.BLACK)
+	_legend.add_theme_constant_override("outline_size", 6)
+	overlay.add_child(_legend)
 	root.add_child(overlay)
 	var shots := 0
 	for pose in POSES:
@@ -112,6 +132,10 @@ func _capture(pose: Array) -> bool:
 	root.add_child(world)
 	world.set_process(false)
 	var heights := _stage(world, pose)
+	var tinted: bool = name in LEG_TINT_POSES
+	if tinted:
+		_leg_tint(world)
+	_legend.text = "proof tint: L leg orange, R leg cyan (thigh light, shin mid, boot dark)" 			if tinted else ""
 	var input := {"move_x": int(pose[3].x), "move_z": int(pose[3].y), "buttons": 0,
 			"aim_x": 0, "aim_z": -1}
 	var action: String = pose[9]
@@ -172,6 +196,26 @@ func _xray(world: World, on: bool) -> void:
 	parts.append_array(world._leg_rig.forearms)
 	for i in parts.size():
 		(parts[i] as GeometryInstance3D).transparency = (0.6 if i == 0 else 0.85) if on else 0.0
+
+
+## Proof aid, shot tool only: draws each leg's thigh, shin and boot in its own flat colour
+## (LEG_TINT) through material_override on this sheet's figure. The game's body material,
+## the pose and the sim are untouched; the override only replaces what these MeshInstances
+## draw while the sheet is shot (the figure is freed with the world after the pose).
+func _leg_tint(world: World) -> void:
+	for side in 2:
+		var parts: Array = [world._limbs[4 + side]]
+		if world._leg_rig.shins.size() == 2:
+			parts.append(world._leg_rig.shins[side])
+		if world._leg_rig.boots.size() == 2:
+			parts.append(world._leg_rig.boots[side])
+		for i in parts.size():
+			if parts[i] == null:
+				continue
+			var tint := StandardMaterial3D.new()
+			tint.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			tint.albedo_color = LEG_TINT[side][i]
+			(parts[i] as GeometryInstance3D).material_override = tint
 
 
 ## One 60 Hz sim tick through the real controller, then the world's own player pass.
