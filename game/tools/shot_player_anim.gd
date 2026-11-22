@@ -365,13 +365,23 @@ func _cameras(world: World, pose: Array) -> Array:
 	# tread's near edge, so contact could not be judged).
 	var sloped: bool = pose[4] != "flat"
 	var side := Vector3(3.4, 0.0 if sloped else 0.55, 0.0)
-	# A descent's rear camera stands higher (2.7 u over the aim point instead of 1.5): on a
-	# 1:2 slope the ground behind the figure rises 1.45 u over the 2.9 u setback, so the
-	# 1.5 u camera looked along the slope and the tread just uphill of the figure hid the
-	# boots (review of 1b7bb7d). From 2.7 u the sight line drops ~40 deg, clear of the uphill
-	# tread edge, and the boots sit against the wide course (_add_tread) below them.
+	# A descent's rear camera stands in the figure's LEFT rear quarter, 2.7 u out (azimuth
+	# ~27 deg off straight behind, 1.8 u over the aim point, sight line ~34 deg down). From
+	# the right rear quarter (1.1, 2.7, 2.9) the near right (cyan) leg, the robe and the
+	# back-swinging arm hid the far left (orange) boot through the crossing (rear frames 5-7
+	# of down_ramp, 8 of down_stairs; re-review of cf9aeb1); from the left both boots sit
+	# apart below the hem in every frame. The 2.4 u setback keeps the ground behind the
+	# figure 1.2 u under a 2.5 u eye, so the uphill tread still clears the boots (review of
+	# 1b7bb7d), and they sit against the wide course (_add_tread) below them.
 	var descent: bool = name in ["down_ramp", "down_stairs"]
-	var rear := Vector3(1.1, 2.7 if descent else 1.5, 2.9)
+	var rear := Vector3(-1.2, 1.8, 2.4) if descent else Vector3(1.1, 1.5, 2.9)
+	# The jump's side camera swings ~23 deg toward the front and drops to 0.1 u over the
+	# aim point (from 0.55): from square side-on the near right leg stacked over the far
+	# one and the robe hem hid the knee (re-review of cf9aeb1). From here the thigh, the
+	# thigh/shin break and the boot show under the hem with the left leg beside the right.
+	# Lower than 0.1 u and the ground's near edge cuts the takeoff frame's boots.
+	if name == "jump":
+		side = Vector3(3.1, 0.1, -1.3)
 	var views := [side, rear, offsets[_third_view(name)]]
 	# An airborne pose outruns a 2.4 u frame: the arc lifts the figure clean out of the top
 	# of the shot. Widen the frame and follow the height with a lag for those poses only.
