@@ -248,16 +248,39 @@ func _sim_trace(animated: bool, f: Array[String]) -> Array:
 		world.step(DT)
 		var before := _controller_bits(world.ctl)
 		var hash_before := Hash.sha256(state)
+		var full_before := sim_state_hash(world)
 		if animated:
 			world._process(DT * 0.5)
 			world._process(DT * 0.5)
-		if before != _controller_bits(world.ctl) or hash_before != Hash.sha256(state):
+		if before != _controller_bits(world.ctl) or hash_before != Hash.sha256(state) 				or full_before != sim_state_hash(world):
 			f.append("purity: rendering mutated the controller or state hash at tick %d" % tick)
 			break
-		trace.append([hash_before, before])
+		trace.append([hash_before, before, full_before])
 	world.teardown()
 	world.free()
 	return trace
+
+
+## SHA-256 over every script variable of the controller (floats as their IEEE-754 bits via
+## the sim's own Hash.bits, containers by var_to_str) and the collision world's `removed`
+## table. The staged pose worlds have no LevelState / RunState, so sim/state_hash.gd's
+## dump (which covers only the player's position, velocity, grounded and prev buttons
+## of the controller) cannot be reached there; this is a superset of its PLAYER fields.
+## _leg_sim_purity runs the real Hash.sha256 on a built level as well.
+static func sim_state_hash(world: Node) -> String:
+	var ctx := HashingContext.new()
+	ctx.start(HashingContext.HASH_SHA256)
+	var ctl: RefCounted = world.ctl
+	for prop in ctl.get_property_list():
+		if int(prop.usage) & PROPERTY_USAGE_SCRIPT_VARIABLE == 0:
+			continue
+		var value: Variant = ctl.get(prop.name)
+		var text: String = Hash.bits(value) if value is float else var_to_str(value)
+		ctx.update(("%s=%s;" % [prop.name, text]).to_utf8_buffer())
+	var removed: Array = (world.w as Dictionary).get("removed", {}).keys()
+	removed.sort()
+	ctx.update(var_to_str(removed).to_utf8_buffer())
+	return ctx.finish().hex_encode()
 
 
 func _controller_bits(ctl: RefCounted) -> PackedStringArray:
@@ -516,7 +539,7 @@ const POSES := [
 	["up_stairs", "dasher", 9.0, Vector2(0, -1), "stairs", Vector2(0.5, 1.5), 0.0, 44, 0.0, ""],
 	["down_stairs", "dasher", 9.0, Vector2(0, 1), "stairs", Vector2(0.5, -16.5), PI, 44, 0.0, ""],
 	["jump", "dasher", 9.0, Vector2(0, -1), "flat", Vector2(0.5, 8.5), 0.0, 40, 0.75, "jump"],
-	["land", "dasher", 9.0, Vector2(0, -1), "flat", Vector2(0.5, 8.5), 0.0, 40, 0.45, "land"],
+	["land", "dasher", 9.0, Vector2(0, -1), "flat", Vector2(0.5, 8.5), 0.0, 40, 0.50, "land"],
 	["dash", "dasher", 9.0, Vector2(0, -1), "flat", Vector2(0.5, 8.5), 0.0, 40, 0.30, "dash"],
 	["glide", "glider", 9.0, Vector2(0, -1), "flat", Vector2(0.5, 8.5), 0.0, 40, 0.90, "glide"],
 	["idle", "dasher", 9.0, Vector2.ZERO, "flat", Vector2(0.5, 0.5), 0.0, 30, 3.0, ""],
@@ -594,16 +617,28 @@ static func tick(world: Node, pose: Array, jump: bool, ability: bool, animate :=
 			world._process(RENDER_DT)
 
 
-## Warm the pose up (for "land", jump and come back down). Returns the ticks spent.
+## Warm the pose up. Returns the ticks spent. For "land": run up to speed, jump, and stop
+## LAND_LEAD ticks before the touchdown, so the captured span holds the last airborne
+## frames, the touchdown itself, the compression and the recovery. (The old warm-up jumped
+## 30 ticks before its end and the jump came down INSIDE the warm-up: the land sheet began
+## 0.24 s after touchdown and showed only the run that followed.)
+const LAND_LEAD := 3
 static func warm_up(world: Node, pose: Array, animate := true) -> int:
 	var ticks := 0
 	for i in int(pose[7]):
-		tick(world, pose, i == int(pose[7]) - 30 and pose[9] == "land", false, animate, true)
+		tick(world, pose, false, false, animate, true)
 		ticks += 1
-	if pose[9] == "land":
-		while not bool(world.ctl.grounded) and ticks < 400:
-			tick(world, pose, false, false, animate, true)
-			ticks += 1
+	if pose[9] != "land":
+		return ticks
+	tick(world, pose, true, false, animate, true)
+	ticks += 1
+	while ticks < 400 and not bool(world.ctl.grounded):
+		var ctl = world.ctl
+		var floor_y := Locomotion.tile_height(world.w, Vector3(ctl.x, 0.0, ctl.z), ctl.y + 0.05)
+		if ctl.vy < 0.0 and floor_y != -INF 				and ctl.y - floor_y <= -ctl.vy * RENDER_DT * 2.0 * LAND_LEAD:
+			break
+		tick(world, pose, false, false, animate, true)
+		ticks += 1
 	return ticks
 
 
@@ -616,11 +651,12 @@ static func buttons_at(pose: Array, frame: int) -> Array[bool]:
 func _leg_rigid_geometry(f: Array[String]) -> void:
 	var tree := Engine.get_main_loop() as SceneTree
 	var worst := {}
+	var review := {}
 	for pose in POSES:
 		var world = WorldScript.new()
 		tree.root.add_child(world)
 		world.set_process(false)
-		stage(world, pose)
+		var heights: Dictionary = stage(world, pose)
 		var rig = world._leg_rig
 		if rig == null or rig.shins.size() != 2 or rig.boots.size() != 2 or rig.forearms.size() != 2:
 			f.append("rigid %s: the leg/arm rig was not built" % pose[0])
@@ -633,6 +669,8 @@ func _leg_rigid_geometry(f: Array[String]) -> void:
 		var ticks: int = warm_up(world, pose)
 		var span: float = pose[8] if float(pose[8]) > 0.0 else 1.0
 		var faults := {}
+		var track := {"pose": pose[0], "heights": heights, "stance": [true, true],
+				"landings": [], "hips": [], "grounded": []}
 		var frames := int(round(span / RENDER_DT))
 		for frame in frames:
 			if frame % 2 == 0:
@@ -641,6 +679,8 @@ func _leg_rigid_geometry(f: Array[String]) -> void:
 				ticks += 1
 			world._process(RENDER_DT)
 			_check_frame(world, arm_rest, faults)
+			_check_review(world, track, faults)
+		_judge_pose(track, faults, review)
 		for kind in faults.keys():
 			var entry: Array = faults[kind]
 			f.append("rigid %s: %s in %d limb checks over %d frames (worst %.4f)" % [pose[0], kind, entry[0],
@@ -652,6 +692,7 @@ func _leg_rigid_geometry(f: Array[String]) -> void:
 			f.append("rigid %s: the controller trace differs with the animation pass off" % pose[0])
 	print("ANIM rigid geometry: %d poses checked every render frame, worst faults %s"
 			% [POSES.size(), worst])
+	print("ANIM review measures %s" % [review])
 
 
 func _fault(faults: Dictionary, kind: String, amount: float) -> void:
@@ -763,6 +804,216 @@ func _same_sim_without_animation(pose: Array, ticks: int, tree: SceneTree) -> bo
 			spent += 1
 			trace.append_array(_controller_bits(world.ctl))
 			trace.append("%s|%s|%d" % [world.ctl.grounded, world.ctl.gliding, world.ctl.dash_ticks])
+			# (D-ANIM-7) The FULL sim state the staged world has: every script variable of
+			# the controller and the collision world's mutable tables, hashed per tick.
+			trace.append(sim_state_hash(world))
 		traces.append(trace)
 		world.free()
 	return traces[0] == traces[1] and not (traces[0] as PackedStringArray).is_empty()
+
+
+# --- Leg 7 (D-ANIM-7..10): the review checks of v0.1.13-alpha.3 --------------------------
+
+const BASIS_TOL := 0.001         # |axis length - 1| and |axis . axis| of a limb's global basis
+const DEEP_FLOOR_TOL := 0.005    # u: any boot/shin corner below the course surface (no depth cap)
+const SUPPORT_TOL := 0.012       # u: a planted sole above the surface under it (D-ANIM-7)
+const TORSO_BOOT_TOL := 0.01     # u: a boot inside the torso block (D-ANIM-5's 1 cm face margin)
+const TORSO_LEG_TOL := 0.065     # u: RESIDUAL ceiling, thigh past the socket / shin (D-ANIM-9)
+const LAND_DROP := 0.12          # u: the touchdown hips sit at least this far below the run hips
+const LAND_RECOVER := 0.04       # u: ...and come back to within this of them by the span's end
+const DESCENT_LANDINGS := 6      # stance starts a 1 s descent must show (feet plant, not float)
+const TOUCH_SKIP := 0.07         # s after touchdown a sole may still be settling (TOUCH_GRACE)
+
+
+## The course surface height at `p`, straight from the staged tile table (`stage`'s
+## heights: z row -> [hu, kind]) - an oracle independent of view/player_locomotion.gd's
+## tile_height and of the controller: a flat tile tops at hu * 0.5 u, a kind-4 ramp rises
+## 0.5 u from its +z edge to its -z edge. -INF off the course.
+static func course_floor(heights: Dictionary, p: Vector3) -> float:
+	var row_z := floori(p.z)
+	if p.x < -12.0 or p.x >= 13.0 or not heights.has(row_z):
+		return -INF
+	var row: Array = heights[row_z]
+	var top := float(row[0]) * 0.5
+	if int(row[1]) == 4:
+		top += 0.5 * (1.0 - (p.z - float(row_z)))
+	return top
+
+
+## The 8 corners of a mesh's local AABB, in world space.
+static func box_corners(part: MeshInstance3D) -> Array[Vector3]:
+	var b := part.get_aabb()
+	var out: Array[Vector3] = []
+	for i in 8:
+		out.append(part.to_global(b.position + b.size * Vector3(i & 1, (i >> 1) & 1, (i >> 2) & 1)))
+	return out
+
+
+## A 3 x 5 x 3 grid through a mesh's local AABB (corners, edges, faces and interior), world space.
+static func box_volume(part: MeshInstance3D) -> Array[Vector3]:
+	var b := part.get_aabb()
+	var out: Array[Vector3] = []
+	for i in 3:
+		for j in 5:
+			for k in 3:
+				out.append(part.to_global(b.position + b.size * Vector3(i / 2.0, j / 4.0, k / 2.0)))
+	return out
+
+
+## How deep `local` lies inside `box` (distance to its nearest face), 0 outside.
+static func box_depth(box: AABB, local: Vector3) -> float:
+	if not box.has_point(local):
+		return 0.0
+	var lo := local - box.position
+	var hi := box.end - local
+	return minf(minf(minf(lo.x, hi.x), minf(lo.y, hi.y)), minf(lo.z, hi.z))
+
+
+## Orthonormal and right-handed: unit axes, pairwise perpendicular, determinant +1.
+static func basis_error(basis: Basis) -> float:
+	var err := 0.0
+	for axis in [basis.x, basis.y, basis.z]:
+		err = maxf(err, absf((axis as Vector3).length() - 1.0))
+	err = maxf(err, absf(basis.x.dot(basis.y)))
+	err = maxf(err, absf(basis.y.dot(basis.z)))
+	err = maxf(err, absf(basis.z.dot(basis.x)))
+	return maxf(err, absf(basis.determinant() - 1.0))
+
+
+func _measure(track: Dictionary, key: String, value: float) -> void:
+	track[key] = maxf(float(track.get(key, -INF)), value)
+
+
+## Every render frame of every pose: (1) every limb part's global basis is orthonormal (a
+## shear passes a scale-only check); (2) the FULL volume of each thigh, shin and boot stays
+## out of the torso block - only the thigh's top `socket` u (the length buried in the torso
+## at rest, where the hip joint sits) may be inside; (3) no boot or shin corner is below the
+## course surface by the independent oracle, at any depth; (4) a planted sole rests on the
+## surface under it - neither through it nor short of it.
+func _check_review(world, track: Dictionary, faults: Dictionary) -> void:
+	var rig = world._leg_rig
+	var heights: Dictionary = track.heights
+	var parts: Array = world._limbs.duplicate()
+	parts.append_array(rig.forearms + rig.shins + rig.boots)
+	for part in parts:
+		var err := basis_error((part as Node3D).global_basis)
+		_measure(track, "basis", err)
+		if err > BASIS_TOL:
+			_fault(faults, "limb basis not orthonormal", err)
+	var torso: MeshInstance3D = world._limbs[0]
+	var torso_box := torso.get_aabb()
+	var torso_inv := torso.global_transform.affine_inverse()
+	var socket: float = world._limb_rest[4].y + world._limb_mounts[4].y + Locomotion.HIP_RISE \
+			- (world._limb_rest[0].y + torso_box.position.y)
+	for side in 2:
+		var thigh: MeshInstance3D = world._limbs[side + 4]
+		var shin: MeshInstance3D = rig.shins[side]
+		var boot: MeshInstance3D = rig.boots[side]
+		var hip := thigh.to_global(world._limb_mounts[side + 4])
+		var axis := (shin.global_position - hip).normalized()
+		for part in [thigh, shin, boot]:
+			for point in box_volume(part):
+				if part == thigh and (point - hip).dot(axis) < socket:
+					continue
+				var depth := box_depth(torso_box, torso_inv * point)
+				var which: String = ["thigh", "shin", "boot"][[thigh, shin, boot].find(part)]
+				_measure(track, "torso_" + which, depth)
+				if depth > (TORSO_BOOT_TOL if part == boot else TORSO_LEG_TOL):
+					_fault(faults, "%s volume inside the torso" % which, depth)
+		for point in box_corners(boot) + box_corners(shin):
+			var ground := course_floor(heights, point)
+			if ground != -INF:
+				_measure(track, "deep_floor", ground - point.y)
+				if point.y < ground - DEEP_FLOOR_TOL:
+					_fault(faults, "boot or shin below the course surface", ground - point.y)
+		_check_support(world, track, faults, side, boot)
+	var root: Vector3 = world.player_model.global_position
+	var thigh_l: MeshInstance3D = world._limbs[4]
+	var hip_y := thigh_l.to_global(world._limb_mounts[4]).y
+	(track.hips as Array).append(hip_y - course_floor(heights, root))
+	(track.grounded as Array).append(bool(world.ctl.grounded))
+
+
+## A planted sole (stance, full contact, past the touchdown settle) sits on the surface the
+## oracle gives under its footprint: the boot is flat, so it rests on the HIGHEST ground
+## under its four sole corners (a ramp's uphill edge, a tread rather than the riser below
+## it). Its gap may be neither negative past DEEP_FLOOR_TOL (through the surface) nor above
+## SUPPORT_TOL (short of it). Each stance START is recorded as a landing.
+func _check_support(world, track: Dictionary, faults: Dictionary, side: int,
+		boot: MeshInstance3D) -> void:
+	var rig = world._leg_rig
+	var planted: bool = rig.stance[side]
+	var was: bool = track.stance[side]
+	track.stance[side] = planted
+	var clock: float = world._land_clock
+	if not planted or world._contact_weight < 1.0 or (clock >= 0.0 and clock < TOUCH_SKIP):
+		return
+	var corners := box_corners(boot)
+	var sole := INF
+	var support := -INF
+	for i in 8:
+		if (i >> 1) & 1 == 0:   # the four bottom corners
+			sole = minf(sole, corners[i].y)
+			support = maxf(support, course_floor(track.heights, corners[i]))
+	if support == -INF:
+		return
+	var gap := sole - support
+	_measure(track, "support_above", gap)
+	_measure(track, "support_below", -gap)
+	if gap > SUPPORT_TOL:
+		_fault(faults, "planted sole short of the surface", gap)
+	elif gap < -DEEP_FLOOR_TOL:
+		_fault(faults, "planted sole through the surface", -gap)
+	if not was:
+		(track.landings as Array).append(gap)
+
+
+## Per pose, after its span: the descents must actually plant (DESCENT_LANDINGS stance
+## starts, each ON the tread or slope); the land must show a touchdown compression (hips
+## LAND_DROP below both the last airborne frame and the steady run) and recover to the run
+## height (within LAND_RECOVER) by the end of the span. `review` collects the measures.
+func _judge_pose(track: Dictionary, faults: Dictionary, review: Dictionary) -> void:
+	var name: String = track.pose
+	var hips: Array = track.hips
+	var landings: Array = track.landings
+	var out := {}
+	for key in ["basis", "torso_thigh", "torso_shin", "torso_boot", "deep_floor", "support_above", "support_below"]:
+		out[key] = snappedf(float(track.get(key, 0.0)), 0.0001)
+	out["landings"] = landings.size()
+	var total := 0.0
+	for h in hips:
+		total += float(h)
+	out["hip_mean"] = snappedf(total / maxf(1.0, hips.size()), 0.0001)
+	if name in ["down_ramp", "down_stairs"] and landings.size() < DESCENT_LANDINGS:
+		_fault(faults, "descent planted too few steps (%d)" % landings.size(), landings.size())
+	if name == "land":
+		_judge_land(track, faults, review, out)
+	review[name] = out
+
+
+func _judge_land(track: Dictionary, faults: Dictionary, review: Dictionary, out: Dictionary) -> void:
+	var hips: Array = track.hips
+	var grounded: Array = track.grounded
+	var touch := grounded.find(true)
+	if touch <= 0:
+		_fault(faults, "land span holds no airborne frame before the touchdown", 1.0)
+		return
+	var before: float = hips[touch - 1]
+	var low := INF
+	for i in range(touch, mini(hips.size(), touch + int(0.15 / RENDER_DT))):
+		low = minf(low, float(hips[i]))
+	var tail := 0.0
+	for i in range(hips.size() - 6, hips.size()):
+		tail += float(hips[i]) / 6.0
+	var run: float = (review.get("run_forward", {}) as Dictionary).get("hip_mean", NAN)
+	out["touch_frame"] = touch
+	out["hip_before"] = snappedf(before, 0.0001)
+	out["hip_low"] = snappedf(low, 0.0001)
+	out["hip_end"] = snappedf(tail, 0.0001)
+	if is_nan(run):
+		_fault(faults, "land needs the run_forward hip height measured first", 1.0)
+		return
+	if before - low < LAND_DROP or run - low < LAND_DROP:
+		_fault(faults, "touchdown compression too shallow", minf(before - low, run - low))
+	if absf(tail - run) > LAND_RECOVER:
+		_fault(faults, "land did not recover to the run hip height", absf(tail - run))

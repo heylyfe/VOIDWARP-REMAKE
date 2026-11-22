@@ -18,7 +18,7 @@ const HIP_RISE := 0.16
 const SOLE_HEIGHT := 0.09
 const MIN_SPEED := 0.20
 const REACH := 2.0 * SEGMENT     # hip -> ankle, fully straight
-const SWING_DROP := 0.27         # u: a swinging ankle stays at least this far below its hip
+const SWING_DROP := 0.36         # u: a swinging ankle stays at least this far below its hip (D-ANIM-9)
 const TOE := 0.14                # u: a boot pointed along the shin reaches this far below the ankle
 const MIN_FOLD := 0.24           # u, the nearest an ankle comes to its hip (knee fold limit)
 const SOFT := 0.06               # the last SOFT u of reach eases in (no knee snap)
@@ -36,6 +36,13 @@ const ENV_PLATEAU := 0.24       # u: a sample's footprint can touch ground this 
 const ENV_SLOPE_BEHIND := 3.5
 const MAX_DROP := 7.0            # u/s a swinging sole may lower
 const ENV_SLOPE := 1.2           # rise per unit of approach to a higher tread
+const DESCENT_CADENCE := 0.55  # extra cadence share on a full descent (D-ANIM-8)
+const TOUCH_LEAD := 0.025         # s of travel a touching-down foot lands ahead of its hip
+const TOUCH_GRACE := 0.06        # s a foot that just met the ground holds before reach can lift it
+const STEP_GRACE := 0.05         # s a freshly set-down foot holds before reach can lift it
+const STANCE_REACH := RELEASE - 0.04  # u hip->ankle a planted foot is brought within (D-ANIM-8)
+const SETTLE := 0.05             # u a set-down foot may be above its landing on the swing's last frame
+const SHIN_MARGIN := 0.004        # u a planted foot peels off before its shin corner reaches the tread
 const PIVOT := 0.55              # rad a planted foot may lag the body yaw before it pivots
 const Collision := preload("res://sim/collision.gd")
 
@@ -45,6 +52,9 @@ var forearms: Array[MeshInstance3D] = []
 var stance: Array[bool] = [false, false]
 var foot_yaw: Array[float] = [0.0, 0.0]
 var pole_yaw := 0.0              # knee direction offset (model frame), set per frame
+var floors: Array[float] = [-INF, -INF]   # ground under each foot (model frame), set per frame
+var shin_depth := 0.0            # half the shin block's depth and width (u), from the mesh
+var shin_width := 0.0
 var releases := 0                # diagnostics: early lift-offs (foot out of reach / lane)
 var _has_contact: Array[bool] = [false, false]
 var _plants: Array[Vector3] = [Vector3.ZERO, Vector3.ZERO]
@@ -56,6 +66,7 @@ var _swing_from: Array[Vector3] = [Vector3.ZERO, Vector3.ZERO]
 var _swing_yaw: Array[float] = [0.0, 0.0]
 var _swing_begin: Array[float] = [0.0, 0.0]
 var _released: Array[bool] = [false, false]
+var _grace: Array[float] = [0.0, 0.0]
 var _prev_phase: Array[float] = [0.0, 0.0]
 var _step: Array[float] = [-1.0, -1.0]   # idle step progress 0..1, -1 = none
 var _swing_hold: Array[float] = [0.0, 0.0]
@@ -78,6 +89,8 @@ func build(limbs: Array, mounts: Array[Vector3]) -> void:
 			upper.mesh = _segment_mesh(source, bounds, mount, bounds.size.y - length, 1.0)
 		else:
 			shins.append(_segment(upper, source, bounds, SEGMENT, 0.83))
+			shin_depth = bounds.size.z * 0.83 * 0.5
+			shin_width = bounds.size.x * 0.83 * 0.5
 			boots.append(_segment(upper, source, bounds, SOLE_HEIGHT, 0.94))
 			upper.mesh = _segment_mesh(source, bounds, mount, SEGMENT, 1.0)
 
@@ -115,14 +128,20 @@ static func _segment(upper: MeshInstance3D, source: Mesh, bounds: AABB,
 static func profile(speed: float, run_speed: float, climb: float, side := 0.0,
 		slope := 0.0) -> Vector3:
 	var run := smoothstep(0.35, 0.95, speed / maxf(run_speed, 0.001))
-	var cadence := (1.0 + 0.28 * speed) / lerpf(1.0, 0.77, climb) * (1.0 + 0.30 * side)
-	var fore := sqrt(maxf(0.0, 1.0 - side * side)) / (1.0 - 0.45 * maxf(climb, slope))
+	# Going down, the steps quicken and shorten (DESCENT_CADENCE): the leading foot reaches
+	# down to the next tread or the slope before the body follows, instead of a long split.
+	var cadence := (1.0 + 0.28 * speed) / lerpf(1.0, 0.77, climb) * (1.0 + 0.30 * side) 			* (1.0 + DESCENT_CADENCE * slope)
+	# Uphill the stance reach shrinks (the foot behind sits low, the one ahead high). Going
+	# down it does not: the hips are lowered onto the slope instead, and a shrunken stance
+	# share left both feet off the ground most of the cycle (a float, not a descent).
+	var fore := sqrt(maxf(0.0, 1.0 - side * side)) / (1.0 - 0.45 * climb)
 	var reach := 1.0 / sqrt(pow(fore / REACH_FORE, 2.0) + pow(side / REACH_SIDE, 2.0))
 	var duty := minf(lerpf(0.56, 0.30, run), 1.84 * reach * cadence / maxf(speed, MIN_SPEED))
 	return Vector3(cadence, maxf(duty, 0.10), run)
 
 
 func reset_contacts() -> void:
+	floors.fill(-INF)
 	_has_contact.fill(false)
 	stance.fill(false)
 	_released.fill(false)
@@ -198,8 +217,10 @@ func place_foot(side: int, rest: Vector3, velocity: Vector3, phase: float, gait:
 		root: Vector3, down := 0.0) -> Vector3:
 	var limit := rest.y + 0.51
 	if not _has_contact[side]:
-		var underfoot := floor_under(world, rest, yaw, limit)
-		var start := rest
+		# A foot meeting the ground (a touchdown) lands a little ahead of its hip along the
+		# travel, so the body moves over it while it compresses instead of leaving it behind.
+		var start := rest + Vector3(velocity.x, 0.0, velocity.z) * TOUCH_LEAD
+		var underfoot := floor_under(world, start, yaw, limit)
 		if underfoot != -INF:
 			start.y = underfoot + 0.002
 		_plants[side] = start
@@ -213,6 +234,8 @@ func place_foot(side: int, rest: Vector3, velocity: Vector3, phase: float, gait:
 		_released[side] = false
 		_step[side] = -1.0
 		_prev_phase[side] = phase
+		_grace[side] = TOUCH_GRACE
+	_grace[side] -= delta
 	if stance[side]:
 		_pivot(side, yaw, root)
 	var was_swinging := not stance[side]
@@ -229,8 +252,10 @@ func place_foot(side: int, rest: Vector3, velocity: Vector3, phase: float, gait:
 		if ground != -INF:
 			result.y = maxf(result.y, ground + 0.002)
 		if was_swinging:
-			# Coming off a ledge the foot lowers at a bounded rate (no one-frame drop).
-			result.y = maxf(result.y, _targets[side].y - MAX_DROP * delta)
+			# Coming off a ledge the foot lowers at a bounded rate (no one-frame drop); going
+			# down a flight, up to twice as fast, so it is down on the lower tread when its
+			# stance begins.
+			result.y = maxf(result.y, _targets[side].y - MAX_DROP * (1.0 + down) * delta)
 	_targets[side] = result
 	return result
 
@@ -256,7 +281,16 @@ func _gait_foot(side: int, rest: Vector3, velocity: Vector3, phase: float, gait:
 			_plants[side] = _landings[side]
 			_plant_yaw[side] = _landing_yaw[side]
 			stance[side] = true
-		if not _must_release(side, _plants[side], hip, yaw, root):
+			# Going down, a foot set down on a lower tread holds while the hips come down
+			# to it (the body follows the leading foot down; see reach_drop) instead of
+			# lifting off the frame it lands.
+			# Only a foot already down on its landing: one still being lowered off a ledge
+			# (bounded drop rate) would snap onto the plant below it.
+			if down > 0.2 and _targets[side].y <= _landings[side].y + SETTLE:
+				_grace[side] = maxf(_grace[side], STEP_GRACE)
+		# A foot that has just met the ground holds for TOUCH_GRACE while the body (still
+		# settling from the air) comes down over it: out of reach it lags, it does not lift.
+		if not _must_release(side, _plants[side], hip, yaw, root, _grace[side] <= 0.0):
 			foot_yaw[side] = _plant_yaw[side]
 			return _plants[side]
 		releases += 1
@@ -266,7 +300,7 @@ func _gait_foot(side: int, rest: Vector3, velocity: Vector3, phase: float, gait:
 	var lift := (lerpf(0.10, 0.18, gait.z) + 0.20 * climb) * (1.0 - 0.45 * down)
 	# Running adds a heel kick: the foot rises behind the body early in the swing (the
 	# knee folds up) instead of trailing straight back along the ground.
-	var kick := 0.15 * gait.z * (1.0 - 0.6 * climb)
+	var kick := 0.15 * gait.z * (1.0 - 0.6 * climb) * (1.0 - 0.8 * down)
 	return _swing(side, s, lift, kick, gait.z)
 
 
@@ -396,9 +430,19 @@ func _pivot(side: int, yaw: float, root: Vector3) -> void:
 	_plant_yaw[side] += turn
 
 
-func _must_release(side: int, plant: Vector3, hip: Vector3, yaw: float, root: Vector3) -> bool:
-	if hip.distance_to(plant + Vector3.UP * SOLE_HEIGHT) > RELEASE:
+func _must_release(side: int, plant: Vector3, hip: Vector3, yaw: float, root: Vector3,
+		reach := true) -> bool:
+	if reach and hip.distance_to(plant + Vector3.UP * SOLE_HEIGHT) > RELEASE:
 		return true
+	# A leg folded tight over its planted foot (the hips come down past it on a descent)
+	# pitches the shin so far that the block's lower corner would sink into the tread:
+	# the foot peels off instead.
+	if shin_depth > 0.0:
+		var turn := minf(pole_yaw, 0.0) if side == 1 else maxf(pole_yaw, 0.0)
+		var pole := Vector3.FORWARD.rotated(Vector3.UP, yaw + turn)
+		# (SHIN_MARGIN covers the hips' motion between this check and the drawn pose.)
+		if shin_lowest(solve(hip, plant + Vector3.UP * SOLE_HEIGHT, pole)) < plant.y + SHIN_MARGIN:
+			return true
 	var local := (plant - root).rotated(Vector3.UP, -yaw)
 	return local.x * (-1.0 if side == 0 else 1.0) < LANE
 
@@ -430,9 +474,13 @@ func pose_leg(side: int, limb: MeshInstance3D, hip: Vector3, mount: Vector3,
 	var shin_dir := Basis(Vector3.RIGHT, thigh_pitch - maxf(knee_flex, 0.0)) * Vector3.DOWN
 	var air_ankle := hip + (thigh_dir + shin_dir) * SEGMENT
 	var target := air_ankle.lerp(sole + Vector3.UP * SOLE_HEIGHT, contact)
-	if ground != -INF:
+	# The floor guard: under the foot's own sole while the gait is placing it (`floors`),
+	# else under the body's centre (airborne and dash legs). The centre floor lifted a foot
+	# planted on a lower tread or downhill on a slope off its ground (D-ANIM-8).
+	var floor_y: float = floors[side] if floors[side] != -INF else ground
+	if floor_y != -INF:
 		# A pointed (airborne) boot dips its toe up to TOE below the ankle line.
-		target.y = maxf(target.y, ground + SOLE_HEIGHT + TOE * (1.0 - contact) + 0.002)
+		target.y = maxf(target.y, floor_y + SOLE_HEIGHT + TOE * (1.0 - contact) + 0.002)
 	var out := -1.0 if side == 0 else 1.0
 	if target.x * out < LANE:
 		target.x = out * LANE
@@ -442,6 +490,17 @@ func pose_leg(side: int, limb: MeshInstance3D, hip: Vector3, mount: Vector3,
 	var pole := Vector3.FORWARD.rotated(Vector3.UP, turn)
 	target = clear_hip(hip, target, pole)
 	var joints := solve(hip, target, pole)
+	# The shin block is wider than the ankle is high: steeply pitched (a swing's first
+	# frames, a push-off) its lower corners reach under the sole. Lift the foot until the
+	# lowest shin corner clears the floor under the foot (`floors`, model frame). A planted
+	# foot this catches is a frame from peeling off (_must_release's shin check).
+	if floors[side] != -INF:
+		for i in 3:
+			var short := floors[side] + 0.002 - shin_lowest(joints)
+			if short <= 0.0:
+				break
+			target.y += short
+			joints = solve(hip, target, pole)
 	var knee: Vector3 = joints[0]
 	var ankle: Vector3 = joints[1]
 	var bend: Vector3 = joints[2]
@@ -453,6 +512,25 @@ func pose_leg(side: int, limb: MeshInstance3D, hip: Vector3, mount: Vector3,
 	var flat := Basis(Vector3.UP, wrapf(foot_yaw[side] - model_yaw, -PI, PI))
 	var boot_basis := shin.slerp(flat, contact) if contact < 1.0 else flat
 	boots[side].transform = inverse * Transform3D(boot_basis, ankle)
+
+
+## The lowest corner height of the shin block for a solve()'s [knee, ankle, bend].
+func shin_lowest(joints: Array) -> float:
+	var shin_axis: Vector3 = ((joints[1] as Vector3) - (joints[0] as Vector3)).normalized()
+	var bend_dir: Vector3 = joints[2]
+	var depth_axis := (bend_dir - shin_axis * shin_axis.dot(bend_dir)).normalized()
+	var across := depth_axis.cross(shin_axis).normalized()
+	return (joints[1] as Vector3).y - absf(depth_axis.y) * shin_depth - absf(across.y) * shin_width
+
+
+## How far the hip must come DOWN for a planted sole to be within STANCE_REACH of it (a
+## foot set down on a lower tread or downhill: the body follows it down).
+static func reach_drop(sole: Vector3, hip: Vector3) -> float:
+	var ankle := sole + Vector3.UP * SOLE_HEIGHT
+	var flat := Vector2(hip.x - ankle.x, hip.z - ankle.z).length()
+	if flat >= STANCE_REACH:
+		return 0.0
+	return maxf(0.0, hip.y - ankle.y - sqrt(STANCE_REACH * STANCE_REACH - flat * flat))
 
 
 ## How far the hip must rise for a planted sole to stay MIN_FOLD (+ margin) below it.
