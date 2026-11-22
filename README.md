@@ -9,7 +9,7 @@ one back, and the third fall ends the run.
 
 The world is serious. The enemies are not.
 
-> **Status: alpha — `v0.1.11-alpha.3`.** Playable end to end, level after level, with the lobby, the
+> **Status: alpha — `v0.1.12-alpha.3`.** Playable end to end, level after level, with the lobby, the
 > shop and the collapse all wired. Not yet a proven 30-level run — see
 > [What works today](#what-works-today) for the honest list.
 
@@ -368,6 +368,56 @@ level before anything fell. The grace is now five seconds, so the first ring cra
 still out there and falls at ten. A countdown at the top of the screen names the next ring and its
 timer. The rest of the schedule is unchanged: 8 u rings, 5 s crack, 10 s gap, 55 to 175 s to reach
 the hub. Ruling D-B12-1.
+
+</details>
+
+<details open>
+<summary><b>What changed in v0.1.12-alpha.3</b> — the sky, the HUD, the front-end and the walk cycle</summary>
+
+A look-and-feel release. The owner played `v0.1.11-alpha.3` and asked for four things: the storm sky
+and the little contour-outlined rocks floating in it, a gold gift counter and a CTRL hint on the HUD,
+a GUI that does not look like six different games, and a walk cycle that is not choppy. All four are
+in, plus three fixes that landed after the last tag.
+
+**The sky is a storm, and the rocks float in it.** A 450 u cloud dome replaces the flat void colour
+behind the level: hard-edged billows, a dark mass in the lower sky and a horizontal streak band, all
+drifting slowly, drawn behind everything and following the camera. 110 low-poly rocks hang in a ring
+170 to 300 u out, each with a thin pale outline grown to a fixed 1.6 screen pixels so it stays a line
+at any distance. Their placement and shape come from the level seed, so a level always looks the same.
+Rulings D-ATMO-1..3.
+
+**The lighting bug behind it.** `fog_env.resolve_palette` was dropping the `energy` key, so the
+palette's ambient value of 2.6 had never reached the game — every level has always rendered at 1.0.
+Ambient is now pinned at 1.0, which is what you were actually seeing, and the overhead glow drops
+from 0.55 to 0.3 so the glowing tiles, gifts and beacon stand out against the new sky.
+
+**The HUD is rebuilt.** One panel language in `view/hud/hud_style.gd`: dark translucent pills, 10 px
+corners, three type sizes and no others, monospace for numbers. A gold gift counter takes the gift
+counter's place at bottom-centre the moment the phase turns gold, and a CTRL hint reads
+`CTRL TO UNLOCK MOUSE` / `CTRL TO LOCK MOUSE` off the world's own flag. Icon rows cap at 12 cells and
+show `+N` past that, because the curse catalogue has more than 100 entries. Ruling D-GUI-1.
+
+**The front-end is one game.** `view/ui_style.gd` and `view/ui_focus.gd` replace the six screens that
+each invented their own palette, font sizes and button shapes. The main menu, the class altar, the
+pause overlay, the settings screen, the intermission lobby and the loading chrome now share one type
+scale, one spacing scale and one keyboard focus ring, and every screen is usable with mouse or
+keyboard. Rulings D-FRONT-1..5.
+
+**The walk cycle is smooth.** The choppiness had a real cause: the animation was driven from the
+fixed 60 Hz sim tick, so above 60 Hz render some frames got no tick at all and the pose only moved on
+tick boundaries. It now runs on the render clock with interpolation, while the sim stays on its fixed
+tick and the animation never feeds back into the state hash. The gait has articulated knees and
+elbows, counter-swinging arms, a foot plant that does not slide or sink, and a shorter, higher-knee,
+lower-bob stride uphill. Measured: 0 of 50 frames frozen at 120 Hz against 50 of 50 before. Rulings
+D-PLAYER-ANIM-1..3.
+
+**Also in this release, from after the last tag:** the ambience bed is no longer stopped through a
+freed node on teardown; the state hash now pins lost gifts, the black quota and the straggler band,
+so a run that lost a gift to the collapse no longer hashes the same as one that did not; and the
+collapse's first crack now comes 5 s after the beacon opens instead of 20, because 20 s was longer
+than the entire gold phase and the collapse was therefore never visible. Ruling D-B12-1.
+
+**And the version badge on the main menu** no longer says `v0.1.6-alpha.3`.
 
 </details>
 
