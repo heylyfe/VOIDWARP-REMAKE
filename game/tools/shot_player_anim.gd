@@ -272,10 +272,15 @@ func _cameras(world: World, pose: Array) -> Array:
 	var yaw: float = pose[6]
 	side.offset = Vector3(3.4, 0.55, 0.0).rotated(Vector3.UP, yaw)
 	rear.offset = Vector3(1.1, 1.5, 2.9).rotated(Vector3.UP, yaw)
+	# An airborne pose outruns a 2.4 u frame: the arc lifts the figure clean out of the top
+	# of the shot, so the pose cannot be judged. Widen the frame and follow the height
+	# faster for those poses only; the ground poses keep the tight framing.
+	var airborne: bool = pose[0] in ["jump", "land", "glide"]
 	for cam in [side, rear]:
 		cam.figure = world.player_model
 		cam.projection = Camera3D.PROJECTION_ORTHOGONAL
-		cam.size = 2.4
+		cam.size = 3.8 if airborne else 2.4
+		cam.lag = 0.80 if airborne else 0.3
 		world.add_child(cam)
 		cam.follow()
 	return [side, rear]
@@ -284,6 +289,7 @@ func _cameras(world: World, pose: Array) -> Array:
 class _FollowCam extends Camera3D:
 	var figure: Node3D
 	var offset := Vector3.ZERO
+	var lag := 0.3
 	var _y := INF
 
 	func _process(_delta: float) -> void:
@@ -294,7 +300,7 @@ class _FollowCam extends Camera3D:
 			return
 		# Follow x/z exactly; height with a short lag, so a climb or a jump still reads.
 		var feet := figure.position
-		_y = feet.y if _y == INF else lerpf(_y, feet.y, 0.3)
+		_y = feet.y if _y == INF else lerpf(_y, feet.y, lag)
 		var target := Vector3(feet.x, _y + 0.85, feet.z)
 		position = target + offset
 		look_at(target)
