@@ -18,6 +18,8 @@ const HIP_RISE := 0.16
 const SOLE_HEIGHT := 0.09
 const MIN_SPEED := 0.20
 const REACH := 2.0 * SEGMENT     # hip -> ankle, fully straight
+const SWING_DROP := 0.27         # u: a swinging ankle stays at least this far below its hip
+const TOE := 0.14                # u: a boot pointed along the shin reaches this far below the ankle
 const MIN_FOLD := 0.24           # u, the nearest an ankle comes to its hip (knee fold limit)
 const SOFT := 0.06               # the last SOFT u of reach eases in (no knee snap)
 const RELEASE := REACH - 0.025   # a planted ankle farther than this lifts off
@@ -43,8 +45,7 @@ var forearms: Array[MeshInstance3D] = []
 var stance: Array[bool] = [false, false]
 var foot_yaw: Array[float] = [0.0, 0.0]
 var pole_yaw := 0.0              # knee direction offset (model frame), set per frame
-var releases := 0
-var dbg := [[], []]                # diagnostics: early lift-offs (foot out of reach / lane)
+var releases := 0                # diagnostics: early lift-offs (foot out of reach / lane)
 var _has_contact: Array[bool] = [false, false]
 var _plants: Array[Vector3] = [Vector3.ZERO, Vector3.ZERO]
 var _landings: Array[Vector3] = [Vector3.ZERO, Vector3.ZERO]
@@ -58,6 +59,7 @@ var _released: Array[bool] = [false, false]
 var _prev_phase: Array[float] = [0.0, 0.0]
 var _step: Array[float] = [-1.0, -1.0]   # idle step progress 0..1, -1 = none
 var _swing_hold: Array[float] = [0.0, 0.0]
+var _swing_floor: Array[float] = [0.0, 0.0]
 var _swing_drop: Array[float] = [0.1, 0.1]
 var _envelope: Array[PackedFloat32Array] = [PackedFloat32Array(), PackedFloat32Array()]
 
@@ -225,13 +227,18 @@ func place_foot(side: int, rest: Vector3, velocity: Vector3, phase: float, gait:
 		var ceiling := maxf(result.y + 0.25, _targets[side].y + 0.01)
 		var ground := floor_under(world, result, foot_yaw[side], ceiling)
 		if ground != -INF:
-			if ground + 0.002 > result.y + 0.001: dbg[side].append("GUARD %.3f" % (ground + 0.002 - result.y))
 			result.y = maxf(result.y, ground + 0.002)
 		if was_swinging:
 			# Coming off a ledge the foot lowers at a bounded rate (no one-frame drop).
 			result.y = maxf(result.y, _targets[side].y - MAX_DROP * delta)
 	_targets[side] = result
 	return result
+
+
+## The height a swinging sole is held at by the ground it passes (its riser/tread
+## clearance), without the stylistic lift and heel kick.
+func swing_floor(side: int) -> float:
+	return _swing_floor[side]
 
 
 func _gait_foot(side: int, rest: Vector3, velocity: Vector3, phase: float, gait: Vector3,
@@ -256,8 +263,11 @@ func _gait_foot(side: int, rest: Vector3, velocity: Vector3, phase: float, gait:
 	if stance[side]:
 		_lift_off(side, phase, rest, velocity, gait, yaw, world)
 	var s := clampf((phase - _swing_begin[side]) / maxf(1.0 - _swing_begin[side], 0.05), 0.0, 1.0)
-	var lift := (lerpf(0.10, 0.18, gait.z) + 0.12 * climb) * (1.0 - 0.45 * down)
-	return _swing(side, s, lift)
+	var lift := (lerpf(0.10, 0.18, gait.z) + 0.20 * climb) * (1.0 - 0.45 * down)
+	# Running adds a heel kick: the foot rises behind the body early in the swing (the
+	# knee folds up) instead of trailing straight back along the ground.
+	var kick := 0.15 * gait.z * (1.0 - 0.6 * climb)
+	return _swing(side, s, lift, kick, gait.z)
 
 
 func _lift_off(side: int, phase: float, rest: Vector3, velocity: Vector3, gait: Vector3,
@@ -270,7 +280,10 @@ func _lift_off(side: int, phase: float, rest: Vector3, velocity: Vector3, gait: 
 	# Land so that mid-stance falls under the hip at the current velocity.
 	var horizon := (1.0 - phase + gait.y * 0.5) / gait.x
 	var landing := rest + velocity * horizon
-	var floor_y := floor_under(world, landing, yaw, rest.y + 0.51)
+	# A long stride up a slope or stairs lands well above the body's tread: allow the
+	# steepest walkable rise (0.5 u per u) over the stride's length.
+	var reach_up := 0.51 + 0.55 * Vector2(landing.x - rest.x, landing.z - rest.z).length()
+	var floor_y := floor_under(world, landing, yaw, rest.y + reach_up)
 	if floor_y != -INF:
 		landing.y = floor_y + 0.002
 	_landings[side] = landing
@@ -282,17 +295,23 @@ func _lift_off(side: int, phase: float, rest: Vector3, velocity: Vector3, gait: 
 ## clearance envelope of the ground along the path (sampled at lift-off). The envelope is
 ## a set of cones (slope ENV_SLOPE) over the sampled treads, so the foot rises before a
 ## riser going up and reaches over the nosing before it lowers going down, continuously.
-func _swing(side: int, s: float, lift: float) -> Vector3:
+func _swing(side: int, s: float, lift: float, kick := 0.0, run := 0.0) -> Vector3:
 	var from := _swing_from[side]
 	var to := _landings[side]
 	# A riser right in front of the lifting foot: hold the travel while the foot rises.
 	var hold := _swing_hold[side]
-	var travel := smoothstep(hold, 1.0, s)
+	var eased := smoothstep(hold, 1.0, s)
+	var travel := lerpf(eased, clampf((s - hold) / maxf(1.0 - hold, 0.01), 0.0, 1.0), 0.45 * run)
 	var result := from.lerp(to, travel)
-	result.y += lift * pow(sin(PI * s), 2.0)
 	var weight := smoothstep(0.0, maxf(hold, 0.12), s) * (1.0 - smoothstep(1.0 - _swing_drop[side], 1.0, s))
-	dbg[side] = [s, travel, result.y, _envelope_at(side, travel), weight]
-	result.y = maxf(result.y, lerpf(result.y, _envelope_at(side, travel), weight))
+	var envelope := _envelope_at(side, travel)
+	# Where the ground already forces the foot up (a riser), that clearance IS the lift:
+	# the arc is not stacked on top of it (which would bring the sole up to the hip).
+	var forced := maxf(0.0, envelope - ENV_CLEAR - result.y) * weight
+	var arc := maxf(0.0, lift * pow(sin(PI * s), 2.0) - forced)
+	_swing_floor[side] = maxf(result.y, lerpf(result.y, envelope - ENV_CLEAR, weight))
+	result.y += arc + kick * pow(sin(PI * pow(s, 0.55)), 2.0)
+	result.y = maxf(result.y, lerpf(result.y, envelope, weight))
 	foot_yaw[side] = lerp_angle(_swing_yaw[side], _landing_yaw[side], travel)
 	return result
 
@@ -406,15 +425,21 @@ func pose_arm(side: int, limb: MeshInstance3D, mount: Vector3, bend: float) -> v
 ## SEGMENT length in every frame; an unreachable sole is missed, never stretched to.
 func pose_leg(side: int, limb: MeshInstance3D, hip: Vector3, mount: Vector3,
 		sole: Vector3, model_yaw: float, contact: float, thigh_pitch := 0.0,
-		knee_flex := 0.0) -> void:
+		knee_flex := 0.0, ground := -INF) -> void:
 	var thigh_dir := Basis(Vector3.RIGHT, thigh_pitch) * Vector3.DOWN
 	var shin_dir := Basis(Vector3.RIGHT, thigh_pitch - maxf(knee_flex, 0.0)) * Vector3.DOWN
 	var air_ankle := hip + (thigh_dir + shin_dir) * SEGMENT
 	var target := air_ankle.lerp(sole + Vector3.UP * SOLE_HEIGHT, contact)
+	if ground != -INF:
+		# A pointed (airborne) boot dips its toe up to TOE below the ankle line.
+		target.y = maxf(target.y, ground + SOLE_HEIGHT + TOE * (1.0 - contact) + 0.002)
 	var out := -1.0 if side == 0 else 1.0
 	if target.x * out < LANE:
 		target.x = out * LANE
-	var pole := Vector3.FORWARD.rotated(Vector3.UP, pole_yaw)
+	# A knee only turns OUTWARD toward a sideways step (the leading leg); the trailing
+	# knee stays forward instead of swinging across the body.
+	var turn := minf(pole_yaw, 0.0) if side == 1 else maxf(pole_yaw, 0.0)
+	var pole := Vector3.FORWARD.rotated(Vector3.UP, turn)
 	target = clear_hip(hip, target, pole)
 	var joints := solve(hip, target, pole)
 	var knee: Vector3 = joints[0]

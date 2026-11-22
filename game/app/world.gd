@@ -246,6 +246,8 @@ var _anim_height := INF
 var _contact_weight := 0.0
 var _climb_weight := 0.0
 var _descent_weight := 0.0
+var _fold_lift := 0.0            # u, hips raised for a high step (see _step_up)
+var _rise_rate := 0.0            # u/s, low-passed vertical speed of the grounded samples
 var _side_weight := 0.0
 var _land_clock := -1.0          # s since touchdown while < LAND_TIME, else -1
 var _was_airborne := false
@@ -1829,7 +1831,24 @@ func _render_animation(delta: float, alpha: float) -> void:
 	# Soles remain in world space while the body catches up to the new tread.
 	# (A 0.5 u riser over ~0.09 s: fast enough to read as a step, slow enough that the hips
 	# never yank the legs through a big angle in one frame.)
-	_anim_height = lerpf(_anim_height, root_pos.y, 1.0 - exp(-delta / ANIM_RISE_TIME))
+	# Feed the sim's own vertical speed forward, so a steady climb up a ramp has no lag
+	# (only the discrete stair snaps are smoothed).
+	# The controller snaps its feet onto slopes and treads (vy stays 0 on the ground), so
+	# the climb rate is read from the ground itself: the rise across one unit of course
+	# centred on the body, times the ground speed. A ramp and a flight of 1 HU stairs both
+	# give a steady rate, which is fed forward so the hips climb WITH the feet instead of
+	# lagging a whole step below them (only an isolated step is smoothed).
+	var flat := Vector3(velocity.x, 0.0, velocity.z)
+	var climb_rate := 0.0
+	if on_ground and flat.length() > Locomotion.MIN_SPEED:
+		var dir := flat.normalized()
+		var ahead := Locomotion.tile_height(w, root_pos + dir * 0.5, root_pos.y + 0.55)
+		var behind := Locomotion.tile_height(w, root_pos - dir * 0.5, root_pos.y + 0.05)
+		if ahead != -INF and behind != -INF:
+			climb_rate = clampf(ahead - behind, -0.6, 0.6) * flat.length()
+	_rise_rate = lerpf(_rise_rate, climb_rate, 1.0 - exp(-delta / 0.10))
+	var feed := _rise_rate * ANIM_RISE_TIME if on_ground else 0.0
+	_anim_height = lerpf(_anim_height, root_pos.y + feed, 1.0 - exp(-delta / ANIM_RISE_TIME))
 	if not on_ground and not _anim_prev.grounded:
 		_anim_height = move_toward(_anim_height, root_pos.y, absf(velocity.y) * delta)
 	player_model.position = Vector3(root_pos.x, _anim_height, root_pos.z)
@@ -1878,8 +1897,8 @@ func _pose_locomotion(root_pos: Vector3, velocity: Vector3, delta: float, blend:
 	var direction := velocity.normalized()
 	var yaw := player_model.rotation.y
 	var local_dir := direction.rotated(Vector3.UP, -yaw)   # -z ahead, +x right
-	var rise := Locomotion.grade(w, root_pos, direction,
-			(_anim_next.velocity as Vector3).y)
+	# Grounded here, so the sim's vy is the slope, not a jump: grade() reads the ground only.
+	var rise := Locomotion.grade(w, root_pos, direction, 0.0)
 	_climb_weight = lerpf(_climb_weight, rise, blend)
 	_descent_weight = lerpf(_descent_weight, Locomotion.descent(w, root_pos, direction), blend)
 	_side_weight = lerpf(_side_weight, absf(local_dir.x) if speed >= Locomotion.MIN_SPEED else 0.0, blend)
@@ -1894,7 +1913,7 @@ func _pose_locomotion(root_pos: Vector3, velocity: Vector3, delta: float, blend:
 	var run_pose := _pose_run(_anim_phase, gait.z)
 	var ahead := clampf(-local_dir.z, -0.35, 1.0) if speed >= Locomotion.MIN_SPEED else 0.0
 	target["torso"] = lerpf(target.torso, (float(run_pose.torso) - 0.06) * ahead
-			- 0.12 * _climb_weight + 0.05 * _descent_weight, moving)
+			- 0.04 * _climb_weight + 0.05 * _descent_weight, moving)
 	target["twist"] = sin(_anim_phase) * lerpf(0.11, 0.19, gait.z) * moving * (1.0 - 0.7 * _side_weight)
 	target["head"] = float(target.head) * (1.0 - moving)
 	if _leg_rig.boots.size() != 2:
@@ -1918,8 +1937,12 @@ func _pose_locomotion(root_pos: Vector3, velocity: Vector3, delta: float, blend:
 		if _leg_rig.stance[side]:
 			# A planted sole the lagging hips have caught up on (a fresh tread): the body
 			# rises so the knee never folds past its limit onto that tread.
-			var rise_to := Locomotion.fold_height(sole, hip)
-			fold_lift = maxf(fold_lift, rise_to)
+			fold_lift = maxf(fold_lift, Locomotion.fold_height(sole, hip))
+		else:
+			# A swinging sole headed for a tread near hip height: the body steps up with
+			# it, so the thigh never comes up past level into the chest.
+			fold_lift = maxf(fold_lift, _leg_rig.swing_floor(side) + Locomotion.SOLE_HEIGHT
+					+ Locomotion.SWING_DROP - hip.y)
 		var key := "arm_l" if side == 0 else "arm_r"
 		var travel := (sole - rest).dot(forward)
 		var counter := clampf(-travel / 0.34, -1.0, 1.0) * lerpf(0.30, 0.79, gait.z)
@@ -1930,11 +1953,20 @@ func _pose_locomotion(root_pos: Vector3, velocity: Vector3, delta: float, blend:
 			bob = maxf(bob, pow(sin(PI * phase / gait.y), 2.0))
 	bob *= lerpf(0.024, 0.064, gait.z) * (1.0 - 0.90 * _climb_weight)
 	# Slopes and stairs: the hips sit lower so both soles stay inside the leg's reach.
-	var crouch := (0.07 * _climb_weight + 0.06 * _descent_weight) * moving
+	var crouch := (0.10 * _climb_weight + 0.06 * _descent_weight) * moving
 	# A run sits lower than a walk: the hips drop with the run blend so the bob's peak
 	# (mid-stance, sole under the hip) still leaves the stance leg inside its reach.
-	target["body_y"] = lerpf(float(target.body_y), -0.065 - 0.05 * gait.z + bob, moving) 			- crouch - _land_dip() + fold_lift
+	target["body_y"] = lerpf(float(target.body_y), -0.065 - 0.05 * gait.z + bob, moving) 			- crouch - _land_dip() + _step_up(fold_lift, delta)
 	return target
+
+
+## The body's step-up: follows a demanded rise at a bounded rate, settles back slowly.
+func _step_up(demand: float, delta: float) -> float:
+	if demand > _fold_lift:
+		_fold_lift = minf(demand, _fold_lift + 5.0 * delta)
+	else:
+		_fold_lift = lerpf(_fold_lift, demand, 1.0 - exp(-delta / 0.12))
+	return _fold_lift
 
 
 ## The touchdown dip: the hips sink and recover over LAND_TIME (knees bend, the IK keeps
@@ -1956,6 +1988,8 @@ func _cache_player_limbs(figure: Node3D) -> void:
 	_anim_height = INF
 	_climb_weight = 0.0
 	_descent_weight = 0.0
+	_rise_rate = 0.0
+	_fold_lift = 0.0
 	_side_weight = 0.0
 	_land_clock = -1.0
 	_was_airborne = false
@@ -1979,6 +2013,13 @@ func _apply_pose() -> void:
 	var body := Basis.from_euler(Vector3(_pose.torso, _pose.twist, 0.0))
 	var waist := _limb_rest[0] + _limb_mounts[0]
 	var offset := Vector3.UP * float(_pose.body_y)
+	# The floor under the figure, in its own frame: an airborne/dash leg pose never
+	# swings a boot through the ground the body is skimming.
+	var ground := -INF
+	if w != null and player_model != null:
+		var under := Locomotion.tile_height(w, player_model.position, player_model.position.y + 0.3)
+		if under != -INF:
+			ground = under - player_model.position.y
 	for i in LIMB_NAMES.size():
 		var node = _limbs[i]
 		if node == null or not _pose.has(POSE_KEYS[i]):
@@ -2011,7 +2052,7 @@ func _apply_pose() -> void:
 		elif i >= 4 and _leg_rig.shins.size() == 2:
 			_leg_rig.pose_leg(i - 4, node, joint, mount, _feet[i - 4],
 					player_model.rotation.y, _contact_weight, angle,
-					float(_pose.get("knee_l" if i == 4 else "knee_r", 0.0)))
+					float(_pose.get("knee_l" if i == 4 else "knee_r", 0.0)), ground)
 
 
 ## The enemy body pass: every live runtime row gets ONE body - its bespoke view host when

@@ -17,10 +17,19 @@ extends RefCounted
 #      carries no material, so without it the surface drew with Godot's default white and
 #      the authored palette was never seen). Asserts on material properties and on the
 #      mesh's vertex colours - never on a screenshot.
+#   6. (D-ANIM-1, the owner's "legs merged into one long wedge" bug) every pose the contact
+#      sheet shows - run forward/backward, strafe left/right, diagonal, turn in place, up/down
+#      a ramp, up/down 1 HU stairs, jump, land, dash, glide, idle, walk - is driven through
+#      the REAL controller on a staged course, and EVERY rendered frame is checked: each bone
+#      keeps its rest length and unit scale (no stretched shin), knees never hyperextend and
+#      elbows never invert, soles never sit below the floor under them, knees/ankles never
+#      enter the torso, the left leg stays on the body's -x side and the right on +x, and the
+#      controller trace is byte-identical with the animation pass on and off.
 
 const WorldScript := preload("res://app/world.gd")
 const LobbyPlayerScript := preload("res://view/lobby/lobby_player.gd")
 const Collision := preload("res://sim/collision.gd")
+const Locomotion := preload("res://view/player_locomotion.gd")
 const Hash := preload("res://sim/state_hash.gd")
 const RunState := preload("res://sim/run_state.gd")
 
@@ -39,6 +48,7 @@ func run() -> Array[String]:
 	_leg_render_smoothness(f)
 	_leg_gaits(f)
 	_leg_sim_purity(f)
+	_leg_rigid_geometry(f)
 	return f
 
 
@@ -479,3 +489,280 @@ func _check_figure_materials(f: Array[String], root: Node3D, which: String) -> v
 					f.append("figure materials: %s figure surface %d carries no vertex colours" % [which, s])
 	if found == 0:
 		f.append("figure materials: %s figure has no mesh surfaces" % which)
+
+
+# --- Leg 6 (D-ANIM-1): rigid limbs on every pose, every frame ----------------------------
+
+const Controller := preload("res://sim/controller.gd")
+const GliderView := preload("res://view/glider_view.gd")
+const RENDER_DT := 1.0 / 120.0
+const LEG_BONE := 0.31           # view/player_locomotion.gd SEGMENT: thigh and shin length
+const LENGTH_TOL := 0.002        # u: a bone may not change length by more than this
+const FLOOR_TOL := 0.005         # u: a sole corner may not sit lower than this under its floor
+
+## The contact-sheet poses (tools/shot_player_anim.gd draws exactly these). Columns:
+## name, kit, speed, move (world x/z input), course, start (x, z), facing yaw (rad), warm-up
+## ticks, captured span (s; 0 = one second), action.
+const POSES := [
+	["run_forward", "dasher", 9.0, Vector2(0, -1), "flat", Vector2(0.5, 8.5), 0.0, 50, 0.0, ""],
+	["walk_forward", "dasher", 3.0, Vector2(0, -1), "flat", Vector2(0.5, 8.5), 0.0, 50, 0.0, ""],
+	["run_backward", "dasher", 9.0, Vector2(0, 1), "flat", Vector2(0.5, -8.5), 0.0, 50, 0.0, ""],
+	["strafe_left", "dasher", 9.0, Vector2(-1, 0), "flat", Vector2(8.5, 0.5), 0.0, 50, 0.0, ""],
+	["strafe_right", "dasher", 9.0, Vector2(1, 0), "flat", Vector2(-8.5, 0.5), 0.0, 50, 0.0, ""],
+	["diagonal", "dasher", 9.0, Vector2(1, -1), "flat", Vector2(-6.5, 6.5), 0.0, 50, 0.0, ""],
+	["turn_in_place", "dasher", 9.0, Vector2.ZERO, "flat", Vector2(0.5, 0.5), 0.0, 40, 1.2, "turn"],
+	["up_ramp", "dasher", 9.0, Vector2(0, -1), "ramp", Vector2(0.5, 1.5), 0.0, 44, 0.0, ""],
+	["down_ramp", "dasher", 9.0, Vector2(0, 1), "ramp", Vector2(0.5, -16.5), PI, 44, 0.0, ""],
+	["up_stairs", "dasher", 9.0, Vector2(0, -1), "stairs", Vector2(0.5, 1.5), 0.0, 44, 0.0, ""],
+	["down_stairs", "dasher", 9.0, Vector2(0, 1), "stairs", Vector2(0.5, -16.5), PI, 44, 0.0, ""],
+	["jump", "dasher", 9.0, Vector2(0, -1), "flat", Vector2(0.5, 8.5), 0.0, 40, 0.75, "jump"],
+	["land", "dasher", 9.0, Vector2(0, -1), "flat", Vector2(0.5, 8.5), 0.0, 40, 0.45, "land"],
+	["dash", "dasher", 9.0, Vector2(0, -1), "flat", Vector2(0.5, 8.5), 0.0, 40, 0.30, "dash"],
+	["glide", "glider", 9.0, Vector2(0, -1), "flat", Vector2(0.5, 8.5), 0.0, 40, 0.90, "glide"],
+	["idle", "dasher", 9.0, Vector2.ZERO, "flat", Vector2(0.5, 0.5), 0.0, 30, 3.0, ""],
+]
+
+
+class StillRig extends Node3D:
+	var yaw_deg := 0.0
+	var pitch_deg := 0.0
+
+
+## Stage `pose` on a fresh world: the course's collision, a real controller of the pose's
+## kit at the start, a camera-less yaw holder, the figure, its glider, and the limb cache.
+## Shared with tools/shot_player_anim.gd, which adds the visible treads and cameras.
+static func stage(world: Node, pose: Array) -> Dictionary:
+	var course: String = pose[4]
+	var tiles: Array = []
+	var heights := {}
+	for z in range(-24, 13):
+		var hu := 0
+		var kind := 0
+		if course != "flat" and z < 0:
+			hu = -z - 1 if course == "ramp" else -z
+			kind = 4 if course == "ramp" else 0
+		if course == "ramp" and z <= -20:
+			hu = 19
+			kind = 0
+		for x in range(-12, 13):
+			tiles.append([x, z, hu, kind, 0])
+		heights[z] = [hu, kind]
+	world.w = Collision.make_world(tiles, [], [], {"dais": [0, 0, 0]})
+	world.ctl = Controller.new()
+	world.ctl.setup(pose[1], Controller.load_constants())
+	world.ctl.C["run_speed"] = float(pose[2])
+	var start: Vector2 = pose[5]
+	var row: Array = heights[floori(start.y)]
+	world.ctl.x = start.x
+	world.ctl.z = start.y
+	world.ctl.y = Collision.tile_top(row[0]) + (0.5 * (1.0 - (start.y - floorf(start.y)))
+			if row[1] == 4 else 0.0)
+	world.ctl.cur_key = "%d,%d,%d" % [floori(start.x), floori(start.y), row[0]]
+	world.ctl.grounded = true
+	world.ctl.sync_body()
+	var rig := StillRig.new()
+	rig.yaw_deg = rad_to_deg(float(pose[6]))
+	world.rig = rig
+	world.add_child(rig)
+	var scene: PackedScene = load(WorldScript.PLAYER_MODEL)
+	world.player_model = scene.instantiate()
+	WorldScript._apply_player_body_material(world.player_model)
+	world.add_child(world.player_model)
+	world.glider_view = GliderView.new()
+	if world.glider_view.build():
+		world.player_model.add_child(world.glider_view)
+	else:
+		world.glider_view.free()
+		world.glider_view = null
+	world._cache_player_limbs(world.player_model)
+	return heights
+
+
+## One 60 Hz sim tick through the real controller, then (if animated) the player pass;
+## `render` also draws the tick's two 120 Hz render frames.
+static func tick(world: Node, pose: Array, jump: bool, ability: bool, animate := true,
+		render := false) -> void:
+	var held := {"move_x": int(pose[3].x), "move_z": int(pose[3].y), "aim_x": 0, "aim_z": -1,
+			"buttons": (Controller.BTN_JUMP if jump else 0) | (Controller.BTN_ABILITY if ability else 0)}
+	if pose[9] == "turn":
+		world.rig.yaw_deg = fposmod(world.rig.yaw_deg + rad_to_deg(3.0) * RENDER_DT * 2.0, 360.0)
+	world.ctl.step(RENDER_DT * 2.0, held, world.w)
+	if animate:
+		world._player_pass()
+		if render:
+			world._process(RENDER_DT)
+			world._process(RENDER_DT)
+
+
+## Warm the pose up (for "land", jump and come back down). Returns the ticks spent.
+static func warm_up(world: Node, pose: Array, animate := true) -> int:
+	var ticks := 0
+	for i in int(pose[7]):
+		tick(world, pose, i == int(pose[7]) - 30 and pose[9] == "land", false, animate, true)
+		ticks += 1
+	if pose[9] == "land":
+		while not bool(world.ctl.grounded) and ticks < 400:
+			tick(world, pose, false, false, animate, true)
+			ticks += 1
+	return ticks
+
+
+## The buttons held on render frame `frame` of the captured span.
+static func buttons_at(pose: Array, frame: int) -> Array[bool]:
+	var action: String = pose[9]
+	return [(action == "jump" and frame < 40) or action == "glide", action == "dash" and frame < 4]
+
+
+func _leg_rigid_geometry(f: Array[String]) -> void:
+	var tree := Engine.get_main_loop() as SceneTree
+	var worst := {}
+	for pose in POSES:
+		var world = WorldScript.new()
+		tree.root.add_child(world)
+		world.set_process(false)
+		stage(world, pose)
+		var rig = world._leg_rig
+		if rig == null or rig.shins.size() != 2 or rig.boots.size() != 2 or rig.forearms.size() != 2:
+			f.append("rigid %s: the leg/arm rig was not built" % pose[0])
+			world.free()
+			continue
+		var arm_rest: Array[float] = []
+		for side in 2:
+			# pose_arm hangs the forearm one upper-arm length below the shoulder mount
+			arm_rest.append((world._limbs[side + 2] as MeshInstance3D).get_aabb().size.y)
+		var ticks: int = warm_up(world, pose)
+		var span: float = pose[8] if float(pose[8]) > 0.0 else 1.0
+		var faults := {}
+		var frames := int(round(span / RENDER_DT))
+		for frame in frames:
+			if frame % 2 == 0:
+				var held: Array[bool] = buttons_at(pose, frame)
+				tick(world, pose, held[0], held[1])
+				ticks += 1
+			world._process(RENDER_DT)
+			_check_frame(world, arm_rest, faults)
+		for kind in faults.keys():
+			var entry: Array = faults[kind]
+			f.append("rigid %s: %s in %d limb checks over %d frames (worst %.4f)" % [pose[0], kind, entry[0],
+					frames, entry[1]])
+			worst[kind] = maxf(float(worst.get(kind, 0.0)), float(entry[1]))
+		world.free()
+		# Animation OFF: the same inputs must leave the controller bit-identical.
+		if not _same_sim_without_animation(pose, ticks, tree):
+			f.append("rigid %s: the controller trace differs with the animation pass off" % pose[0])
+	print("ANIM rigid geometry: %d poses checked every render frame, worst faults %s"
+			% [POSES.size(), worst])
+
+
+func _fault(faults: Dictionary, kind: String, amount: float) -> void:
+	var entry: Array = faults.get(kind, [0, 0.0])
+	faults[kind] = [entry[0] + 1, maxf(entry[1], amount)]
+
+
+func _check_frame(world, arm_rest: Array[float], faults: Dictionary) -> void:
+	var rig = world._leg_rig
+	var model: Node3D = world.player_model
+	var torso: MeshInstance3D = world._limbs[0]
+	var torso_box := torso.get_aabb().grow(-0.01)
+	var torso_inv := torso.global_transform.affine_inverse()
+	var right := model.global_basis.x.normalized()
+	var ankles: Array[Vector3] = []
+	var knees: Array[Vector3] = []
+	for side in 2:
+		var thigh: MeshInstance3D = world._limbs[side + 4]
+		var shin: MeshInstance3D = rig.shins[side]
+		var boot: MeshInstance3D = rig.boots[side]
+		var hip := thigh.to_global(world._limb_mounts[side + 4])
+		var knee := shin.global_position
+		var ankle := boot.global_position
+		knees.append(knee)
+		ankles.append(ankle)
+		# 1. constant bone lengths and unit scale (the stretched-shin wedge fails here).
+		var stretch := maxf(absf(hip.distance_to(knee) - LEG_BONE), absf(knee.distance_to(ankle) - LEG_BONE))
+		if stretch > LENGTH_TOL:
+			_fault(faults, "leg bone length changed", stretch)
+		for part in [thigh, shin, boot]:
+			var scale := (part as Node3D).global_basis.get_scale()
+			var off := (scale - Vector3.ONE).abs()
+			var worst_axis := maxf(off.x, maxf(off.y, off.z))
+			if worst_axis > 0.001:
+				_fault(faults, "leg segment scaled", worst_axis)
+		# 2. the knee flexes, never hyperextends backwards (hinge across the body's right).
+		var thigh_dir := (knee - hip).normalized()
+		var shin_dir := (ankle - knee).normalized()
+		var flex := thigh_dir.angle_to(shin_dir)
+		var hinge := -thigh_dir.cross(shin_dir).dot(right)
+		if flex > 0.02 and hinge < -0.01:
+			_fault(faults, "knee hyperextended", -hinge)
+		if flex > 2.75:
+			_fault(faults, "knee folded past its limit", flex)
+		# 3. no sole corner below the floor under it.
+		var box := boot.get_aabb()
+		for x in [box.position.x, box.end.x]:
+			for z in [box.position.z, box.end.z]:
+				var corner := boot.to_global(Vector3(x, box.position.y, z))
+				var ground := Locomotion.tile_height(world.w, corner, corner.y + 0.3)
+				if ground != -INF and corner.y < ground - FLOOR_TOL:
+					_fault(faults, "sole below the floor", ground - corner.y)
+		# 4. knee and ankle stay out of the torso block (1 cm in from its faces); the shin's
+		# midpoint may graze the leaning block's lower front edge by up to 3 cm, the
+		# thickness of the thigh that already enters the torso at the hip by design.
+		for point in [knee, ankle]:
+			if torso_box.has_point(torso_inv * point):
+				_fault(faults, "leg inside the torso", 1.0)
+		if torso.get_aabb().grow(-0.03).has_point(torso_inv * knee.lerp(ankle, 0.5)):
+			_fault(faults, "shin through the torso", 1.0)
+	# 5. the left leg stays on the body's -x side, the right on +x (no swap, no crossing).
+	var root := model.global_position
+	for side in 2:
+		var side_sign := -1.0 if side == 0 else 1.0
+		for point in [ankles[side], knees[side]]:
+			var lateral: float = (point - root).dot(right) * side_sign
+			if lateral <= 0.0:
+				_fault(faults, "leg crossed the body midline", -lateral)
+	# Arms: the forearm hangs from the elbow at its rest distance with unit scale, and the
+	# elbow only flexes forward.
+	for side in 2:
+		var upper: MeshInstance3D = world._limbs[side + 2]
+		var fore: MeshInstance3D = rig.forearms[side]
+		var shoulder := upper.to_global(world._limb_mounts[side + 2])
+		var elbow := fore.global_position
+		var bone := absf(shoulder.distance_to(elbow) - arm_rest[side])
+		if bone > LENGTH_TOL:
+			_fault(faults, "arm bone length changed", bone)
+		var scale := fore.global_basis.get_scale()
+		var off := (scale - Vector3.ONE).abs()
+		if maxf(off.x, maxf(off.y, off.z)) > 0.001:
+			_fault(faults, "forearm scaled", maxf(off.x, maxf(off.y, off.z)))
+		var upper_dir := -upper.global_basis.y.normalized()
+		var fore_dir := -fore.global_basis.y.normalized()
+		if upper_dir.angle_to(fore_dir) > 0.02 \
+				and upper_dir.cross(fore_dir).dot(upper.global_basis.x.normalized()) < -0.01:
+			_fault(faults, "elbow inverted", 1.0)
+
+
+## Re-run the pose's inputs without any animation pass; the controller must match the
+## animated run's final state bit for bit (and the pose cannot have fed back into the sim).
+func _same_sim_without_animation(pose: Array, ticks: int, tree: SceneTree) -> bool:
+	var traces: Array = []
+	for animate in [true, false]:
+		var world = WorldScript.new()
+		tree.root.add_child(world)
+		world.set_process(false)
+		stage(world, pose)
+		var trace := PackedStringArray()
+		var spent: int = warm_up(world, pose, animate)
+		var frame := 0
+		while spent < ticks:
+			var held: Array[bool] = buttons_at(pose, frame)
+			tick(world, pose, held[0], held[1], animate)
+			if animate:
+				world._process(RENDER_DT)
+				world._process(RENDER_DT)
+			frame += 2
+			spent += 1
+			trace.append_array(_controller_bits(world.ctl))
+			trace.append("%s|%s|%d" % [world.ctl.grounded, world.ctl.gliding, world.ctl.dash_ticks])
+		traces.append(trace)
+		world.free()
+	return traces[0] == traces[1] and not (traces[0] as PackedStringArray).is_empty()
