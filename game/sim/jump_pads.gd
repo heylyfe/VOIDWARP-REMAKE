@@ -4,8 +4,8 @@ extends RefCounted
 #
 # NOT the launch pads (controller._try_launch_pad, level "pads"). The pad SET is level data -
 # terrain/jump_pads.gd places it as Level["jump_pads"] = [[x, z, y], ...], a pure function of
-# the Level dict - so, like the tripmine set, it is not hashed row by row. What IS live state,
-# and is dumped as state_hash.gd's JUMPPADS line, is:
+# the Level dict AND data/jump_pads.json - the config is outside the level hash, so the ordered
+# pad coordinates ARE dumped (pads_csv, Terra review finding 2). Also on the JUMPPADS line:
 #   ready_tick[i]  the first level tick at which pad i may fire again (0 = armed from the start)
 #   lost           bitset: pad i's tile fell in the platform collapse (it falls with the tile)
 #   rearm_ticks / launch_speed - data (data/jump_pads.json), pinned so two runs whose data
@@ -117,6 +117,7 @@ static func tick(lv, ctls: Array, w: Dictionary, tick: int, events: Array) -> vo
 		jp.ready_tick[pid] = tick + jp.rearm_ticks
 		var ev: Array = []
 		ctl.jump_pad_launch(jp.launch_speed, ev)
+		_sync_row(lv, i, ctl)
 		for e in ev:
 			e["pad"] = pid
 			e["player"] = i
@@ -124,6 +125,38 @@ static func tick(lv, ctls: Array, w: Dictionary, tick: int, events: Array) -> vo
 			e["y"] = float(int(p[2])) * 0.5
 			e["z"] = float(int(p[1])) + 0.5
 			events.append(e)
+
+
+## Terra review finding 1: the callers (app/world.gd step, tools/bot_run.gd _play_level) copy
+## the controller into lv.players[i] BEFORE this tick runs (gifts and mines read that row), so
+## a launch would leave the hashed row grounded with its pre-launch velocity until the next
+## tick. The pad is what changed the controller, so the pad writes the row back: every path
+## that fires a pad gets it, and no caller has to remember. Only the fields jump_pad_launch()
+## changes and the row carries (position is untouched by the fling). A holder without player
+## rows (the unit tests' bare Holder) is skipped.
+static func _sync_row(lv, i: int, ctl) -> void:
+	if not ("players" in lv):
+		return
+	var rows: Array = lv.players
+	if i >= rows.size():
+		return
+	var row: Dictionary = rows[i]
+	row["vx"] = ctl.vx
+	row["vy"] = ctl.vy
+	row["vz"] = ctl.vz
+	row["grounded"] = ctl.grounded
+
+
+## Terra review finding 2: the ordered pad coordinates for state_hash.gd's JUMPPADS line,
+## "x:z:y" per pad in placement (id) order, comma joined. The pad set is a function of the
+## Level AND of data/jump_pads.json (count, spacing, ...), and that config is not in the
+## level hash - so two runs on one level hash with different pad positions must not hash
+## alike. Placement order is the pad id order the ready ticks and the lost bitset index.
+func pads_csv() -> String:
+	var parts := PackedStringArray()
+	for p in pads:
+		parts.append("%d:%d:%d" % [int(p[0]), int(p[1]), int(p[2])])
+	return ",".join(parts)
 
 
 ## The ready ticks joined for state_hash.gd's JUMPPADS line ("" for none).

@@ -737,7 +737,9 @@ func step(dt: float) -> void:
 	MinesScript.tick(lstate, [ctl], w, [0], lstate.tick, minev)
 	for e in minev:
 		ev.append(e)
-	JumpPadsScript.tick(lstate, [ctl], w, lstate.tick, ev)   # D-JUMPPAD-2/4
+	# D-JUMPPAD-2/4. A launch writes its new vy / grounded back into lstate.players[0] (the row
+	# above was copied before the pad fired - sim/jump_pads.gd _sync_row, Terra finding 1).
+	JumpPadsScript.tick(lstate, [ctl], w, lstate.tick, ev)
 	# The curse entry gate (a crowded dais, an unserved dwell): a refused player simply
 	# does not enter this tick; the beacon stays open and the next tick asks again.
 	if _curses == null or bool(_curses.entry_allowed(0)):

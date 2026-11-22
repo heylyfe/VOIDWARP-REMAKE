@@ -12,13 +12,16 @@ extends RefCounted
 #      rule) and must report each of them;
 #   2. the refill list: jump_pad_launch() refills air jumps, dash + twin dash, glider energy
 #      (base + bonus), the updraft, the ability lock - and leaves void charges, the beacon
-#      shield, Last Light, invulnerability and the horizontal velocity alone;
+#      shield, Last Light, invulnerability and the horizontal velocity alone; and the refilled
+#      updraft is USABLE - a glider flung off a pad can actually fire the rise (D-JUMPPAD-3);
 #   3. launch height: on a flat test floor the pad flings the player to ~v^2/(2g) (6.25 u at
 #      20 u/s), far above a normal jump, with >= 1 s of air time, momentum kept;
 #   4. re-arm: a pad does not re-fire inside rearm_ticks, does at rearm_ticks, and one pad
 #      firing does not disarm another;
 #   5. determinism: the JUMPPADS state-hash line, a recorded real-level run replayed twice
-#      (identical hashes at every checkpoint) and a perturbed replay (diverges);
+#      (identical hashes at every checkpoint) and a perturbed replay (diverges); on the launch
+#      tick itself the hashed player row matches the controller (Terra finding 1); two levels
+#      with one level hash and one pad count but moved pads hash apart (Terra finding 2);
 #   6. collapse: a pad whose tile falls is lost, never fires again, and its view is hidden;
 #      a temporarily removed tile also stops it and hides it without losing it;
 #   7. view: the compress / rebound curve and the slab mesh.
@@ -49,9 +52,12 @@ func run() -> Array[String]:
 	var f: Array[String] = []
 	_placement(f)
 	_refill(f)
+	_updraft_usable(f)
 	_launch_height(f)
 	_rearm(f)
 	_hash_and_replay(f)
+	_launch_tick_row(f)
+	_hash_positions(f)
 	_collapse(f)
 	_view(f)
 	return f
@@ -342,6 +348,65 @@ func _refill(f: Array[String]) -> void:
 		f.append("refill NC: a launch that refilled charges + shield was not caught twice")
 
 
+## D-JUMPPAD-3 (Terra finding 3 declined): the refill must leave the rise USABLE, not just
+## flagged. A drained glider that owns the updraft is flung off a pad on the flat floor, then
+## presses jump on each falling tick (spending its refilled air jumps first, as a player
+## would). Returns the number of updraft_rise events before it lands again (-1: no launch).
+## spoil = put the rise back to its drained state right after the launch (the negative control).
+func _rise_after_pad(owned: bool, spoil: bool) -> int:
+	var wh := _flat_world([[4, 4, 0]])
+	var w: Dictionary = wh[0]
+	var h: Holder = wh[1]
+	var c
+	if owned:
+		c = _drained("glider")
+	else:
+		c = ControllerScript.new()
+		c.setup("glider", ControllerScript.load_constants())
+	_on_tile(c, 4, 4, 0)
+	c.vx = 0.0
+	c.vz = 0.0
+	var ev: Array = []
+	JumpPadsScript.tick(h, [c], w, 1, ev)
+	if ev.is_empty():
+		return -1
+	if spoil:
+		# undo the rise's refill: not ready, spent, and a cooldown longer than any flight
+		# (pressing on every other falling tick glides, so the flight outlasts a 6 s cooldown)
+		c.updraft_ready = false
+		c.updraft_cd = 1000.0
+		c.updraft_used = true
+	var rises := 0
+	var held := false
+	for t in 600:
+		# a fresh press on every falling tick that follows a released one
+		var press: bool = c.vy < 0.0 and not held
+		held = press
+		var out: Array = c.step(DT, {"move_x": 0, "move_z": 0,
+				"buttons": ControllerScript.BTN_JUMP if press else 0}, w)
+		for e in out:
+			if str(e.get("e", "")) == "updraft_rise":
+				rises += 1
+		if c.grounded:
+			break
+	return rises
+
+
+func _updraft_usable(f: Array[String]) -> void:
+	var n := _rise_after_pad(true, false)
+	if n < 0:
+		f.append("updraft: the fixture pad did not fire")
+	elif n != 1:
+		f.append("updraft: a glider flung off a pad fired the rise %d times before landing, want 1" % n)
+	# negative controls: the probe must see an unusable rise as unusable
+	var nc := _rise_after_pad(true, true)
+	if nc != 0:
+		f.append("updraft NC: with the rise drained again after the launch it still fired %d times" % nc)
+	var nu := _rise_after_pad(false, false)
+	if nu != 0:
+		f.append("updraft NC: an unowned glider fired the rise %d times after a pad" % nu)
+
+
 # ---- 3. launch height ------------------------------------------------------------------
 
 ## A flat 9x9 floor at y = 0 HU, a jump pad at its centre (4, 4).
@@ -555,6 +620,126 @@ func _record(L: Dictionary, sd: int, lvn: int, perturb: bool) -> Dictionary:
 		if lv.tick % 60 == 0:
 			hashes.append(HashScript.sha256(rs))
 	return {"hashes": hashes, "fires": fires, "dump": "\n".join(HashScript.dump(rs))}
+
+
+## Terra finding 1: the world / bot order is step -> copy the controller into
+## lv.players[0] -> tick += 1 -> gifts / mines -> JumpPadsScript.tick. On the tick a pad
+## fires, the hashed row must already show the launch (vy = launch speed, airborne): the hash
+## must equal the hash of a row freshly copied from the controller. Fails if the row is
+## synced only before the pad fires.
+func _launch_tick_row(f: Array[String]) -> void:
+	var sd := 7
+	var lvn := 1
+	var L: Dictionary = VoidGenScript.generate(sd, lvn)
+	PlaceScript.attach(L)
+	if (L["jump_pads"] as Array).is_empty():
+		f.append("launch row: fixture seed 7 level 1 has no jump pad")
+		return
+	var rs = RunStateScript.new_run(sd, 1, [])
+	rs.load_level(L, lvn)
+	var lv = rs.level
+	var w: Dictionary = CollisionScript.make_world(L["tiles"], L["props"], L["pads"], {"dais": L["beacon"]})
+	var c = ControllerScript.new()
+	c.setup("dasher", ControllerScript.load_constants())
+	c.place(w)
+	var p: Array = L["jump_pads"][0]
+	_on_tile(c, int(p[0]), int(p[1]), int(p[2]))
+	var fired := false
+	for t in 10:
+		var ev: Array = c.step(DT, {"move_x": 0, "move_z": 0, "buttons": 0}, w)
+		var p0: Dictionary = lv.players[0]
+		p0["x"] = c.x
+		p0["y"] = c.y
+		p0["z"] = c.z
+		p0["vx"] = c.vx
+		p0["vy"] = c.vy
+		p0["vz"] = c.vz
+		p0["grounded"] = c.grounded
+		p0["prev_buttons"] = 0
+		lv.tick += 1
+		var pev: Array = []
+		JumpPadsScript.tick(lv, [c], w, lv.tick, pev)
+		if pev.is_empty():
+			continue
+		fired = true
+		var got: String = HashScript.sha256(rs)
+		var row: Dictionary = lv.players[0]
+		if float(row["vy"]) != c.vy or bool(row["grounded"]) != c.grounded:
+			f.append("launch row: on the launch tick the row has vy %.3f grounded %s, the controller vy %.3f grounded %s" % [
+					float(row["vy"]), str(row["grounded"]), c.vy, str(c.grounded)])
+		# the truth: the row copied from the controller after the launch
+		var truth: Dictionary = row.duplicate()
+		truth["vx"] = c.vx
+		truth["vy"] = c.vy
+		truth["vz"] = c.vz
+		truth["grounded"] = c.grounded
+		lv.players[0] = truth
+		var want: String = HashScript.sha256(rs)
+		if got != want:
+			f.append("launch row: the launch-tick hash differs from the hash of a controller-synced row")
+		# negative control: a row left at its pre-launch state (grounded, vy 0) must hash
+		# differently from the truth, or the comparison above proves nothing
+		var stale: Dictionary = truth.duplicate()
+		stale["vy"] = 0.0
+		stale["grounded"] = true
+		lv.players[0] = stale
+		if HashScript.sha256(rs) == want:
+			f.append("launch row NC: a stale grounded row hashes like the launched one")
+		lv.players[0] = truth
+		break
+	if not fired:
+		f.append("launch row: standing on the fixture pad never fired it in 10 ticks")
+
+
+## Terra finding 2: pad placement depends on data/jump_pads.json, which the level hash does
+## not see. Same Level, same level hash, same pad count, one pad moved -> different hash.
+func _hash_positions(f: Array[String]) -> void:
+	var sd := 7
+	var lvn := 3   # 2 pads (count_by_level from 3), so the order check below has two to swap
+	var L: Dictionary = VoidGenScript.generate(sd, lvn)
+	PlaceScript.attach(L)
+	var pads: Array = L["jump_pads"]
+	if pads.size() < 2:
+		f.append("hash pos: fixture seed 7 level 3 has %d jump pads, want >= 2" % pads.size())
+		return
+	# a different floor tile for pad 0 (the first tile that is not already a pad)
+	var taken := {}
+	for q in pads:
+		taken["%d,%d,%d" % [int(q[0]), int(q[1]), int(q[2])]] = true
+	var moved: Array = []
+	for t in L["tiles"]:
+		if not taken.has("%d,%d,%d" % [int(t[0]), int(t[1]), int(t[2])]):
+			moved = [int(t[0]), int(t[1]), int(t[2])]
+			break
+	var L2: Dictionary = L.duplicate(true)
+	(L2["jump_pads"] as Array)[0] = moved
+	var L3: Dictionary = L.duplicate(true)
+	var hs: Array = []
+	var lh: Array = []
+	for lvl in [L, L2, L3]:
+		var rs = RunStateScript.new_run(sd, 1, [])
+		rs.load_level(lvl, lvn)
+		hs.append(HashScript.sha256(rs))
+		lh.append(str(rs.level.level_hash))
+	if lh[0] != lh[1]:
+		f.append("hash pos: fixture broken - moving a jump pad changed the level hash")
+	if (L2["jump_pads"] as Array).size() != pads.size():
+		f.append("hash pos: fixture broken - the pad count changed")
+	if hs[0] == hs[1]:
+		f.append("hash pos: two levels with one level hash and pad count but a moved pad hash alike")
+	# negative control: an identical pad set hashes identically (the line is not just noise)
+	if hs[0] != hs[2]:
+		f.append("hash pos NC: an identical copy of the level hashed differently")
+	# order matters too: the ready ticks and the lost bitset are indexed by placement order
+	var L4: Dictionary = L.duplicate(true)
+	var a: Array = L4["jump_pads"]
+	var tmp = a[0]
+	a[0] = a[1]
+	a[1] = tmp
+	var rs4 = RunStateScript.new_run(sd, 1, [])
+	rs4.load_level(L4, lvn)
+	if HashScript.sha256(rs4) == hs[0]:
+		f.append("hash pos: swapping two pads' placement order does not change the hash")
 
 
 # ---- 6. collapse -----------------------------------------------------------------------

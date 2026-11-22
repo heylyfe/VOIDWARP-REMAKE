@@ -41,8 +41,11 @@ extends RefCounted
 #                                          DATA, not a function of the Level: without them two
 #                                          runs whose collapse.json differed would hash the same
 #                                          until the first zone fell (B10 review finding 1).
-#   JUMPPADS <ready ticks csv> <lost hex> <rearm_ticks> <launch_speed bits>
-#                                          (D-JUMPPAD-4) the jump pads' live state: per pad the
+#   JUMPPADS <pads x:z:y csv> <ready ticks csv> <lost hex> <rearm_ticks> <launch_speed bits>
+#                                          (D-JUMPPAD-4) the jump pads: their ordered coordinates
+#                                          (placement depends on data/jump_pads.json, which the
+#                                          level hash does not cover - Terra review finding 2),
+#                                          then their live state: per pad the
 #                                          first tick it may fire again and the bitset of pads
 #                                          whose tile fell in the collapse, then the two data
 #                                          knobs (data/jump_pads.json). Only when the level
@@ -144,11 +147,12 @@ static func dump(rs: RefCounted) -> PackedStringArray:
 			str(cst.get("partition", "")),
 			int(cst.get("delay_ticks", 0)),   # D-B11-1: the start delay is data too
 		])
-	# D-JUMPPAD-4: the pad SET is a pure function of the Level (like the mine set); the re-arm
-	# ticks and the lost bitset are live state, the two knobs are data.
+	# D-JUMPPAD-4: the pad SET depends on the Level AND on data/jump_pads.json (count, spacing),
+	# which LEVELHASH does not cover, so the ordered coordinates are dumped; the re-arm ticks
+	# and the lost bitset are live state, the two knobs are data.
 	var jp = lv.get("jump_pads")
 	if jp != null:
-		out.append("JUMPPADS %s %s %d %s" % [str(jp.ready_csv()),
+		out.append("JUMPPADS %s %s %s %d %s" % [str(jp.pads_csv()), str(jp.ready_csv()),
 				(jp.lost as PackedByteArray).hex_encode(), int(jp.rearm_ticks),
 				bits(float(jp.launch_speed))])
 	return out

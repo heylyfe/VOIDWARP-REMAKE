@@ -8424,6 +8424,21 @@ jump and could not be the intent; one number in data flips it.
 list; test_jump_pads checks every row on all three kits, and its negative controls prove the checker reports all
 8 rows on an un-launched controller and catches a launch that also refilled charges and the shield.
 
+**Review objection declined (2026-11-22, Terra / gpt-6.1-terra xhigh, finding 3).** Terra objected that
+`jump_pad_launch()` resets `updraft_used`, which is outside the owner's expressly exhaustive refill list, that the
+test requires the extra reset and so reinforces the deviation, and asked for the write to be removed or the
+requirement changed. Declined by the orchestrator: the write stays. The rise in `controller.step()` is gated on
+`updraft_ready ... and not updraft_used` (controller.gd:475), so setting `updraft_ready` while leaving
+`updraft_used` true would make the refill a refill on paper only; the owner's intent was "the updraft comes
+back", and a flag that is set but unusable does not satisfy it. The `JUMP_PAD_REFILLS` comment now says so.
+Implementer's note, for the record: in the controller as it stands the glide-engage block also clears
+`updraft_used` on every fresh glide engagement (controller.gd:458), and the launch ends any glide, so the rise
+would still be usable without this write - removing it fails only test_jump_pads' flag row, not the new
+usability leg. The write is kept as the refill's own guarantee rather than a reliance on that coupling.
+test_jump_pads now also asserts the rise is USABLE after a pad: a drained glider that owns it is flung, presses
+jump on falling ticks (spending its refilled air jumps) and must fire `updraft_rise` exactly once before landing;
+negative controls: the same flight with the rise drained again after the launch, and an unowned glider, fire 0.
+
 ## D-JUMPPAD-4 (2026-11-22): per-pad re-arm in integer ticks, hashed; the collapse takes pads with their tiles
 
 **Ruling.** `game/sim/jump_pads.gd` (LevelState `jump_pads`, built from `L["jump_pads"]`, null when the key is
@@ -8433,6 +8448,16 @@ absent): `ready_tick[i]` = the first tick pad i may fire again, set to `tick + r
 byte-identical (the random-input replay and every older fixture). world.gd's `_collapse_sweep` calls `sweep()`
 with the fallen keys (a pad goes down with its tile and never fires again); a tile a curse removes for a while
 hides the pad and stops it firing (`tile_alive`) without losing it. No RNG at runtime.
+
+**Amended (2026-11-22, Terra review findings 1 and 2).** (1) The world and bot paths copy the controller into
+`lv.players[0]` before the pad tick, so a launch left the hashed row grounded with its old velocity until the next
+tick. `JumpPadsScript.tick` now writes `vx / vy / vz / grounded` back into `lv.players[i]` after it fires
+(`_sync_row`), which fixes both callers at once; test_jump_pads `_launch_tick_row` checks the launch-tick row
+and hash against a controller-synced row. (2) Placement depends on data/jump_pads.json (count, spacing), which the
+level hash does not cover, so the line is now `JUMPPADS <pads x:z:y csv> <ready csv> <lost hex> <rearm_ticks>
+<launch_speed bits>` with the coordinates in pad id order; `_hash_positions` checks that a moved pad and a swapped
+placement order both change the hash at an unchanged level hash and pad count. A level without pads still writes
+no JUMPPADS line, so its dumps are unchanged.
 
 ## D-JUMPPAD-5 (2026-11-22): the pad view and the boing
 

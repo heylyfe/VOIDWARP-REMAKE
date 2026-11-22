@@ -689,6 +689,7 @@ static func _play_level(api: RefCounted, ledger: Dictionary, seed: int, level: i
 		MinesScript.tick(lv, [ctl], w, [0], lv.tick, minev)
 		for e in minev:
 			ev.append(e)
+		# a launch re-syncs lv.players[0] itself (sim/jump_pads.gd _sync_row, Terra finding 1)
 		JumpPadsScript.tick(lv, [ctl], w, lv.tick, ev)
 		lv.beacon.try_enter(ctl, lv.tick, 0, ev)
 		if lv.beacon.is_open() and not bool(mem["overtime_on"]):
