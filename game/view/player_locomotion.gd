@@ -45,6 +45,17 @@ const SETTLE := 0.05             # u a set-down foot may be above its landing on
 const SHIN_MARGIN := 0.004        # u a planted foot peels off before its shin corner reaches the tread
 const HEM_CLEAR := 0.02          # u a swinging or airborne leg block may tuck under the torso hem (D-ANIM-9)
 const PIVOT := 0.55              # rad a planted foot may lag the body yaw before it pivots
+## The boot tone (view side): the authored leg is ONE "player_boot" block (#0C0D10, with
+## #08090B / #151619 face tones; assets_src/blender/t015_common.py), so thigh, shin and boot
+## all rendered near-black and, from the player's rear camera on a descent, the two legs
+## and their boots merged into one black column under the dark robe hem (#353437) with no
+## visible ankle or sole (in-game check, review of 3a77375). The boot SEGMENT's vertex
+## colours are scaled so its base face reads BOOT_TONE, a cool slate a little lighter than
+## the robe; the side and top faces keep their authored ratios to it. Tone only: the boot's
+## shape, size and the base material (unshaded, vertex colour as albedo, white) are
+## unchanged, and the thigh and shin keep the authored near-black.
+const BOOT_SOURCE := Color("#0C0D10")
+const BOOT_TONE := Color("#3A3F4C")
 const Collision := preload("res://sim/collision.gd")
 
 var shins: Array[MeshInstance3D] = []
@@ -98,6 +109,9 @@ func build(limbs: Array, mounts: Array[Vector3]) -> void:
 			shin_depth = bounds.size.z * 0.83 * 0.5
 			shin_width = bounds.size.x * 0.83 * 0.5
 			boots.append(_segment(upper, source, bounds, SOLE_HEIGHT, 0.94))
+			boots[-1].mesh = tone_mesh(boots[-1].mesh, BOOT_SOURCE, BOOT_TONE)
+			for s in source.get_surface_count():
+				boots[-1].set_surface_override_material(s, upper.get_surface_override_material(s))
 			upper.mesh = _segment_mesh(source, bounds, mount, SEGMENT, 1.0)
 
 
@@ -115,6 +129,25 @@ static func _segment_mesh(source: Mesh, bounds: AABB, top: Vector3,
 		arrays[Mesh.ARRAY_VERTEX] = vertices
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	return mesh
+
+
+## A copy of `mesh` whose vertex colours (linear, as the glb stores them) are scaled per
+## channel so the authored `from` tone renders as `to`; other face tones keep their ratio.
+static func tone_mesh(mesh: Mesh, from: Color, to: Color) -> ArrayMesh:
+	var a := from.srgb_to_linear()
+	var b := to.srgb_to_linear()
+	var gain := Color(b.r / a.r, b.g / a.g, b.b / a.b, 1.0)
+	var out := ArrayMesh.new()
+	for i in mesh.get_surface_count():
+		var arrays := mesh.surface_get_arrays(i)
+		var colors: PackedColorArray = arrays[Mesh.ARRAY_COLOR]
+		for j in colors.size():
+			var c := colors[j]
+			colors[j] = Color(minf(c.r * gain.r, 1.0), minf(c.g * gain.g, 1.0),
+					minf(c.b * gain.b, 1.0), c.a)
+		arrays[Mesh.ARRAY_COLOR] = colors
+		out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return out
 
 
 static func _segment(upper: MeshInstance3D, source: Mesh, bounds: AABB,
