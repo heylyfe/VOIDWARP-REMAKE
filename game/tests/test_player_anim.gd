@@ -952,7 +952,7 @@ func _check_support(world, track: Dictionary, faults: Dictionary, side: int,
 	var planted: bool = rig.stance[side]
 	var was: bool = track.stance[side]
 	track.stance[side] = planted
-	var clock: float = world._land_clock
+	var clock: float = float(world.get("_land_clock")) if world.get("_land_clock") != null else -1.0
 	if not planted or world._contact_weight < 1.0 or (clock >= 0.0 and clock < TOUCH_SKIP):
 		return
 	var corners := box_corners(boot)

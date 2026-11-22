@@ -2002,22 +2002,25 @@ func _pose_locomotion(root_pos: Vector3, velocity: Vector3, delta: float, blend:
 		_leg_rig.seat_drop[side] = under - (_leg_rig.slope_floor[side] + player_model.position.y) 				if _leg_rig.slope_floor[side] != -INF and under != -INF else 0.0
 		if _leg_rig.stance[side]:
 			# A planted sole the lagging hips have caught up on (a fresh tread): the body
-			# rises so the knee never folds past its limit onto that tread.
+			# rises so the knee never folds past its limit onto that tread (on a slope, onto
+			# the boot as drawn: seated along it, seat_drop below the gait's plant).
 			# (Going down, a trailing foot left on the upper tread peels off instead of
 			# holding the hips up against the leading foot's step-down.)
-			fold_lift = maxf(fold_lift, Locomotion.fold_height(sole, hip) * (1.0 - _descent_weight))
+			var seated := sole
+			seated.y -= _leg_rig.seat_drop[side]
+			fold_lift = maxf(fold_lift, Locomotion.fold_height(seated, hip) * (1.0 - _descent_weight))
 			# Going down only: the leading foot is set down on the lower tread or the slope
 			# and the hips follow it (a climb keeps the D-ANIM-4 step-up alone). On a slope
 			# the boot is drawn seated along it, seat_drop below the gait's level-boot
 			# plant (pose_leg), and the hips follow THAT sole.
-			var seated := sole
-			seated.y -= _leg_rig.seat_drop[side]
 			reach_drop = maxf(reach_drop, Locomotion.reach_drop(seated, hip) * smoothstep(0.1, 0.3, _descent_weight))
 		else:
 			# A swinging sole headed for a tread near hip height: the body steps up with
-			# it, so the thigh never comes up past level into the chest.
-			fold_lift = maxf(fold_lift, _leg_rig.swing_floor(side) + Locomotion.SOLE_HEIGHT
-					+ Locomotion.SWING_DROP - hip.y)
+			# it, so the thigh never comes up past level into the chest. (Over a slope the
+			# floor is read for a level boot; the boot drawn along the slope sits
+			# seat_drop lower, as do the hips.)
+			fold_lift = maxf(fold_lift, _leg_rig.swing_floor(side) - _leg_rig.seat_drop[side]
+					+ Locomotion.SOLE_HEIGHT + Locomotion.SWING_DROP - hip.y)
 		var key := "arm_l" if side == 0 else "arm_r"
 		var travel := (sole - rest).dot(forward)
 		var counter := clampf(-travel / 0.34, -1.0, 1.0) * lerpf(0.30, 0.79, gait.z)

@@ -8461,3 +8461,62 @@ and the course is DRAWN only 3 u wide (collision unchanged), so the slope or sta
 feet instead of a wall of treads behind them. Every sheet gains a third row: "downhill" (low, from the downhill side)
 for descents, "xray" (torso and arms see-through) for climbs, else "front". The land sheet carries a red bar at the
 running waistline.
+
+## D-ANIM-12 (2026-11-22): the torso hem guard; TORSO_LEG_TOL 0.065 -> 0.035 u (supersedes D-ANIM-9's ceiling and D-ANIM-10's chest pitch)
+
+**Finding (objection 2, re-measured).** The leg-6/leg-7 full-volume check finds NO limb point inside the back half
+of the torso block in any pose, and no boot inside it at all (torso_boot 0 everywhere). The "dark block over the
+back of the torso" in the up-stairs rear frames was therefore the trailing leg's raised shin and boot projected over
+the back from the high rear camera (a 2D overlap); with SWING_DROP 0.36 (D-ANIM-9) it no longer shows in the re-shot
+rear row. The REAL intersection was elsewhere and was not visible from that angle: the knee block's top-rear corner
+tucked under the torso's FRONT hem, up to 0.062 u (down stairs), 0.06 u (up stairs), 0.046 u (flat run) - a high
+swing knee (ankle within ~0.33 u of the hip) puts the knee joint level with the hem and the 0.104 u half-deep shin
+block corner rises into it. **Ruling.** (a) pose_leg's hem guard (view/player_locomotion.gd HEM_CLEAR 0.02 u): a
+leg that is not bearing weight (swinging, or airborne) is straightened away from its hip until its thigh (past the
+0.166 u socket buried at the hip by design) and shin blocks are within 0.02 u of the torso block; where the floor
+stops it straightening, the foot trails back (the hem is highest at the back of a forward-leaning torso). A planted
+foot is never moved. The torso pivot is unchanged; the shoulder-attachment test passes. (b) Land: the chest comes
+HALF UPRIGHT during the compression (torso x (1 - 0.5 x landing)) instead of pitching 0.18 rad further forward
+(D-ANIM-10): the extra pitch dropped the hem onto the deep-bent knees (0.044 u). The compression still reads (hips
+0.711 -> 0.469 -> 0.624 u, run mean 0.602 u). (c) TORSO_LEG_TOL 0.065 -> 0.035 u. Measured worst now: shin 0.0333
+(diagonal), 0.0332 (dash), 0.0246 (down stairs), 0.021 (up stairs), 0.0233 (flat run); thigh past socket 0.0226
+(dash), 0.019 (up stairs); boots 0. **The residual is disclosed, not hidden.** The remaining 3.3 cm is where a leg
+already reaches almost straight (0.50 of 0.56 u) to a foot the floor holds, under a torso leaning 0.24 rad (diagonal
+run) or 0.67 rad (dash): straightening is blocked, and raising the hips was tried and does not help (a near-straight
+leg's knee barely drops). 0.035 u is a regression ceiling set 1.7 mm above that measured worst, NOT a value derived
+from first principles; it still fails the old 0.062 u stairs knee and the v0.1.13 0.137 u thigh. Clearing it fully
+needs a proportion change (shorter shin block or a lower hem) or less dash/run lean - the owner's call.
+
+## D-ANIM-13 (2026-11-22): boots lie along a slope; the support check reads each sole corner
+
+**Finding.** With the D-ANIM-8 descent in place the down-ramp side frames (re-shot level, D-ANIM-14) still showed
+each planted boot touching the 1:2 ramp only at its uphill edge, its toe 0.10-0.12 u above the slope: the boot
+was drawn level (yaw only). **Ruling (view only; the rig stays rigid).** world.gd samples the ground 0.1 u around
+each sole (Locomotion.slope_at: a plane, grade 0.01..0.6, no step between samples; a stair nosing or a ramp's foot
+is not a slope). On a slope a grounded boot is rotated about its ankle to lie along it, and a planted one is seated
+with its lowest corner 0.002 u over the slope plane (pose_leg `_seat`); the shin floor guard reads the same plane.
+The seated sole sits `seat_drop` below the gait's level-boot plant, so: the release check judges reach from the
+seated height (a seated foot hung out of reach and slid 2.6 cm on the uphill walk); the hips sit lower by half a
+boot length times the grade (0.059 u on 1:2), read from the ground under the body and eased over 0.25 s (snapped on a
+view reset), so it adds no bob (uphill walk bob 0.0065 u, unchanged); the fold step-up and the swing step-up read the
+seated heights (read level, they added 0.02 u of bob). **Test (test_player_anim.gd).** (a) Leg 7's planted-sole gap
+is now the SMALLEST height of a bottom corner over the oracle ground directly under that corner. For a level boot
+(all four corners at one height) this is exactly D-ANIM-7's "lowest corner over the highest ground", so nothing is
+weakened; a boot along a ramp now measures its real contact. SUPPORT_TOL 0.012 u and the 0.005 u through-limit are
+unchanged; every corner is still held above its own ground by the deep-floor check. Measured: down ramp 0.002,
+up ramp 0.0052, worst any pose 0.0117 u (diagonal). (b) Leg 6's floor check searched for ground only up to 0.3 u
+above each sole corner, so a deeper sink found no surface and passed: FLOOR_REACH 0.3 -> 2.0 u (four risers; the
+staged courses hold one tile per column, so no overhang can be mistaken for a corner's floor). Both checks pass.
+
+## D-ANIM-14 (2026-11-22): framing - a level side view over a narrow course (supersedes D-ANIM-11's 20-degree side camera and 3 u course)
+
+**Finding.** D-ANIM-11's ramp/stair side camera looked down ~20 degrees (its offset sat 1.25 u above its aim
+point) over a 3 u wide drawn course: a sole standing mid-tread was drawn
+up to 0.13 u BELOW the tread's near edge, so tread contact still could not be judged from the sheet, and the land
+sheet's red bar ran across the figure, so the side view saw it end-on. **Ruling (tools/shot_player_anim.gd only).**
+On ramps and stairs the side camera is level with its aim point (offset y 0) and the course is DRAWN 1.2 u wide (the
+figure is 0.54 u wide): the stair or slope profile is a silhouette and a planted sole sits exactly on its outline.
+The land bar is a cross (one bar across the figure, one along it) so the side and the rear view each read it as a
+line. Collision is unchanged (the staged tile data). **Re-shot and read:** all 16 sheets, 3 rows x 10 frames; feet
+in frame in every frame of every row. **Negative control** for the D-ANIM-12/13 test: the file run against 77661c5's
+player_locomotion.gd + world.gd fails 72 checks (D-ANIM-5: 40, D-ANIM-7: 68).
