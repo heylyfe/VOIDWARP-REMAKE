@@ -224,6 +224,8 @@ const ANIM_BLEND_TIME := 0.08    # s, pose blend constant (1 - e^(-dt/tau) towar
 const POSE_EXTRAS := ["arm_spread", "elbow_l", "elbow_r", "twist", "body_y", "knee_l", "knee_r"]
 const ANIM_RISE_TIME := 0.085   # s, body height catch-up to the sim feet (stairs)
 const ANIM_SEAT_MAX := 0.22      # u the drawn body may sit below the sim's footprint support (D-ANIM-8)
+const AIR_TUCK_VY := -5.0        # u/s: the jump tuck holds through the apex until the fall is this fast
+const AIR_TUCK_CLEAR := 1.0      # u: ...or until the floor under the figure is this close
 const LAND_TIME := 0.42          # s, the touchdown knee-dip: down and back up (D-ANIM-10)
 const LAND_DOWN := 0.07          # s from touchdown to the deepest point of the dip
 const LAND_DEPTH := 0.20         # u the hips sink at the deepest point
@@ -258,6 +260,7 @@ var _rise_rate := 0.0            # u/s, low-passed vertical speed of the grounde
 var _side_weight := 0.0
 var _land_clock := -1.0          # s since touchdown while < LAND_TIME, else -1
 var _was_airborne := false
+var _air_rose := false           # this airborne spell rose (a jump), so the tuck holds to AIR_TUCK_VY
 var _feet: Array[Vector3] = [Vector3.ZERO, Vector3.ZERO]
 var _run_speed := 9.0            # data/player.json shared_kit.run_speed (read in build())
 
@@ -1741,17 +1744,23 @@ static func _pose_idle(phase: float) -> Dictionary:
 	}
 
 
-## Jump (rising): both legs tucked back, arms swung back-up, torso leaning into the rise.
+## Jump (the arc, up to AIR_TUCK_VY): a deliberate knee tuck - both thighs drawn up
+## level in front of the hips, the shins folded back under them at the fold limit
+## (Locomotion.MIN_FOLD) - and the arms swung BACK (a positive arm angle swings forward,
+## like a leg), so from the side they do not hang across the tucked thighs. The torso leans
+## back a little to open the space in front of its hem for the knees (a forward lean drew
+## the hem down over them). The 0.65 rad thigh and forward arms of the first cut read as
+## legs trailing below the body (review of 1b7bb7d).
 static func _pose_jump() -> Dictionary:
 	return {
-		"torso": -0.22,
+		"torso": 0.10,
 		"head": 0.0,
-		"arm_l": 0.95,
-		"arm_r": 0.95,
-		"leg_l": 0.65,
-		"leg_r": 0.65,
-		"knee_l": 1.35,
-		"knee_r": 1.35,
+		"arm_l": -0.85,
+		"arm_r": -0.85,
+		"leg_l": 1.60,
+		"leg_r": 1.60,
+		"knee_l": 2.35,
+		"knee_r": 2.35,
 	}
 
 
@@ -1893,13 +1902,27 @@ func _render_animation(delta: float, alpha: float) -> void:
 	elif _land_clock >= 0.0:
 		_land_clock = _land_clock + delta if on_ground and _land_clock < LAND_TIME else -1.0
 	_was_airborne = not on_ground
+	if on_ground or dash or glide:
+		_air_rose = false
 	var target: Dictionary
 	if dash:
 		target = _pose_dash()
 	elif glide:
 		target = _pose_glide()
 	elif not on_ground:
-		target = _pose_jump() if velocity.y >= -0.4 else _pose_fall()
+		# The tuck holds over the apex and opens into the braced fall pose only late in a
+		# drop (a 12 u/s jump lands at -12 u/s): switching at -0.4 u/s put the trailing
+		# fall legs on every frame after the apex (review of 1b7bb7d). It also opens once
+		# the floor is within AIR_TUCK_CLEAR, so the legs reach for the ground before a
+		# touchdown (a short hop keeps the old apex switch and its braced landing).
+		# Only a jump that rose holds the tuck: a glide released or a ledge walked off
+		# drops straight into the fall pose.
+		if velocity.y > 0.4:
+			_air_rose = true
+		var floor_y := Locomotion.tile_height(w, root_pos, root_pos.y + 0.05) if w != null else -INF
+		var high := floor_y == -INF or root_pos.y - floor_y > AIR_TUCK_CLEAR
+		var tuck := velocity.y >= -0.4 or (_air_rose and high and velocity.y >= AIR_TUCK_VY)
+		target = _pose_jump() if tuck else _pose_fall()
 	else:
 		target = _pose_locomotion(root_pos, velocity, delta, k)
 	if not on_ground:
@@ -2108,6 +2131,7 @@ func _cache_player_limbs(figure: Node3D) -> void:
 	_side_weight = 0.0
 	_land_clock = -1.0
 	_was_airborne = false
+	_air_rose = false
 	_contact_weight = 0.0
 	_breath_phase = 0.0
 	for i in LIMB_NAMES.size():
