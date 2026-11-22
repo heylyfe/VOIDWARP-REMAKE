@@ -24,6 +24,8 @@ const FRAME := 1.0 / 120.0
 const FRAMES := 10
 const VIEW := Vector2i(640, 640)
 const THUMB := 256
+const NARROW_LAYER := 2         # render layer of the narrow sloped course (side, third, climb rear)
+const WIDE_LAYER := 4           # render layer of the full-width sloped course (descent rear)
 
 ## name, kit, speed, move (world x/z input), course, start (x, z), yaw (facing, rad),
 ## warm (ticks before capture), span (s captured; 0 = one gait cycle), and an optional
@@ -199,7 +201,14 @@ func _stage(world: World, pose: Array) -> Dictionary:
 		for x in range(-12, 13):
 			tiles.append([x, z, hu, kind, 0])
 		heights[z] = hu
-		_add_tread(world, z, hu, kind == 4, course != "flat")
+		if course == "flat":
+			_add_tread(world, z, hu, kind == 4, false, 1)
+		else:
+			# Two drawings of a sloped course: the narrow strip for the side and third
+			# views (and a climb's rear view), the full-width course for a descent's
+			# rear view (_cameras).
+			_add_tread(world, z, hu, kind == 4, true, NARROW_LAYER)
+			_add_tread(world, z, hu, kind == 4, false, WIDE_LAYER)
 	world.w = Collision.make_world(tiles, [], [], {"dais": [0, 0, 0]})
 	world.ctl = Controller.new()
 	world.ctl.setup(pose[1], Controller.load_constants())
@@ -240,7 +249,11 @@ func _stage(world: World, pose: Array) -> Dictionary:
 ## wide), so the level side view sees the slope / stair profile as a silhouette with the
 ## soles on its outline, instead of a wall of treads hiding the feet (the 25 u course of
 ## the v0.1.13-alpha.3 sheets) or a tread top whose near edge sits below the feet.
-func _add_tread(world: Node3D, z: int, hu: int, ramp: bool, narrow: bool) -> void:
+## The rear three-quarter view of a DESCENT sees a full-width copy instead (WIDE_LAYER):
+## looking down the slope past the figure, the 1.2 u strip was a thin band below the
+## boots and the black boots stood dark-on-dark against the empty background (review of
+## 1b7bb7d); the wide course puts lit, striped surface behind every foot.
+func _add_tread(world: Node3D, z: int, hu: int, ramp: bool, narrow: bool, layer: int) -> void:
 	var width := 1.2 if narrow else 25.0
 	var part := MeshInstance3D.new()
 	var slab := BoxMesh.new()
@@ -257,6 +270,7 @@ func _add_tread(world: Node3D, z: int, hu: int, ramp: bool, narrow: bool) -> voi
 		slab.size = Vector3(width, top + 1.0, 1.0)
 		part.position = Vector3(0.5, (top - 1.0) * 0.5, z + 0.5)
 	part.mesh = slab
+	part.layers = layer
 	world.add_child(part)
 	# Stripes every 1 u across each tread: the stride and a sideways step read against them.
 	var dark := StandardMaterial3D.new()
@@ -269,6 +283,7 @@ func _add_tread(world: Node3D, z: int, hu: int, ramp: bool, narrow: bool) -> voi
 		var mark := MeshInstance3D.new()
 		mark.mesh = stripe
 		mark.material_override = dark
+		mark.layers = layer
 		mark.transform = part.transform * Transform3D(Basis.IDENTITY,
 				Vector3(float(x) - 0.5, slab.size.y * 0.5 + 0.006, 0.0))
 		world.add_child(mark)
@@ -306,12 +321,20 @@ func _cameras(world: World, pose: Array) -> Array:
 	# tread's near edge, so contact could not be judged).
 	var sloped: bool = pose[4] != "flat"
 	var side := Vector3(3.4, 0.0 if sloped else 0.55, 0.0)
-	var views := [side, Vector3(1.1, 1.5, 2.9), offsets[_third_view(name)]]
+	# A descent's rear camera stands higher (2.7 u over the aim point instead of 1.5): on a
+	# 1:2 slope the ground behind the figure rises 1.45 u over the 2.9 u setback, so the
+	# 1.5 u camera looked along the slope and the tread just uphill of the figure hid the
+	# boots (review of 1b7bb7d). From 2.7 u the sight line drops ~40 deg, clear of the uphill
+	# tread edge, and the boots sit against the wide course (_add_tread) below them.
+	var descent: bool = name in ["down_ramp", "down_stairs"]
+	var rear := Vector3(1.1, 2.7 if descent else 1.5, 2.9)
+	var views := [side, rear, offsets[_third_view(name)]]
 	# An airborne pose outruns a 2.4 u frame: the arc lifts the figure clean out of the top
 	# of the shot. Widen the frame and follow the height with a lag for those poses only.
 	var airborne: bool = name in ["jump", "glide"]
 	var cams: Array = []
-	for offset in views:
+	for index in views.size():
+		var offset: Vector3 = views[index]
 		var cam := _FollowCam.new()
 		cam.figure = world.player_model
 		cam.offset = (offset as Vector3).rotated(Vector3.UP, yaw)
@@ -319,6 +342,15 @@ func _cameras(world: World, pose: Array) -> Array:
 		cam.size = 3.8 if airborne else (3.1 if sloped else 2.4)
 		cam.lag = 0.80 if airborne else 1.0
 		cam.aim = 0.85 if not sloped else 0.70
+		# The deployed glider's canopy rides ~1.9 u over the boots: in a 3.8 u frame aimed
+		# 0.85 u up it crossed the top edge of every cell from frame 6 on (review of
+		# 1b7bb7d). A 4.4 u frame aimed 1.35 u up holds canopy and boots together.
+		if name == "glide":
+			cam.size = 4.4
+			cam.aim = 1.35
+		if sloped:
+			var wide := descent and index == 1
+			cam.cull_mask &= ~(NARROW_LAYER if wide else WIDE_LAYER)
 		world.add_child(cam)
 		cam.follow()
 		cams.append(cam)
