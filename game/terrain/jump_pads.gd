@@ -16,12 +16,14 @@ extends RefCounted
 # byte-identical with or without them.
 #
 # Placement rule (the owner's spec, item 1: "next to paths, never on them"):
-#   - the ROUTE is a walkway's centre lane, computed exactly as the generator's GEN_VERSION 4
-#     centre_lane() (all four neighbour columns hold a walkable tile on that layer, and along
-#     one axis the cell two away is empty on both sides);
-#   - a candidate is a FLOOR tile (kind 0) on a walkway piece (kind 1), not on the centre lane
-#     itself, 4-adjacent to a centre-lane tile of the SAME walkway at the SAME height - i.e. the
-#     lane one tile beside the route;
+#   - the ROUTE is a walkway's middle line: the generator's own centre column (o == 0), read
+#     off the packed piece's bbox for a straight 3-wide walkway, plus any tile the GEN 4
+#     centre_lane() test marks (all four neighbour columns walkable, and along one axis the cell
+#     two away empty on both sides);
+#   - a candidate is a FLOOR tile (kind 0) of a straight walkway (kind 1) one lane to the side
+#     of that middle line, with the route tile right beside it (toward the middle, same piece,
+#     same height) - the lane one tile beside the route. A walkway whose bbox cannot say which
+#     axis is its width (square, or not a straight run) carries no pad;
 #   - never on: the hub piece (the beacon dais lives there), a `stair` (jump stairs) or `ramp`
 #     walkway, a ramp tile, a tile with a 4-neighbour on its piece more than 1 HU above or below
 #     (a ledge / jump-stair riser edge; a stepped climb's 1 HU tread is allowed), a tile
@@ -200,24 +202,31 @@ static func candidates(L: Dictionary, cfg: Dictionary) -> Array:
 			continue                                     # jump stairs, ramps
 		if banned.has(Vector2i(x, z)) or _has_prop(ix, x, z, y):
 			continue
+		var ax := lateral_axis(pc)
+		if ax < 0:
+			continue                                     # not a straight walkway: no lane read
 		if _route(L, ix, i, route_cache):
 			continue                                     # ON the path: never
-		var beside := false
+		# the lane one tile beside the middle line, and the route tile right next to it
+		# (toward the middle, same height) must exist on the same walkway
+		var bb: Array = pc["bbox"]
+		var mid2: int = int(bb[ax]) + int(bb[ax + 2])
+		var lat: int = x if ax == 0 else z
+		if absi(lat * 2 - mid2) != 2:
+			continue
+		var step_in: int = -1 if lat * 2 > mid2 else 1
+		var rx: int = x + (step_in if ax == 0 else 0)
+		var rz: int = z + (step_in if ax == 1 else 0)
+		var r := _tile_at(L, ix, rx, rz, y)
+		if r < 0 or int(tiles[r][4]) != pid or not _route(L, ix, r, route_cache):
+			continue
 		var flat := true
 		for d in N4:
-			var j := -1
 			for jj in ix["col"].get(Vector2i(x + d.x, z + d.y), []):
 				var tj: Array = tiles[jj]
-				if int(tj[4]) == pid and absi(int(tj[2]) - y) < CLEAR:
-					j = jj
-			if j < 0:
-				continue
-			if absi(int(tiles[j][2]) - y) > STEP_HU or int(tiles[j][3]) != 0:
-				flat = false
-				break
-			if int(tiles[j][2]) == y and _route(L, ix, j, route_cache):
-				beside = true
-		if not flat or not beside:
+				if int(tj[4]) == pid and absi(int(tj[2]) - y) < CLEAR 						and (absi(int(tj[2]) - y) > STEP_HU or int(tj[3]) != 0):
+					flat = false
+		if not flat:
 			continue
 		if not _headroom_ok(L, ix, x, z, y, headroom):
 			continue
@@ -225,10 +234,38 @@ static func candidates(L: Dictionary, cfg: Dictionary) -> Array:
 	return out
 
 
+## A straight walkway's lateral axis read off its packed bbox: 0 = the lanes run along z (the
+## width is on x), 1 = the width is on z; -1 when the bbox cannot say (both extents or neither
+## equal the width - a square walkway, or a piece that is not a straight run).
+static func lateral_axis(pc: Dictionary) -> int:
+	if int(pc["kind"]) != 1:
+		return -1
+	var bb: Array = pc["bbox"]
+	var ex: int = int(bb[2]) - int(bb[0]) + 1
+	var ez: int = int(bb[3]) - int(bb[1]) + 1
+	var w: int = int(pc["w"])
+	if ex == w and ez != w:
+		return 0
+	if ez == w and ex != w:
+		return 1
+	return -1
+
+
+## The ROUTE: a walkway tile on the generator's GEN 4 centre lane, or on the middle line of a
+## straight walkway (the generator's own centre column, o == 0 - the GEN 4 test misses it at a
+## row whose neighbour is a gap or a prop, and that tile is still walked).
 static func _route(L: Dictionary, ix: Dictionary, i: int, cache: Dictionary) -> bool:
 	if not cache.has(i):
 		var t: Array = L["tiles"][i]
-		cache[i] = int(L["pieces"][int(t[4])]["kind"]) == 1 and on_route(L, ix, i)
+		var pc: Dictionary = L["pieces"][int(t[4])]
+		var on := false
+		if int(pc["kind"]) == 1:
+			var ax := lateral_axis(pc)
+			if ax >= 0:
+				var bb: Array = pc["bbox"]
+				on = int(t[ax]) * 2 == int(bb[ax]) + int(bb[ax + 2])
+			on = on or on_route(L, ix, i)
+		cache[i] = on
 	return bool(cache[i])
 
 
