@@ -1755,10 +1755,10 @@ static func _pose_fall() -> Dictionary:
 		"head": 0.0,
 		"arm_l": 2.55,
 		"arm_r": 2.35,
-		"leg_l": -0.35,
-		"leg_r": -0.10,
-		"knee_l": 0.45,
-		"knee_r": 0.95,
+		"leg_l": -0.20,
+		"leg_r": 0.30,
+		"knee_l": 0.85,
+		"knee_r": 1.20,
 	}
 
 

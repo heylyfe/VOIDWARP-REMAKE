@@ -292,9 +292,9 @@ class _FollowCam extends Camera3D:
 	func follow() -> void:
 		if figure == null:
 			return
-		# Follow x/z exactly; follow height slowly, so a stair climb shows as a climb.
+		# Follow x/z exactly; height with a short lag, so a climb or a jump still reads.
 		var feet := figure.position
-		_y = feet.y if _y == INF else lerpf(_y, feet.y, 0.08)
+		_y = feet.y if _y == INF else lerpf(_y, feet.y, 0.3)
 		var target := Vector3(feet.x, _y + 0.85, feet.z)
 		position = target + offset
 		look_at(target)
