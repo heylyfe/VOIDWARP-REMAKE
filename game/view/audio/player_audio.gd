@@ -8,6 +8,7 @@ extends RefCounted
 #   land             the body thud on touching down
 #   dash             the air being cut, on the dash's start tick
 #   glide            wind under the wing, LOOPED while the glider is out
+#   jump_pad         the springy rising boing of a jump pad firing (D-JUMPPAD-5)
 #
 # House shape (view/audio/cue_audio.gd): a static play function that loads the stream,
 # returns null SILENTLY when the file is missing, creates the player, parents it to the
@@ -24,17 +25,19 @@ const DIR := "res://assets/audio/player"
 const CUE_LAND := "land"
 const CUE_DASH := "dash"
 const CUE_GLIDE := "glide"
+const CUE_JUMP_PAD := "jump_pad"
 const FOOTSTEPS := ["footstep_01", "footstep_02", "footstep_03", "footstep_04"]
 
 const STEP_DB := -9.0     # a step is a texture under the level, not an event
 const LAND_DB := -5.0
 const DASH_DB := -4.0
+const JUMP_PAD_DB := -3.0
 const GLIDE_DB := -14.0   # a bed: it must sit under everything else while it runs
 
 
 ## Every cue this module can play, sorted (the test's table).
 static func cue_names() -> Array:
-	var out: Array = [CUE_LAND, CUE_DASH, CUE_GLIDE]
+	var out: Array = [CUE_LAND, CUE_DASH, CUE_GLIDE, CUE_JUMP_PAD]
 	out.append_array(FOOTSTEPS)
 	out.sort()
 	return out
@@ -60,6 +63,10 @@ static func play_land(host: Object) -> AudioStreamPlayer:
 
 static func play_dash(host: Object) -> AudioStreamPlayer:
 	return CueAudio.play_2d(host, path_for(CUE_DASH), DASH_DB)
+
+
+static func play_jump_pad(host: Object) -> AudioStreamPlayer:
+	return CueAudio.play_2d(host, path_for(CUE_JUMP_PAD), JUMP_PAD_DB)
 
 
 ## Starts the glide wind loop. The caller owns the player and passes it back to

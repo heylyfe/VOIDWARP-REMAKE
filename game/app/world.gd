@@ -78,6 +78,10 @@ const HudScript := preload("res://view/hud/hud.gd")
 const GiftsViewScript := preload("res://view/gifts_view.gd")
 const TripmineViewScript := preload("res://view/tripmine_view.gd")
 const BeaconViewScript := preload("res://view/beacon_view.gd")
+# D-JUMPPAD-1..5: jump pads (NOT the launch pads) - terrain places, sim fires, view shows.
+const JumpPadPlaceScript := preload("res://terrain/jump_pads.gd")
+const JumpPadsScript := preload("res://sim/jump_pads.gd")
+const JumpPadViewScript := preload("res://view/jump_pad_view.gd")
 # The glitched-floor decal layer. The body is one of the `boards` billboards; the decals are
 # a separate world-origin node in floor-only mode, because the sim's glitched entries carry
 # absolute tile coordinates and the body node moves.
@@ -162,6 +166,7 @@ var hud: Control = null
 # The core-loop views: built in build(), driven from step(), freed by teardown().
 var gifts_view: Node3D = null
 var tripmine_view: Node3D = null
+var jump_pad_view: Node3D = null
 var beacon_view: Node3D = null
 var toucher_floor: Node3D = null   # the glitched-floor decals (floor-only mode)
 # The enemy presentation layer (see the preloads): telegraphs + their cues, Coil's own
@@ -365,6 +370,9 @@ func build(seed_value: int, level: int, p_ledger: Dictionary = {}) -> bool:
 		push_warning("world: voidgen.generate(%d, %d) returned {}" % [seed_value, level])
 		teardown()
 		return false
+	# D-JUMPPAD-1: the jump pads, a pure function of the Level dict (the canonical text and the
+	# level hash are untouched); LevelState.build picks them up from L["jump_pads"].
+	JumpPadPlaceScript.attach(lv)
 	# The spawn is the level's own spawn tile (the collision default, spawns[0] - the same
 	# assembly feel_probe.gd and perf_probe.gd use). The bot_run override {"dais": beacon}
 	# plants the spawn inside the beacon monument, which encloses the 1.8 u figure and
@@ -587,6 +595,9 @@ func build(seed_value: int, level: int, p_ledger: Dictionary = {}) -> bool:
 	tripmine_view = TripmineViewScript.new()
 	add_child(tripmine_view)
 	tripmine_view.setup(lv, lstate.mines)
+	jump_pad_view = JumpPadViewScript.new()
+	add_child(jump_pad_view)
+	jump_pad_view.setup(lv, lstate.jump_pads)
 	beacon_view = BeaconViewScript.new()
 	add_child(beacon_view)
 	beacon_view.setup(lv)
@@ -726,6 +737,7 @@ func step(dt: float) -> void:
 	MinesScript.tick(lstate, [ctl], w, [0], lstate.tick, minev)
 	for e in minev:
 		ev.append(e)
+	JumpPadsScript.tick(lstate, [ctl], w, lstate.tick, ev)   # D-JUMPPAD-2/4
 	# The curse entry gate (a crowded dais, an unserved dwell): a refused player simply
 	# does not enter this tick; the beacon stays open and the next tick asks again.
 	if _curses == null or bool(_curses.entry_allowed(0)):
@@ -1096,6 +1108,7 @@ func teardown() -> void:
 	_hud_layer = null
 	gifts_view = null
 	tripmine_view = null
+	jump_pad_view = null
 	beacon_view = null
 	collapse_view = null
 	_collapse = {}
@@ -1332,6 +1345,8 @@ func _collapse_sweep(keys: Array) -> void:
 			var s: Dictionary = m.slots[slot_id]
 			if gone.has(CollisionScript.tile_key(int(s["x"]), int(s["z"]), int(s["y"]))):
 				m.drop(slot_id)
+	if lstate.jump_pads != null:
+		lstate.jump_pads.sweep(keys)   # a pad goes down with its tile (D-JUMPPAD-4)
 
 
 ## Apply the tile events raised at index >= from: fell erases the tile from collision
@@ -2214,6 +2229,9 @@ func _view_pass() -> void:
 		# the view owns no clock: sim seconds in, one turn per TURN_PERIOD (4 s)
 		tripmine_view.set_time(float(lstate.tick) * DT)
 		tripmine_view.sync(_eye_pos())
+	if jump_pad_view != null:
+		jump_pad_view.set_removed(removed)
+		jump_pad_view.sync(lstate.jump_pads, int(lstate.tick))
 	if beacon_view != null and lstate.beacon != null:
 		beacon_view.sync_from(lstate.beacon, lstate.gifts, lstate.tick)
 	if toucher_floor != null and rt != null:
@@ -2236,6 +2254,8 @@ func _fx_events(ev: Array) -> void:
 				PlayerAudioScript.play_land(self)
 			"dash_start":
 				PlayerAudioScript.play_dash(self)
+			"jump_pad_launch":
+				PlayerAudioScript.play_jump_pad(self)
 			"gift_collected":
 				# the slot id picks the variant, so a chain of gifts never repeats one
 				WorldAudioScript.play_gift_pickup(self, int(e.get("slot", 0)))
