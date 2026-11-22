@@ -18,6 +18,7 @@
     "prop_crate": { "hex": "#1A5A52" },
     "support_spike": { "hex": "#0A2E30" },
     "launch_pad": { "hex": "#2A5BFF", "note": "top face; emission pulses 0.5-1.5 at 1 Hz" },
+    "jump_pad": { "hex": "#1A2BFF", "alpha": 0.8, "emission": 0.9, "note": "D-JUMPPAD-5: the jump pad slab (NOT the launch pad tile): saturated glossy semi-transparent blue, emission 0.9 armed / 0.2 re-arming, 1 Hz pulse; view/jump_pad_view.gd mirrors it" },
     "black_gift_body": { "hex": "#050608" },
     "black_gift_rim": { "hex": "#7CFFF4", "emission": 1.5, "note": "rim emission x 1.5" },
     "gold_gift": { "hex": "#FFC83D", "emission": 2.0, "note": "emission x 2.0" },
