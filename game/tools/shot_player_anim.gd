@@ -99,7 +99,7 @@ func _run() -> void:
 	overlay.add_child(_label)
 	_legend = Label.new()
 	_legend.position = Vector2(12, VIEW.y - 44)
-	_legend.add_theme_font_size_override("font_size", 22)
+	_legend.add_theme_font_size_override("font_size", 20)
 	_legend.add_theme_color_override("font_color", Color("#ffe066"))
 	_legend.add_theme_color_override("font_outline_color", Color.BLACK)
 	_legend.add_theme_constant_override("outline_size", 6)
@@ -135,7 +135,7 @@ func _capture(pose: Array) -> bool:
 	var tinted: bool = name in LEG_TINT_POSES
 	if tinted:
 		_leg_tint(world)
-	_legend.text = "proof tint: L leg orange, R leg cyan (thigh light, shin mid, boot dark)" 			if tinted else ""
+	_legend.text = "proof tint: L orange, R cyan; thigh > shin > boot" if tinted else ""
 	var input := {"move_x": int(pose[3].x), "move_z": int(pose[3].y), "buttons": 0,
 			"aim_x": 0, "aim_z": -1}
 	var action: String = pose[9]
