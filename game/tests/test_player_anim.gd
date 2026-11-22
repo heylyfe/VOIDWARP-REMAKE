@@ -522,6 +522,7 @@ const RENDER_DT := 1.0 / 120.0
 const LEG_BONE := 0.31           # view/player_locomotion.gd SEGMENT: thigh and shin length
 const LENGTH_TOL := 0.002        # u: a bone may not change length by more than this
 const FLOOR_TOL := 0.005         # u: a sole corner may not sit lower than this under its floor
+const FLOOR_REACH := 2.0         # u above a sole corner the floor search reaches (was 0.3, D-ANIM-7)
 
 ## The contact-sheet poses (tools/shot_player_anim.gd draws exactly these). Columns:
 ## name, kit, speed, move (world x/z input), course, start (x, z), facing yaw (rad), warm-up
@@ -737,12 +738,15 @@ func _check_frame(world, arm_rest: Array[float], faults: Dictionary) -> void:
 			_fault(faults, "knee hyperextended", -hinge)
 		if flex > 2.75:
 			_fault(faults, "knee folded past its limit", flex)
-		# 3. no sole corner below the floor under it.
+		# 3. no sole corner below the floor under it. The ground search reaches FLOOR_REACH
+		# above the corner (D-ANIM-7: it reached 0.3 u, so a corner sunk deeper than that
+		# found no surface and passed). The staged courses hold one tile per column, so
+		# no overhang above a corner can be mistaken for its floor.
 		var box := boot.get_aabb()
 		for x in [box.position.x, box.end.x]:
 			for z in [box.position.z, box.end.z]:
 				var corner := boot.to_global(Vector3(x, box.position.y, z))
-				var ground := Locomotion.tile_height(world.w, corner, corner.y + 0.3)
+				var ground := Locomotion.tile_height(world.w, corner, corner.y + FLOOR_REACH)
 				if ground != -INF and corner.y < ground - FLOOR_TOL:
 					_fault(faults, "sole below the floor", ground - corner.y)
 		# 4. knee and ankle stay out of the torso block (1 cm in from its faces); the shin's
@@ -818,7 +822,7 @@ const BASIS_TOL := 0.001         # |axis length - 1| and |axis . axis| of a limb
 const DEEP_FLOOR_TOL := 0.005    # u: any boot/shin corner below the course surface (no depth cap)
 const SUPPORT_TOL := 0.012       # u: a planted sole above the surface under it (D-ANIM-7)
 const TORSO_BOOT_TOL := 0.01     # u: a boot inside the torso block (D-ANIM-5's 1 cm face margin)
-const TORSO_LEG_TOL := 0.065     # u: RESIDUAL ceiling, thigh past the socket / shin (D-ANIM-9)
+const TORSO_LEG_TOL := 0.035     # u: thigh past the socket / shin inside the torso block (D-ANIM-9)
 const LAND_DROP := 0.12          # u: the touchdown hips sit at least this far below the run hips
 const LAND_RECOVER := 0.04       # u: ...and come back to within this of them by the span's end
 const DESCENT_LANDINGS := 6      # stance starts a 1 s descent must show (feet plant, not float)
@@ -934,30 +938,32 @@ func _check_review(world, track: Dictionary, faults: Dictionary) -> void:
 	(track.grounded as Array).append(bool(world.ctl.grounded))
 
 
-## A planted sole (stance, full contact, past the touchdown settle) sits on the surface the
-## oracle gives under its footprint: the boot is flat, so it rests on the HIGHEST ground
-## under its four sole corners (a ramp's uphill edge, a tread rather than the riser below
-## it). Its gap may be neither negative past DEEP_FLOOR_TOL (through the surface) nor above
-## SUPPORT_TOL (short of it). Each stance START is recorded as a landing.
+## A planted sole (stance, full contact, past the touchdown settle) rests on the surface
+## the oracle gives under it: its gap is the SMALLEST height of a bottom corner over the
+## ground directly under that corner (the corner that bears; for a level boot this is the
+## lowest corner over the highest ground - a tread rather than the riser below it - and a
+## boot pitched along a ramp touches along its length). The gap may be neither negative
+## past DEEP_FLOOR_TOL (through the surface) nor above SUPPORT_TOL (short of it); every
+## corner is also held above its own ground by the deep-floor check. Each stance START is
+## recorded as a landing.
 func _check_support(world, track: Dictionary, faults: Dictionary, side: int,
 		boot: MeshInstance3D) -> void:
 	var rig = world._leg_rig
 	var planted: bool = rig.stance[side]
 	var was: bool = track.stance[side]
 	track.stance[side] = planted
-	var clock: float = float(world.get("_land_clock")) if world.get("_land_clock") != null else -1.0
+	var clock: float = world._land_clock
 	if not planted or world._contact_weight < 1.0 or (clock >= 0.0 and clock < TOUCH_SKIP):
 		return
 	var corners := box_corners(boot)
-	var sole := INF
-	var support := -INF
+	var gap := INF
 	for i in 8:
 		if (i >> 1) & 1 == 0:   # the four bottom corners
-			sole = minf(sole, corners[i].y)
-			support = maxf(support, course_floor(track.heights, corners[i]))
-	if support == -INF:
+			var ground := course_floor(track.heights, corners[i])
+			if ground != -INF:
+				gap = minf(gap, corners[i].y - ground)
+	if gap == INF:
 		return
-	var gap := sole - support
 	_measure(track, "support_above", gap)
 	_measure(track, "support_below", -gap)
 	if gap > SUPPORT_TOL:

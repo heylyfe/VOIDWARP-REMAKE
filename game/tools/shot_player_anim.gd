@@ -236,11 +236,12 @@ func _stage(world: World, pose: Array) -> Dictionary:
 
 
 ## One visible tread (collision is the staged tile data, not these meshes). A ramp or
-## stair course is DRAWN only 3 u wide around the figure's line, so the side view sees the
-## slope / stair profile as a silhouette under the feet instead of a wall of treads behind
-## them (the 25 u course hid tread contact in the v0.1.13-alpha.3 sheets).
+## stair course is DRAWN only 1.2 u wide around the figure's line (the figure is 0.54 u
+## wide), so the level side view sees the slope / stair profile as a silhouette with the
+## soles on its outline, instead of a wall of treads hiding the feet (the 25 u course of
+## the v0.1.13-alpha.3 sheets) or a tread top whose near edge sits below the feet.
 func _add_tread(world: Node3D, z: int, hu: int, ramp: bool, narrow: bool) -> void:
-	var width := 3.0 if narrow else 25.0
+	var width := 1.2 if narrow else 25.0
 	var part := MeshInstance3D.new()
 	var slab := BoxMesh.new()
 	var material := StandardMaterial3D.new()
@@ -299,10 +300,12 @@ func _cameras(world: World, pose: Array) -> Array:
 		"xray": Vector3(2.7, 1.5, -0.9),
 		"front": Vector3(2.0, 0.25, -2.8),
 	}
-	# On ramps and stairs the side camera looks down ~20 degrees instead of ~9, so the tread
-	# tops and the slope under the feet are seen as surfaces, not edge-on lines.
+	# On ramps and stairs the side camera is LEVEL with its aim point: with the narrow
+	# course the tread and slope profile is then a clean silhouette and a sole on it sits
+	# exactly on its outline (a camera looking down drew a sole standing mid-tread below the
+	# tread's near edge, so contact could not be judged).
 	var sloped: bool = pose[4] != "flat"
-	var side := Vector3(3.4, 1.25 if sloped else 0.55, 0.0)
+	var side := Vector3(3.4, 0.0 if sloped else 0.55, 0.0)
 	var views := [side, Vector3(1.1, 1.5, 2.9), offsets[_third_view(name)]]
 	# An airborne pose outruns a 2.4 u frame: the arc lifts the figure clean out of the top
 	# of the shot. Widen the frame and follow the height with a lag for those poses only.
@@ -332,14 +335,22 @@ func _hip_marker(world: World) -> void:
 	bar.figure = world.player_model
 	var torso := world._limbs[0] as MeshInstance3D
 	bar.height = world._limb_rest[0].y + torso.get_aabb().position.y - 0.065 - 0.05
+	# A cross (one bar across the figure, one along it), so the side view and the rear
+	# view each see a bar edge-on as a horizontal line.
 	var mesh := BoxMesh.new()
 	mesh.size = Vector3(1.4, 0.014, 0.014)
+	var along := MeshInstance3D.new()
+	var mesh_along := BoxMesh.new()
+	mesh_along.size = Vector3(0.014, 0.014, 1.4)
+	along.mesh = mesh_along
 	var material := StandardMaterial3D.new()
 	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	material.albedo_color = Color("#ff5a5a")
 	material.no_depth_test = true
 	bar.mesh = mesh
 	bar.material_override = material
+	along.material_override = material
+	bar.add_child(along)
 	world.add_child(bar)
 
 

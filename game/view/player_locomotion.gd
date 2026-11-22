@@ -43,6 +43,7 @@ const STEP_GRACE := 0.05         # s a freshly set-down foot holds before reach 
 const STANCE_REACH := RELEASE - 0.04  # u hip->ankle a planted foot is brought within (D-ANIM-8)
 const SETTLE := 0.05             # u a set-down foot may be above its landing on the swing's last frame
 const SHIN_MARGIN := 0.004        # u a planted foot peels off before its shin corner reaches the tread
+const HEM_CLEAR := 0.02          # u a swinging or airborne leg block may tuck under the torso hem (D-ANIM-9)
 const PIVOT := 0.55              # rad a planted foot may lag the body yaw before it pivots
 const Collision := preload("res://sim/collision.gd")
 
@@ -53,6 +54,11 @@ var stance: Array[bool] = [false, false]
 var foot_yaw: Array[float] = [0.0, 0.0]
 var pole_yaw := 0.0              # knee direction offset (model frame), set per frame
 var floors: Array[float] = [-INF, -INF]   # ground under each foot (model frame), set per frame
+# A slope under each foot (D-ANIM-8): the ground height at the sole's centre (model frame)
+# and its gradient (dh/dx, 0, dh/dz in the model frame); ZERO on flat ground and stairs.
+var slope_floor: Array[float] = [-INF, -INF]
+var grades: Array[Vector3] = [Vector3.ZERO, Vector3.ZERO]
+var seat_drop: Array[float] = [0.0, 0.0]  # u the seated boot's ankle sits below the level plant (about)
 var shin_depth := 0.0            # half the shin block's depth and width (u), from the mesh
 var shin_width := 0.0
 var releases := 0                # diagnostics: early lift-offs (foot out of reach / lane)
@@ -142,6 +148,9 @@ static func profile(speed: float, run_speed: float, climb: float, side := 0.0,
 
 func reset_contacts() -> void:
 	floors.fill(-INF)
+	slope_floor.fill(-INF)
+	grades.fill(Vector3.ZERO)
+	seat_drop.fill(0.0)
 	_has_contact.fill(false)
 	stance.fill(false)
 	_released.fill(false)
@@ -166,6 +175,25 @@ static func tile_height(world: Dictionary, point: Vector3, limit: float) -> floa
 		if top <= limit:
 			best = maxf(best, top)
 	return best
+
+
+## The ground's gradient (dh/dx, 0, dh/dz, world frame) at `p` from four samples 0.1 u
+## around it, or ZERO where the ground there is flat, is not a plane (a stair nosing, a
+## ledge, a ramp's foot) or is steeper than 0.6.
+static func slope_at(world: Dictionary, p: Vector3) -> Vector3:
+	var limit := p.y + 0.3
+	var centre := tile_height(world, p, limit)
+	var hx0 := tile_height(world, p + Vector3(-0.1, 0.0, 0.0), limit)
+	var hx1 := tile_height(world, p + Vector3(0.1, 0.0, 0.0), limit)
+	var hz0 := tile_height(world, p + Vector3(0.0, 0.0, -0.1), limit)
+	var hz1 := tile_height(world, p + Vector3(0.0, 0.0, 0.1), limit)
+	if centre == -INF or hx0 == -INF or hx1 == -INF or hz0 == -INF or hz1 == -INF:
+		return Vector3.ZERO
+	var grad := Vector3((hx1 - hx0) / 0.2, 0.0, (hz1 - hz0) / 0.2)
+	var bent := absf(hx1 + hx0 - 2.0 * centre) + absf(hz1 + hz0 - 2.0 * centre)
+	if grad.length() <= 0.01 or grad.length() > 0.6 or bent >= 0.01:
+		return Vector3.ZERO
+	return grad
 
 
 ## 0..1: how steeply the ground rises ahead in the movement direction.
@@ -432,7 +460,8 @@ func _pivot(side: int, yaw: float, root: Vector3) -> void:
 
 func _must_release(side: int, plant: Vector3, hip: Vector3, yaw: float, root: Vector3,
 		reach := true) -> bool:
-	if reach and hip.distance_to(plant + Vector3.UP * SOLE_HEIGHT) > RELEASE:
+	# (On a slope the boot is drawn seated seat_drop lower: reach is judged from there.)
+	if reach and hip.distance_to(plant + Vector3.UP * (SOLE_HEIGHT - seat_drop[side])) > RELEASE:
 		return true
 	# A leg folded tight over its planted foot (the hips come down past it on a descent)
 	# pitches the shin so far that the block's lower corner would sink into the tread:
@@ -469,7 +498,8 @@ func pose_arm(side: int, limb: MeshInstance3D, mount: Vector3, bend: float) -> v
 ## SEGMENT length in every frame; an unreachable sole is missed, never stretched to.
 func pose_leg(side: int, limb: MeshInstance3D, hip: Vector3, mount: Vector3,
 		sole: Vector3, model_yaw: float, contact: float, thigh_pitch := 0.0,
-		knee_flex := 0.0, ground := -INF) -> void:
+		knee_flex := 0.0, ground := -INF, torso := Transform3D(), torso_box := AABB(),
+		socket := 0.0) -> void:
 	var thigh_dir := Basis(Vector3.RIGHT, thigh_pitch) * Vector3.DOWN
 	var shin_dir := Basis(Vector3.RIGHT, thigh_pitch - maxf(knee_flex, 0.0)) * Vector3.DOWN
 	var air_ankle := hip + (thigh_dir + shin_dir) * SEGMENT
@@ -481,6 +511,17 @@ func pose_leg(side: int, limb: MeshInstance3D, hip: Vector3, mount: Vector3,
 	if floor_y != -INF:
 		# A pointed (airborne) boot dips its toe up to TOE below the ankle line.
 		target.y = maxf(target.y, floor_y + SOLE_HEIGHT + TOE * (1.0 - contact) + 0.002)
+	# On a slope a grounded boot lies along it (a pure rotation about the ankle) and a
+	# planted one is seated with its sole on the slope; a flat boot touched only at its
+	# uphill edge and its toe hung up to 0.12 u over a 1:2 ramp (D-ANIM-8).
+	var flat := Basis(Vector3.UP, wrapf(foot_yaw[side] - model_yaw, -PI, PI))
+	var graded := contact >= 1.0 and grades[side] != Vector3.ZERO and slope_floor[side] != -INF
+	var seat := -INF
+	if graded:
+		var normal := Vector3(-grades[side].x, 1.0, -grades[side].z).normalized()
+		flat = Basis(Quaternion(Vector3.UP, normal)) * flat
+		seat = _seat(side, sole, target, flat)
+		target.y = seat if stance[side] else maxf(target.y, seat)
 	var out := -1.0 if side == 0 else 1.0
 	if target.x * out < LANE:
 		target.x = out * LANE
@@ -490,13 +531,41 @@ func pose_leg(side: int, limb: MeshInstance3D, hip: Vector3, mount: Vector3,
 	var pole := Vector3.FORWARD.rotated(Vector3.UP, turn)
 	target = clear_hip(hip, target, pole)
 	var joints := solve(hip, target, pole)
+	# The robe hem (D-ANIM-9): a knee folded high in a swing, or tucked in the air, tilts
+	# the shin block's back-top corner up under the torso's lower front edge (measured up
+	# to 0.06 u deep on stairs). A leg that is not bearing weight straightens away from the
+	# hip until its thigh (past the `socket` buried at the hip by design) and shin blocks
+	# are within HEM_CLEAR of the torso block; the floor still has the last word (where a
+	# tread holds the foot up, the body steps up instead: world.gd _step_up). A planted
+	# foot is never moved: its knee height is the hips' business (fold_height).
+	if torso_box.size != Vector3.ZERO and not (stance[side] and contact >= 1.0):
+		var inv := torso.affine_inverse()
+		for i in 6:
+			var deep := hem_depth(limb, mount, hip, joints, inv, torso_box, socket)
+			if deep <= HEM_CLEAR:
+				break
+			var step := 1.5 * (deep - HEM_CLEAR) + 0.005
+			var reach := hip.distance_to(target)
+			var low := floor_y + SOLE_HEIGHT + TOE * (1.0 - contact) + 0.002 if floor_y != -INF else -INF
+			if graded:
+				low = _seat(side, sole, target, flat)
+			var longer := hip + (target - hip).normalized() * minf(REACH - SOFT, reach + step)
+			if longer.y >= low + 0.001 and reach < REACH - SOFT - 0.001:
+				target = longer
+			else:
+				# Straightening is blocked by the floor (or the leg is straight): the foot
+				# trails back instead. The torso leans on its bottom centre, so its hem is
+				# highest at the back and the knee clears it there.
+				target.z += step
+			target.y = maxf(target.y, low)
+			joints = solve(hip, target, pole)
 	# The shin block is wider than the ankle is high: steeply pitched (a swing's first
 	# frames, a push-off) its lower corners reach under the sole. Lift the foot until the
 	# lowest shin corner clears the floor under the foot (`floors`, model frame). A planted
 	# foot this catches is a frame from peeling off (_must_release's shin check).
 	if floors[side] != -INF:
 		for i in 3:
-			var short := floors[side] + 0.002 - shin_lowest(joints)
+			var short := shin_short(side, sole, joints, graded)
 			if short <= 0.0:
 				break
 			target.y += short
@@ -509,9 +578,73 @@ func pose_leg(side: int, limb: MeshInstance3D, hip: Vector3, mount: Vector3,
 	limb.transform = Transform3D(thigh, hip - thigh * mount)
 	var inverse := limb.transform.affine_inverse()
 	shins[side].transform = inverse * Transform3D(shin, knee)
-	var flat := Basis(Vector3.UP, wrapf(foot_yaw[side] - model_yaw, -PI, PI))
 	var boot_basis := shin.slerp(flat, contact) if contact < 1.0 else flat
 	boots[side].transform = inverse * Transform3D(boot_basis, ankle)
+
+
+## How deep the leg's thigh (beyond `socket` along it) and shin blocks reach into the
+## torso block, for a solve()'s [knee, ankle, bend]: a 3 x 5 x 3 grid through each block.
+## `inv` takes the figure frame to the torso's mesh frame.
+func hem_depth(limb: MeshInstance3D, mount: Vector3, hip: Vector3, joints: Array,
+		inv: Transform3D, box: AABB, socket: float) -> float:
+	var knee: Vector3 = joints[0]
+	var bend: Vector3 = joints[2]
+	var thigh_basis := bone_basis(knee - hip, bend)
+	var thigh := Transform3D(thigh_basis, hip - thigh_basis * mount)
+	var shin := Transform3D(bone_basis((joints[1] as Vector3) - knee, bend), knee)
+	var axis := (knee - hip).normalized()
+	var deep := 0.0
+	for k in 2:
+		var part: Transform3D = thigh if k == 0 else shin
+		var b: AABB = limb.get_aabb() if k == 0 else shins[0].get_aabb()
+		for i in 3:
+			for j in 5:
+				for m in 3:
+					var p := part * (b.position + b.size * Vector3(i / 2.0, j / 4.0, m / 2.0))
+					if k == 0 and (p - hip).dot(axis) < socket:
+						continue
+					var l := inv * p
+					if box.has_point(l):
+						var lo := l - box.position
+						var hi := box.end - l
+						deep = maxf(deep, minf(minf(minf(lo.x, hi.x), minf(lo.y, hi.y)), minf(lo.z, hi.z)))
+	return deep
+
+
+## The ground height at `q` (model frame) on the slope plane under foot `side`.
+func _plane(side: int, sole: Vector3, q: Vector3) -> float:
+	return slope_floor[side] + grades[side].x * (q.x - sole.x) + grades[side].z * (q.z - sole.z)
+
+
+## The ankle height that rests the lowest bottom corner of a boot posed by `basis` at
+## 0.002 u over the slope plane (an ankle at `at`'s x/z).
+func _seat(side: int, sole: Vector3, at: Vector3, basis: Basis) -> float:
+	var b := boots[side].get_aabb()
+	var need := -INF
+	for x in [b.position.x, b.end.x]:
+		for z in [b.position.z, b.end.z]:
+			var corner: Vector3 = basis * Vector3(x, b.position.y, z)
+			var q := Vector3(at.x + corner.x, 0.0, at.z + corner.z)
+			need = maxf(need, _plane(side, sole, q) - corner.y + 0.002)
+	return need
+
+
+## How far the shin block's lowest corner is short of clearing the ground under the foot by
+## 0.002 u (the slope plane on a slope, else `floors`), for a solve()'s [knee, ankle, bend].
+func shin_short(side: int, sole: Vector3, joints: Array, graded: bool) -> float:
+	if not graded:
+		return floors[side] + 0.002 - shin_lowest(joints)
+	var ankle: Vector3 = joints[1]
+	var shin_axis: Vector3 = (ankle - (joints[0] as Vector3)).normalized()
+	var bend_dir: Vector3 = joints[2]
+	var depth_axis := (bend_dir - shin_axis * shin_axis.dot(bend_dir)).normalized()
+	var across := depth_axis.cross(shin_axis).normalized()
+	var short := -INF
+	for a in [-1.0, 1.0]:
+		for c in [-1.0, 1.0]:
+			var corner: Vector3 = ankle + depth_axis * (a * shin_depth) + across * (c * shin_width)
+			short = maxf(short, _plane(side, sole, corner) + 0.002 - corner.y)
+	return short
 
 
 ## The lowest corner height of the shin block for a solve()'s [knee, ankle, bend].
