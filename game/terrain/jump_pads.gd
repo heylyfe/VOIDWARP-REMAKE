@@ -25,7 +25,7 @@ extends RefCounted
 #     same height) - the lane one tile beside the route. A walkway whose bbox cannot say which
 #     axis is its width (square, or not a straight run) carries no pad;
 #   - never on: the hub piece (the beacon dais lives there), a `stair` (jump stairs) or `ramp`
-#     walkway, a ramp tile, a tile with a 4-neighbour on its piece more than 1 HU above or below
+#     walkway, a ramp tile, a tile with a 4-neighbour on its piece over 1 HU above or below
 #     (a ledge / jump-stair riser edge; a stepped climb's 1 HU tread is allowed), a tile
 #     carrying a prop, a gift slot or tripmine slot or the 8 tiles around one, a launch pad or
 #     its landing tile (or the 8 tiles around either);
@@ -45,7 +45,7 @@ const CLEAR := 12                     # voidgen.CLEAR: two layers are distinct a
 # TERRAIN_SPEC section 2 names the walkway arches: `step` = stepped climbs (1 HU risers the
 # auto step-up walks), `stair` = jump stairs (2 HU risers), `ledge` = drop ledges, `flat`, `ramp`.
 # "Never on stairs" bars the jump stairs and the ramps; a stepped climb's tread is legal as long
-# as no neighbour on the piece is more than STEP_HU off (no pad at a ledge or stair riser).
+# as no neighbour on the piece is over STEP_HU off (no pad at a ledge or stair riser).
 const NO_PAD_ARCHS := ["stair", "ramp"]
 const STEP_HU := 1
 const N4 := [Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(0, -1)]
