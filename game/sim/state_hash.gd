@@ -41,6 +41,13 @@ extends RefCounted
 #                                          DATA, not a function of the Level: without them two
 #                                          runs whose collapse.json differed would hash the same
 #                                          until the first zone fell (B10 review finding 1).
+#   JUMPPADS <ready ticks csv> <lost hex> <rearm_ticks> <launch_speed bits>
+#                                          (D-JUMPPAD-4) the jump pads' live state: per pad the
+#                                          first tick it may fire again and the bitset of pads
+#                                          whose tile fell in the collapse, then the two data
+#                                          knobs (data/jump_pads.json). Only when the level
+#                                          carries jump pads (lv.jump_pads non-null), so every
+#                                          dump of a level built without them is unchanged.
 # Level content itself is NOT dumped: it is a pure function of the seed and enters the hash once,
 # via LEVELHASH.
 
@@ -137,6 +144,13 @@ static func dump(rs: RefCounted) -> PackedStringArray:
 			str(cst.get("partition", "")),
 			int(cst.get("delay_ticks", 0)),   # D-B11-1: the start delay is data too
 		])
+	# D-JUMPPAD-4: the pad SET is a pure function of the Level (like the mine set); the re-arm
+	# ticks and the lost bitset are live state, the two knobs are data.
+	var jp = lv.get("jump_pads")
+	if jp != null:
+		out.append("JUMPPADS %s %s %d %s" % [str(jp.ready_csv()),
+				(jp.lost as PackedByteArray).hex_encode(), int(jp.rearm_ticks),
+				bits(float(jp.launch_speed))])
 	return out
 
 

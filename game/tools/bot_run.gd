@@ -73,6 +73,9 @@ const RunStateScript := preload("res://sim/run_state.gd")
 const Intermission := preload("res://sim/intermission.gd")
 const GiftsScript := preload("res://sim/gifts.gd")
 const MinesScript := preload("res://sim/mines.gd")
+# D-JUMPPAD-1/4: the jump pads (terrain places them on the Level, sim re-arms and fires them)
+const JumpPadPlaceScript := preload("res://terrain/jump_pads.gd")
+const JumpPadsScript := preload("res://sim/jump_pads.gd")
 const EnemyRuntime := preload("res://sim/enemy_runtime.gd")
 const RunLogScript := preload("res://app/run_log.gd")
 const HashScript := preload("res://sim/state_hash.gd")
@@ -547,6 +550,7 @@ static func _play_level(api: RefCounted, ledger: Dictionary, seed: int, level: i
 	var L: Dictionary = VoidGenScript.generate(seed, level, 1, extra)
 	if L.is_empty():
 		return {"result": "stuck"}
+	JumpPadPlaceScript.attach(L)
 	var rs = RunStateScript.new_run(seed, 1, api.content_ids())
 	# the run's carried enemy set rides the RunState, so the state hash pins it
 	rs.run_votes = votes.duplicate()
@@ -685,6 +689,7 @@ static func _play_level(api: RefCounted, ledger: Dictionary, seed: int, level: i
 		MinesScript.tick(lv, [ctl], w, [0], lv.tick, minev)
 		for e in minev:
 			ev.append(e)
+		JumpPadsScript.tick(lv, [ctl], w, lv.tick, ev)
 		lv.beacon.try_enter(ctl, lv.tick, 0, ev)
 		if lv.beacon.is_open() and not bool(mem["overtime_on"]):
 			rt.on_beacon_open()
