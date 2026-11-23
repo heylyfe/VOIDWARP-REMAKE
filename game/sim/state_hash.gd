@@ -155,8 +155,9 @@ static func dump(rs: RefCounted) -> PackedStringArray:
 		out.append("JUMPPADS %s %s %s %d %s" % [str(jp.pads_csv()), str(jp.ready_csv()),
 				(jp.lost as PackedByteArray).hex_encode(), int(jp.rearm_ticks),
 				bits(float(jp.launch_speed))])
-	if lv.boss != null:
-		var encounter: Dictionary = lv.boss.snapshot()
+	var boss: RefCounted = lv.get("boss")
+	if boss != null:
+		var encounter: Dictionary = boss.snapshot()
 		if lv.arena_controller != null:
 			encounter["controller"] = _arena_controller_fields(lv.arena_controller)
 			encounter["gift_fire"] = lv.boss_gifts.snapshot()

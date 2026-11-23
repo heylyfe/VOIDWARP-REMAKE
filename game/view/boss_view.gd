@@ -4,7 +4,7 @@ extends Node3D
 const HudStyle := preload("res://view/hud/hud_style.gd")
 const PETER_PATH := "res://assets/owner_third_party/peter/peter_griffin.png"
 const GREEN_PATH := "res://assets/owner_third_party/peter/peter_green_fn.png"
-const GIFT_MODEL := "res://assets/models/gold_gift.glb"
+const GiftsView := preload("res://view/gifts_view.gd")
 
 var _sprite: Sprite3D
 var _normal: Texture2D
@@ -13,6 +13,7 @@ var _bar: ProgressBar
 var _title: Label
 var _overlay: Control
 var _gift_model: PackedScene
+var _gift_material: StandardMaterial3D
 var _gifts: Dictionary = {}
 
 
@@ -27,7 +28,8 @@ func setup(target: Vector3, sprite_height: float, canvas: CanvasLayer) -> void:
 	if _normal != null:
 		_sprite.pixel_size = sprite_height / float(_normal.get_height())
 	_set_texture(_normal)
-	_gift_model = load(GIFT_MODEL)
+	_gift_model = load(GiftsView.GOLD_MODEL)
+	_gift_material = GiftsView._gold_body_material()
 
 	_overlay = Control.new()
 	_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -96,6 +98,7 @@ func on_events(events: Array) -> void:
 			"boss_gift_spawned":
 				if _gift_model != null:
 					var gift: Node3D = _gift_model.instantiate()
+					GiftsView._add_body(gift, _gift_material)
 					add_child(gift)
 					gift.position = event["position"]
 					_gifts[event["id"]] = gift
