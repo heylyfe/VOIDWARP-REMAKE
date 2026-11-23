@@ -114,7 +114,7 @@ Two honest coverage notes:
 
 ## Findings
 
-### F1 (MEDIUM, the only finding in the two deliverable logs) - 4 detached `Label` nodes leak per entry on the empty-ledger path
+### F1 (MEDIUM, the only finding in the two deliverable logs; **RESOLVED, see below**) - 4 detached `Label` nodes leaked per entry on the empty-ledger path
 
 `--vote-mode random` reports at exit, after a perfectly clean 160-entry sweep:
 
@@ -186,6 +186,90 @@ symptom would be a game that gets heavier the more levels are played through the
 Relevant to the cycle-8 crash report because a leak is a candidate cause of a late-session
 failure, but this sweep does **not** show it crashing anything.
 
+### F1 RESOLVED (D-U5-1) - the leak is `game/view/hud/icon_rows.gd:163`, which built a stack badge for every cell but parented it only when the cell showed a count
+
+**The owner, plainly.** `icon_rows.gd:_rebuild()` is the function that fills the curses and
+upgrades rows of the HUD, one icon cell per held curse/upgrade. It built the "xN" stack
+badge for **every** cell and then parented it only inside `if stacks > 1`:
+
+```
+game/view/hud/icon_rows.gd:163   var badge := Label.new()          # built for EVERY cell
+game/view/hud/icon_rows.gd:165   HudStyle.style_label(badge, ...)  # styled (font + colours)
+game/view/hud/icon_rows.gd:170   if stacks > 1:
+game/view/hud/icon_rows.gd:171       cell.add_child(badge)         # only parented here
+```
+
+For a single-stack cell the badge was created and styled, went into **no parent**, and
+nothing in the tree could free it - a detached `Label` with a font override and a text
+shape, exactly the "4 x Label + FontFile + StyleBox pair + ShapedTextData" the verbose dump
+named. That is why the node path was empty: it never had one.
+
+**Why the vote mode decided it.** The rows only draw what the run actually holds. The sweep's
+`all` mode passes a full `votes` ledger but an empty `curses`, so the HUD snapshot has no
+curses and no upgrade stacks, `_rebuild()` never draws a single-stack cell, and nothing
+leaks. `random` passes an empty ledger, `world._resolve_run()` replays the lobbies, the
+replayed altar picks land curses and upgrade stacks, and every single-stack cell dropped one
+badge on the floor: 4 per level build, 160 builds, 680 CanvasItem RIDs.
+
+**The fix** (`game/view/hud/icon_rows.gd`, the only production file touched):
+
+- the badge is now built *inside* the `if stacks > 1` arm, through a new `_stack_badge()`
+  helper that always returns a node its caller parents, so the rule lives in one place;
+- nothing is suppressed: no warning filtered, no verbose flag, no change to the exit report.
+  The leak is gone because the allocation is gone.
+
+**Proof, before -> after.** Leak-family lines (`grep -Eci 'leaked|still in use'`) on the
+same commands, same seed window:
+
+| log | command | before | after |
+|---|---|---|---|
+| `sweep_L9-12.log` | the brief's `--vote-mode all` sweep, 160 entries | 0 | **0** |
+| `sweep_L9-12_random.log` | the brief's `--vote-mode random` sweep, 160 entries | **5** | **0** |
+| `ctl_random_2seeds.log` | `--seeds 2`, random, 8 entries | 6 | 2 (audio only, F2) |
+| `ctl_all_2seeds.log` | `--seeds 2`, all, 8 entries | 0 | 2 (audio only, F2) |
+| `ctl_random_1entry.log` | `--seeds 1 --levels 9-9`, random | 5 | 2 (audio only, F2) |
+| `ctl_all_1entry.log` | `--seeds 1 --levels 9-9`, all | 2 | 2 (audio only, F2) |
+
+The two deliverable sweeps went **5 -> 0** and **0 -> 0**, both still
+`entries=160 built=160 build_failures=0` with `EXIT=0`, and all ten crash patterns still
+count 0 in both.
+
+The small counts left in the control runs are **not** this leak and are not labels: they are
+F2's audio streams still in use at exit, which fluctuates run to run (that is why
+`ctl_all_2seeds` moved 0 -> 2 with no label involved). Checked with a `--verbose` dump of the
+very command that used to leak 4 labels:
+
+```
+ctl_random_verbose_1entry_BEFORE.log   (old code)  Leaked instance: Label ... x4
+ctl_random_verbose_1entry.log          (fixed)     Leaked instance: Label ... x0
+```
+
+The four instance ids in the BEFORE dump (`...23682`, `...154091`, `...863085`, `...014909`)
+are the same four the original finding named, so this is the same defect closing, not a
+related one going quiet. F2 is untouched and still open.
+
+**The regression test and its teeth.** `game/tests/test_hud_icon_badges.gd`, with
+`game/tests/leak_probe_icon_rows.gd` as its probe (no `test_` prefix, so `run_all.gd` does
+not run it as a test).
+
+The obvious test is a trap here: the leaked node is **detached**, so counting labels under
+the row passes with the bug present, and Godot's `Performance` monitors refresh once per
+frame - measured, five orphan `Label`s moved `OBJECT_NODE_COUNT` by 0 inside one synchronous
+`run()`. The one observer that does see a detached node is the engine's own exit report,
+which only exists at process exit. So the test runs the probe as a **child Godot process**:
+six rows of single-stack curses plus six of upgrades, all freed, with `--verbose`, then reads
+the dump for `Leaked instance: Label`.
+
+Teeth, measured by running the finished test against the old code and the fix:
+
+- old code: `FAIL icon rows: 48 Label(s) leaked at exit in the probe (Leaked instance: Label:31356618199 - Node path:)` - 48 = 6 x 4 curses + 6 x 4 upgrades, exactly one per single-stack cell;
+- fixed code: `TESTS` clean, 0 leaked labels.
+
+A second assertion stops the fix degenerating into "never draw a badge": a 3-stack cell must
+still render `x3`, the single-stack cell beside it must render none, and a rebuild must not
+accumulate badges. The probe prints its own receipt line, and the test fails if that receipt
+is missing, so a probe that silently did nothing cannot pass as clean.
+
 ### F2 (LOW, control runs only, not present in either deliverable log) - audio resources still in use at exit
 
 Seen in short runs of both vote modes:
@@ -219,13 +303,52 @@ integrator; not counted as a levels-9-12 finding.
 
 ## Verdict
 
-**levels 9-12: 2 findings** - F1 (leak of 4 detached `Label` nodes per level build on the
-empty-ledger/`random` path, reported as RID + ObjectDB leaks at exit) and F2 (audio streams
-and playbacks still in use at exit, short runs only).
+**levels 9-12: 1 finding, F2** - F1 is fixed and closed on this branch (D-U5-1, "F1 RESOLVED"
+above): the icon-row stack badge was built for every cell and parented only when the cell
+showed a count, and the badge is now built only where it is shown. The two deliverable
+sweeps were re-run after the fix on the same seeds: `random` went from 5 leak-family lines to
+**0**, `all` stays **0**, both still `entries=160 built=160 build_failures=0` with `EXIT=0`
+and all ten crash patterns at 0.
+
+What remains open is F2 (audio streams and playbacks still in use at exit, short runs only,
+never seen in either 160-entry run).
 
 No crash, no non-zero exit, no failed build, and no parse/script error on any of the 320
 entries: **the app layer did not crash on levels 9-12 under this driver.** The owner's crash
-is not reproduced by these levels here; the leak in F1 is the one defect this sweep surfaces.
+is not reproduced by these levels here; F1 was the one defect this sweep surfaced and it is
+closed.
+
+## Gate (D-U5-1): exit 1, and the one failure is NOT this change
+
+`powershell -File tools\gate.ps1` on this branch: **exit 1**, `TESTS 145 passed 1 failed`.
+
+Steps 1 and 2 pass (python oracle `TESTS OK, SELFTEST 18/18, GALLERY 16/16 OK`; terrain
+parity). Step 3 `run_all` reports one failing test, and my new test passes inside it:
+
+```
+PASS res://tests/test_hud_icon_badges.gd
+FAIL test_model_materials.gd: res://view/asset_load.gd loads a model under res://assets/models/
+     but never assigns a base material with vertex_color_use_as_albedo (and is not on the J12 allow-list)
+FAIL test_model_materials.gd: res://view/player_figure_fallback.gd  ... same
+TESTS 145 passed 1 failed
+```
+
+**That failure is pre-existing at the base commit `4c15bf9`, not caused by this fix.** Proven
+by stashing every change on this branch (fix, tests and docs) and running the same test
+against the pristine base: `test_model_materials.gd failures=2`, the same two messages. It is
+U4's fail-soft asset work (`view/asset_load.gd`, `view/player_figure_fallback.gd`, both added
+by `4c15bf9`), not the HUD, and my diff touches no file that test scans.
+
+Why it is not fixed here: the two candidate repairs are both outside this task's scope. The
+files belong to U4's asset-loading track (the same reason `app/world.gd` is off limits this
+cycle), and the other repair - a J12 allow-list entry - would mean editing a test, which is
+forbidden. The correct entry would be honest rather than a weakening, because both files are
+pure loaders that hand the model to a caller which applies the body material: the loader
+never renders it, exactly the rationale the allow-list already carries for
+`view/respawn_view.gd`. That call belongs to the integrator.
+
+So: the F1 fix is complete and proven, and the branch's gate is red for a reason that predates
+it and is reproducible without it.
 
 ## Raw evidence (gitignored, on disk)
 
@@ -234,3 +357,11 @@ is not reproduced by these levels here; the leak in F1 is the one defect this sw
 `game/out/ctl_random_1entry.log`, `game/out/ctl_random_2seeds.log`,
 `game/out/ctl_random_verbose_1entry.log`, `game/out/ctl_random_verbose_L10.log`,
 `game/out/import_L9-12.log`.
+
+For F1's before/after (D-U5-1), the pre-fix copies are kept beside the re-runs:
+`game/out/*_before.log` (`sweep_L9-12_before.log`, `sweep_L9-12_random_before.log`,
+`ctl_random_2seeds_before.log`, `ctl_all_2seeds_before.log`, `ctl_random_1entry_before.log`,
+`ctl_all_1entry_before.log`), the same command run against old and new code is
+`ctl_random_verbose_1entry_BEFORE.log` vs `ctl_random_verbose_1entry.log`, the child-process
+probe dumps are `probe_old.log` (48 leaked Labels) and `probe_new.log` (0), and the gate run
+is `gate_U5-1.log`.
