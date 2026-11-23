@@ -64,16 +64,15 @@ func _digest(case: Array) -> String:
 	world.set_process(false)
 	AnimTest.stage(world, pose)
 	AnimTest.warm_up(world, pose)
-	# An AIRBORNE span starts from a clean pose state. The baseline is the POSE, not the
+	# Start the captured span from a CLEAN pose state. The baseline is the POSE, not the
 	# blend out of whatever gait preceded it: U1 changed the flat-ground gait, so the
 	# take-off blend necessarily differs, and that is not what this test pins. With the pose
 	# dict empty the first captured frame snaps to the target (world.gd's
 	# `if _pose.is_empty(): k = 1.0`), and with the lobby gait's weight at 0 the legs are
-	# posed by the articulated solve alone - exactly the pre-U1 code path. A grounded span
-	# needs no reset: its pose has already converged on the articulated target.
-	if not bool(world.ctl.grounded):
-		world._pose = {}
-		world._rigid_weight = 0.0
+	# posed by the articulated solve alone - exactly the pre-U1 code path.
+	world._pose = {}
+	world._rigid_weight = 0.0
+	world._body_lift = NAN
 	var rig = world._leg_rig
 	var parts: Array = world._limbs.duplicate()
 	parts.append_array(rig.shins + rig.boots + rig.forearms)
