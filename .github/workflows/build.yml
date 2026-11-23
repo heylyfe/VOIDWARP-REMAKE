@@ -185,6 +185,35 @@ jobs:
             xattr -dr com.apple.quarantine "$root/Godot.app" 2>/dev/null || true
           fi
 
+      # The Windows exe icon is embedded by rcedit, which Godot does not ship.
+      # Fetch a pinned build, verify its hash against the one used on the dev
+      # machine, and point the editor settings (Export > Windows > rcedit) at
+      # it, so the icon is embedded by the export itself. A release must never
+      # silently ship the default Godot icon: the verify step after the export
+      # fails the build if the icon frames are missing from the exe.
+      - name: Fetch rcedit and point the exporter at it
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="$(cygpath -u "$RUNNER_TEMP")/rcedit"
+          mkdir -p "$dir"
+          curl -fsSL --retry 3 -o "$dir/rcedit-x64.exe" \
+            "https://github.com/electron/rcedit/releases/download/v2.0.0/rcedit-x64.exe"
+          echo "3e7801db1a5edbec91b49a24a094aad776cb4515488ea5a4ca2289c400eade2a  $dir/rcedit-x64.exe" | sha256sum -c -
+          key="$(cygpath -m "$dir/rcedit-x64.exe")"
+          f="$(cygpath -u "$APPDATA")/Godot/editor_settings-${GODOT_VERSION%\.*}.tres"
+          mkdir -p "$(dirname "$f")"
+          if [ -f "$f" ]; then
+            if grep -q "export/windows/rcedit" "$f"; then
+              sed -i "s|export/windows/rcedit = .*|export/windows/rcedit = \"$key\"|" "$f"
+            else
+              printf 'export/windows/rcedit = "%s"\n' "$key" >> "$f"
+            fi
+          else
+            printf '[gd_resource type="EditorSettings" format=3]\n\n[resource]\nexport/windows/rcedit = "%s"\n' "$key" > "$f"
+          fi
+
       - name: Verify the engine matches the pinned hash
         shell: bash
         run: |
@@ -232,6 +261,16 @@ jobs:
             exit 1
           fi
           echo "wrote $out_sh ($bytes bytes)"
+
+      # Evidence the exe really carries the custom icon: parse .rsrc and fail
+      # loudly if the six frames are missing (a default-icon export is a bug,
+      # not a warning to scroll past).
+      - name: Verify the icon resources in the exe
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python game/tools/art/dump_pe_icons.py "$GITHUB_WORKSPACE/${{ matrix.out }}" 16 32 48 64 128 256
 
       - name: Check the export for script errors
         shell: bash
