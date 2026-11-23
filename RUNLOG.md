@@ -938,3 +938,13 @@ from `data/boss.json` and `data/player.json`, never brute-forced; a negative con
 `cooldown_ticks: 0` makes the gap assertion fail with "attacks arrive 1 ticks apart".
 `test_audio_cues_synth.gd` gains `BossAudio` and the `boss` group in its MODULES/GROUPS
 tables (extended, not weakened; its `seen < 18` floor is untouched).
+
+Gate on `t3/peter-boss-attacks` at `aed765e`: `GATE_EXIT=0`, `GATE OK (9 ran, 0 skipped,
+738 s)`, TESTS 140 passed 0 failed, PARITY 56/56, SELFTEST 18/18, GALLERY 16/16. Two
+gate failures were found and fixed on the way, both inherited from the T8a framework and
+both real defects rather than test noise: `boss_view.gd` instantiated `gold_gift.glb`
+with no base material, so the thrown gift would have rendered Godot's default white
+(`test_model_materials.gd`, the J3 defect class), and `sim/gifts.gd` plus
+`sim/state_hash.gd` read `lv.boss` directly, which raises "Invalid access to property or
+key 'boss'" on every test `StubLevel` and is read by the gate as a script error. Both are
+fixed at the source (a vertex-colour base pass; `.get("boss")`), not allow-listed.
