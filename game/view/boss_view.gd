@@ -5,6 +5,7 @@ extends Node3D
 ## marker), Peter's laugh, and the Bankai cinematic. Everything here is view-only: the
 ## cinematic is wired through its own signals and never touches sim/ or the state hash.
 
+const AssetLoadScript := preload("res://view/asset_load.gd")   # U4: fail-soft loads
 const HudStyle := preload("res://view/hud/hud_style.gd")
 const BossAudio := preload("res://view/audio/boss_audio.gd")
 const BankaiScript := preload("res://view/cinematics/bankai_gift_animation.gd")
@@ -66,7 +67,7 @@ func setup(target: Vector3, sprite_height: float, canvas: CanvasLayer,
 	if _normal != null:
 		_sprite.pixel_size = sprite_height / float(_normal.get_height())
 	_set_texture(_normal)
-	_gift_model = load(GiftsView.GOLD_MODEL)
+	_gift_model = AssetLoadScript.scene(GiftsView.GOLD_MODEL)
 
 	_overlay = Control.new()
 	_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE

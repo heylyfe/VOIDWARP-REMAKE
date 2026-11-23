@@ -140,7 +140,16 @@ static func tone_mesh(mesh: Mesh, from: Color, to: Color) -> ArrayMesh:
 	var out := ArrayMesh.new()
 	for i in mesh.get_surface_count():
 		var arrays := mesh.surface_get_arrays(i)
-		var colors: PackedColorArray = arrays[Mesh.ARRAY_COLOR]
+		# U4: a mesh with no vertex colours (a plain BoxMesh, a stand-in figure) has a NULL
+		# ARRAY_COLOR, not an empty one. Assigning it to a PackedColorArray fails and the
+		# surface is then built with a mismatched array set, which Godot drops - the boot
+		# came out with 0 surfaces and set_surface_override_material(0, ...) errored. A
+		# mesh with no colours simply keeps its own tone.
+		var raw: Variant = arrays[Mesh.ARRAY_COLOR]
+		if not (raw is PackedColorArray) or (raw as PackedColorArray).is_empty():
+			out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+			continue
+		var colors: PackedColorArray = raw
 		for j in colors.size():
 			var c := colors[j]
 			colors[j] = Color(minf(c.r * gain.r, 1.0), minf(c.g * gain.g, 1.0),

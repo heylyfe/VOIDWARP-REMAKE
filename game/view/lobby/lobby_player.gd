@@ -17,6 +17,10 @@ extends Node3D
 # the caller passes the axis values (headless tests drive move() directly).
 
 const CameraRigScript := preload("res://app/camera_rig.gd")
+# U4: the same fail-soft load the level uses - a missing figure falls back to the blocky
+# stand-in instead of leaving the hall's camera framing nothing.
+const AssetLoadScript := preload("res://view/asset_load.gd")
+const PlayerFallbackScript := preload("res://view/player_figure_fallback.gd")
 
 const PLAYER_MODEL := "res://assets/models/player_figure.glb"
 const RUN_SPEED := 9.0        # data/player.json shared_kit.run_speed (the level's speed)
@@ -40,6 +44,8 @@ const LIMB_NAMES := ["ArmL", "ArmR", "LegL", "LegR"]
 var rig: Node3D = null
 var camera: Camera3D = null
 var model: Node3D = null
+# U4 test seam: the path build() loads the figure from (PLAYER_MODEL in every real run).
+var player_model_path := PLAYER_MODEL
 var x := 0.0
 var y := 0.0
 var z := 8.0
@@ -58,9 +64,12 @@ func build(p_spawn: Vector3) -> void:
 	vx = 0.0
 	vz = 0.0
 	_phase = 0.0
-	var ps: PackedScene = load(PLAYER_MODEL)
+	var ps: PackedScene = AssetLoadScript.scene(player_model_path)
 	if ps != null:
 		model = ps.instantiate()
+	else:
+		model = PlayerFallbackScript.build()
+	if model != null:
 		_apply_player_body_material(model)
 		model.position = Vector3(x, y, z)
 		add_child(model)

@@ -46,6 +46,8 @@ extends Node3D
 
 const GiftsScript := preload("res://sim/gifts.gd")
 const DullGiftsScript := preload("res://content/curses/dull_gifts.gd")
+# U4: the fail-soft asset load (reports a missing path once, returns null).
+const AssetLoadScript := preload("res://view/asset_load.gd")
 
 const BLACK_MODEL := "res://assets/models/black_gift.glb"
 const GOLD_MODEL := "res://assets/models/gold_gift.glb"
@@ -64,6 +66,10 @@ const DULL_ALBEDO := Color(0.0404, 0.0235, 0.0328)
 const GOLD_FACTOR := 2.0  # gold_gift emission x 2.0 (TERRAIN_SPEC 12.2); no longer used to render anything (the gold gift renders via _gold_body_material()); kept as the spec's value
 
 var _gifts: RefCounted = null
+# U4 test seam: the paths setup() loads the gift models from (the consts in every real
+# run). A test points them at a path that does not exist to prove the blocky fallback.
+var black_model_path := BLACK_MODEL
+var gold_model_path := GOLD_MODEL
 var _black: Array = []    # slot id -> Node3D (null on occ == 1 slots)
 var _gold: Array = []     # slot id -> Node3D
 var _turn_idx: Array = [] # slot id -> build order (phase offset source; -1 not built)
@@ -119,8 +125,13 @@ func setup(level: Dictionary, gifts_state: RefCounted) -> void:
 	_tile_key.resize(n)
 	for i in n:
 		_tile_key[i] = _gifts.slot_tile_key(i)
-	var black_ps: PackedScene = load(BLACK_MODEL)
-	var gold_ps: PackedScene = load(GOLD_MODEL)
+	# U4: a missing gift model must not crash the level. load() returns null and the old
+	# code called instantiate() on it ("Attempt to call function 'instantiate' in base
+	# 'null instance'" - the class of error Terra's bug hunt found in godot.log). The
+	# load now reports once and the slot falls back to a blocky box, so the gift is still
+	# visible and collectable rather than silently absent.
+	var black_ps: PackedScene = AssetLoadScript.scene(black_model_path)
+	var gold_ps: PackedScene = AssetLoadScript.scene(gold_model_path)
 	var built: int = 0
 	for i in n:
 		if not _gifts.is_real(i):
@@ -128,20 +139,30 @@ func setup(level: Dictionary, gifts_state: RefCounted) -> void:
 		_turn_idx[i] = built
 		built += 1
 		var pos: Vector3 = _gifts.slot_pos(i)
-		var b: Node3D = black_ps.instantiate()
+		var b: Node3D = black_ps.instantiate() if black_ps != null else _fallback_gift()
 		b.position = pos
 		var bm: StandardMaterial3D = _black_body_material()
 		_add_body(b, bm)
 		_black_mat[i] = bm
 		add_child(b)
 		_black[i] = b
-		var g: Node3D = gold_ps.instantiate()
+		var g: Node3D = gold_ps.instantiate() if gold_ps != null else _fallback_gift()
 		g.position = pos
 		_add_body(g, _gold_body_material())
 		g.visible = false
 		add_child(g)
 		_gold[i] = g
 	sync()
+
+
+## The blocky stand-in for a gift whose .glb is missing: a 0.5 u box at the slot, so the
+## gift is still drawn and still collectable. Only ever used when the model is gone.
+static func _fallback_gift() -> Node3D:
+	var mi := MeshInstance3D.new()
+	var box := BoxMesh.new()
+	box.size = Vector3(0.5, 0.5, 0.5)
+	mi.mesh = box
+	return mi
 
 
 ## Adds the additive emission overlay to every mesh under the instance.

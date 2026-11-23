@@ -32,6 +32,7 @@ extends Node3D
 # The caller drives sync() every frame (or on change) and owns the clock; this
 # node never writes sim state. No engine calls beyond the view surface.
 
+const AssetLoadScript := preload("res://view/asset_load.gd")   # U4: fail-soft loads
 const MinesScript := preload("res://sim/mines.gd")
 
 const MODEL := "res://assets/models/tripmine_box.glb"
@@ -335,7 +336,7 @@ func _eye_dist(root: Node3D, eye: Vector3) -> float:
 
 ## Loads the T-015 box and splits it: {"box": ArrayMesh, "star": ArrayMesh}.
 static func _model_parts() -> Dictionary:
-	var ps: PackedScene = load(MODEL)
+	var ps: PackedScene = AssetLoadScript.scene(MODEL)
 	if ps == null:
 		return {"box": ArrayMesh.new(), "star": ArrayMesh.new()}
 	var inst: Node3D = ps.instantiate()

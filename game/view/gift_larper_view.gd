@@ -176,10 +176,21 @@ func sync(eye: Vector3 = Vector3.ZERO) -> void:
 	if _emitter == null or billboard == null:
 		return
 	if eye == Vector3.ZERO:
-		_emitter.emitting = true
+		_set_emitting(true)
 		return
 	var p := billboard.global_position if billboard.is_inside_tree() else billboard.position
-	_emitter.emitting = p.distance_to(eye) <= _tell_range
+	_set_emitting(p.distance_to(eye) <= _tell_range)
+
+
+## U4: CPUParticles3D's `emitting` setter reads the node's global transform, which errors
+## ("Condition !is_inside_tree() is true") when the view is not in the tree - and a view
+## IS synced outside the tree: world.gd pre-builds the enemy hosts detached and the tests
+## build a world outside the tree. The tell is a draw state, so it is simply not written
+## while detached; the next tick after the view enters the tree sets it.
+func _set_emitting(p_on: bool) -> void:
+	if not _emitter.is_inside_tree():
+		return
+	_emitter.emitting = p_on
 
 
 ## Frame locally (BILLBOARDING) - the billboard's own _process is disabled; this file owns it.

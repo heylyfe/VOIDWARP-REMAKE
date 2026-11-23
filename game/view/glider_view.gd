@@ -1,4 +1,6 @@
 extends Node3D
+
+const AssetLoadScript := preload("res://view/asset_load.gd")   # U4: fail-soft loads
 #
 # The hang glider the player flies under while gliding (owner request 2026-11-20).
 # Model: assets_src/blender/glider.py -> res://assets/models/glider.glb (origin = the
@@ -62,7 +64,7 @@ func build() -> bool:
 	name = "Glider"
 	position = MOUNT
 	visible = false
-	var ps: PackedScene = load(GLIDER_MODEL)
+	var ps: PackedScene = AssetLoadScript.scene(GLIDER_MODEL)
 	if ps == null:
 		return false
 	model = ps.instantiate() as Node3D

@@ -29,6 +29,7 @@ extends Node3D
 #
 # Reads sim state only (never writes): set_progress + set_open from the caller.
 
+const AssetLoadScript := preload("res://view/asset_load.gd")   # U4: fail-soft loads
 const BeaconScript := preload("res://sim/beacon.gd")
 const BeaconAudioScript := preload("res://view/audio/beacon_audio.gd")
 
@@ -66,7 +67,7 @@ var _open_mat: StandardMaterial3D
 
 
 func _init() -> void:
-	var ps: PackedScene = load(MODEL)
+	var ps: PackedScene = AssetLoadScript.scene(MODEL)
 	if ps != null:
 		var body: Node3D = ps.instantiate()
 		add_child(body)
