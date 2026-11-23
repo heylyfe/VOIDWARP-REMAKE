@@ -193,8 +193,12 @@ func _test_no_public_preload(f: Array[String]) -> void:
 				# app.gd's guarded load() - and neither may PRELOAD it
 				if not (path == "res://app/app.gd" or path == "res://tests/test_tester_build.gd"):
 					f.append("tester: %s references the tester panel from public code" % path)
-			if text.contains("preload(") and text.contains("view/tester/"):
-				f.append("tester: %s PRELOADS the tester panel - it must be load()-only" % path)
+			# preload() is compile-time: no LINE anywhere may preload the panel
+			for line in text.split("\n", false):
+				if line.contains("preload(") and line.contains("view/tester/"):
+					f.append("tester: %s preloads the tester panel on a line -"
+							+ " it must be load()-only: %s"
+							% [path, line.strip_edges()])
 
 
 # ---- (d): app gate + sim ignorance --------------------------------------------------------------

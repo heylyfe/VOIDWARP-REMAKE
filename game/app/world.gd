@@ -914,9 +914,9 @@ func _upgrade_knobs(plan: Dictionary, kit: String) -> Dictionary:
 
 
 ## TESTER (cycle 7 T2, D-T2-5): fold ONE more owned stack of upgrade `id` into the LIVE run.
-## Called only by the tester debug panel (view/tester/debug_panel.gd, which exists only in
-## "Tester" feature-tag exports); nothing in the public game calls it. The ledger carries the
-## stack into every later level through run_ledger(), and the build()'s stat pipeline is
+## Called only by the tester debug panel (the owner-only cycle-7 T2 script; absent from every
+## public pack); nothing in the public game calls it. The ledger carries the stack into every
+## later level through run_ledger(), and the build()'s stat pipeline is
 ## re-run here so the stack is (mostly) live on the current level too:
 ##   - _stats_black/_stats_gold, _upgrade_knobs' assignments and _apply_phase_stats() are
 ##     re-computed - all set-based, so re-running them is the rebuild's own semantics;
