@@ -8614,6 +8614,7 @@ squashes to 35 % in 0.06 s and springs back through ~1.19x (settled by 0.9 s), t
 rising sine with a decaying 26 Hz wobble over a 70 Hz thump, played on the `jump_pad_launch` event. No
 first-use hint (optional in the spec). Screenshot proof: tools/shot_jump_pad.gd (windowed).
 
+<<<<<<< HEAD
 ## D-T2-1 (2026-11-23): the tester panel is compiled OUT of the public build, three layers deep
 
 **Ruling.** The owner's words: "tester build with debug panel (owner only, never in public releases)". The
@@ -9454,3 +9455,145 @@ park it anywhere (repo convention: game/out/tools/, gitignored), then
 Editor Settings > Export > Windows > rcedit = that path. Verified locally on this
 machine: exporting preset.0 with the key set produces an exe whose .rsrc carries
 the six 16/32/48/64/128/256 png frames and one RT_GROUP_ICON (dump_pe_icons output).
+=======
+## D-JUMPPAD-6 (2026-11-23): a jump pad is a 3x3 BLOCK of floor tiles, outside the paths
+
+**Owner's words (cycle 7 brief, T6):** "jump pads revamp (3x3 tiles, outside paths, 2 to 6 per level)" and
+"Pads must be 3x3 TILES big and NOT on the paths: outside the paths (adjacent to them), never on
+mines/gifts/beacon/hub/stairs. Count per level: minimum 2, maximum 6 on big levels (scale with level size; in
+data)."
+
+**Ruling.** `L["jump_pads"]` entries are still `[x, z, y]`, but they are now the CENTRE tile of a
+`size_tiles` x `size_tiles` block (`data/jump_pads.json`, 3 -> a 3x3 block, `half_extent()` = 1,
+`footprint()` lists the 9 cells). A block is legal only when all 9 cells exist at that one height and every
+one of them is a FLOOR tile (piece `kind` 0) of a non-hub platform piece, with no ramp tile (`t[3] != 0`), no
+prop, and none of them a gift slot, a tripmine slot, the beacon tile, a launch pad or its landing tile. The
+count comes from `count_by_level`: 2 at level 1, 3 from 4, 4 from 8, 5 from 14, 6 from 20.
+
+**Why the pads left the walkways.** The old rule put a pad on a walkway's side lane, one tile beside the
+centre lane. A walkway is exactly 3 tiles wide (`WALK_W`), so a 3x3 block on it always covers the centre lane -
+it would be ON the route, which the owner forbids. There is no 3x3 block that both sits on a walkway and
+misses its middle line, so "3x3" and "never on the route" together mean the pad must be off the walkway
+entirely. The floor tiles beside the path are the platform pieces, which is where the pads now go: the block
+is on the platform, the walkway runs past its edge. That is also what the owner's reference
+(`game/out/owner_refs/jumppad_ref.png`) shows - a big blue slab on the floor with the checkered path at its
+corner.
+
+**"Never on" replaces "never on or beside".** The old placement banned the 8 neighbours of every gift, mine
+and launch pad. The owner's new wording is "never on mines/gifts/beacon/hub/stairs", so the ban is now the
+exact tile. This is not a relaxation for convenience: it is what the brief says, and it is what makes 2..6
+pads possible at all - the 8-neighbourhood ban covers 9 cells per gift/mine/launch pad, and on a level with
+~15 gifts and ~6 launch pads that is ~190 of ~900 tiles, which left several levels with no legal 3x3 block
+anywhere (measured: seed 1 level 3, seed 7 level 3, seed 42 level 20 and others had zero). A pad may now sit
+right beside a gift or a mine, never over one.
+
+**Count floor.** CORRECTED in review round 1: the floor of 2 is NOT reachable on every level once edge
+adjacency is enforced (D-JUMPPAD-7 has the numbers - 15 of 160 measured levels get fewer than 2, all on levels
+1-5). The code never invents a spot: it places `min(count_by_level, what the greedy can take)`, and the test
+asserts that a level which gets fewer than it wants is MAXIMAL - no further legal block could be added without
+overlapping a placed pad - and that no more than `SHORT_MAX` of its 64 levels fall short.
+
+## D-JUMPPAD-7 (2026-11-23, rewritten in review rounds 1 and 2): edge adjacency is a HARD rule
+
+**Owner's words (cycle 7 brief, T6):** "jump pads revamp (3x3 tiles, outside paths, 2 to 6 per level)" and
+"Pads must be 3x3 TILES big and NOT on the paths: outside the paths (adjacent to them)".
+
+**Ruling.** A block is a candidate only when BOTH hold: (a) none of its 9 tiles is a path tile (D-JUMPPAD-6),
+and (b) at least one tile on the RING OUTSIDE the block - the 12 cells that share a side with its 3x3
+footprint, never a diagonal and never a cell inside the footprint - is a path tile within `path_step_hu`
+(data, 4 HU) vertically. A block with no such neighbour is not a candidate at all, so a pad can never sit out
+on a platform away from every path. Candidates are then taken in the pad stream's shuffled order, greedily
+with `min_spacing_tiles`, and if that lands below the floor of 2 a two-pad arrangement is searched for before
+a shortfall is accepted.
+
+**The ring, not the footprint (review round 2).** The first version walked the 4-neighbourhood of every block
+cell, which includes the neighbours of the INTERIOR cells - other block cells - so a walkway one or two HU
+above or below a block tile counted as "adjacent" without being beside the block's edge. Terra caught it. The
+ring is now walked directly: offsets of exactly `half + 1` on one axis and at most `half` on the other, which
+is 12 cells for a 3x3 block. The test's checker is written from the rule (the four sides of the block's
+rectangle) rather than copied from the implementation, and a synthetic fixture pins it: a 5x5 platform with
+one walkway tile either under the block's centre (must NOT be a candidate) or on its ring (must be). Real
+levels almost never stack a walkway on a platform within `path_step_hu`, so no sweep could have caught this.
+
+**The greedy can strand a legal pair (review round 2).** Taking candidates in shuffled order can pick a block
+that is too close to BOTH members of a pair that would have satisfied the spacing, and then report a shortfall
+that is not real - Terra's case is level 3 seed 11, which placed 1 pad while two candidates 4 tiles apart were
+legal. `place_jump_pads` now runs an exhaustive pair scan (`_first_pair`) whenever the greedy lands below the
+floor of 2, and only accepts the shortfall when no pair exists. The candidate count is 6..17 per level, so the
+scan is at most ~136 distance checks and is deterministic (shuffled order, first pair). The test's shortfall
+assertion is the same proof from the other side: `_no_pair` scans every candidate pair, so a level is only
+excused when no two-pad arrangement exists at all - "can one be added to what we placed" is not enough.
+
+**This replaces the round-1 rule, which was wrong.** Round 1 ordered candidates by a "gap" to the nearest
+walkway and took them nearest-first, but never filtered on it: a block at gap 99 was still a candidate. Terra
+rejected that as the track's main requirement, correctly. The old gap metric was also looser than adjacency -
+it used Chebyshev distance to the nearest walkway within 4 HU, so a diagonal or two-cells-away path tile
+scored gap 0 - which is why the round-1 report claimed "510 of 570 pads at gap 0" while also claiming a
+one-tile cap left zero legal blocks on most levels. Both numbers were real, but they measured different
+things, and the histogram was not evidence of adjacency. The honest numbers are below.
+
+**Same-height adjacency is impossible on this generator.** voidgen steps a walkway 1-2 HU off the platform it
+runs beside at the junction, so a path tile is almost never at the same height as the platform floor next to
+it. Measured over 20 seeds x 8 levels (160 levels): 23 same-height path/floor edge pairs in the whole sweep,
+against 2127 at +1 HU and 1257 at +2 HU. A strict same-height rule leaves 0 legal blocks on 20 of 20 levels at
+level sizes 2, 5, 8, 12 and 20, and never more than 4 blocks on any level anywhere. It cannot deliver the
+owner's floor of 2 without changing the generator, and the generator is frozen (GEN_VERSION 4, PARITY,
+GALLERY_PIN). `path_step_hu` = 4 is therefore the tolerance: it covers the junction step and the first stair
+row, and stays well under `CLEAR` (12 HU), so a walkway on another storey can never satisfy it. This is the
+one place where the rule is not literally "same height", and it is stated here rather than hidden.
+
+**The funnel, measured (20 seeds x 8 levels, shipped data).** Legal blocks (all 9 tiles free floor, no ramp,
+non-hub, no prop, no gift/mine/beacon/launch pad) average 14.9 at level 1 rising to 34.8 at level 20. Of
+those, edge-adjacent blocks average 6.0 at level 1, 4.8 at level 2, 6.1 at level 3, 6.8 at level 5, 8.2 at
+level 8, 13.2 at level 12, 16.9 at level 20 and 15.7 at level 30. Pads PLACED average 1.75 / 1.80 / 1.75 /
+2.60 / 3.25 / 3.85 / 5.50 / 5.65 on the same levels.
+
+**The floor of 2 does not hold everywhere, and this is the honest number.** Over those 160 levels, 14 get
+fewer than 2 pads: level 1 seeds 7, 11, 29, 37; level 2 seeds 17, 37, 43, 2024; level 3 seeds 1, 17, 31, 53;
+level 5 seeds 7 and 60717. Every one is PROVEN pair-free - the closest candidate pair is 1.00, 2.00 or 2.24
+tiles apart against a spacing of 4, or the level has fewer than 2 candidates at all (level 1 seed 37 has
+none) - so the shortfall is the level's geometry, not the greedy's. Levels 8, 12, 20 and 30 always reach 2.
+The test's own sweep (9 seeds x 8 levels = 72 levels, seed 11 included because it is Terra's stranded-pair
+case) has 6 such levels - level 1 seeds 7 and 11, level 2 seed 2024, level 3 seed 1, level 5 seeds 7 and
+60717 - and `SHORT_MAX` pins that number: the test asserts every short level is pair-free AND that no more
+than 6 of the 72 fall short, so a regression that starves more levels fails instead of hiding behind "the
+level had no room". The brief's escape clause ("never fewer than 2 unless the level genuinely has no room -
+if that can happen, say so in a D-entry and in the test") is what this paragraph is.
+
+**`min_spacing_tiles` 8 -> 4.** 4 is the smallest spacing that leaves a gap between two 3x3 blocks (centres
+4 apart = one empty tile between). 8 was tried and cost pads on the big levels (level 20 average 5.25 instead
+of 5.50) without helping the floor of 2 anywhere; 3 (blocks touching) rescues no level either, so 4 is the
+tightest spacing that still reads as two separate pads.
+
+**The one-pad-per-platform rule is gone.** It was a round-1 invention, not the owner's, and with edge
+adjacency it only removed pads from levels that had few candidates to begin with.
+
+## D-JUMPPAD-8 (2026-11-23): the sim fires from any of the 9 cells, and the collapse takes the whole block
+
+**Ruling.** `sim/jump_pads.gd` maps EVERY cell of a pad's block to that pad id (`_at`), so `pad_at()` finds the
+pad from any of the 9 tiles and `tick()` fires for a player standing on any of them. The tile-alive check in
+`tick()` is now the cell the player actually stands on (`floor(x), floor(z)`), not the block's centre, so a
+curse that removes one cell stops the pad only for a player on that cell. `tile_keys(i)` returns all 9
+collision keys; `sweep()` drops the pad when ANY of them falls in the platform collapse (the pad goes down
+with the tile it lost), and the view hides the pad while any of its cells is in the world's removed set.
+`tile_key(i)` still returns the centre key. Launch, refill, re-arm, the hash and the collapse behaviour are
+otherwise unchanged: same 20 u/s fling, same `jump_pad_launch()` refill list, same 30-tick re-arm, same
+`_sync_row` on the launch tick.
+
+## D-JUMPPAD-9 (2026-11-23): the 3x3 slab, and the state hash line grows a size field
+
+**Ruling.** `view/jump_pad_view.gd` draws the same saturated glossy blue rounded slab, now 2.9 u across (the
+3 u block less 0.05 u a side, so it never overhangs the block), 0.55 u corner radius, 0.10 u bevel, same
+0.16 u height, same 0.012 u lift, same colour and glow. The squash / rebound curve, the re-arm dimming and the
+1 Hz pulse are untouched; the two ripple rings now start at 1.5 u and expand to 4.4 u so they still read
+around a pad three times the size. The slab is centred on the anchor tile, so it covers the whole block.
+
+**State hash.** The `JUMPPADS` line gains a trailing `size_tiles` field: the coordinates are the block's
+centre, and the block size is data (`data/jump_pads.json`) that the level hash does not cover, so without it
+two runs whose data differed in `size_tiles` would hash alike while the pads covered different tiles. The line
+is still written only when the level carries pads, so a level built without them keeps its exact dump. The
+hash VALUE changes for every level that has pads - that is the point of the revamp, not a regression - and no
+golden fixture pins a state hash: `test_replay.gd` compares runs against each other, and the jump-pad suite
+compares a run against its own replay, so nothing had to be re-pinned. The determinism tests are unchanged and
+none was weakened.
+>>>>>>> origin/t3/jump-pads-revamp
