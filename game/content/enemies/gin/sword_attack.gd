@@ -106,4 +106,3 @@ static func _finish(row: Dictionary, cfg: Dictionary, now: int, outcome: String)
 	row["gin_outcome"] = outcome
 	row["gin_next_tick"] = now + delay
 	row["phase"] = "cooldown"
-

@@ -217,8 +217,8 @@ Rules that apply to all 12 (ENEMIES.md HARD RULES, restated because they bind ev
 - **TBD FALLBACK**: if any agent refuses or is blocked on a name/asset: name "TBD", placeholder TBD
   PNG, full behavior wired, entry marked TBD. Never stall.
 - Sounds are new designs per ENEMIES.md "New sound" lines; cue TIMINGS below are binding.
-- Enemy logic runs in the deterministic simulation (the future server). Sprites, billboarding and
-  gin ichimaru's spears are view-layer only (ENEMIES.md global notes).
+- Enemy logic runs in the deterministic simulation (the future server). Sprites and billboarding
+  are view-layer only. Gin's ground sword follows the simulated path in §5.12.
 
 Behavior source rule (DECISIONS D-040): the behavior sentence in ENEMIES.md is the spec. Numbers come
 from nullscape.wiki where they fit that sentence (research/NULLSCAPE_PATTERNS.md §5), otherwise they
@@ -254,7 +254,7 @@ Preferred anchor kind per enemy (this table is the spec; a paragraph that names 
 | seal | `lane` | |
 | address me | none | appears 6 u in front of the player |
 | Claude | `open` | |
-| gin ichimaru | `perch` | his strike appearances keep his own 15–25 u rule (§5.12) |
+| gin ichimaru | none | screen-space portrait, with a simulated ground sword (§5.12) |
 
 `none` means the enemy has no preferred anchor kind: it skips (a) and (b). Ben's initial position is
 fallback (c); the nuke has no body on the map; gift Larper lives in gift slots; address me appears in
@@ -281,7 +281,7 @@ body width per the HITBOXES hard rule, height = body height):
 | seal | 0.6 | 0.6 | easily hurdle-able; its dash is the threat (§5.9) |
 | address me | 2.5 | — | no body contact; it is a countdown, not an obstacle |
 | Claude | 2.0 | 1.6 | not hurdle-able; keeps its distance (within 20 u) |
-| gin ichimaru | 1.8 | 0.7 | stands 15–25 u away on platform tiles only (D-072); contact is not his threat |
+| gin ichimaru | — | — | bodyless, with a ground sword (§5.12) |
 
 The nuke has no body; gift Larper occupies gift slots as the tripmine (§3.3) — the roster's other
 rows carry no world size.
@@ -521,23 +521,14 @@ the beat; **strings**: keep ≥ 6 u from Claude and put a height step or a prop 
 telegraph line; **wind**: run in a straight line (7.0 u/s vs 9.0 — you gain 2 u/s) or drop one tread
 —a shot dies on any slab or riser (D-071).
 
-### 5.12 gin ichimaru — Image 16 = "gin idle.png", Image 17 = "ginsword.png"
-Fades in on a tile 15–25 u from the player. **He stands on platform tiles only (D-072):** his
-fade-in tile is always a platform tile (never a walkway tile — his body must never block or cut the
-only route home); if no platform tile qualifies under his 15–25 u rule, he uses the **farthest tile of
-the spawn hub** (farthest from the player). Strike: the 5×5 tile patch centred on the player's tile
-is marked (red outline `#FF2A2A`, deep cracking rumble) for 2.0 s → launch pose, sword-spears streak
-to the patch in 0.3 s (view-layer VFX only) → the patch is a **void zone** for 10 s: its tiles are
-non-solid and anything that enters its column is **killed** → tiles fade back over 0.5 s (a player
-inside is lifted onto the surface). Cooldown 14 s (−3 s per extra vote, min 5 s). Never marks the
-beacon dais, and never marks while address me's countdown runs (SR-4). Gifts over a void zone stay
-but cannot be reached until it closes.
-*Pressure:* rewrites the puzzle live.
-*Terrain:* walkways — cutting a 2-wide causeway severs an arm for 10 s; loops, drops and pads become
-survival tools.
-*Answer:* walk out of the patch — 3 cells, 0.33 s of running inside a 2.0 s mark — and change
-direction during a Twin Fangs double mark; his body is never on the path (D-072), so only the patch
-threatens you.
+### 5.12 gin ichimaru
+
+gin's smiling portrait and bye bye call precede the sword throw. A ground sword closes toward the
+target's feet over 39 simulation ticks (650 ms). Distance determines travel speed. At impact the
+sword kills if the player's feet are below the height needed to clear it. Cooldown and extra-vote
+discounts follow the attack data. The warning defers while address me's countdown runs (SR-4).
+
+*Answer:* jump as the sword closes in.
 
 ## 6. Intermissions and the OFFERING SCHEDULE
 
@@ -658,7 +649,7 @@ Severity: M = Mild, H = Harsh, B = Brutal. "st" = max stacks.
 | unannounced | Unannounced | address me | 10 | B | 1 | no trumpet — only the sprite and the rumble | keep it on screen; Radar Module: Threats |
 | crescendo | Crescendo | Claude | 16 | H | 1 | agitation rises 3/s instead of 2/s | plushies first |
 | token_limit | Token Limit | Claude | 18 | B | 1 | plushies remove 20 agitation instead of 35 and spawn every 30 s | route for plushies |
-| twin_fangs | Twin Fangs | gin ichimaru | 17 | B | 1 | each strike marks two patches: yours and where you will be in 1.0 s | change direction during the mark |
+| twin_fangs | Twin Fangs | gin ichimaru | 17 | B | 1 | two swords converge together, requiring more jump clearance | time your jump so both swords pass near its apex |
 
 ### 7.2 General (22)
 
