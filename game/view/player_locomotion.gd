@@ -615,6 +615,37 @@ func pose_leg(side: int, limb: MeshInstance3D, hip: Vector3, mount: Vector3,
 	boots[side].transform = inverse * Transform3D(boot_basis, ankle)
 
 
+## The lobby gait's leg (D-ANIM-15): the whole leg as ONE rigid block at the hip - thigh,
+## shin and boot collinear, rotated by `angle` about the hip joint, which is exactly the
+## block the Antechamber's walker rotates. `weight` blends it over the articulated pose
+## pose_leg has just written (0 = the solve, 1 = the rigid block), so the switch between the
+## two rigs is a slerp and never a snap. Every segment is still placed by a pure rotation,
+## so the constant-limb-length rule (D-ANIM-1) holds trivially here.
+func pose_leg_rigid(side: int, limb: MeshInstance3D, hip: Vector3, mount: Vector3,
+		angle: float, weight: float) -> void:
+	if weight <= 0.0:
+		return
+	var basis := Basis(Vector3.RIGHT, angle)
+	var down := Vector3.DOWN * SEGMENT
+	var rigid_limb := Transform3D(basis, hip - basis * mount)
+	var rigid_shin := Transform3D(Basis.IDENTITY, mount + down)
+	var rigid_boot := Transform3D(Basis.IDENTITY, mount + down * 2.0)
+	if weight >= 1.0:
+		limb.transform = rigid_limb
+		shins[side].transform = rigid_shin
+		boots[side].transform = rigid_boot
+		return
+	limb.transform = blend_transform(limb.transform, rigid_limb, weight)
+	shins[side].transform = blend_transform(shins[side].transform, rigid_shin, weight)
+	boots[side].transform = blend_transform(boots[side].transform, rigid_boot, weight)
+
+
+## A transform part-way from `from` to `to`: the basis slerped, the origin lerped.
+static func blend_transform(from: Transform3D, to: Transform3D, weight: float) -> Transform3D:
+	return Transform3D(from.basis.slerp(to.basis, weight).orthonormalized(),
+			from.origin.lerp(to.origin, weight))
+
+
 ## How deep the leg's thigh (beyond `socket` along it) and shin blocks reach into the
 ## torso block, for a solve()'s [knee, ankle, bend]: a 3 x 5 x 3 grid through each block.
 ## `inv` takes the figure frame to the torso's mesh frame.

@@ -17,6 +17,7 @@ extends Node3D
 # the caller passes the axis values (headless tests drive move() directly).
 
 const CameraRigScript := preload("res://app/camera_rig.gd")
+const PlayerGait := preload("res://view/player_gait.gd")
 
 const PLAYER_MODEL := "res://assets/models/player_figure.glb"
 const RUN_SPEED := 9.0        # data/player.json shared_kit.run_speed (the level's speed)
@@ -33,9 +34,7 @@ const CAM_MIN_T := 0.15       # never pull the camera closer than this fraction 
 const FILL_RANGE := 18.0      # palette.json roles.player_fill_light.range
 const FILL_ENERGY := 1.2
 const FILL_HEX := "#BFFFF8"
-const GAIT_RATE := 10.5       # rad/s at full speed (world.gd's ANIM_PHASE_RUN)
-const GAIT_SWING := 0.9       # rad, leg swing amplitude at full speed
-const LIMB_NAMES := ["ArmL", "ArmR", "LegL", "LegR"]
+const LIMB_NAMES := PlayerGait.LIMB_NAMES
 
 var rig: Node3D = null
 var camera: Camera3D = null
@@ -211,16 +210,16 @@ static func _approach(p_now: float, p_target: float, p_step: float) -> float:
 	return maxf(p_now - p_step, p_target)
 
 
-## A compact gait: legs swing apart, arms counter them, scaled by the horizontal speed.
-## The level's full pose system (world.gd) is not duplicated here - the hall is a walk.
+## The gait (D-ANIM-15): view/player_gait.gd's four limb angles, the SAME function the
+## level's figure plays, so the hall and a level move identically. The hall is a walk, so
+## nothing else moves - no lean, no bob, no foot plant.
 func _anim(p_dt: float) -> void:
 	if _limbs.is_empty():
 		return
-	var amp := clampf(speed() / RUN_SPEED, 0.0, 1.0)
-	_phase = fmod(_phase + GAIT_RATE * amp * p_dt, TAU)
-	var swing := sin(_phase) * GAIT_SWING * amp
-	var pairs := [swing, -swing, -swing, swing]   # ArmL, ArmR, LegL, LegR
+	var amp := PlayerGait.amplitude(speed(), RUN_SPEED)
+	_phase = PlayerGait.advance(_phase, amp, p_dt)
+	var angles := PlayerGait.limb_angles(_phase, amp)
 	for i in _limbs.size():
 		var limb: Node3D = _limbs[i]
 		if limb != null and is_instance_valid(limb):
-			limb.rotation.x = float(pairs[i])
+			limb.rotation.x = angles[i]

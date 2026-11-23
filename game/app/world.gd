@@ -233,12 +233,20 @@ var _mouse_sens := CameraRigScript.MOUSE_SENS_DEFAULT  # settings.mouse_sensitiv
 # The fixed tick captures controller samples. The render pass owns all pose clocks and
 # contacts, and applies them to the articulated figure only.
 const Locomotion := preload("res://view/player_locomotion.gd")
+const PlayerGait := preload("res://view/player_gait.gd")
 const LIMB_NAMES := ["Torso", "Head", "ArmL", "ArmR", "LegL", "LegR"]
 const POSE_KEYS := ["torso", "head", "arm_l", "arm_r", "leg_l", "leg_r"]  # same order
 const ANIM_BLEND_TIME := 0.08    # s, pose blend constant (1 - e^(-dt/tau) toward target)
 const POSE_EXTRAS := ["arm_spread", "elbow_l", "elbow_r", "twist", "body_y", "knee_l", "knee_r"]
 const ANIM_RISE_TIME := 0.085   # s, body height catch-up to the sim feet (stairs)
 const ANIM_SEAT_MAX := 0.22      # u the drawn body may sit below the sim's footprint support (D-ANIM-8)
+## The lobby gait (D-ANIM-15): the owner's ruling is that in-game idle/walk/run must be the
+## Antechamber's animation exactly, so on flat ground the figure plays view/player_gait.gd's
+## four limb angles as rigid blocks and nothing else. Stairs, slopes, the landing
+## compression, dash and glide keep the articulated rig, so the switch is a weight: 1 on
+## flat ground, 0 everywhere else, eased over RIGID_BLEND so it never snaps a knee.
+const RIGID_FLAT := 0.02         # climb/descent weight below which the ground counts as flat
+const RIGID_BLEND := 0.08        # s, the ease between the lobby gait and the articulated rig
 const AIR_TUCK_VY := -5.0        # u/s: the jump tuck holds through the apex until the fall is this fast
 const AIR_TUCK_CLEAR := 1.0      # u: ...or until the floor under the figure is this close
 const LAND_TIME := 0.42          # s, the touchdown knee-dip: down and back up (D-ANIM-10)
@@ -278,6 +286,9 @@ var _was_airborne := false
 var _air_rose := false           # this airborne spell rose (a jump), so the tuck holds to AIR_TUCK_VY
 var _feet: Array[Vector3] = [Vector3.ZERO, Vector3.ZERO]
 var _run_speed := 9.0            # data/player.json shared_kit.run_speed (read in build())
+var _rigid_weight := 0.0         # 1 = the lobby gait, 0 = the articulated rig (D-ANIM-15)
+var _rigid_lift := 0.0           # u the drawn body rides higher under the lobby gait (see _cache_player_limbs)
+var _gait_phase := 0.0           # the lobby gait's own clock (view/player_gait.gd, D-ANIM-15)
 
 var _economy: RefCounted = null   # the gold-phase economy (purse / chain / upgrade stats)
 # The run's stats, from core/content_api.gd apply_modifiers over the owned upgrade stacks
@@ -612,6 +623,7 @@ func build(seed_value: int, level: int, p_ledger: Dictionary = {}) -> bool:
 	_cache_player_limbs(player_model)
 	_pose = {}
 	_anim_phase = 0.0
+	_gait_phase = 0.0
 	var pstats: Variant = JSON.parse_string(
 			FileAccess.get_file_as_string("res://data/player.json"))
 	if pstats is Dictionary and (pstats as Dictionary).has("shared_kit"):
@@ -1437,6 +1449,7 @@ func teardown() -> void:
 	_limb_mounts.clear()
 	_pose = {}
 	_anim_phase = 0.0
+	_gait_phase = 0.0
 	lstate = null
 	if _curses != null:
 		_curses.clear()   # drops the modules and their per-level curse_st scratch
@@ -2051,18 +2064,19 @@ static func _apply_player_body_material(p_root: Node3D) -> void:
 
 
 ## Pose values are local pitch in radians, except head roll and the optional extras.
-## The base run pose sets the lean. The articulated gait derives counter-swing and
-## hip and knee angles from the foot contacts.
+## The base run pose sets the lean. The four limb angles come from the ONE gait
+## (view/player_gait.gd, D-ANIM-15) - the same function the Antechamber's walker plays - so
+## there is no second copy of the swing here. The articulated rig reads only the lean: its
+## legs come from the foot contacts and its arms from the foot travel.
 static func _pose_run(phase: float, amp: float) -> Dictionary:
-	var swing := sin(phase) * 0.9 * amp
-	var counter := -swing * 0.85
+	var angles := PlayerGait.limb_angles(phase, amp)
 	return {
 		"torso": -0.28 * amp,
 		"head": 0.0,
-		"arm_l": counter * (1.0 - 0.4 * (1.0 - amp)),
-		"arm_r": -counter * (1.0 - 0.4 * (1.0 - amp)),
-		"leg_l": swing,
-		"leg_r": -swing,
+		"arm_l": angles[0],
+		"arm_r": angles[1],
+		"leg_l": angles[2],
+		"leg_r": angles[3],
 	}
 
 
@@ -2242,6 +2256,14 @@ func _render_animation(delta: float, alpha: float) -> void:
 	elif _land_clock >= 0.0:
 		_land_clock = _land_clock + delta if on_ground and _land_clock < LAND_TIME else -1.0
 	_was_airborne = not on_ground
+	# The lobby gait's weight (D-ANIM-15): 1 on flat ground, 0 in the air, on stairs or a
+	# slope, during a landing and for dash/glide (on_ground already excludes the last two).
+	# Eased, so the switch between the two rigs is a blend and never a snap.
+	var level_ground := _climb_weight < RIGID_FLAT and _descent_weight < RIGID_FLAT
+	var rigid := 1.0 if (on_ground and level_ground and _land_clock < 0.0) else 0.0
+	_rigid_weight = lerpf(_rigid_weight, rigid, 1.0 - exp(-delta / RIGID_BLEND))
+	if absf(_rigid_weight - rigid) < 0.001:
+		_rigid_weight = rigid
 	if on_ground or dash or glide:
 		_air_rose = false
 	var target: Dictionary
@@ -2271,6 +2293,11 @@ func _render_animation(delta: float, alpha: float) -> void:
 		k = 1.0
 	elif _contact_weight == 1.0:
 		k = 1.0 - exp(-delta / 0.025)
+	# The lobby gait is already smooth frame to frame (it is a sine of a clock), so it takes
+	# no pose filter: the applied angle IS the shared gait's angle, which is what the parity
+	# test compares against the lobby (D-ANIM-15).
+	if _rigid_weight >= 1.0:
+		k = 1.0
 	for key in POSE_KEYS + POSE_EXTRAS:
 		_pose[key] = lerpf(float(_pose.get(key, 0.0)), float(target.get(key, 0.0)), k)
 	if _contact_weight == 1.0:
@@ -2278,11 +2305,43 @@ func _render_animation(delta: float, alpha: float) -> void:
 	_apply_pose()
 
 
-## Ground locomotion. The figure keeps its facing (the camera yaw); the feet step along the
-## ACTUAL horizontal velocity, so backpedalling and strafing step backward/sideways with
+## Ground locomotion. The owner's ruling (U1, D-ANIM-15): on flat ground the figure plays
+## the Antechamber's gait EXACTLY - view/player_gait.gd's four limb angles and nothing else
+## - and the articulated rig below still runs underneath, so the feet are already planted
+## the moment the ground stops being flat. Stairs, slopes, the landing compression, dash and
+## glide keep the articulated pose untouched.
+func _pose_locomotion(root_pos: Vector3, velocity: Vector3, delta: float, blend: float) -> Dictionary:
+	var target := _pose_articulated(root_pos, velocity, delta, blend)
+	if _rigid_weight <= 0.0:
+		return target
+	var lobby := _pose_lobby_gait(velocity, delta)
+	if _rigid_weight >= 1.0:
+		return lobby
+	for key in POSE_KEYS + POSE_EXTRAS:
+		target[key] = lerpf(float(target.get(key, 0.0)), float(lobby.get(key, 0.0)), _rigid_weight)
+	return target
+
+
+## The Antechamber's gait (D-ANIM-15): the four limb angles from view/player_gait.gd, the
+## same function the lobby's walker calls, and nothing else - no lean, no twist, no bob, no
+## elbow bend, no foot plant. The drawn body rides _rigid_lift higher so the rigid boot's
+## leading corner clears the floor at every swing angle (see _cache_player_limbs).
+func _pose_lobby_gait(velocity: Vector3, delta: float) -> Dictionary:
+	var amp := PlayerGait.amplitude(Vector2(velocity.x, velocity.z).length(), _run_speed)
+	_gait_phase = PlayerGait.advance(_gait_phase, amp, delta)
+	var angles := PlayerGait.limb_angles(_gait_phase, amp)
+	return {
+		"torso": 0.0, "head": 0.0, "twist": 0.0,
+		"arm_l": angles[0], "arm_r": angles[1], "leg_l": angles[2], "leg_r": angles[3],
+		"elbow_l": 0.0, "elbow_r": 0.0, "body_y": _rigid_lift
+	}
+
+
+## The articulated rig. The figure keeps its facing (the camera yaw); the feet step along
+## the ACTUAL horizontal velocity, so backpedalling and strafing step backward/sideways with
 ## the knees still forward. Speed sets cadence and stride (walk -> run blend), the torso
 ## leans into forward running only, and the bob peaks at mid-stance.
-func _pose_locomotion(root_pos: Vector3, velocity: Vector3, delta: float, blend: float) -> Dictionary:
+func _pose_articulated(root_pos: Vector3, velocity: Vector3, delta: float, blend: float) -> Dictionary:
 	velocity.y = 0.0
 	var speed := velocity.length()
 	var moving := smoothstep(Locomotion.MIN_SPEED, 1.0, speed)
@@ -2310,6 +2369,9 @@ func _pose_locomotion(root_pos: Vector3, velocity: Vector3, delta: float, blend:
 		gait.x = 0.0
 		velocity = Vector3.ZERO
 		_anim_phase = 0.0            # a start always lifts the right foot first
+	# The articulated rig keeps its OWN clock, unchanged, so stairs, slopes, jump, fall and
+	# the landing stay bit-identical to before U1. The lobby gait runs on _gait_phase, the
+	# same clock the Antechamber's walker runs (D-ANIM-15).
 	_anim_phase = fposmod(_anim_phase + gait.x * TAU * delta, TAU)
 	_breath_phase = fposmod(_breath_phase + ANIM_PHASE_IDLE * delta, TAU)
 	var target := _pose_idle(_breath_phase)
@@ -2474,6 +2536,7 @@ func _cache_player_limbs(figure: Node3D) -> void:
 	_air_rose = false
 	_contact_weight = 0.0
 	_breath_phase = 0.0
+	_rigid_weight = 0.0
 	for i in LIMB_NAMES.size():
 		var node := figure.find_child(LIMB_NAMES[i], true, false) as MeshInstance3D if figure != null else null
 		_limbs.append(node)
@@ -2486,6 +2549,16 @@ func _cache_player_limbs(figure: Node3D) -> void:
 		_limb_mounts.append(mount)
 	_leg_rig = Locomotion.new()
 	_leg_rig.build(_limbs, _limb_mounts)
+	# The lobby gait's body lift (D-ANIM-15): a rigid leg swings its boot as one block, so
+	# the boot's leading bottom corner dips below the sole's centre by half the boot's depth
+	# times sin(angle) - at most sqrt(leg^2 + half^2) - leg over the whole swing. The drawn
+	# body rides that much higher (plus the 0.002 u plant clearance) so no corner of the
+	# swinging boot ever goes under the floor, and the sole sits 0.002 u over it at the
+	# neutral angle. The leg is 0.004 u longer than the hip is high, hence the first term.
+	var leg := 2.0 * Locomotion.SEGMENT + Locomotion.SOLE_HEIGHT
+	var half := _leg_rig.boots[0].get_aabb().size.z * 0.5 if _leg_rig.boots.size() == 2 else 0.0
+	var hip := _limb_rest[4].y + _limb_mounts[4].y + Locomotion.HIP_RISE
+	_rigid_lift = maxf(0.0, leg - hip) + sqrt(leg * leg + half * half) - leg + 0.002
 
 
 func _apply_pose() -> void:
@@ -2535,11 +2608,17 @@ func _apply_pose() -> void:
 			var bend: float = _pose.elbow_l if i == 2 else _pose.elbow_r
 			_leg_rig.pose_arm(i - 2, node, mount, bend)
 		elif i >= 4 and _leg_rig.shins.size() == 2:
-			_leg_rig.pose_leg(i - 4, node, joint, mount, _feet[i - 4],
-					player_model.rotation.y, _contact_weight, angle,
-					float(_pose.get("knee_l" if i == 4 else "knee_r", 0.0)), ground,
-					hem.transform if hem != null else Transform3D(),
-					hem.get_aabb() if hem != null else AABB(), socket)
+			# The lobby gait (D-ANIM-15) draws the leg as ONE rigid block at the hip; the
+			# articulated solve is skipped only when it is fully blended out, and otherwise
+			# pose_leg_rigid slerps the rigid block over the solve's pose.
+			var side := i - 4
+			if _rigid_weight < 1.0:
+				_leg_rig.pose_leg(side, node, joint, mount, _feet[side],
+						player_model.rotation.y, _contact_weight, angle,
+						float(_pose.get("knee_l" if i == 4 else "knee_r", 0.0)), ground,
+						hem.transform if hem != null else Transform3D(),
+						hem.get_aabb() if hem != null else AABB(), socket)
+			_leg_rig.pose_leg_rigid(side, node, joint, mount, angle, _rigid_weight)
 
 
 ## The enemy body pass: every live runtime row gets ONE body - its bespoke view host when
