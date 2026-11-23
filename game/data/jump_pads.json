@@ -1,0 +1,13 @@
+{
+  "_doc": "THE one tunable file for JUMP PADS (D-JUMPPAD-1..5; DESIGN.md section 3.4). A jump pad is a separate entity from the generator's LAUNCH pads (voidgen W.pads, the 'X' line, controller _try_launch_pad): a launch pad throws the player onto a target tile and is load-bearing for reachability; a jump pad flings the player STRAIGHT UP, keeps their horizontal momentum, and refills their MOVEMENT resources only (air jumps, dash + twin dash, glider energy, updraft, ability lock) - never void charges, gold or the beacon shield. Placement is game/terrain/jump_pads.gd place_jump_pads(level, cfg): a pure function of the Level dict, so the level hash still determines the pads without touching the frozen generator's canonical text. A pad sits on a flat floor tile BESIDE a walkway's centre lane (the route), never on the centre lane, a gift slot or tripmine (or the 8 tiles around one), the hub/beacon piece, a stair/step/ramp walkway, a launch pad (or its landing tile), or under overhead geometry within headroom_hu. count_by_level: the row with the largest 'from' <= the level number gives the pad count (fewer are placed when the level has fewer legal spots). min_spacing_tiles: the XZ distance between any two pads is at least this. launch_speed: the upward velocity in u/s set on trigger; under gravity 32 the apex is v^2/64 = 6.25 u at 20.0 (a normal jump is 12.0 -> 2.25 u; a stair walkway climbs at most 3 u, so 6.25 u clears about two stair walkways' worth) and the air time to land back on the pad's height is 2v/32 = 1.25 s. rearm_s: after a pad fires it is inert for this long (rounded to whole 60 Hz ticks), so standing on it cannot chain-fire; landing back on it after a full 1.25 s flight re-fires it, which is the point of a pad.",
+  "count_by_level": [
+    {"from": 1, "count": 1},
+    {"from": 3, "count": 2},
+    {"from": 6, "count": 3},
+    {"from": 10, "count": 4}
+  ],
+  "min_spacing_tiles": 12,
+  "headroom_hu": 18,
+  "launch_speed": 20.0,
+  "rearm_s": 0.5
+}

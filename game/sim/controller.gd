@@ -636,6 +636,49 @@ func _try_launch_pad(w: Dictionary, ev: Array) -> void:
 	ev.append({"e": "pad_launch"})
 
 
+# ---- jump pads (D-JUMPPAD-2/3; DESIGN.md section 3.4) ----------------------------------
+# NOT the launch pad above. A jump pad (terrain/jump_pads.gd places it, sim/jump_pads.gd owns
+# its re-arm and decides WHEN it fires) calls this once per trigger: a fixed upward velocity,
+# the horizontal momentum untouched, and every MOVEMENT resource refilled. This function is
+# the one place the refill list lives; JUMP_PAD_REFILLS names it for the tests.
+# Deliberately NOT refilled: void charges (charges / charge_cap), gold (not controller state),
+# the beacon shield (barrier_shields), Last Light, Field Dressing, invulnerability.
+# updraft_used is on the list although the owner spec names only the rise itself (D-JUMPPAD-3,
+# Terra review finding 3 declined). The rise in step() is gated on
+# "updraft_ready ... and not updraft_used", and the glide-engage block already clears
+# updraft_used on every fresh engagement while the launch ends any glide - so the rise would
+# still be usable without this write. The write is a SAFEGUARD, not what makes the rise work
+# today: it keeps the refill self-contained instead of resting on that coupling, so a future
+# change to glide engagement cannot silently leave the rise flagged but unusable.
+const JUMP_PAD_REFILLS := [
+	"air_jumps", "dash_ready", "dash_cd", "bonus_dashes", "bonus_cd",
+	"glide_energy", "updraft_ready", "updraft_cd", "updraft_used", "lock",
+]
+
+
+func jump_pad_launch(launch_vy: float, ev: Array = []) -> void:
+	# the fling: vertical only - vx / vz (the run, a dash's carry) are kept as they are
+	vy = launch_vy
+	grounded = false
+	coyote = 0.0          # a coyote jump in the next 0.1 s would REPLACE the fling with 12 u/s
+	buffer = 0.0
+	gliding = false
+	pad_flight = false
+	# the refill list (owner spec item 3)
+	air_jumps = air_jumps_max
+	dash_ready = true
+	dash_cd = 0.0
+	bonus_dashes = bonus_dashes_max
+	bonus_cd = 0.0
+	glide_energy = _glide_max()
+	# the rise is granted ONLY by apply_updraft (D-T053-6): an unowned glider stays without it
+	updraft_ready = updraft_owned
+	updraft_cd = 0.0
+	updraft_used = false
+	lock = 0.0
+	ev.append({"e": "jump_pad_launch", "vy": launch_vy})
+
+
 # ---- void fall / respawn (D-050, D-053, D-043) --------------------------------------
 
 func _void_fall(w: Dictionary, ev: Array) -> void:

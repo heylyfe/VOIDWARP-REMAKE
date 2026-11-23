@@ -8375,3 +8375,97 @@ jump, land, dash, glide, idle, plus a walk) from two fixed-offset cameras, side-
 owner's angle), 10 frames over one gait cycle for the cyclic poses, with the pose name and frame burned into every
 PNG and one labelled sheet per pose. It shares the course staging with the test (test_player_anim.gd `stage`,
 `tick`, `warm_up`, `buttons_at`), so the sheet and the gate show the same motion.
+
+## D-JUMPPAD-1 (2026-11-22): jump pads are placed by a new terrain module beside the walkway's middle line
+
+**Ruling.** Jump pads are a NEW entity, separate from the generator's launch pads (`W.pads`, level `pads`, the
+canonical `X` line, `controller._try_launch_pad`), which are untouched. Placement is
+`game/terrain/jump_pads.gd` `place_jump_pads(L, cfg)`: a pure function of the packed Level dict, run after
+`voidgen.generate()` (world.gd's level build and bot_run.gd call `attach(L)`), stored as `L["jump_pads"]`. It draws
+from its own VoidRng stream, `mix(base, 0x4A504144)` where `base` is the generator's own per-attempt base, so the
+level hash still determines the pads while `to_text()` - and so PARITY 56/56 and GALLERY_PIN 16/16 - is unchanged
+(test_jump_pads asserts the hash and text are identical before and after `attach`). The owner's "next to paths,
+never on them" is read as: the route is a straight 3-wide walkway's middle column (the generator's own `o == 0`
+column, read off the piece bbox: the axis whose extent equals `w` is the width; a square or non-straight walkway
+is skipped) plus any GEN 4 centre-lane tile; a pad goes on the lane one tile to the side, with the route tile
+right next to it at the same height. "Never on stairs" bars the `stair` arch (TERRAIN_SPEC's "jump stairs", 2 HU
+risers) and `ramp` walkways and any tile with a riser of more than 1 HU beside it on its piece; the `step` arch
+("stepped climbs", 1 HU risers the auto step-up walks) is allowed - excluding it too left 31 of 40 probe levels
+without a single pad. Also barred: the hub piece and beacon, gift and tripmine slots and the 8 tiles around each,
+launch pads and their landing tiles and the 8 around each, a tile with a prop, overhead geometry within 18 HU in
+the 3x3 columns. Count by level (1 / 2 / 3 / 4 from levels 1 / 3 / 6 / 10), at most one per walkway, >= 12 tiles
+apart. Measured on seeds 1/7/42/99/123 x levels 1/2/3/5/8/12/20/30: 40 of 40 levels get their full count.
+
+**Why.** The generator is frozen and hashed; a pure post-pass keeps every pin while still being level data.
+The first rule (any non-route tile 4-adjacent to a GEN 4 centre-lane tile) was caught by the test's independent
+bbox checker putting pads on the middle line where the GEN 4 test fails (a row next to a gap or prop), so the
+lateral-axis rule replaced it.
+
+## D-JUMPPAD-2 (2026-11-22): the fling is 20 u/s straight up, horizontal momentum kept [CONTESTABLE]
+
+**Ruling.** `data/jump_pads.json` `launch_speed` 20.0: apex v^2/2g = 6.25 u under gravity 32, about 1.25 s to come
+back to the pad's height. A normal jump is 12 u/s = 2.25 u; a `stair` walkway climbs at most 3 u, so 6.25 u is
+"about two stair runs" of height plus air time worth using (a glider gets 1.25 s up before it can deploy). `vx` /
+`vz` are not written. The pad fires for a grounded player whose feet are on the pad tile's top and whose centre
+is inside its cell, on the sim tick after the controller step (the slot MinesScript.tick runs in).
+`jump_pad_launch` also clears `coyote` and `buffer`: a coyote jump in the next 0.1 s would otherwise REPLACE the
+fling with 12 u/s.
+
+**Why contestable.** "About 2 stairs-worth" could also mean two 1 u stair risers (2 u), which is below a normal
+jump and could not be the intent; one number in data flips it.
+
+## D-JUMPPAD-3 (2026-11-22): the refill list lives in controller.jump_pad_launch()
+
+**Ruling.** Refilled: `air_jumps` -> `air_jumps_max`; `dash_ready` true, `dash_cd` 0; `bonus_dashes` ->
+`bonus_dashes_max`, `bonus_cd` 0; `glide_energy` -> `_glide_max()` (base + `glide_energy_bonus`); `updraft_ready`
+-> `updraft_owned` (an unowned glider is NOT granted the rise, D-T053-6), `updraft_cd` 0, `updraft_used` false;
+`lock` 0 (the owner's list). NOT touched: `charges` / `charge_cap`, gold (not controller state),
+`barrier_shields`, `last_light_spent`, `invuln`, Field Dressing. `ControllerScript.JUMP_PAD_REFILLS` names the
+list; test_jump_pads checks every row on all three kits, and its negative controls prove the checker reports all
+8 rows on an un-launched controller and catches a launch that also refilled charges and the shield.
+
+**Review objection declined (2026-11-22, Terra / gpt-6.1-terra xhigh, finding 3).** Terra objected that
+`jump_pad_launch()` resets `updraft_used`, which is outside the owner's expressly exhaustive refill list, that the
+test requires the extra reset and so reinforces the deviation, and asked for the write to be removed or the
+requirement changed. Declined by the orchestrator: the write stays, as a SAFEGUARD rather than as what makes the
+rise work today. The rise in `controller.step()` is gated on `updraft_ready ... and not updraft_used`
+(controller.gd:475), and the glide-engage block already clears `updraft_used` on every fresh glide engagement
+(controller.gd:458) while a launch ends any glide - so the rise would still be usable without this write, and
+removing it fails only test_jump_pads' flag row, not the new usability leg. The write is kept so the refill is
+self-contained instead of resting on that coupling: a future change to glide engagement cannot then silently
+leave the rise flagged but unusable. The `JUMP_PAD_REFILLS` comment says the same.
+test_jump_pads now also asserts the rise is USABLE after a pad: a drained glider that owns it is flung, presses
+jump on falling ticks (spending its refilled air jumps) and must fire `updraft_rise` exactly once before landing;
+negative controls: the same flight with the rise drained again after the launch, and an unowned glider, fire 0.
+
+## D-JUMPPAD-4 (2026-11-22): per-pad re-arm in integer ticks, hashed; the collapse takes pads with their tiles
+
+**Ruling.** `game/sim/jump_pads.gd` (LevelState `jump_pads`, built from `L["jump_pads"]`, null when the key is
+absent): `ready_tick[i]` = the first tick pad i may fire again, set to `tick + rearm_ticks` on firing
+(`rearm_s` 0.5 -> 30 ticks); `lost` bitset. state_hash.gd dumps `JUMPPADS <ready csv> <lost hex> <rearm_ticks>
+<launch_speed bits>` only when the level carries pads, so every dump of a level built without them is
+byte-identical (the random-input replay and every older fixture). world.gd's `_collapse_sweep` calls `sweep()`
+with the fallen keys (a pad goes down with its tile and never fires again); a tile a curse removes for a while
+hides the pad and stops it firing (`tile_alive`) without losing it. No RNG at runtime.
+
+**Amended (2026-11-22, Terra review findings 1 and 2).** (1) The world and bot paths copy the controller into
+`lv.players[0]` before the pad tick, so a launch left the hashed row grounded with its old velocity until the next
+tick. `JumpPadsScript.tick` now writes `vx / vy / vz / grounded` back into `lv.players[i]` after it fires
+(`_sync_row`), which fixes both callers at once; test_jump_pads `_launch_tick_row` checks the launch-tick row
+and hash against a controller-synced row. (2) Placement depends on data/jump_pads.json (count, spacing), which the
+level hash does not cover, so the line is now `JUMPPADS <pads x:z:y csv> <ready csv> <lost hex> <rearm_ticks>
+<launch_speed bits>` with the coordinates in pad id order; `_hash_positions` checks that a moved pad and a swapped
+placement order both change the hash at an unchanged level hash and pad count. A level without pads still writes
+no JUMPPADS line, so its dumps are unchanged.
+
+## D-JUMPPAD-5 (2026-11-22): the pad view and the boing
+
+**Ruling.** `game/view/jump_pad_view.gd` (wired at world.gd's level build and view pass only; none of the
+animation functions D-ANIM-* owns are touched): a procedural rounded-square slab 0.84 u wide, 0.16 u tall,
+0.22 u corner radius with a 0.07 u soft top bevel, 0.012 u above the tile, saturated glossy semi-transparent blue
+`#1A2BFF` (alpha 0.8, clearcoat, rim, emission 0.9 armed with a 1 Hz pulse / 0.2 while re-arming;
+palette.json `jump_pad`). Everything animated derives from the sim state and tick (no view clock): the slab
+squashes to 35 % in 0.06 s and springs back through ~1.19x (settled by 0.9 s), two additive rings ripple from
+0.45 u to 2.1 u over 0.45 s. Audio: `player/jump_pad` (synth_cues.gd seed 24, 0.55 s) - a 140 -> 620 Hz
+rising sine with a decaying 26 Hz wobble over a 70 Hz thump, played on the `jump_pad_launch` event. No
+first-use hint (optional in the spec). Screenshot proof: tools/shot_jump_pad.gd (windowed).

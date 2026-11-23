@@ -34,6 +34,7 @@ const CUES := [
 	["player", "land", 0.24, 21],
 	["player", "dash", 0.30, 22],
 	["player", "glide", 1.50, 23],
+	["player", "jump_pad", 0.55, 24],
 	["world", "gift_pickup_01", 0.22, 31],
 	["world", "gift_pickup_02", 0.22, 32],
 	["world", "gift_pickup_03", 0.22, 33],
@@ -106,6 +107,7 @@ func _render(cue: String, n: int, rng: Lcg) -> PackedFloat32Array:
 			"land": _land(buf, n, rng)
 			"dash": _dash(buf, n, rng)
 			"glide": _glide(buf, n, rng)
+			"jump_pad": _jump_pad(buf, n, rng)
 			"level_complete": _level_complete(buf, n, rng)
 			"death": _death(buf, n, rng)
 			"collapse_crack": _collapse_crack(buf, n, rng)
@@ -119,6 +121,27 @@ func _render(cue: String, n: int, rng: Lcg) -> PackedFloat32Array:
 
 
 # ---- voices ---------------------------------------------------------------------
+
+# Jump pad (D-JUMPPAD-5): a springy rising boing. A sine whose pitch sweeps up (140 -> ~620 Hz,
+# exponential approach) with a vibrato that starts fast and wide and settles - the spring's
+# wobble - over a short low thump (the pad compressing) and a breath of filtered noise.
+func _jump_pad(buf: PackedFloat32Array, n: int, rng: Lcg) -> void:
+	var a := _lp_coef(1800.0)
+	var lp := 0.0
+	var phase := 0.0
+	var phase2 := 0.0
+	for i in n:
+		var t := float(i) / float(RATE)
+		var sweep := 140.0 + 480.0 * (1.0 - exp(-7.0 * t))
+		var wob := 1.0 + 0.10 * exp(-9.0 * t) * sin(TAU_F * 26.0 * t)
+		var hz := sweep * wob
+		phase += TAU_F * hz / float(RATE)
+		phase2 += TAU_F * hz * 2.0 / float(RATE)
+		var env := minf(1.0, t / 0.008) * exp(-4.2 * t)
+		var tone := sin(phase) * 0.8 + sin(phase2) * 0.18
+		var thump := sin(TAU_F * 70.0 * t) * exp(-30.0 * t)
+		lp += a * (rng.next() - lp)
+		buf[i] = tone * env + thump * 0.6 + lp * exp(-25.0 * t) * 0.25
 
 # One-pole lowpass coefficient for a cutoff in Hz (the filter state is the caller's).
 static func _lp_coef(cutoff: float) -> float:
