@@ -92,7 +92,7 @@
 	},
 	"behavior": "Floats toward the nearest player at 3.4 u/s; within 8 u, it stops and rumbles 3.0 s, then a shockwave ring expands 9 u/s to 8 u (1.0 u tall, 0.6 u thick, plane of its feet). Hit = kill. Touch = kill.",
 	"tell": "Within 8 u: it stops and rumbles 3.0 s",
-	"counter_play": "jump as the ring reaches you (jump height > 1.0 u from 0.10 s to 0.65 s — a 0.56 s window for a 0.16 s crossing), or stand ≥ 1.5 u above or below its feet, or be more than 8.7 u away when it releases (the ring's cap plus its 0.7 u hit band). Under Echo Ring: jump 0.25–0.65 s before the first ring and jump again on landing — hard but learnable.",
+	"counter_play": "jump as the ring reaches you (jump height > 1.0 u from 0.10 s to 0.65 s — a 0.56 s window for a 0.16 s crossing), or stand ≥ 1.5 u above or below its feet, or be more than 8.7 u away when it releases (the 8 u cap plus the 0.7 u hit band). Under Echo Ring: jump 0.25–0.65 s before the first ring and jump again on landing — hard but learnable.",
 	"sprites": "res://content/enemies/you/sprites.json",
 	"script": true
 }
