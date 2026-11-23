@@ -7,7 +7,7 @@ extends SceneTree
 #   <godot> --path game --script res://tools/shot_jump_pad.gd -- <abs_out_dir> [seed] [level]
 #
 # Writes <out_dir>/jumppad_00.png .. jumppad_02.png:
-#   jumppad_00  the pad at rest beside the walkway's middle lane (camera pulled in)
+#   jumppad_00  the 3x3 pad at rest beside the path (camera pulled back to frame the block)
 #   jumppad_01  the player put on the pad: 3 ticks after it fired (compressed + ripple)
 #   jumppad_02  the same, 30 ticks later: the player high above the pad (third-person camera)
 #
@@ -66,8 +66,8 @@ func _run() -> void:
 	if rig != null:
 		rig.set_process(false)
 		rig.set_physics_process(false)
-	cam.global_position = pad + Vector3(3.2, 2.6, 3.4)
-	cam.look_at(pad + Vector3(-0.3, 0.0, -0.3), Vector3.UP)
+	cam.global_position = pad + Vector3(5.0, 4.0, 5.2)
+	cam.look_at(pad + Vector3(-0.4, 0.0, -0.4), Vector3.UP)
 	await _shot("jumppad_00")
 	# 1: put the player on the pad and let it fire
 	var ctl = _world.ctl
@@ -89,7 +89,7 @@ func _run() -> void:
 		_fail = "the pad did not fire with the player on it"
 		_finish()
 		return
-	cam.global_position = pad + Vector3(3.6, 3.2, 3.8)
+	cam.global_position = pad + Vector3(5.4, 4.6, 5.6)
 	cam.look_at(pad + Vector3(0.0, 0.6, 0.0), Vector3.UP)
 	await _shot("jumppad_01")
 	# 2: the fling, from the gameplay camera

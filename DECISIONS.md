@@ -8613,3 +8613,95 @@ squashes to 35 % in 0.06 s and springs back through ~1.19x (settled by 0.9 s), t
 0.45 u to 2.1 u over 0.45 s. Audio: `player/jump_pad` (synth_cues.gd seed 24, 0.55 s) - a 140 -> 620 Hz
 rising sine with a decaying 26 Hz wobble over a 70 Hz thump, played on the `jump_pad_launch` event. No
 first-use hint (optional in the spec). Screenshot proof: tools/shot_jump_pad.gd (windowed).
+
+## D-JUMPPAD-6 (2026-11-23): a jump pad is a 3x3 BLOCK of floor tiles, outside the paths
+
+**Owner's words (cycle 7 brief, T6):** "jump pads revamp (3x3 tiles, outside paths, 2 to 6 per level)" and
+"Pads must be 3x3 TILES big and NOT on the paths: outside the paths (adjacent to them), never on
+mines/gifts/beacon/hub/stairs. Count per level: minimum 2, maximum 6 on big levels (scale with level size; in
+data)."
+
+**Ruling.** `L["jump_pads"]` entries are still `[x, z, y]`, but they are now the CENTRE tile of a
+`size_tiles` x `size_tiles` block (`data/jump_pads.json`, 3 -> a 3x3 block, `half_extent()` = 1,
+`footprint()` lists the 9 cells). A block is legal only when all 9 cells exist at that one height and every
+one of them is a FLOOR tile (piece `kind` 0) of a non-hub platform piece, with no ramp tile (`t[3] != 0`), no
+prop, and none of them a gift slot, a tripmine slot, the beacon tile, a launch pad or its landing tile. The
+count comes from `count_by_level`: 2 at level 1, 3 from 4, 4 from 8, 5 from 14, 6 from 20.
+
+**Why the pads left the walkways.** The old rule put a pad on a walkway's side lane, one tile beside the
+centre lane. A walkway is exactly 3 tiles wide (`WALK_W`), so a 3x3 block on it always covers the centre lane -
+it would be ON the route, which the owner forbids. There is no 3x3 block that both sits on a walkway and
+misses its middle line, so "3x3" and "never on the route" together mean the pad must be off the walkway
+entirely. The floor tiles beside the path are the platform pieces, which is where the pads now go: the block
+is on the platform, the walkway runs past its edge. That is also what the owner's reference
+(`game/out/owner_refs/jumppad_ref.png`) shows - a big blue slab on the floor with the checkered path at its
+corner.
+
+**"Never on" replaces "never on or beside".** The old placement banned the 8 neighbours of every gift, mine
+and launch pad. The owner's new wording is "never on mines/gifts/beacon/hub/stairs", so the ban is now the
+exact tile. This is not a relaxation for convenience: it is what the brief says, and it is what makes 2..6
+pads possible at all - the 8-neighbourhood ban covers 9 cells per gift/mine/launch pad, and on a level with
+~15 gifts and ~6 launch pads that is ~190 of ~900 tiles, which left several levels with no legal 3x3 block
+anywhere (measured: seed 1 level 3, seed 7 level 3, seed 42 level 20 and others had zero). A pad may now sit
+right beside a gift or a mine, never over one.
+
+**Count floor.** The sweep in D-JUMPPAD-7 (20 seeds x 8 levels) never produced fewer than 2 pads on any level,
+so the "a level genuinely has no room" case is not reachable on the current generator and the test asserts the
+floor of 2 rather than tolerating 1. The code still never invents a spot: it places `min(count_by_level,
+what the greedy can take)`, and the test asserts that a level which gets fewer than it wants is MAXIMAL - no
+further legal block could be added without breaking the spacing or the one-pad-per-platform rule.
+
+## D-JUMPPAD-7 (2026-11-23): "adjacent to the paths" is a preference, not a distance cap [CONTESTABLE]
+
+**Ruling.** Candidates carry their XZ gap to the nearest walkway tile within `path_step_hu` (data, 4 HU) of
+the block's height - 0 = the path runs right against the block, 1 = one empty cell between, and so on - and
+`place_jump_pads` takes them NEAREST FIRST (ties broken by the pad RNG stream), then greedily with
+`min_spacing_tiles` and at most one pad per platform piece. The gap is a preference, not a filter.
+
+**Why not a hard cap.** Measured over 20 seeds x 8 levels with the full D-JUMPPAD-6 rule: a hard "within 1
+tile of the path" cap leaves 0 legal blocks on most levels, "within 2" still leaves 0 on several, and even
+"within 4" leaves 0 on some (the generator separates pieces by at least one empty cell, and a platform's
+rim is ragged, so a 3x3 block rarely fits right at the walkway mouth). A hard cap therefore cannot honour the
+owner's floor of 2 pads. Nearest-first gets the same result where the level allows it and degrades to the
+closest available block where it does not: with the shipped data, 510 of 570 pads over that sweep sit at gap
+0 (the path runs against the block's edge), 45 at gap 1, 11 at gap 2, and the remaining 4 are on platforms
+whose nearest walkway is far (a spire reached only by a launch pad). The test asserts the ordering directly:
+the gaps never decrease in placement order, and pad 0 is the closest legal block on the level.
+
+**`path_step_hu` = 4.** The generator steps a walkway 1-2 HU off its parent platform at the junction, and a
+`stair` walkway climbs 2 HU per row, so a walkway at the same height as the platform is the exception. 4 HU
+covers the junction step and the first stair row without reaching a walkway on another storey (two layers are
+distinct at `CLEAR` = 12 HU).
+
+**`min_spacing_tiles` 12 -> 8.** The old 12 was tuned for 1-tile pads. A 3x3 pad is 9 tiles, so 8 keeps two
+pads clearly apart (their blocks are 5 tiles apart at the closest) while still letting a big level carry 6.
+At 12 the level-20 and level-30 sweeps lost pads to spacing rather than to a lack of legal blocks.
+
+## D-JUMPPAD-8 (2026-11-23): the sim fires from any of the 9 cells, and the collapse takes the whole block
+
+**Ruling.** `sim/jump_pads.gd` maps EVERY cell of a pad's block to that pad id (`_at`), so `pad_at()` finds the
+pad from any of the 9 tiles and `tick()` fires for a player standing on any of them. The tile-alive check in
+`tick()` is now the cell the player actually stands on (`floor(x), floor(z)`), not the block's centre, so a
+curse that removes one cell stops the pad only for a player on that cell. `tile_keys(i)` returns all 9
+collision keys; `sweep()` drops the pad when ANY of them falls in the platform collapse (the pad goes down
+with the tile it lost), and the view hides the pad while any of its cells is in the world's removed set.
+`tile_key(i)` still returns the centre key. Launch, refill, re-arm, the hash and the collapse behaviour are
+otherwise unchanged: same 20 u/s fling, same `jump_pad_launch()` refill list, same 30-tick re-arm, same
+`_sync_row` on the launch tick.
+
+## D-JUMPPAD-9 (2026-11-23): the 3x3 slab, and the state hash line grows a size field
+
+**Ruling.** `view/jump_pad_view.gd` draws the same saturated glossy blue rounded slab, now 2.9 u across (the
+3 u block less 0.05 u a side, so it never overhangs the block), 0.55 u corner radius, 0.10 u bevel, same
+0.16 u height, same 0.012 u lift, same colour and glow. The squash / rebound curve, the re-arm dimming and the
+1 Hz pulse are untouched; the two ripple rings now start at 1.5 u and expand to 4.4 u so they still read
+around a pad three times the size. The slab is centred on the anchor tile, so it covers the whole block.
+
+**State hash.** The `JUMPPADS` line gains a trailing `size_tiles` field: the coordinates are the block's
+centre, and the block size is data (`data/jump_pads.json`) that the level hash does not cover, so without it
+two runs whose data differed in `size_tiles` would hash alike while the pads covered different tiles. The line
+is still written only when the level carries pads, so a level built without them keeps its exact dump. The
+hash VALUE changes for every level that has pads - that is the point of the revamp, not a regression - and no
+golden fixture pins a state hash: `test_replay.gd` compares runs against each other, and the jump-pad suite
+compares a run against its own replay, so nothing had to be re-pinned. The determinism tests are unchanged and
+none was weakened.

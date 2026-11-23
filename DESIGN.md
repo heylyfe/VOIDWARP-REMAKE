@@ -149,35 +149,40 @@ the stipend + Paycheck.
 - **Straggler beam**: when ≤ 20% of REAL black gifts remain, each remaining one emits a vertical beam
   (`#7CFFF4`, to Y +40 u). Same rule for gold gifts in the gold phase.
 
-### 3.4 Jump pads (D-JUMPPAD-1..5)
+### 3.4 Jump pads (D-JUMPPAD-1..9)
 A **jump pad** is NOT a launch pad. Launch pads are the generator's ballistic throws onto a target tile
 (TERRAIN_SPEC §4, level `pads`, canonical `X` line) and are load-bearing for reachability; nothing below
 changes them. A jump pad is a movement toy that sits beside the route.
+- **Shape**: a **3×3 block of tiles** (`size_tiles` in data), anchored on its centre tile — the stored
+  `[x, z, y]` is that centre, and the block covers the 8 tiles around it at the same height.
 - **Placement** (`game/terrain/jump_pads.gd`, `place_jump_pads(L, cfg)`): a pure function of the Level
   dict, run after `voidgen.generate()` and stored as `L["jump_pads"] = [[x, z, y], ...]`. The frozen
-  generator and its canonical text are untouched, so the level hash still determines the pads. A pad
-  sits on a flat floor tile of a straight walkway **one lane beside the walkway's middle line** (the
-  route), with the route tile right next to it at the same height — never on the route, never on or
-  beside a gift slot or tripmine, never on the hub (beacon), never on a jump-stair (`stair`) or `ramp`
-  walkway or next to a riser of more than 1 HU, never on or beside a launch pad or its landing tile,
-  never under overhead geometry within 18 HU. Count by level number (1 / 2 / 3 / 4 from levels
-  1 / 3 / 6 / 10), at most one per walkway, ≥ 12 tiles apart; fewer when a level has fewer legal
-  spots. All numbers live in `game/data/jump_pads.json`.
-- **Launch**: a grounded player whose feet are on the pad tile's top is flung straight up at
-  **20 u/s** (apex 6.25 u, about 1.25 s back to the pad's height; a normal jump is 2.25 u). The
-  horizontal velocity is kept.
+  generator and its canonical text are untouched, so the level hash still determines the pads. A pad sits
+  **outside the paths**: every tile of the block is a flat floor tile of a platform piece, so no tile is a
+  walkway tile (the path) or a walkway's middle line (the route) — a 3-wide walkway has no room for a 3×3
+  block that misses its centre lane, which is why the pads left the walkways. Never on the hub (beacon),
+  a ramp tile, a prop, a gift slot, a tripmine, the beacon tile, a launch pad or its landing tile; never
+  under overhead geometry within 18 HU of the block's own columns. Placement prefers the blocks **nearest
+  the path** (the XZ gap to the nearest walkway tile within 4 HU, nearest first), so a pad sits as close
+  to the route as the level allows. Count by level number (2 / 3 / 4 / 5 / 6 from levels 1 / 4 / 8 / 14 /
+  20), at most one per platform, ≥ 8 tiles apart; fewer only when no further legal block can be added.
+  All numbers live in `game/data/jump_pads.json`.
+- **Launch**: a grounded player whose feet are on the top of **any of the block's 9 tiles** is flung
+  straight up at **20 u/s** (apex 6.25 u, about 1.25 s back to the pad's height; a normal jump is
+  2.25 u). The horizontal velocity is kept.
 - **Refill — movement only** (`controller.jump_pad_launch()`, the one place the list lives): air
   jumps, the dash and its cooldown, Twin Dash's stock and cooldown, the glider's energy (full, base +
   bonus), the Updraft (only if owned) and its cooldown, the ability lock. **Not** refilled: void
   charges, gold, the Subspacial Barrier shield, Last Light, invulnerability.
 - **Re-arm**: a pad is inert for **0.5 s (30 ticks)** after it fires, so standing on it cannot
   chain-fire; per pad, integer ticks, in the state hash (`JUMPPADS` line) and replayed exactly.
-- **Collapse**: a pad on a tile that falls falls with it (lost for the level); a pad on a tile a curse
-  removes for a while is hidden and inert until the tile returns.
+- **Collapse**: a pad whose block loses **any** tile falls with it (lost for the level); a pad with a
+  tile a curse removes for a while is hidden and inert until the tile returns.
 - **Feedback**: a springy rising "boing" (`assets/audio/player/jump_pad.wav`, synth_cues.gd), the slab
   compresses to 35 % and rebounds through ~1.19×, two rings ripple out, and the glow dims while the pad
-  re-arms. Look: a saturated blue, glossy, semi-transparent rounded-square slab just above the floor
-  (owner reference `game/out/owner_refs/jumppad_ref.png`; `game/view/jump_pad_view.gd`).
+  re-arms. Look: a saturated blue, glossy, semi-transparent rounded-square slab just above the floor,
+  2.9 u across so it covers the whole 3×3 block (owner reference `game/out/owner_refs/jumppad_ref.png`;
+  `game/view/jump_pad_view.gd`).
 
 ## 4. Classes [CANON roster]
 

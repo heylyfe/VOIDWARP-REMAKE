@@ -52,12 +52,11 @@ static func create(level: Dictionary, cfg: Dictionary = {}) -> RefCounted:
 		var id: int = jp.pads.size()
 		jp.pads.append([int(p[0]), int(p[1]), int(p[2])])
 		# every cell of the block maps to the pad, so standing on any of them fires it
-		for dx in range(-jp.half, jp.half + 1):
-			for dz in range(-jp.half, jp.half + 1):
-				var key := "%d,%d" % [int(p[0]) + dx, int(p[1]) + dz]
-				if not jp._at.has(key):
-					jp._at[key] = []
-				(jp._at[key] as Array).append(id)
+		for cell in JumpPadPlaceScript.footprint(int(p[0]), int(p[1]), int(p[2]), jp.half):
+			var key := "%d,%d" % [int(cell[0]), int(cell[1])]
+			if not jp._at.has(key):
+				jp._at[key] = []
+			(jp._at[key] as Array).append(id)
 	jp.ready_tick.resize(jp.pads.size())
 	jp.ready_tick.fill(0)
 	jp.lost.resize((jp.pads.size() + 7) >> 3)
@@ -87,9 +86,8 @@ func tile_key(i: int) -> String:
 func tile_keys(i: int) -> PackedStringArray:
 	var p: Array = pads[i]
 	var out := PackedStringArray()
-	for dx in range(-half, half + 1):
-		for dz in range(-half, half + 1):
-			out.append(CollisionScript.tile_key(int(p[0]) + dx, int(p[1]) + dz, int(p[2])))
+	for cell in JumpPadPlaceScript.footprint(int(p[0]), int(p[1]), int(p[2]), half):
+		out.append(CollisionScript.tile_key(int(cell[0]), int(cell[1]), int(cell[2])))
 	return out
 
 

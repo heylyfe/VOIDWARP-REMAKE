@@ -43,7 +43,6 @@ const DATA_PATH := "res://data/jump_pads.json"
 # streams are, with a value no ST_* constant uses ("JPAD").
 const ST_JUMP_PADS := 0x4A504144
 const CLEAR := 12                     # voidgen.CLEAR: two layers are distinct at >= 12 HU
-const N4 := [Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(0, -1)]
 
 # Mirrors data/jump_pads.json; the file wins for every key it carries.
 const DEFAULTS := {
@@ -126,54 +125,31 @@ static func stream_seed(L: Dictionary) -> int:
 
 # ---- geometry helpers over the packed Level dict ------------------------------------------
 
+## Three lookups over the packed Level: `cell` (x, z, y) -> tile index, `col` (x, z) -> tile
+## indices in that column (the headroom test), `pcol` (x, z) -> props in that column.
 static func _index(L: Dictionary) -> Dictionary:
-	var col: Dictionary = {}
 	var cell: Dictionary = {}
+	var col: Dictionary = {}
 	var tiles: Array = L["tiles"]
 	for i in tiles.size():
 		var t: Array = tiles[i]
+		cell[Vector3i(int(t[0]), int(t[1]), int(t[2]))] = i
 		var key := Vector2i(int(t[0]), int(t[1]))
 		if not col.has(key):
 			col[key] = []
 		(col[key] as Array).append(i)
-		cell[Vector3i(int(t[0]), int(t[1]), int(t[2]))] = i
 	var pcol: Dictionary = {}
 	for p in L["props"]:
 		var key2 := Vector2i(int(p[0]), int(p[1]))
 		if not pcol.has(key2):
 			pcol[key2] = []
 		(pcol[key2] as Array).append(p)
-	return {"col": col, "cell": cell, "pcol": pcol}
+	return {"cell": cell, "col": col, "pcol": pcol}
 
 
 static func _has_prop(ix: Dictionary, x: int, z: int, y: int) -> bool:
 	for p in ix["pcol"].get(Vector2i(x, z), []):
 		if int(p[2]) == y:
-			return true
-	return false
-
-
-# voidgen.lane_cell over the packed Level.
-static func _lane_cell(L: Dictionary, ix: Dictionary, x: int, z: int, y: int) -> bool:
-	for j in ix["col"].get(Vector2i(x, z), []):
-		var tj: Array = L["tiles"][j]
-		if absi(int(tj[2]) - y) < CLEAR and not _has_prop(ix, x, z, int(tj[2])):
-			return true
-	return false
-
-
-## True when tile i is on a walkway's centre lane - the ROUTE (voidgen.centre_lane, GEN 4).
-static func on_route(L: Dictionary, ix: Dictionary, i: int) -> bool:
-	var t: Array = L["tiles"][i]
-	var x := int(t[0])
-	var z := int(t[1])
-	var y := int(t[2])
-	for d in N4:
-		if not _lane_cell(L, ix, x + d.x, z + d.y, y):
-			return false
-	for a in [Vector2i(1, 0), Vector2i(0, 1)]:
-		if not _lane_cell(L, ix, x + 2 * a.x, z + 2 * a.y, y) \
-				and not _lane_cell(L, ix, x - 2 * a.x, z - 2 * a.y, y):
 			return true
 	return false
 
