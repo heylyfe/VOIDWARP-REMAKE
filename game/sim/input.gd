@@ -11,6 +11,7 @@ extends RefCounted
 const BUTTON_JUMP := 1
 const BUTTON_ABILITY := 2
 const BUTTON_INTERACT := 4
+const BUTTON_FIRE := 8
 
 ## int8 signed range, but the axis contract (D-T010-2) caps the usable magnitude at 127.
 const AXIS_MIN := -127
