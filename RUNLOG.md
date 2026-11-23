@@ -1046,3 +1046,22 @@ Also recorded: I made one process mistake and caught it. `git add -A` after the 
 13:40Z cycle 7: v0.1.15-alpha.3 IS CUT AND VERIFIED. Tag `v0.1.15-alpha.3` on `d27cdb2` (the release commit), pushed, CI green in 1m33s, and `gh release view` confirms it is a PRE-RELEASE (`prerelease: true`, `draft: false`) carrying all three assets - `voidwrap_run.exe` (120,845,432 bytes), `voidwrap_run.x86_64` (85,223,352), `voidwrap_run.zip` (71,653,957) - and stating "Built from d27cdb2c98f83c87bc15e0cbe84f2cbe5d5bfa76", which is the tag commit. I ran the gate on `d27cdb2` myself before tagging: `GATE_EXIT=0`, `GATE OK (9 ran, 0 skipped, 698 s)`, TESTS 142 passed 0 failed, PARITY 56/56, SELFTEST 18/18, GALLERY 16/16. The older tags are untouched and I checked each one rather than assuming: v0.1.8 `42b9037`, v0.1.9 `eb3b31c`, v0.1.10 `c1b3f4d`, v0.1.11 `0033013`, v0.1.12 `112050c`, v0.1.13 `d717097`, v0.1.14 `12a0931`. The release carries all eight cycle 7 tracks: the Peter Griffin boss fight at level 10 with the Bankai easter egg, the Claude clawd revamp, the Gin sword revamp, the "you?!" retune, the 3x3 jump pads, the refined player model look, and the custom launcher icon. The TESTER build is NOT in it and never will be - it is a separate preset, excluded from all three public presets and built only by `tools/build_tester.ps1` into `game/out/tester/`.
 
 Session state: main is `d27cdb2`, clean, pushed, gate-green, tag pushed and released. Nothing is in flight and no worker is running. Open for the owner: (1) the jump-pad floor of 2 is not met on 14 of 160 measured levels, all on levels 1-5, all proven pair-free - meeting it needs a change to the frozen generator; (2) the Peter laugh is a synthesised placeholder until the owner drops `game/assets/owner_third_party/peter/laugh.ogg|mp3|wav` in; (3) the Gin voice is the cleaned-up clip, so the owner should listen to it once and say whether the denoise is acceptable; (4) the two older open decisions from cycle 5 (collapse first-crack delay 5 s vs 20 s, PARKED row 35 balance) are still open.
+
+Cycle 8 U3: tuned Bankai to the requested numeric threshold 0.0025 (1 in 400,
+with 1 in 250 corresponding to 0.004). The same seeded draw now selects
+192, 1577, 3279, 3448, 3734, 3769 and 3963 in addition to 839 and 1364 in the
+level-10 test sweep. The replay fixture's first qualifying seed moves from
+839 to 192. No stored state or terrain gallery hash needed a new value.
+
+FORCE BANKAI now follows the live arena timeline. The fallback uses the existing
+owner MP3 (both files MD5 298fab131793a4edb83d835cfb201d79). The windowed probe
+started it at 468 (7.800 s), observed the natural finish at 711 (11.850 s), and
+restored the camera at 1530 (25.500 s). SHOT_EXIT=0, nine PNGs in
+C:/Users/Nathan/AppData/Local/Temp/bankai-u3-screenshots.zip. The headless smoke
+passed at 30 and 144 FPS, including input lock, 300 gold, beacon and level
+completion. Negative controls confirmed failures for the old threshold, removed
+voice fallback, missing impact, overly loud kill and delayed camera transition.
+Decisions D-T8B-9 through D-T8B-11.
+
+Gate: GATE_EXIT=0, GATE OK (9 ran, 0 skipped, 676 s), TESTS 143 passed 0 failed,
+PARITY 56/56, SELFTEST 18/18, GALLERY 16/16.
