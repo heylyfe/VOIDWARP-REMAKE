@@ -9602,16 +9602,27 @@ none was weakened.
 
 ## D-T8B-9 (2026-11-23) Cycle 8: increase the seeded Bankai threshold
 
-Use the explicit requested threshold 0.0025, which is 1 in 400. An exact 1 in 250
-would be 0.004. The single draw remains keyed by run seed and level at fight start.
-In the level-10 sweep of seeds 0 through 4095, the old threshold selected 839 and
-1364. The new threshold also selects 192, 1577, 3279, 3448, 3734, 3769 and 3963.
-These seeds cross the increased threshold on the same draw, which changes their
-hashed Bankai selection and ensuing fight trace. The replay test dynamically
-chooses the first selected seed, so its Bankai leg moves from 839 to 192. The
-framework test now pins the full selected set in this sweep. The terrain gallery
-pins terrain hashes, and the boss replay checks compare traces between runs, so
-there are no stored hash values to re-pin.
+The owner asked for 1 in 250, so the threshold is 0.004. The single draw remains
+keyed by run seed and level at fight start, unchanged in shape: one
+`_roll(VoidRng.mix(run_seed, level_no), chance)` at fight start, no second draw,
+no wall-clock or frame-count input. In the level-10 sweep of seeds 0 through 4095,
+the old 0.001 threshold selected 839 and 1364. The new threshold selects 18 seeds:
+70, 192, 297, 839, 1364, 1517, 1577, 1662, 1810, 1979, 2128, 2596, 2726, 3279,
+3448, 3734, 3769 and 3963. These seeds cross the increased threshold on the same
+draw, which changes their hashed Bankai selection and ensuing fight trace. The
+replay test dynamically chooses the first selected seed, so its Bankai leg moves
+from 839 to 70. The framework test now pins the full selected set in this sweep.
+The terrain gallery pins terrain hashes, and the boss replay checks compare traces
+between runs, so there are no stored hash values to re-pin.
+
+A note on how this entry was reached, because it is a process lesson rather than a
+design one: the first pass shipped 0.0025 and documented it as "1 in 400, an exact
+1 in 250 would be 0.004". That was the worker correctly reading a wrong number out
+of its brief - the orchestrator had written 0.0025 next to the words "1 in 250".
+The worker flagged the discrepancy instead of silently matching either the number
+or the words, which is why it was caught before the merge. The owner's intent is
+the odds, not the decimal, so the decimal was corrected to 0.004 and the pinned
+seed set recomputed from the RNG rather than guessed.
 
 ## D-T8B-10 (2026-11-23) Cycle 8: the owner's voice and procedural support cues
 

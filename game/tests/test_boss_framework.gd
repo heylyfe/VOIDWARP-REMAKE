@@ -63,7 +63,8 @@ func _rolls_and_damage(failures: Array[String]) -> void:
 			return
 	if crits < 160 or crits > 250:
 		failures.append("unexpected crit count across 4096 seeds: %d" % crits)
-	if selected != [192, 839, 1364, 1577, 3279, 3448, 3734, 3769, 3963]:
+	if selected != [70, 192, 297, 839, 1364, 1517, 1577, 1662, 1810, 1979, 2128, 2596,
+			2726, 3279, 3448, 3734, 3769, 3963]:
 		failures.append("unexpected Bankai selection across 4096 seeds: %s" % str(selected))
 
 

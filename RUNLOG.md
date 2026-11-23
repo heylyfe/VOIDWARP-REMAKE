@@ -1047,11 +1047,15 @@ Also recorded: I made one process mistake and caught it. `git add -A` after the 
 
 Session state: main is `d27cdb2`, clean, pushed, gate-green, tag pushed and released. Nothing is in flight and no worker is running. Open for the owner: (1) the jump-pad floor of 2 is not met on 14 of 160 measured levels, all on levels 1-5, all proven pair-free - meeting it needs a change to the frozen generator; (2) the Peter laugh is a synthesised placeholder until the owner drops `game/assets/owner_third_party/peter/laugh.ogg|mp3|wav` in; (3) the Gin voice is the cleaned-up clip, so the owner should listen to it once and say whether the denoise is acceptable; (4) the two older open decisions from cycle 5 (collapse first-crack delay 5 s vs 20 s, PARKED row 35 balance) are still open.
 
-Cycle 8 U3: tuned Bankai to the requested numeric threshold 0.0025 (1 in 400,
-with 1 in 250 corresponding to 0.004). The same seeded draw now selects
-192, 1577, 3279, 3448, 3734, 3769 and 3963 in addition to 839 and 1364 in the
-level-10 test sweep. The replay fixture's first qualifying seed moves from
-839 to 192. No stored state or terrain gallery hash needed a new value.
+Cycle 8 U3: tuned Bankai to the owner's 1 in 250, threshold 0.004. The first pass
+shipped 0.0025 because the orchestrator's brief wrote that number next to the words
+"1 in 250"; the worker flagged that 0.0025 is 1 in 400 rather than silently matching
+either, and the orchestrator corrected the decimal to the odds the owner asked for.
+The same seeded draw now selects 18 seeds in the level-10 sweep of 0 through 4095:
+70, 192, 297, 839, 1364, 1517, 1577, 1662, 1810, 1979, 2128, 2596, 2726, 3279, 3448,
+3734, 3769 and 3963, against 839 and 1364 at the old 0.001. The replay fixture's first
+qualifying seed moves from 839 to 70. No stored state or terrain gallery hash needed a
+new value.
 
 FORCE BANKAI now follows the live arena timeline. The fallback uses the existing
 owner MP3 (both files MD5 298fab131793a4edb83d835cfb201d79). The windowed probe

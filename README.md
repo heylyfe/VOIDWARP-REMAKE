@@ -387,7 +387,7 @@ in-memory state on top of the seed's own run — the seed replay itself stays by
 ## Changelog
 
 **Bankai (unreleased).** The one seeded roll per level-10 boss fight uses a threshold of
-0.0025 (1 in 400). The cinematic plays the owner's voice with quiet synthesized cues.
+0.004 (1 in 250). The cinematic plays the owner's voice with quiet synthesized cues.
 When the sword plants, the camera pulls back and orbits the player for the rest of
 the sequence. Peter's defeat opens the beacon and pays 300 gold. First-person control
 returns at the end. See D-T8B-9 through D-T8B-11.

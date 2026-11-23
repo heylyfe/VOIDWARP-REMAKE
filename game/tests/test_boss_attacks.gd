@@ -165,7 +165,7 @@ func _measured_windows(f: Array[String]) -> void:
 
 
 ## A seed whose fight is NOT the easter egg, so the attack legs see attacks. The roll is
-## 1/400, so the first candidate almost always works; the loop is bounded either way.
+## 1/250, so the first candidate almost always works; the loop is bounded either way.
 static func _plain_seed() -> int:
 	for s in 64:
 		var probe := Boss.new()
@@ -407,7 +407,7 @@ func _bankai(f: Array[String]) -> void:
 
 # ---- 6. a real record/replay ------------------------------------------------------
 
-## A seed whose fight IS the easter egg. The roll is 1/400, so this scans a bounded range
+## A seed whose fight IS the easter egg. The roll is 1/250, so this scans a bounded range
 ## and gives up rather than looping forever.
 static func _bankai_seed() -> int:
 	for s in 4096:
