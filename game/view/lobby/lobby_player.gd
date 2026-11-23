@@ -57,6 +57,15 @@ var _phase := 0.0
 
 
 ## Builds the figure, the fill light and the camera rig at p_spawn (feet on the floor).
+
+# U4 (Terra finding 3): release this subtree's surface-override materials before the
+# node is destroyed, on EVERY free path (the app's transition or a direct free()):
+# a MeshInstance3D's override Refs die before its RS instance is freed, so freeing with
+# the overrides still set leaves a dangling material RID and the dummy renderer prints
+# `ERROR: Parameter "material" is null` (see asset_load.gd release_materials).
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE:
+		AssetLoadScript.release_materials(self)
 func build(p_spawn: Vector3) -> void:
 	x = p_spawn.x
 	y = p_spawn.y

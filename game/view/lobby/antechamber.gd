@@ -173,6 +173,15 @@ var _curses_state: Dictionary = {}
 
 ## Feeds the run's curse state (view/lobby/lobby_scene.gd build()'s ledger). Rebuilds
 ## the selectables on the spot so a mid-visit change is visible at once.
+
+# U4 (Terra finding 3): release this subtree's surface-override materials before the
+# node is destroyed, on EVERY free path (the app's transition or a direct free()):
+# a MeshInstance3D's override Refs die before its RS instance is freed, so freeing with
+# the overrides still set leaves a dangling material RID and the dummy renderer prints
+# `ERROR: Parameter "material" is null` (see asset_load.gd release_materials).
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE:
+		AssetLoadScript.release_materials(self)
 func set_curses_state(p_state: Dictionary) -> void:
 	_curses_state = p_state
 	if lobby != null:
