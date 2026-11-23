@@ -3,6 +3,9 @@ extends RefCounted
 const Controller := preload("res://sim/controller.gd")
 const RunState := preload("res://sim/run_state.gd")
 const StateHash := preload("res://sim/state_hash.gd")
+const EnemyRuntime := preload("res://sim/enemy_runtime.gd")
+const Gin := preload("res://content/enemies/gin/enemy.gd")
+const Util := preload("res://tests/sim_testutil.gd")
 
 const SEED := 1
 const LEVEL := 17
@@ -45,8 +48,13 @@ func run() -> Array[String]:
 			failures.append("throw-to-arrival window was %.1f ms, expected 650 ms" % ms)
 		if trace["voice"] < 0 or trace["voice"] >= launch:
 			failures.append("Gin's voice must precede the launch")
-		if trace["contact"] > 0.001:
-			failures.append("the sword endpoint did not reach the player's feet")
+	if jump["contact"] > 0.001:
+		failures.append("the unobstructed sword missed its fixed release endpoint")
+	if still["impact"] < still["launch"] + 30 or still["impact"] > still["arrival"]:
+		failures.append("standing at the aim point must be dangerous inside the trigger window")
+	if not jump["pending_sensitive"]:
+		failures.append("the pending Gin tick or placement target is missing from the hash")
+	_moving_crossing(failures)
 	return failures
 
 
@@ -63,11 +71,22 @@ func _play(jump: bool, gin: bool, playback: Array = []) -> Dictionary:
 	rs.load_level(world.lv, LEVEL)
 	rs.level = world.lstate
 	rs.run_votes = votes
+	var pending_sensitive := false
+	if gin and not world.rt.planned.is_empty():
+		var before := StateHash.sha256(rs)
+		world.rt.spawn_delay_ticks += 1
+		var tick_sensitive := StateHash.sha256(rs) != before
+		world.rt.spawn_delay_ticks -= 1
+		var entry: Dictionary = world.rt.planned[0]
+		entry["spawn_target"] = 1
+		pending_sensitive = tick_sensitive and StateHash.sha256(rs) != before
+		entry["spawn_target"] = 0
 	var inputs: Array = []
 	var hashes: Array[String] = []
 	var launch := -1
 	var voice := -1
 	var arrival := -1
+	var impact := -1
 	var outcome := ""
 	var contact := INF
 	var jump_seen := false
@@ -98,15 +117,58 @@ func _play(jump: bool, gin: bool, playback: Array = []) -> Dictionary:
 			hash_sensitive = StateHash.sha256(rs) != checkpoint
 			row["gin_sword_pos"] = pos
 		if row["phase"] == "cooldown":
-			arrival = int(world.rt.tick) - 1
+			arrival = int(row["gin_arrival_tick"])
+			impact = int(world.rt.tick) - 1
 			outcome = str(row["gin_outcome"])
 			var pos: Vector3 = row["gin_sword_pos"]
 			contact = Vector2(pos.x, pos.z).distance_to(Vector2(world.ctl.x, world.ctl.z))
 			break
 	var result := {"inputs": inputs, "hashes": hashes, "voice": voice, "launch": launch,
-			"arrival": arrival, "dead": world.ctl.dead, "code": world.ctl.dead_code,
+			"arrival": arrival, "impact": impact, "dead": world.ctl.dead, "code": world.ctl.dead_code,
 			"killer": world.ctl.dead_killer, "outcome": outcome, "contact": contact,
-			"jump_seen": jump_seen, "hash_sensitive": hash_sensitive}
+			"jump_seen": jump_seen, "hash_sensitive": hash_sensitive,
+			"pending_sensitive": pending_sensitive}
 	world.teardown()
 	world.free()
 	return result
+
+
+func _moving_crossing(failures: Array[String]) -> void:
+	var doc: Dictionary = JSON.parse_string(
+			FileAccess.get_file_as_string("res://content/enemies/gin/enemy.json"))
+	var cfg: Dictionary = doc["stats"]
+	var floor_tiles: Array = []
+	for x in range(-2, 12):
+		for z in range(-2, 3):
+			floor_tiles.append([x, z, 0])
+	for jump in [false, true]:
+		var w := Util.world_from_tiles(floor_tiles)
+		w["dais"] = [0, 0, 0]
+		var player := Controller.new()
+		player.setup("dasher", Util.consts())
+		player.place(w)
+		player.last_light_spent = true
+		var rt := EnemyRuntime.new()
+		rt.setup({}, w, [player], SEED)
+		var row := rt.spawn_at("gin", "gin ichimaru", Gin.new(), cfg, Vector3(8.5, 0.0, 0.5))
+		var jump_seen := false
+		var traveled := false
+		for _i in range(KILL_MAX):
+			var flying: bool = row["phase"] == "sword"
+			var events := player.step(DT, {"move_x": 127 if flying else 0, "move_z": 0,
+					"buttons": Controller.BTN_JUMP if flying and jump else 0}, w)
+			for event in events:
+				jump_seen = jump_seen or event.get("e") == "jump"
+			rt.step(DT)
+			traveled = traveled or player.x > 1.5
+			if row["phase"] == "cooldown":
+				break
+		if not traveled:
+			failures.append("moving Gin fixture failed to travel toward the sword")
+		if jump:
+			if not jump_seen or player.dead or row["gin_outcome"] != "clear":
+				failures.append("moving jump must cross the projectile and survive")
+			elif (row["gin_sword_pos"] as Vector3).distance_to(row["gin_goal"]) > 0.001:
+				failures.append("the sword followed a moving player away from its release endpoint")
+		elif not player.dead or player.dead_code != "D-GIN" or rt.tick - 1 >= int(row["gin_arrival_tick"]):
+			failures.append("moving ground player must die before the sword reaches its endpoint")

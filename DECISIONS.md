@@ -8625,3 +8625,11 @@ Twin Fangs now sends two swords from opposite sides which arrive on the same tic
 ## D-T5-3 (2026-11-23) Gin presentation and owner audio
 
 The procedural portrait shows silver hair, a dark profile and a narrow smile. A screen-space sword track shows the throw countdown even when the world sword starts outside the camera. The owner sword was keyed from its white background and rotated to point along its sprite axis. The voice uses miniaudio MP3 decode and SciPy/NumPy spectral subtraction, with the quietest non-padding frames as the noise profile. Same 36 quietest 1024-sample frames before/after: 0.00001834 to 0.00000237 FS (-94.73 to -112.49 dBFS). Quiet non-padding profile frames: 0.02775310 to 0.00734312 FS (-31.13 to -42.68 dBFS). The game ships mono 44.1 kHz 16-bit PCM and starts the throw after the 1.724 s clip.
+
+## D-T5-4 (2026-11-23) Fixed release trajectory and pending schedule
+
+Terra's review found that the deadline hit could ignore an earlier crossing. The ground sword now aims at the target's feet at release, advances by a fixed fraction of the launch distance each tick, and sweeps against each controller's body using relative motion. A clear path reaches the aim point after 39 ticks. Twin Fangs uses two fixed paths into the same aim point. The hash includes both origins, the aim point, the previous controller positions used by the sweep, and the pending plan's scheduled start, placement target, queue order and copy progress. Stationary and moving bots exercise the collision through the real controller.
+
+## D-T5-5 (2026-11-23) Live and historical Gin data
+
+The shipped enemy metadata describes the bodyless ground sword and its bye bye cue. The mark and zone metadata moved to a test fixture. The legacy code path remains for archived timing, arbitration, audio, negative-control and answer-lab fixtures that construct Gin without the live attack configuration. Those checks still exercise the historical attack and keep their original timing thresholds.

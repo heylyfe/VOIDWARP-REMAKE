@@ -57,9 +57,14 @@ func _json_contract(f: Array[String]) -> void:
 	var j: Dictionary = doc
 	if str(j.get("id", "")) != "gin":
 		f.append("json: id %s, want gin" % str(j.get("id", "")))
-	var st: Dictionary = j.get("stats", {})
-	if str(st.get("death_code", "")) != "D-GIN":
-		f.append("json: stats.death_code %s, want D-GIN" % str(st.get("death_code", "")))
+	var live: Dictionary = j.get("stats", {})
+	if str(live.get("death_code", "")) != "D-GIN":
+		f.append("json: stats.death_code %s, want D-GIN" % str(live.get("death_code", "")))
+	if live.get("audio_cues", []) != ["bye_bye"] or bool(live.get("contact_kill", true)):
+		f.append("json: live Gin must have only the bye bye cue and no contact kill")
+	if live.has("zone_ticks") or live.has("spear_travel_ticks") or live.has("audio_cue_timing"):
+		f.append("json: live Gin carries retired attack metadata")
+	var st: Dictionary = _json().get("stats", {})
 	if int(j.get("min_level", 0)) != 17:
 		f.append("json: min_level %s, want 17" % str(j.get("min_level", 0)))
 	if int(j.get("max_votes", 0)) != 3:
@@ -79,7 +84,7 @@ func _json_contract(f: Array[String]) -> void:
 	var y: Variant = arb.get("yields_to", null)
 	if not (y is Array) or (y as Array) != ["address_me"]:
 		f.append("json: yields_to %s, want [\"address_me\"]" % str(y))
-	var cues: Array = j.get("stats", {}).get("audio_cues", [])
+	var cues: Array = st.get("audio_cues", [])
 	for cue in ["crack_rumble", "shing", "whoosh", "zone_open", "zone_close"]:
 		if not cues.has(cue):
 			f.append("json: audio cue '%s' missing" % cue)
@@ -407,7 +412,7 @@ func _arena():
 ## the SAME file the sim would consume, not from a test-local copy.
 func _ticks_from_json(key: String) -> int:
 	var doc: Variant = JSON.parse_string(FileAccess.get_file_as_string(
-			"res://content/enemies/gin/enemy.json"))
+			"res://tests/gin_legacy_metadata.json"))
 	if not (doc is Dictionary):
 		return -1
 	var st: Dictionary = (doc as Dictionary).get("stats", {})
@@ -417,7 +422,7 @@ func _ticks_from_json(key: String) -> int:
 ## The whole enemy.json document as a Dictionary (empty on a parse failure).
 func _json() -> Dictionary:
 	var doc: Variant = JSON.parse_string(FileAccess.get_file_as_string(
-			"res://content/enemies/gin/enemy.json"))
+			"res://tests/gin_legacy_metadata.json"))
 	if doc is Dictionary:
 		return doc
 	return {}

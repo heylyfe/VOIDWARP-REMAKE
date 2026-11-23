@@ -523,10 +523,11 @@ telegraph line; **wind**: run in a straight line (7.0 u/s vs 9.0 — you gain 2 
 
 ### 5.12 gin ichimaru
 
-gin's smiling portrait and bye bye call precede the sword throw. A ground sword closes toward the
-target's feet over 39 simulation ticks (650 ms). Distance determines travel speed. At impact the
-sword kills if the player's feet are below the height needed to clear it. Cooldown and extra-vote
-discounts follow the attack data. The warning defers while address me's countdown runs (SR-4).
+gin's smiling portrait and bye bye call precede the sword throw. The sword aims at the target's
+feet at release and reaches that point in 39 simulation ticks (650 ms) unless it hits a player
+first. Distance determines travel speed. The sword tests its swept path against moving players
+every tick. Cooldown and extra-vote discounts follow the attack data. The warning defers while
+address me's countdown runs (SR-4).
 
 *Answer:* jump as the sword closes in.
 

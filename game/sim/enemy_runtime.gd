@@ -86,6 +86,9 @@ class EnemyBehavior:
 	func hash_state(_row: Dictionary) -> Array:
 		return []
 
+	func hash_pending(_entry: Dictionary) -> Array:
+		return []
+
 
 # A fixture behavior: a stationary body whose contact kills (the KILL RULE default); used by
 # the T-027 tests and drop-in fixtures until real Wave-3 behaviors land.
@@ -480,7 +483,7 @@ func add_vote(id: String, max_votes: int) -> int:
 func plan(id: String, display_name: String, behavior: RefCounted, cfg: Dictionary,
 		copies: int) -> void:
 	planned.append({"id": id, "name": display_name, "behavior": behavior, "cfg": cfg,
-			"copies": copies})
+			"copies": copies, "spawn_target": int(cfg.get("spawn_target", 0))})
 	plan_copies_total += maxi(copies, 0)
 
 
@@ -606,7 +609,7 @@ func _spawn_planned() -> void:
 		while k < copies and budget > 0:
 			# re-read the live copies each round: copy 1 must clear copy 0 (and so on)
 			var exclude: Array = _copy_positions(id)
-			var spot: Variant = pick_spawn_tile(level, kind, _player_pos(0), exclude,
+			var spot: Variant = pick_spawn_tile(level, kind, _player_pos(int(plan_row["spawn_target"])), exclude,
 					COPY_SEP if copies > 1 else 0.0, _round_trip_cached())
 			if spot == null:
 				break   # D-T027-4: no legal tile this tick - the entry waits
@@ -1533,7 +1536,7 @@ func move_toward(row: Dictionary, tx: float, tz: float, h_speed: float, target_y
 
 
 func _player_pos(i: int) -> Vector3:
-	if i < controllers.size() and controllers[i] != null:
+	if i >= 0 and i < controllers.size() and controllers[i] != null:
 		return Vector3(float(controllers[i].x), float(controllers[i].y), float(controllers[i].z))
 	if not level.get("spawns", []).is_empty():
 		var s: Array = level["spawns"][0]

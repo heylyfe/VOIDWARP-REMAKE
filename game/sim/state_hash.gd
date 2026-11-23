@@ -157,6 +157,16 @@ static func dump(rs: RefCounted) -> PackedStringArray:
 				bits(float(jp.launch_speed))])
 	var rt = lv.enemy_runtime
 	if rt != null:
+		var queue: Array = []
+		var has_hashed_plan := false
+		for entry in rt.planned:
+			var state: Array = entry["behavior"].hash_pending(entry)
+			has_hashed_plan = has_hashed_plan or not state.is_empty()
+			queue.append([entry["id"], entry["copies"], entry.get("spawned_copies", 0),
+					entry["spawn_target"], entry["cfg"].get("preferred_kind", ""), state])
+		if has_hashed_plan:
+			out.append("ENEMY_QUEUE %d %d %s" % [rt.tick, rt.spawn_delay_ticks,
+					var_to_bytes(queue).hex_encode()])
 		for row in rt.enemies:
 			var state: Array = row["behavior"].hash_state(row)
 			if not state.is_empty():
