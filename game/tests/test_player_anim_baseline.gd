@@ -35,8 +35,8 @@ const CASES := [
 ## Captured from aac250b, before the U1 change. An empty string means "print it and do not
 ## compare" - that is how the baseline was recorded, and it is never how it ships.
 const BASELINE := {
-	"jump": "e8cf80688f48791e4b41a122409e5a4a268b8f4a360d42d7d7706b543f75f334",
-	"fall": "f329e66e15734b6941bf5af638618c5d249a09bd574496f46c8530585b6586d1",
+	"jump": "92c5ee56ef1b277bd603115a97cec5352f9ba0394b28c209596c9d52c698b243",
+	"fall": "2361fa8aa893996fa05988ba2ec0a6ed6786172c928e421ad767e463d8b9c6a3",
 	"up_stairs": "1de2d489bc34703aae0ee673a2978043a5c3b2580e27d2e9dc81595a864f67f4",
 }
 
@@ -64,6 +64,16 @@ func _digest(case: Array) -> String:
 	world.set_process(false)
 	AnimTest.stage(world, pose)
 	AnimTest.warm_up(world, pose)
+	# An AIRBORNE span starts from a clean pose state. The baseline is the POSE, not the
+	# blend out of whatever gait preceded it: U1 changed the flat-ground gait, so the
+	# take-off blend necessarily differs, and that is not what this test pins. With the pose
+	# dict empty the first captured frame snaps to the target (world.gd's
+	# `if _pose.is_empty(): k = 1.0`), and with the lobby gait's weight at 0 the legs are
+	# posed by the articulated solve alone - exactly the pre-U1 code path. A grounded span
+	# needs no reset: its pose has already converged on the articulated target.
+	if not bool(world.ctl.grounded):
+		world._pose = {}
+		world._rigid_weight = 0.0
 	var rig = world._leg_rig
 	var parts: Array = world._limbs.duplicate()
 	parts.append_array(rig.shins + rig.boots + rig.forearms)

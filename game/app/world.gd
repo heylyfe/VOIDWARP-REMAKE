@@ -289,6 +289,7 @@ var _run_speed := 9.0            # data/player.json shared_kit.run_speed (read i
 var _rigid_weight := 0.0         # 1 = the lobby gait, 0 = the articulated rig (D-ANIM-15)
 var _rigid_lift := 0.0           # u the drawn body rides higher under the lobby gait (see _cache_player_limbs)
 var _gait_phase := 0.0           # the lobby gait's own clock (view/player_gait.gd, D-ANIM-15)
+var _body_lift := NAN            # the articulated rig's own body_y (see _pose_articulated)
 
 var _economy: RefCounted = null   # the gold-phase economy (purse / chain / upgrade stats)
 # The run's stats, from core/content_api.gd apply_modifiers over the owned upgrade stacks
@@ -2394,7 +2395,10 @@ func _pose_articulated(root_pos: Vector3, velocity: Vector3, delta: float, blend
 	var bob := 0.0
 	var fold_lift := 0.0
 	var reach_drop := 0.0
-	var lift := float(_pose.get("body_y", target.body_y))
+	# The articulated rig's OWN body height, not the blended pose's: the lobby gait draws a
+	# different body height (D-ANIM-15), and the hip the feet are planted from must not
+	# depend on which rig is showing, or the plants would differ on the way onto stairs.
+	var lift := _body_lift if not is_nan(_body_lift) else float(target.body_y)
 	for side in 2:
 		var phase := fposmod(_anim_phase / TAU + side * 0.5, 1.0)
 		var hip_local := _limb_rest[side + 4] + _limb_mounts[side + 4]
@@ -2474,6 +2478,7 @@ func _pose_articulated(root_pos: Vector3, velocity: Vector3, delta: float, blend
 	target["torso"] = float(target.torso) * (1.0 - 0.5 * landing)
 	for key in ["arm_l", "arm_r"]:
 		target[key] = lerpf(float(target[key]), -0.45, 0.8 * landing)
+	_body_lift = float(target["body_y"])
 	return target
 
 
@@ -2537,6 +2542,7 @@ func _cache_player_limbs(figure: Node3D) -> void:
 	_contact_weight = 0.0
 	_breath_phase = 0.0
 	_rigid_weight = 0.0
+	_body_lift = NAN
 	for i in LIMB_NAMES.size():
 		var node := figure.find_child(LIMB_NAMES[i], true, false) as MeshInstance3D if figure != null else null
 		_limbs.append(node)
