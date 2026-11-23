@@ -24,6 +24,7 @@ extends Node3D
 # ribbons are opaque-with-angle-discard, fog-exempt, unshaded.
 
 const BillboardScript := preload("res://view/billboard.gd")
+const AssetLoadScript := preload("res://view/asset_load.gd")   # U4: fail-soft loads (text/scene/texture/stream)
 const GinAudio := preload("res://view/audio/gin_audio.gd")
 const GinOverlay := preload("res://view/gin_overlay.gd")
 
@@ -56,10 +57,9 @@ func setup(sheet_path: String = SHEET_REL, folder: String = FOLDER_REL) -> void:
 	for child in get_children():
 		child.free()
 	var doc: Dictionary = {}
-	if FileAccess.file_exists(sheet_path):
-		var parsed = JSON.parse_string(FileAccess.get_file_as_string(sheet_path))
-		if parsed is Dictionary:
-			doc = parsed
+	var parsed = JSON.parse_string(AssetLoadScript.text(sheet_path))
+	if parsed is Dictionary:
+		doc = parsed
 	_anim_block = doc.get("anim", {})
 	billboard = BillboardScript.new()
 	add_child(billboard)

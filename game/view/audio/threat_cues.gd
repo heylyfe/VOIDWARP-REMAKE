@@ -1,4 +1,6 @@
 extends RefCounted
+
+const AssetLoadScript := preload("res://view/asset_load.gd")   # U4: fail-soft loads (text/scene/texture/stream)
 #
 # The threat cue layer (PARKED.md rows 12-15; T-087's owner spec "every lethal threat's
 # audio cue is learnable and precedes the attack"). The audio half of the telegraph layer
@@ -63,9 +65,7 @@ func load_table() -> void:
 	dirs.sort()
 	for d in dirs:
 		var path := "%s/%s/enemy.json" % [ENEMY_ROOT, d]
-		if not FileAccess.file_exists(path):
-			continue
-		var doc: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
+		var doc: Variant = JSON.parse_string(AssetLoadScript.text(path))
 		if not (doc is Dictionary):
 			continue
 		var enemy := str((doc as Dictionary).get("id", d))

@@ -33,6 +33,7 @@ extends Node3D
 # hold would accrue twice per frame.
 
 const FogEnvScript := preload("res://view/fog_env.gd")
+const AssetLoadScript := preload("res://view/asset_load.gd")   # U4: fail-soft loads (text/scene/texture/stream)
 const IconArtScript := preload("res://view/icon_art.gd")
 const BillboardScript := preload("res://view/billboard.gd")
 const OffersSim := preload("res://sim/offers.gd")
@@ -770,9 +771,7 @@ func _exhibit_enemy(p_anchor: Node3D, p_altar: Dictionary) -> String:
 	var sheet_path := "res://content/enemies/%s/sprites.json" % eid
 	var bb = BillboardScript.new()
 	p_anchor.add_child(bb)
-	var parsed: Variant = null
-	if FileAccess.file_exists(sheet_path):
-		parsed = JSON.parse_string(FileAccess.get_file_as_string(sheet_path))
+	var parsed: Variant = JSON.parse_string(AssetLoadScript.text(sheet_path))
 	if parsed is Dictionary and not (parsed as Dictionary).is_empty():
 		bb.setup_from_sheet(parsed, "res://content/enemies/" + eid)
 		# scale the sheet's own world_height up to the exhibit body height.

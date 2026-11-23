@@ -26,6 +26,7 @@ extends Node3D
 # the dash line) against their OWN position, so the view node must carry the row position.
 
 const KiwiCatViewScript := preload("res://view/kiwi_cat_view.gd")
+const AssetLoadScript := preload("res://view/asset_load.gd")   # U4: fail-soft loads (text/scene/texture/stream)
 const SealViewScript := preload("res://view/seal_view.gd")
 const GiftLarperViewScript := preload("res://view/gift_larper_view.gd")
 const ThiccBenViewScript := preload("res://view/thicc_ben_view.gd")
@@ -111,9 +112,9 @@ func setup(p_id: String, folder: String) -> bool:
 
 
 func _load_gin_sheet(sheet: String, folder: String) -> void:
-	if view.billboard == null or not FileAccess.file_exists(sheet):
+	if view.billboard == null:
 		return
-	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(sheet))
+	var parsed: Variant = JSON.parse_string(AssetLoadScript.text(sheet))
 	if parsed is Dictionary:
 		view.billboard.setup_from_sheet(parsed, folder)
 

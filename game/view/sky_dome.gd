@@ -1,4 +1,6 @@
 extends MeshInstance3D
+
+const AssetLoadScript := preload("res://view/asset_load.gd")   # U4: fail-soft loads (text/scene/texture/stream)
 #
 # Procedural cloud dome (DECISIONS D-ATMO-1). A large sphere seen from the inside, carrying a
 # spatial shader: horizon -> zenith gradient, three fbm value-noise layers (5 octaves each)
@@ -93,7 +95,7 @@ var _t := 0.0
 
 
 static func load_config() -> Dictionary:
-	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(PALETTE_PATH))
+	var parsed: Variant = JSON.parse_string(AssetLoadScript.text(PALETTE_PATH))
 	if typeof(parsed) != TYPE_DICTIONARY:
 		push_error("sky_dome: cannot parse %s" % PALETTE_PATH)
 		return {}

@@ -1,4 +1,6 @@
 extends Node3D
+
+const AssetLoadScript := preload("res://view/asset_load.gd")   # U4: fail-soft loads (text/scene/texture/stream)
 #
 # Floating contour-outlined rocks (DECISIONS D-ATMO-2). Low-poly convex chunks drift in a wide
 # ring far outside the level, each with a thin bright outline.
@@ -78,7 +80,7 @@ var _t := 0.0
 
 
 static func load_config() -> Dictionary:
-	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(PALETTE_PATH))
+	var parsed: Variant = JSON.parse_string(AssetLoadScript.text(PALETTE_PATH))
 	if typeof(parsed) != TYPE_DICTIONARY:
 		push_error("debris: cannot parse %s" % PALETTE_PATH)
 		return {}

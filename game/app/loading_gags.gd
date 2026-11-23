@@ -1,4 +1,6 @@
 extends RefCounted
+
+const AssetLoadScript := preload("res://view/asset_load.gd")   # U4: fail-soft loads (text/scene/texture/stream)
 #
 # Loading-screen gags (TICKET LOADING; DECISIONS D-LOAD-1..8). Pure model, no nodes: for a gag id and
 # a display time `t` it returns the list of "items" the stage (app/loading_stage.gd) draws - real enemy
@@ -44,7 +46,7 @@ static func _data() -> Dictionary:
 		return _gag_data
 	_gag_loaded = true
 	_gag_data = {}
-	var text := FileAccess.get_file_as_string(GAG_DATA)
+	var text := AssetLoadScript.text(GAG_DATA)
 	var parsed: Variant = JSON.parse_string(text)
 	if parsed is Dictionary:
 		for key in (parsed as Dictionary):

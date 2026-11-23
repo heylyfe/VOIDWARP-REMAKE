@@ -16,6 +16,7 @@ extends Node3D
 # the effects themselves (fade, bob, pulse) are unchanged.
 
 const BillboardScript := preload("res://view/billboard.gd")
+const AssetLoadScript := preload("res://view/asset_load.gd")   # U4: fail-soft loads (text/scene/texture/stream)
 const LitterScript := preload("res://content/curses/litter.gd")
 
 const TICKS_PER_SECOND := 60.0
@@ -55,7 +56,7 @@ func set_curses_state(p_state: Dictionary) -> void:
 ## feet on the origin, BILLBOARDING + TRANSPARENCY rules live in billboard.gd) and caches
 ## the anim-block effect parameters. folder_dir is the enemy folder's res:// path.
 func setup(folder_dir: String = "res://content/enemies/kiwi_cat") -> void:
-	var text := FileAccess.get_file_as_string(folder_dir.path_join("sprites.json"))
+	var text := AssetLoadScript.text(folder_dir.path_join("sprites.json"))
 	var doc: Variant = JSON.parse_string(text)
 	if not (doc is Dictionary):
 		push_warning("kiwi_cat_view: sprites.json unreadable at %s" % folder_dir)

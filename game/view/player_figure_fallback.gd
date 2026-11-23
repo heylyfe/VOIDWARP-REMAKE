@@ -45,18 +45,35 @@ const BODY_TONE := Color(0.62, 0.66, 0.72, 1.0)
 
 ## The blocky figure: a Node3D with six named MeshInstance3D children, feet at y = 0.
 ## The caller applies the player body material and parents it exactly as it would the
-## instantiated .glb.
+## instantiated .glb. Each box ALSO carries its own vertex-colour base material (the same
+## unshaded pass world.gd's _player_body_material uses), so the fallback renders its
+## palette even where no caller applies one, and the locomotion rig's surface-override
+## copies (player_locomotion.gd copies get_surface_override_material to the segment
+## parts) inherit a real material instead of null (J12: this file loads a model under
+## res://assets/models/ as the documented stand-in, so it assigns the base pass itself).
 static func build() -> Node3D:
 	var root := Node3D.new()
 	root.name = "PlayerFigureFallback"
+	var base := _base_material()
 	for nm in LIMBS:
 		var spec: Array = LIMBS[nm]
 		var mi := MeshInstance3D.new()
 		mi.name = nm
 		mi.mesh = _box_mesh(spec[1], BODY_TONE)
+		mi.set_surface_override_material(0, base)
 		mi.position = spec[0]
 		root.add_child(mi)
 	return root
+
+
+## The base pass: unshaded, vertex colours as albedo - the same shape as the .glb's own
+## intended render (export_materials="NONE", palette in COLOR_0).
+static func _base_material() -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.vertex_color_use_as_albedo = true
+	m.albedo_color = Color(1.0, 1.0, 1.0)
+	return m
 
 
 ## A box as an ArrayMesh with a filled ARRAY_COLOR, so the locomotion rig's vertex-colour
