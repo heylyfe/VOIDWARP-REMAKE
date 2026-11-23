@@ -1750,15 +1750,20 @@ static func _pose_idle(phase: float) -> Dictionary:
 ## like a leg), so from the side they do not hang across the tucked thighs. The torso leans
 ## back a little to open the space in front of its hem for the knees (a forward lean drew
 ## the hem down over them). The 0.65 rad thigh and forward arms of the first cut read as
-## legs trailing below the body (review of 1b7bb7d).
+## legs trailing below the body (review of 1b7bb7d). The thighs ride 1.90 rad, past level,
+## so from the side the knees stand up and out ahead of the robe with the shins folded
+## under them (1.60 read as lower legs bent back, no forward knee: re-review of 642b41a).
+## The ceiling is the folded BOOT, not the thigh: past 1.90 it swings up into the torso
+## block (D-ANIM-5 boot margin, 2.05 at any lean from -0.06 to 0.34), and leaning the torso
+## further back brings its rear lower edge onto that boot sooner (1.90 at 0.18 fails too).
 static func _pose_jump() -> Dictionary:
 	return {
 		"torso": 0.10,
 		"head": 0.0,
 		"arm_l": -0.85,
 		"arm_r": -0.85,
-		"leg_l": 1.60,
-		"leg_r": 1.60,
+		"leg_l": 1.90,
+		"leg_r": 1.90,
 		"knee_l": 2.35,
 		"knee_r": 2.35,
 	}
