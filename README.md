@@ -9,7 +9,7 @@ one back, and the third fall ends the run.
 
 The world is serious. The enemies are not.
 
-> **Status: alpha — `v0.1.14-alpha.3`.** Playable end to end, level after level, with the lobby, the
+> **Status: alpha — `v0.1.15-alpha.3`.** Playable end to end, level after level, with the lobby, the
 > shop and the collapse all wired. Not yet a proven 30-level run — see
 > [What works today](#what-works-today) for the honest list.
 
@@ -387,6 +387,52 @@ in-memory state on top of the seed's own run — the seed replay itself stays by
 ## Changelog
 
 <details open>
+<summary><b>What changed in v0.1.15-alpha.3</b> — the Peter Griffin boss fight, and four enemies rebuilt</summary>
+
+**Peter Griffin at level 10.** Collect the last gift on level 10 and the level does not end: you are
+teleported to a flat arena where Peter Griffin is waiting, and the camera goes first person with
+mouselook. You throw gifts — 1 damage each, 5% chance to crit for 5, up to six a second — at a boss with
+250 HP and a health bar. He throws a bowling ball along the floor (jump it or step aside) and, in his
+green basketball pose, shoots a three-pointer aimed at where you were when he released it (move sideways
+in time; the wind-up is at least 400 ms and the marker is drawn on the floor). Any hit kills you and he
+laughs. Kill him and a beacon opens with 300 gold gifts, and level 11 carries on as usual. Once per
+fight, with a 1-in-1000 seeded roll made at fight start so replays match, the dormant Bankai cinematic
+plays instead: the gifts target Peter and he dies instantly. Rulings D-T8A-1..3, D-T8B-1..8.
+
+**Claude.** He does nothing by himself now — no attack, no movement, no contact kill. He scatters 5 to
+15 mini clawds across the map at level start, more on bigger maps, on walkable tiles and never on a
+mine, the beacon, the hub or a pad. Collecting one calms him and resets his anger timer. Leave him alone
+for 60 seconds and he makes a warning sound, 120 seconds and a worse one, 180 seconds and he kills you
+outright. The timer runs in sim ticks, is in the state hash, and pauses once the gold phase opens.
+Rulings D-T4-1..10.
+
+**Gin.** He appears on your screen as a smiling portrait, says "bye bye" in the owner's own cleaned-up
+voice line, and throws his sword along the ground at your feet. You have 650 ms from the throw to jump
+it — inside the 500-750 ms window the owner asked for — and the sword is a real projectile that hits
+whatever it crosses, not a homing snap. Rulings D-T5-1..5.
+
+**"YOU?!"** Strikes smaller and slower: the shockwave ring is 8 units instead of 14, and the rumble that
+tells you it is coming lasts 3 seconds instead of 1.5. He also holds position during the tell now, so
+the warning is honest. Rulings D-YOU-C7-1..4.
+
+**Jump pads** are 3x3 blocks of floor tiles, outside the paths and never on one, two to six per level
+scaling with size. **The player model** picked up the refined look — wraparound shades, fuller silver
+hair, a squared cone brim — on the locomotion solver that shipped in v0.1.14, because the proposal's
+animator would have brought the twisted legs back. Rulings D-JUMPPAD-6..9, D-T7-1..2.
+
+**The tester build.** A separate, owner-only export with an F10 debug panel: spawn any enemy, grant any
+upgrade, give gold or gifts, skip levels, set charges, god mode, force a collapse, force Peter, force
+the Bankai, read the state hash. It is compiled out of every public build — the folder is excluded from
+all three public presets, the only load is behind a `tester` feature tag, and CI builds only the public
+presets. `tools/build_tester.ps1` builds it to `game/out/tester/`. It is never released. Rulings
+D-T2-1..9.
+
+**Proof.** The gate is green: 142 tests, terrain parity 56/56, the 18 oracle self-tests and the 16
+pinned gallery records.
+
+</details>
+
+<details>
 <summary><b>What changed in v0.1.14-alpha.3</b> — jump pads, and legs you can actually read</summary>
 
 **Jump pads.** A blue translucent slab sits beside a walkway — never on it — and flings the player
