@@ -112,8 +112,8 @@ Frames: `you_00`…`you_04` (the base character with five corruption-glitch vari
 |---|---|---|---|---|
 | spawn | you_00 | one-shot | 30 ticks | common fade + horizontal tear |
 | idle / chase | you_00→04 | loop at 8 fps (7–8 ticks per frame) | — | run-cycle bob |
-| telegraph (rumble) | you_00→04 | loop at 16 fps (double speed) | 90 ticks (1.5 s) | sprite shakes ± 0.05 u; RGB-split grows 0 → 6 px; a thin red ring at its feet shows the plane the shockwave will travel in |
-| attack (ring release) | you_04 | one-shot | shown on tick 90 = the tick the ring starts expanding (9 u/s to 14 u) | the ring is drawn as a 1.0 u TALL translucent red band, not a ground decal, so its height is readable |
+| telegraph (rumble) | you_00→04 | loop at 16 fps (double speed) | 180 ticks (3.0 s) | sprite shakes ± 0.05 u; RGB-split grows 0 → 6 px; a thin red ring at its feet shows the plane the shockwave will travel in |
+| attack (ring release) | you_04 | one-shot | shown on tick 180 = the tick the ring starts expanding (9 u/s to 8 u) | the ring is drawn as a 1.0 u TALL translucent red band, not a ground decal, so its height is readable |
 | recover | you_00→04 at 8 fps | loop | 240 ticks (4.0 s) cooldown | — |
 
 ### 1.7 gift Larper — Image 9 = "tripine.png"
@@ -291,7 +291,7 @@ not stop for them.
 | nuke | `locked` | on the tick the ring stops | 0.2 s | two-tone 1200 → 1600 Hz |
 | nuke | `descent_roar` | the 90-tick descent | 1.5 s | low-passed noise, cutoff falling 2000 → 200 Hz, rising volume; ends on the impact tick |
 | nuke | `boom` | impact tick | 1.2 s | 45 Hz sine thump + noise burst, long tail |
-| YOU?! | `static_build` | the 90-tick rumble | 1.5 s | quiet white noise gated at 30 Hz, rising volume, with a reversed-envelope tone 400 → 900 Hz in the last 0.5 s — ends on the ring tick |
+| YOU?! | `static_build` | the 180-tick rumble | 3.0 s | quiet white noise gated at 30 Hz, rising volume, with a reversed-envelope tone 400 → 900 Hz in the last 0.5 s — ends on the ring tick |
 | YOU?! | `ring_release` | ring tick | 0.3 s | a short downward chirp 900 → 200 Hz |
 | gift Larper | `mine_blast` (TBD stand-in) | contact tick | 0.8 s | sharp click + noise burst + 60 Hz thump |
 | gift Larper | `mine_dud` | defused / shielded | 0.3 s | a falling "pff": noise with a fast low-pass sweep down |

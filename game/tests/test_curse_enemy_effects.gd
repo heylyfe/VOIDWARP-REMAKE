@@ -30,7 +30,7 @@ extends RefCounted
 #   second_strike a nuke blast records the player's position; the second missile 60 ticks later kills there (control: survives)
 #   spreading_rot the toucher's glitched tiles spread to an adjacent tile 360 ticks after the source appears (control: never)
 #   token_limit  a plushie placement re-arms the clock at 1800 ticks (control: 1500); a pickup removes 20 agitation (control: 35)
-#   twin_fangs   gin's mark phase announces a SECOND "mark" telegraph (control: exactly one)
+#   twin_fangs   Gin adds a second sword to the same arrival (control: exactly one)
 #
 # Test-side placement (teleporting a row or the player a few u) is the same fixture
 # pattern test_curse_dispatch.gd uses for its crowded dais body; no game file is touched.
@@ -770,12 +770,7 @@ func _token_limit(f: Array[String]) -> void:
 
 # ---- on_tick: gin (twin_fangs) ---------------------------------------------------------------------
 
-## twin_fangs: "each strike marks two patches: yours and where you will be in 1.0 s".
-## gin's own mark phase announces his 5x5 patch (kind "mark"); the curse detects the same
-## phase edge and announces a SECOND "mark" circle for the predicted patch. The player is
-## stationary, so the second patch is centred on their own tile - the counter-play is a
-## direction change, which this case does not test; the announce is the module's own
-## promise made observable, and the control run proves the second mark is the curse's.
+## The curse adds a second converging sword without splitting the jump timing.
 func _twin_fangs(f: Array[String]) -> void:
 	for held in [false, true]:
 		var curses := {"twin_fangs": 1} if held else {}
@@ -783,23 +778,22 @@ func _twin_fangs(f: Array[String]) -> void:
 		if world == null:
 			f.append("twin_fangs: build failed (held=%s)" % str(held))
 			continue
-		world.ctl.invuln = 100000.0   # gin's zone is not this case's subject; the marks are
-		var saw_mark_phase := false
-		var mark_count := 0
+		world.ctl.invuln = 100000.0
+		var twin_seen := false
+		var sword_seen := false
 		for _t in range(600):
 			world.step(DT)
 			var row := _first_row(world, "gin")
-			if not row.is_empty() and str(row.get("phase", "")) == "mark":
-				saw_mark_phase = true
-			mark_count = _count_kind(world, "mark")
-			if saw_mark_phase and int(world.lstate.tick) >= 520:
-				break
-		if not saw_mark_phase:
-			f.append("twin_fangs (held=%s): gin never entered the mark phase within 600 ticks - probe invalid" % str(held))
-		elif held:
-			_check(f, mark_count == 2,
-					"twin_fangs held: %d mark telegraphs during gin's mark, want 2 (his patch and the predicted one)" % mark_count)
-		else:
-			_check(f, mark_count == 1,
-					"twin_fangs control: %d mark telegraphs during gin's mark, want 1 (his patch alone)" % mark_count)
+			if row.get("phase") != "sword":
+				continue
+			sword_seen = true
+			twin_seen = row.has("gin_second_pos")
+			if twin_seen:
+				var first: Vector3 = row["gin_sword_pos"]
+				var second: Vector3 = row["gin_second_pos"]
+				_check(f, Vector2(first.x, first.z).distance_to(Vector2(second.x, second.z)) > 0.0,
+						"twin_fangs: the two trajectories start at the same position")
+			break
+		_check(f, sword_seen, "twin_fangs: Gin never launched within 600 ticks")
+		_check(f, twin_seen == held, "twin_fangs: second sword disagrees with held=%s" % held)
 		_drop(world)

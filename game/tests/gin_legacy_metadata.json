@@ -1,0 +1,135 @@
+{
+  "id": "gin",
+  "min_level": 17,
+  "max_votes": 3,
+  "arbiter": {
+    "appear_requires": [],
+    "yields_to": [
+      "address_me"
+    ]
+  },
+  "stats": {
+    "world_height": 1.8,
+    "hit_diameter": 0.7,
+    "pursuit_ceiling": 0.0,
+    "burst_ceiling": 0.0,
+    "frame_w": 256,
+    "frame_h": 256,
+    "body_rect": [
+      16,
+      16,
+      224,
+      224
+    ],
+    "contact_kill": true,
+    "death_code": "D-GIN",
+    "preferred_kind": "none",
+    "spawn_dist_min_u": 15.0,
+    "spawn_dist_max_u": 25.0,
+    "platform_tiles_only": true,
+    "spawn_fade_ticks": 30,
+    "telegraph_ticks": 120,
+    "spear_travel_ticks": 18,
+    "zone_start_tick": 138,
+    "zone_ticks": 600,
+    "fade_back_ticks": 30,
+    "fade_out_after_launch_ticks": 60,
+    "cooldown_ticks": 840,
+    "cooldown_vote_discount_ticks": 180,
+    "cooldown_min_ticks": 300,
+    "patch_half_tiles": 2,
+    "patch_outline_color": "#FF2A2A",
+    "mark_blink_hz_first": 2.0,
+    "mark_blink_hz_second": 4.0,
+    "audio_cues": [
+      "crack_rumble",
+      "shing",
+      "whoosh",
+      "zone_open",
+      "zone_close"
+    ],
+    "tbd_audio": true,
+    "audio_cue_timing": {
+      "crack_rumble": {
+        "event": "telegraph",
+        "kind": "mark",
+        "occurrence": 1,
+        "offset_ticks": 0,
+        "length_s": 2.0,
+        "role": "binding",
+        "attack": "zone_kill",
+        "attack_offset_ticks": 138,
+        "binding_cue_ticks": 138,
+        "parked": "PARKED.md #15"
+      },
+      "shing": {
+        "event": "telegraph",
+        "kind": "mark",
+        "occurrence": 1,
+        "offset_ticks": 120,
+        "length_s": 0.3,
+        "role": "binding",
+        "attack": "zone_kill",
+        "attack_offset_ticks": 138,
+        "binding_cue_ticks": 18
+      },
+      "whoosh": {
+        "event": "telegraph",
+        "kind": "mark",
+        "occurrence": 1,
+        "offset_ticks": 120,
+        "length_s": 0.3,
+        "role": "on_attack",
+        "attack": "zone_kill",
+        "attack_offset_ticks": null,
+        "binding_cue_ticks": null
+      },
+      "zone_open": {
+        "event": "telegraph",
+        "kind": "mark",
+        "occurrence": 1,
+        "offset_ticks": 138,
+        "length_s": 0.4,
+        "role": "on_attack",
+        "attack": "zone_kill",
+        "attack_offset_ticks": null,
+        "binding_cue_ticks": null
+      },
+      "zone_close": {
+        "event": "telegraph",
+        "kind": "mark",
+        "occurrence": 1,
+        "offset_ticks": 738,
+        "length_s": 0.4,
+        "role": "stinger",
+        "attack": null,
+        "attack_offset_ticks": null,
+        "binding_cue_ticks": null
+      }
+    },
+    "lethal_attacks": [
+      {
+        "attack": "zone_kill",
+        "code": "D-GIN",
+        "event": "telegraph",
+        "kind": "mark",
+        "occurrence": 1,
+        "attack_offset_ticks": 138,
+        "binding_cue": "shing",
+        "binding_cue_ticks": 18,
+        "parked": null
+      },
+      {
+        "attack": "body_contact",
+        "code": "D-GIN",
+        "event": "none",
+        "kind": "",
+        "occurrence": 1,
+        "attack_offset_ticks": null,
+        "binding_cue": null,
+        "binding_cue_ticks": null,
+        "parked": "PARKED.md #12"
+      }
+    ]
+  }
+}

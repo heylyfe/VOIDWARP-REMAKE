@@ -1,11 +1,10 @@
 extends RefCounted
 #
 # twin_fangs.gd - script curse (DESIGN.md section 7.1 row "twin_fangs").
-# Rule sentence (spec, verbatim): "each strike marks two patches: yours and where you
-# will be in 1.0 s".
-# Counter-play: "change direction during the mark".
+# Rule sentence: "two swords converge together, requiring more jump clearance".
+# Counter-play: "time your jump so both swords pass near its apex".
 #
-# Reading: gin's strike marks the 5x5 tile patch centred on the player's tile (5.12) and
+# Historical fixture: gin's strike marks the 5x5 tile patch centred on the player's tile and
 # that patch becomes the lethal void zone 138 ticks later. The curse adds a SECOND patch
 # at the mark's start: the 5x5 block centred on the tile the player will occupy in 1.0 s
 # (their position plus velocity x 60 ticks), minus the beacon dais cell exactly as gin's
@@ -81,6 +80,9 @@ static func on_tick(state: Dictionary, api) -> void:
 	for i in range(rt.enemies.size()):
 		var row = rt.enemies[i]
 		if str(row.get("id", "")) != GIN_ID:
+			continue
+		if row.get("cfg", {}).has("sword_attack"):
+			row["gin_twin_fangs"] = true
 			continue
 		var phase := str(row.get("phase", ""))
 		var prev_key := "tf_prev_%d" % i

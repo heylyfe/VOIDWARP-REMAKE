@@ -35,6 +35,7 @@ extends "res://sim/enemy_runtime.gd".EnemyBehavior
 
 const GIN_ID := "gin"
 const DEATH_CODE := "D-GIN"
+const SwordAttack := preload("res://content/enemies/gin/sword_attack.gd")
 
 # phases of the cycle (row["phase"]); each carries its own tick counter, row["phase_t"]
 const SPAWN := "spawn"            # the fade-in, 30 ticks
@@ -80,6 +81,12 @@ func _init() -> void:
 
 
 func on_spawn(row: Dictionary, _api) -> void:
+	if row["cfg"].has("sword_attack"):
+		row["phase"] = "waiting"
+		row["contact_kill"] = false
+		row["gin_next_tick"] = int(row["spawn_tick"])
+		row["gin_twin_fangs"] = bool(row["cfg"].get("twin_fangs", false))
+		return
 	row["phase"] = SPAWN
 	row["phase_t"] = 0
 	row["patch"] = {}
@@ -94,6 +101,9 @@ func on_spawn(row: Dictionary, _api) -> void:
 
 
 func tick(row: Dictionary, api, dt_ticks: int) -> void:
+	if row["cfg"].has("sword_attack"):
+		SwordAttack.tick(row, api)
+		return
 	row["phase_t"] = int(row.get("phase_t", 0)) + dt_ticks
 	row["anim_state_t"] = int(row.get("anim_state_t", 0)) + dt_ticks
 	match str(row.get("phase", SPAWN)):
@@ -148,7 +158,38 @@ func tick(row: Dictionary, api, dt_ticks: int) -> void:
 				_place_on_fade_in_tile(row, api)
 
 
-# ---- the mark + the void zone ------------------------------------------------------------------
+func hash_state(row: Dictionary) -> Array:
+	if not row["cfg"].has("sword_attack"):
+		return []
+	var cfg: Dictionary = row["cfg"]["sword_attack"]
+	return [row["spawn_tick"], row["copies"], row["phase"], row["gin_next_tick"],
+			row["x"], row["y"], row["z"], row.get("gin_target", -1), row.get("gin_voice_tick", -1),
+			row.get("gin_launch_tick", -1), row.get("gin_arrival_tick", -1),
+			row.get("gin_sword_pos", Vector3.ZERO), row.get("gin_outcome", ""),
+			row.get("gin_origin", Vector3.ZERO), row.get("gin_goal", Vector3.ZERO),
+			row.get("gin_second_origin", Vector3.ZERO), row.get("gin_previous_feet", []),
+			row["cfg"]["death_code"], cfg["sword_radius_u"],
+			row.get("gin_flight_elapsed", -1), row.get("gin_twin_fangs", false),
+			row.get("gin_second_pos", Vector3.ZERO), cfg["twin_clearance_u"],
+			cfg["voice_ticks"], cfg["flight_ticks"], cfg["min_launch_distance_u"],
+			cfg["clearance_u"], cfg["cooldown_ticks"], cfg["cooldown_vote_discount_ticks"],
+			cfg["cooldown_min_ticks"]]
+
+
+func hash_pending(entry: Dictionary) -> Array:
+	var cfg: Dictionary = entry["cfg"]
+	if not cfg.has("sword_attack"):
+		return []
+	var attack: Dictionary = cfg["sword_attack"]
+	var keys := attack.keys()
+	keys.sort()
+	var state: Array = [cfg["death_code"], cfg.get("twin_fangs", false)]
+	for key in keys:
+		state.append([key, attack[key]])
+	return state
+
+
+# ---- archived mark + void-zone fixtures --------------------------------------------------------
 
 
 # The patch: the 5x5 tile block centred on the player's tile, minus the dais cell.

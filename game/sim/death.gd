@@ -62,7 +62,8 @@ static func attribute(ctl) -> Dictionary:
 	if ctl == null or not bool(ctl.dead):
 		return {}
 	var code := str(ctl.dead_code)
-	return {"code": code, "killer": killer_for(code)}
+	var killer := str(ctl.dead_killer) if code == "D-PETER" else killer_for(code)
+	return {"code": code, "killer": killer}
 
 
 ## The run-over screen row (DESIGN.md 3.1; rendered by the HUD, T-025).

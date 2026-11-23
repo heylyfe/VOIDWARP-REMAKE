@@ -191,6 +191,9 @@ func sync(row: Dictionary, ctx: Dictionary) -> void:
 			view.sync(row, dt, cam)
 		"gin":
 			view.position = pos
+			if row["cfg"].has("sword_attack"):
+				view.update_sword_attack(row)
+				return
 			view.update_from_row(row)
 			var bb = view.billboard
 			if bb != null:
