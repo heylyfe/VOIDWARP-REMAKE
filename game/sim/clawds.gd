@@ -7,7 +7,7 @@ extends RefCounted
 # generator seed, on walkable tiles, never on mines/beacon/hub/pads, spread out; NOT gifts: they never count in
 # gift totals/straggler/beacon logic)." "Collecting a clawd (pickup radius like gifts, data) CALMS Claude: it
 # resets his anger timer to 0." "If no clawd is collected for 60 s, Claude releases a warning sound (a new synth
-# cue). At 120 s, a second, more urgent sound. At 180 s he INSTA-KILLS the player, death screen cause \"Claude\"."
+# cue). At 120 s a second, louder one. At 180 s he INSTA-KILLS the player, death screen cause \"Claude\"."
 # "The timer runs in sim ticks, deterministic, in the state hash. It pauses when the beacon opens (gold phase)
 # and resets per level."
 #

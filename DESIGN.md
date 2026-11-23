@@ -280,7 +280,7 @@ body width per the HITBOXES hard rule, height = body height):
 | toucher | 1.4 | 0.8 | hurdle-able only with a clean jump (0.85 u margin at apex) |
 | seal | 0.6 | 0.6 | easily hurdle-able; its dash is the threat (§5.9) |
 | address me | 2.5 | — | no body contact; it is a countdown, not an obstacle |
-| Claude | 2.0 | 1.6 | not hurdle-able; keeps its distance (within 20 u) |
+| Claude | 2.0 | 1.6 | not hurdle-able; does not move (cycle 7 revamp, D-T4-1) |
 | gin ichimaru | 1.8 | 0.7 | stands 15–25 u away on platform tiles only (D-072); contact is not his threat |
 
 The nuke has no body; gift Larper occupies gift slots as the tripmine (§3.3) — the roster's other
@@ -501,25 +501,21 @@ While its countdown runs, gin does not mark (SR-4).
 *Answer:* **stop at once** — do nothing for 1.5 s, 3.5 s of slack. SR-4 guarantees it never arrives
 while a chaser, a nuke ring, a gin patch or a coil ring makes stillness lethal.
 
-### 5.11 Claude — Image 15 = "claudelogo.png" (+ clawd Crab plushie sprite, 3 idle frames, source in ENEMIES.md)
-One only. Floats at 4 u/s keeping within 20 u of the player. Music loop at 100 BPM (beat 0.6 s, bar =
-4 beats). One attack per bar, cycling:
-- **Drums** (UI chimes): on beats 1 and 3 a radial ring from Claude — 12 u/s to radius 18 u, 1.0 u
-  tall, **kills**. Jump on the beat.
-- **Strings** (keystroke ticks): telegraph line for 1 beat, then a beam 24 u long × 1.5 u wide sweeps
-  120° over 4 beats at 0.5–1.5 u height, **kills**. Blocked by tiles and props. Jumpable.
-- **Wind** (notification pings): beats 1, 2, 3 each launch a homing shot — **7.0 u/s, turn 90°/s,
-  life 4.0 s (D-071), kills; the shot dies on touching ANY tile slab or step riser (≥ 1 HU), and on
-  any prop**.
-**Agitation** 0–100 rises 2/s. Tempo = 100 + 0.6 × agitation BPM. At 100 ("Deadline"): all three
-attacks every bar. A clawd Crab plushie spawns every 25 s on a round-trip tile 10–25 u from the
-player (max 3 present); picking one up (squeak-pop) = −35 agitation.
-*Pressure:* a second collectible that competes with gifts for your route.
-*Terrain:* open platforms are bad, props and height are good — it makes you re-value every platform.
-*Answer:* its floats keep its body at ceiling 0.55 (4.95 u/s — outwalkable, SR-5); **drums**: jump on
-the beat; **strings**: keep ≥ 6 u from Claude and put a height step or a prop between you and the
-telegraph line; **wind**: run in a straight line (7.0 u/s vs 9.0 — you gain 2 u/s) or drop one tread
-—a shot dies on any slab or riser (D-071).
+### 5.11 Claude — Image 15 = "claudelogo.png" (the clawd swarm reuses the logo frame, shrunk)
+One only. **Does nothing by himself: no attack, no movement** (D-T4-1). On level start he spawns mini
+CLAWDS across the map — 5 on a small level, scaling with the level's tile count up to 15 on a very big
+one (`clawd_count_by_tiles`), placed by the terrain seed on walkable tiles, never on mines, the beacon,
+the hub or the pads, spread out (D-T4-3, D-T4-4). A clawd is **not a gift**: it never counts in a gift
+total, the straggler beam or the beacon. Collecting one (gift pickup radius, 1.6 u) **calms** him: his
+anger timer resets to 0.
+**Anger timer** in sim ticks, in the state hash, reset every level: a warning chime at 60 s (3600
+ticks), a louder alarm at 120 s (7200), and at 180 s (10800) he **insta-kills** the player (cause
+"Claude"). The timer pauses while the beacon is open (the gold phase) and never advances after the kill.
+His body is still 2.0 u tall with a 1.6 u hit diameter and still kills on contact (SR-2).
+*Pressure:* a second collectible that competes with gifts for your route, on a clock.
+*Terrain:* the clawds are spread over the walkable tiles, so the route is the map.
+*Tell:* a warning chime at 60 s and a louder alarm at 120 s; the HUD pill counts the clawds left and the seconds to the next warning
+*Answer:* collect clawds: each one resets the anger timer, so the swarm is the clock. The timer pauses once the beacon opens, so the gold phase is free - but the kill is real before it. His body still kills on contact: do not walk into him.
 
 ### 5.12 gin ichimaru — Image 16 = "gin idle.png", Image 17 = "ginsword.png"
 Fades in on a tile 15–25 u from the player. **He stands on platform tiles only (D-072):** his

@@ -127,16 +127,17 @@ func _leg_telegraphs_and_projectiles(f: Array[String]) -> void:
 	var cues: Array = []
 	for e in tv.cue_log:
 		cues.append(str(e["cue"]))
-	for want in ["thicc_ben_chime", "keystroke_tick", "meow", "isagi_gunshot", "string_sweep"]:
+	for want in ["thicc_ben_chime", "keystroke_tick", "meow", "isagi_gunshot"]:
 		if not cues.has(want):
 			f.append("leg 1: cue '%s' never played (log %s)" % [want, str(cues)])
 	if cues.count("beep") != 2:
 		f.append("leg 1: the two unknown kinds should each beep, log %s" % str(cues))
-	# 7: the four above, the two unknown-kind beeps, and Claude's strings cue (the audio
-	# layer announces the strings_line telegraph - PARKED row 14). coil_ring rides its own
-	# event, so it is not in this log.
-	if cues.has("") or cues.size() != 7:
-		f.append("leg 1: want exactly 7 cues (coil_ring rides its own event), got %s" % str(cues))
+	# 6: the four above and the two unknown-kind beeps. coil_ring rides its own event, so
+	# it is not in this log; the strings_line telegraph still beeps keystroke_tick (the
+	# view's own TELL_CUES map) but no longer plays string_sweep - the cycle-7 Claude
+	# revamp deleted the strings attack and its audio_cue_timing row (D-T4-1).
+	if cues.has("") or cues.size() != 6:
+		f.append("leg 1: want exactly 6 cues (coil_ring rides its own event), got %s" % str(cues))
 	var fill0 := _circle_fill(tv)
 	# leg 2: the projectile, the row's shot and the row's descending missile
 	var pv = world.projectile_view
