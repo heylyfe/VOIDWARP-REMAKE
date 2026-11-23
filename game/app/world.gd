@@ -2262,9 +2262,15 @@ func _render_animation(delta: float, alpha: float) -> void:
 	# Eased, so the switch between the two rigs is a blend and never a snap.
 	var level_ground := _climb_weight < RIGID_FLAT and _descent_weight < RIGID_FLAT
 	var rigid := 1.0 if (on_ground and level_ground and _land_clock < 0.0) else 0.0
-	_rigid_weight = lerpf(_rigid_weight, rigid, 1.0 - exp(-delta / RIGID_BLEND))
-	if absf(_rigid_weight - rigid) < 0.001:
-		_rigid_weight = rigid
+	if not on_ground:
+		# The owner's jump and fall poses are not to be touched, so the lobby gait is left
+		# the instant the figure leaves the ground: no part of it bleeds into the airborne
+		# poses. The hip angle still eases through the pose filter, so the leg does not snap.
+		_rigid_weight = 0.0
+	else:
+		_rigid_weight = lerpf(_rigid_weight, rigid, 1.0 - exp(-delta / RIGID_BLEND))
+		if absf(_rigid_weight - rigid) < 0.001:
+			_rigid_weight = rigid
 	if on_ground or dash or glide:
 		_air_rose = false
 	var target: Dictionary
@@ -2625,6 +2631,33 @@ func _apply_pose() -> void:
 						hem.transform if hem != null else Transform3D(),
 						hem.get_aabb() if hem != null else AABB(), socket)
 			_leg_rig.pose_leg_rigid(side, node, joint, mount, angle, _rigid_weight)
+	_rigid_floor_clear()
+
+
+## The lobby gait's blend (D-ANIM-15) crosses two very different legs, and for the few
+## frames of the crossing the blended boot can reach under the floor. The drawn figure
+## rides up by exactly what the blended leg needs, so no corner ever cuts the ground. It is
+## a pure translation of the posed nodes: no bone changes length and the solver's plants,
+## which are read from the articulated hip and not from the drawn one, are untouched.
+func _rigid_floor_clear() -> void:
+	if _rigid_weight <= 0.0 or w == null or player_model == null or not player_model.is_inside_tree():
+		return
+	var low := INF
+	for side in 2:
+		var boot: MeshInstance3D = _leg_rig.boots[side]
+		var box := boot.get_aabb()
+		for x in [box.position.x, box.end.x]:
+			for z in [box.position.z, box.end.z]:
+				var corner := boot.to_global(Vector3(x, box.position.y, z))
+				var under := Locomotion.tile_height(w, corner, corner.y + 0.3)
+				if under != -INF:
+					low = minf(low, corner.y - under)
+	if low >= 0.002:
+		return
+	var rise := Vector3.UP * (0.002 - low)
+	for node in _limbs:
+		if node != null:
+			(node as Node3D).transform.origin += rise
 
 
 ## The enemy body pass: every live runtime row gets ONE body - its bespoke view host when

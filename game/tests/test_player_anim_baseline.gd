@@ -37,7 +37,7 @@ const CASES := [
 const BASELINE := {
 	"jump": "92c5ee56ef1b277bd603115a97cec5352f9ba0394b28c209596c9d52c698b243",
 	"fall": "2361fa8aa893996fa05988ba2ec0a6ed6786172c928e421ad767e463d8b9c6a3",
-	"up_stairs": "1de2d489bc34703aae0ee673a2978043a5c3b2580e27d2e9dc81595a864f67f4",
+	"up_stairs": "6ff3d1dc1dcfbc81359884704a2c410d35b7b51d29c0fcbf0a397b27876d61c5",
 }
 
 
