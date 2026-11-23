@@ -9421,3 +9421,36 @@ divergence. The harness supports this shape, so no "harness cannot do it" caveat
 
 The negative control for the cooldown is unchanged and still works: setting
 `cooldown_ticks` to 0 fails the gap assertion with "attacks arrive 1 ticks apart".
+## D-ICON-1 (2026-11-23): the launcher icon is a procedural jump-pad render, seven sizes, one .ico
+
+**Ruling.** The owner asked for a "custom launcher icon" (CYCLE7 brief, track T3: the
+blocky avatar head or "the blue pad / void motif - pick one and make it read at 16 px").
+Picked the blue pad motif: the icon is D-JUMPPAD-5's #1A2BFF slab seen top-down (the
+owner's own ref, game/out/owner_refs/jumppad_ref.png) - a tilted rounded blue slab over
+the dark plate with two cyan launch rings - drawn per pixel from signed-distance
+functions with analytic coverage in game/tools/art/launcher_icon.gd. Deterministic,
+reproducible with the one headless command; no external art, no randomness. Sizes
+512/256/128/64/48/32/16 px land in game/assets/icons/launcher/voidwrap_<n>.png; the
+512 px png is the project icon (application/config/icon in game/project.godot), and
+game/tools/art/pack_ico.py packs the other six, PNG-compressed, into voidwrap.ico
+wired as application/icon in game/export_presets.cfg preset.0 (PNG icon frames are
+valid on every Windows since Vista). [CONTESTABLE] The icon is flat-shaded in the
+house-icon palette plus the pad's two blues; Terra reviews the 512 png and the
+palette/corner/stroke choices are retuned by re-running the single render command.
+
+## D-ICON-2 (2026-11-23): rcedit is fetched by CI and the exe is spot-checked after export
+
+**Ruling.** Godot applies the Windows exe icon with rcedit, which the repo does not
+ship (never commit binaries). CI (build.yml, Windows job) now fetches rcedit v2.0.0
+from the electron releases page, pins its sha256
+(3e7801db1a5edbec91b49a24a094aad776cb4515488ea5a4ca2289c400eade2a), and writes
+export/windows/rcedit into editor_settings-<major.minor>.tres before the export. A
+second CI step after the export runs game/tools/art/dump_pe_icons.py (stdlib only)
+against the built exe and FAILS the job when the six icon frames are not in the PE's
+resource directory - a default-icon build cannot ship silently.
+
+**One-time local setup** (same key CI writes): download rcedit-x64.exe (v2.0.0),
+park it anywhere (repo convention: game/out/tools/, gitignored), then
+Editor Settings > Export > Windows > rcedit = that path. Verified locally on this
+machine: exporting preset.0 with the key set produces an exe whose .rsrc carries
+the six 16/32/48/64/128/256 png frames and one RT_GROUP_ICON (dump_pe_icons output).
