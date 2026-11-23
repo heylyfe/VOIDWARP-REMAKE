@@ -252,7 +252,9 @@ static func tick(lv: RefCounted, player_index: int, events: Array) -> void:
 			g.collect(i, lv.tick, player_index, events)
 			if g.phase == PHASE_GOLD and not opened:
 				opened = true
-				if lv.boss != null:
+				# .get(): a test StubLevel has no boss key, and a plain lv.boss access
+				# raises "Invalid access to property or key" on it (T8b gate fix).
+				if lv.get("boss") != null:
 					return
 	if opened:
 		# The last real black gift opens the beacon on the same tick
