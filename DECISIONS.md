@@ -9643,3 +9643,59 @@ the window, and every HBox row of the panel column must fit the scroll column's 
 enemies row fails both. Reverting the Peter entry fails the Peter leg; reverting `_api()`'s fallback turns
 list-content coverage green-or-nothing in the lobby but stays asserted by the WORLD boot; reverting the
 `_spawn` peter routing fails the arena assertion with a `peter` enemy row spawned instead.
+
+## D-T2-13 (2026-11-24): the tester-spawned swarm owner gets his swarm through a WORLD-queued tick job (cycle 8, U2b)
+
+**Terra's finding 1, verbatim.** "tester-spawned Claude lacks the swarm on a level that did not already vote
+for him." The swarm attached ONLY from the voted plan - build()'s D-T4-2 leg probes the plan's votes for a
+`clawd_cfg()` and calls `ClawdsScript.attach(lv, cfg)` before `LevelState.build` turns the Level dict into
+`lv.clawds` - so a level whose votes carry no swarm-bearing entry has `lv.clawds == null`, `ClawdsScript.tick`
+returns at its null guard every tick, and the panel's direct `enemy_runtime.spawn_at()` row never attaches one.
+
+**The contract.** `world.tester_spawn_enemy(id: String, at: Vector3) -> bool` is the one app-layer entry
+point the panel calls for every spawn. It returns false AND changes nothing when no level is live (no
+controller / level state / runtime / registry) or the id is not in the registry. The spawn half is the
+panel's own path verbatim - `_behavior_for(id)` + `_cfg_for(entry, id, level_number, votes=1, beh)` +
+`rt.spawn_at()` - the same row shape the vote plan produces, no shortcut. The swarm half fires ONLY when
+the id's module declares `clawd_cfg()` (the `extra_mines()` probe idiom; no content id is named in
+app/world.gd) AND `lstate.clawds == null` (a level that DID vote the owner in built its swarm at build()
+and must never get a second).
+
+**The swarm attaches from the app layer, queued - not from the spawn call itself.** The attach is appended
+to `_tester_jobs`, a world-OWNED queue drained at the top of `step()` in the same slot as the panel's
+`tester_tick_hook` probe - so the attach happens inside a real tick and this SAME tick's `ClawdsScript.tick`
+already sees the swarm (the test pins anger moving on the attach tick itself). The job runs the same three
+steps level construction runs, nothing bespoke: `ClawdsScript.attach(lv, cfg)` (build()'s own placement
+step), `lstate.clawds = ClawdsScript.create(lv)` (the exact create `LevelState.build` performs), and
+`clawd_view.setup(lstate.clawds)` (build()'s view-setup step; the view node already exists - build()
+creates it even for a swarmless level - so the job re-setups it, creating it only if absent). Placement is
+therefore the identical pure function of the same Level dict; `test_tester_claude_swarm.gd` proves it
+spot-for-spot against a fresh `attach()` on a duplicate Level dict. NO sim file is touched, no threshold
+moves, and sim determinism is unchanged: the queue is appended to only by this tester-only entry point,
+public builds never call it, and the empty-queue cost of a public tick is one emptiness check. The swarm
+joins the state hash only after it exists, exactly as a voted swarm does. `teardown()` clears the queue, so
+a torn-down level's job never lands on the next build's state.
+
+**The idempotence rule.** Idempotence is enforced at BOTH ends: the entry point queues nothing while a
+swarm exists, and the job re-checks the same guard at run time - so a second spawn of the owner (which
+still spawns its second enemy row) attaches nothing, never replaces the swarm object, never doubles the
+body count, and two spawns racing before one tick drains still end with exactly one swarm. The panel is
+NOT modified: its `_spawn` routes through this entry point (U2a's wire-up), which is why the contract
+lives here.
+
+**The proof.** `test_tester_claude_swarm.gd` runs the real world and the real sim, no stub, on a level
+whose EMPTY votes plan no enemy at all: (A) an unbuilt world refuses the spawn and leaves no state;
+(B) one spawn, one tick, the swarm exists with the count the owner's own `clawd_cfg` asks for on this
+level's tile count - and NOT before that tick, proving the queue; (C) it REALLY ticks and not via the
+null guard's skip - the anger timer climbs exactly one tick per tick, a pickup is OBSERVED (the
+`clawd_collected` event in the world's own `last_events`, the spot taken, remaining down, the timer
+calmed to 0), then resumes; (D) the second spawn leaves the swarm object, spots and count untouched and
+queues no job; (E) two registry ids that own no `clawd_cfg()` still spawn normally and disturb nothing.
+
+**A discovery this fix surfaced (recorded, not fixed here - the panel is U2a's file).** This engine build
+(4.7.2) passes a `Callable`'s call-time arguments BEFORE its `.bind()` arguments, the reverse of what the
+panel's `_run_give_gifts(n: int, ev: Array)` signature expects from `_queue_job(...bind(n))` +
+`run.call(out["ev"])`. U2b's own job uses the engine's order (`_tester_attach_swarm(ev, cfg)`), so it is
+correct here; the panel's give-gifts job may be executing with swapped arguments on this build and belongs
+to the panel track's audit, not this one.
+
