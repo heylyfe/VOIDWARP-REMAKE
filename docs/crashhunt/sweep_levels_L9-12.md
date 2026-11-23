@@ -350,6 +350,23 @@ never renders it, exactly the rationale the allow-list already carries for
 So: the F1 fix is complete and proven, and the branch's gate is red for a reason that predates
 it and is reproducible without it.
 
+**The exact patch I would apply** (not applied - outside scope). Both files are loaders that
+never render the model's body, which is precisely what the allow-list exists for, so the
+honest repair is two reasoned entries in `game/tests/test_model_materials.gd:58`, not a
+material assignment these files have no use for:
+
+```gdscript
+const ALLOW_LIST := {
+	"res://view/respawn_view.gd": "... (existing entry, unchanged) ...",
+	"res://view/asset_load.gd": "a fail-soft PackedScene loader: it returns the scene to a caller that instantiates it and applies the body material, and never instantiates or renders the model itself, so vertex_color_use_as_albedo has nothing to act on here (U4, Terra's instantiate-on-null finding).",
+	"res://view/player_figure_fallback.gd": "builds the blocky fallback from ArrayMesh box meshes; it names res://assets/models/player_figure.glb only in a comment explaining why the fallback exists, and never loads or renders the model, so vertex_color_use_as_albedo is meaningless here.",
+}
+```
+
+The alternative - assigning `vertex_color_use_as_albedo` in the loaders - would be wrong: it
+would apply a material to a resource these two files never instantiate. Either way the call
+is the integrator's, and while the entry is missing the gate stays red for everyone.
+
 ## Raw evidence (gitignored, on disk)
 
 `game/out/sweep_L9-12.log`, `game/out/sweep_L9-12_random.log` (the two deliverable logs),
