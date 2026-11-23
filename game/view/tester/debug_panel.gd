@@ -17,7 +17,14 @@ extends Control
 # are untouched; see D-T2-1..D-T2-8 in DECISIONS.md):
 #   F10                    open / close (the mouse is released while it is open)
 #   spawn any enemy        in front of the player or at the cursor's ground point, through
-#                          enemy_runtime.spawn_at() - the runtime's own direct-spawn entry
+#                          enemy_runtime.spawn_at() - the runtime's own direct-spawn
+#                          entry. The dropdown carries EVERY registry enemy plus one
+#                          pinned Peter entry (D-T2-10): the boss is not registry
+#                          content, so his row is fixed here and _spawn routes it to the
+#                          FORCE PETER machinery - _enter_boss_arena(), never a second
+#                          boss spawn path. Both dropdowns' popups are capped to the
+#                          window height, so a long list SCROLLS and every entry stays
+#                          reachable (D-T2-10).
 #   give any upgrade       +1 owned stack: folded into the ledger (carries to every later
 #                          level) and re-applied to the live stats (world's
 #                          apply_tester_upgrade_stack; the stack's EVENT hooks go live from
@@ -53,6 +60,7 @@ const UiStyle := preload("res://view/ui_style.gd")
 const CameraRigScript := preload("res://app/camera_rig.gd")
 const CollisionScript := preload("res://sim/collision.gd")
 const CollapseScript := preload("res://sim/collapse.gd")
+const ContentApiScript := preload("res://core/content_api.gd")
 const EconomyScript := preload("res://sim/economy.gd")
 const StateHashScript := preload("res://sim/state_hash.gd")
 
@@ -64,6 +72,15 @@ const TOGGLE_KEY := KEY_F10
 const SPAWN_AHEAD_U := 4.0    # "in front of the player": this many u along the look dir
 const CURSOR_MAX_U := 200.0   # "at the cursor": the ray never marches past this
 const GROUND_LIMIT_U := 12.0  # ground snap window over the target's feet plane
+
+## D-T2-10: the owner's cycle-8 ask - the boss must be IN the list and spawnable. He is
+## not registry content (he lives in data/boss.json + sim/boss.gd), so the row is pinned
+## here and _spawn routes it to the FORCE PETER machinery, never to the enemy runtime.
+const PETER_ID := "peter"
+const PETER_LABEL := "Peter Griffin (peter)"
+## D-T2-10: a dropdown popup caps at this share of the viewport height, so a list that
+## outgrows the window scrolls inside the popup and every entry stays reachable.
+const POPUP_MAX_H_SHARE := 0.6
 
 ## T8 (merged, D-T2-7-amend): the real boss API - sim/boss.gd one instance per arena,
 ## lstate.boss holds it; world.gd's _enter_boss_arena() is the arena's own full entry
@@ -138,19 +155,25 @@ func _init() -> void:
 	column.add_child(UiStyle.rule(28.0))
 
 	# ---- enemies -----------------------------------------------------------------------
-	var eh := HBoxContainer.new()
-	eh.add_theme_constant_override("separation", UiStyle.SP_2)
-	column.add_child(eh)
+	# D-T2-10: the dropdown owns its row (full column width) and the two spawn buttons
+	# share the row below it - the old single row was 432 u wide inside a 370 u column,
+	# so the CURSOR button sat outside the viewport and pieces of the section were cut
+	# off. Every row now fits the scroll column with room to spare.
+	column.add_child(_section_label("ENEMIES"))
 	_content = OptionButton.new()
-	_content.custom_minimum_size = Vector2(232.0, UiStyle.BUTTON_H)
+	_content.name = "EnemyPick"
+	_content.custom_minimum_size = Vector2(0.0, UiStyle.BUTTON_H)
+	_content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_content.add_theme_font_size_override("font_size", UiStyle.FS_SMALL)
 	UiStyle.style_button(_content, UiStyle.SECONDARY)
-	eh.add_child(_content)
-	var ahead := _mkbtn(eh, "AHEAD", _spawn_ahead, UiStyle.PRIMARY, 92.0)
+	column.add_child(_content)
+	var ep := HBoxContainer.new()
+	ep.add_theme_constant_override("separation", UiStyle.SP_2)
+	column.add_child(ep)
+	var ahead := _mkbtn(ep, "SPAWN AHEAD", _spawn_ahead, UiStyle.PRIMARY, 156.0)
 	ahead.name = "SpawnAhead"
-	var atcur := _mkbtn(eh, "CURSOR", _spawn_at_cursor, UiStyle.PRIMARY, 92.0)
+	var atcur := _mkbtn(ep, "SPAWN AT CURSOR", _spawn_at_cursor, UiStyle.PRIMARY, 156.0)
 	atcur.name = "SpawnCursor"
-	_mkbtn(column, "SPAWN ENEMY (AHEAD)", _spawn_ahead, UiStyle.SECONDARY, -1.0)
 
 	# ---- upgrades / gold / gifts -------------------------------------------------------
 	column.add_child(_section_label("UPGRADE"))
@@ -326,14 +349,16 @@ func _world() -> Node:
 	return w if w != null and (w is Node) and w.is_inside_tree() else null
 
 
-## The world's content registry; falls back to a fresh load when no level is live.
+## The world's content registry; falls back to a fresh load when no level is live (the
+## menu and the lobby carry no world, and the list must never come up empty there).
 func _api() -> RefCounted:
 	var w := _world()
 	if w != null:
 		var a = w.get("_api")
 		if a is RefCounted:
 			return a
-	return null
+	var fallback: RefCounted = ContentApiScript.load()
+	return fallback if fallback.is_ok() else null
 
 
 func _player_feet(w: Node) -> Vector3:
@@ -350,6 +375,9 @@ func _status(p_line: String) -> void:
 
 ## Refill the enemy / upgrade dropdowns from the content registry - ids are read from the
 ## running registry, never named here (the boundary rule holds inside the tester too).
+## D-T2-10: the enemy list ends with the pinned Peter row (the boss is not registry
+## content, and the owner wants him pickable from the same list), and both popups are
+## re-capped to the window height so a long list scrolls and every entry is reachable.
 func _refresh_options() -> void:
 	var api := _api()
 	if api == null:
@@ -358,12 +386,28 @@ func _refresh_options() -> void:
 	for id in api.enemy_ids():
 		var entry: Dictionary = api.enemy(str(id))
 		_add_option(_content, "%s (%s)" % [str(entry.get("name", id)), str(id)], str(id))
+	_add_option(_content, PETER_LABEL, PETER_ID)
 	_content.selected = 0 if _content.item_count > 0 else -1
 	_upgrade_pick.clear()
 	for id in api.upgrade_ids():
 		var entry: Dictionary = api.upgrade(str(id))
 		_add_option(_upgrade_pick, "%s (%s)" % [str(entry.get("name", id)), str(id)], str(id))
 	_upgrade_pick.selected = 0 if _upgrade_pick.item_count > 0 else -1
+	_cap_popups()
+
+
+## Cap both dropdown popups to a share of the viewport height (D-T2-10): PopupMenu
+## scrolls past the cap, so nothing below the fold is unreachable. A no-op outside the
+## tree (nothing to measure) - the cap is re-applied on every refresh while open.
+func _cap_popups() -> void:
+	var vp := get_viewport()
+	if vp == null:
+		return
+	var cap := int(vp.get_visible_rect().size.y * POPUP_MAX_H_SHARE)
+	for pick in [_content, _upgrade_pick]:
+		if pick != null:
+			var pop: PopupMenu = pick.get_popup()
+			pop.max_height = cap
 
 
 ## T8 (merged) worked buttons: the labels say what the press will act on.
@@ -382,6 +426,7 @@ func on_world_built(p_world: Node) -> void:
 	if p_world == null:
 		return
 	_arm_world(p_world)
+	_refresh_options()
 
 
 func _arm_world(p_world: Node) -> void:
@@ -520,7 +565,9 @@ func _spawn_at_cursor() -> void:
 
 ## Spawn through enemy_runtime.spawn_at() - the runtime's own direct-spawn entry (the same
 ## row shape the vote plan produces). The view/billboard pass adopts the new row on the
-## next frame, exactly as it does the planned bodies.
+## next frame, exactly as it does the planned bodies. D-T2-10: the pinned Peter row routes
+## to _force_boss() - the arena's own full entry - so the boss spawns through the boss
+## machinery, never through the enemy runtime (he is not a registry enemy).
 func _spawn(p_at_cursor: bool) -> void:
 	var w := _world()
 	if w == null:
@@ -530,6 +577,9 @@ func _spawn(p_at_cursor: bool) -> void:
 	var id := _selected_id(_content)
 	if id == "" or api == null:
 		_status("pick an enemy first (or the registry is down)")
+		return
+	if id == PETER_ID:
+		_force_boss()
 		return
 	var entry: Dictionary = api.enemy(id)
 	var beh = w.call("_behavior_for", id)
