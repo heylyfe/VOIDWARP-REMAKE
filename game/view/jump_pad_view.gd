@@ -1,11 +1,13 @@
 extends Node3D
 #
-# Jump pad view (D-JUMPPAD-5; DESIGN.md section 3.4). NOT the launch pad (that one is a tile
+# Jump pad view (D-JUMPPAD-5, -9; DESIGN.md section 3.4). NOT the launch pad (that one is a tile
 # top material in level_mesher.gd, "pad"). The owner's reference (game/out/owner_refs/
 # jumppad_ref.png): a saturated blue, glossy, semi-transparent rounded-square slab with soft
 # corners, sitting just above the floor.
 #
-# One slab per pad in the sim's jump pad set (sim/jump_pads.gd), at the pad tile's centre.
+# One slab per pad in the sim's jump pad set (sim/jump_pads.gd), centred on the pad's anchor
+# tile and covering the whole 3x3 block (D-JUMPPAD-6): 2.9 u across, so it stops 0.05 u short
+# of the block's outer edge on every side.
 # Everything animated is DERIVED from sim state and the sim tick - this node owns no clock
 # and never writes sim state:
 #   compress + rebound  the slab squashes to 35 % height in 0.06 s and springs back with a
@@ -19,10 +21,10 @@ extends Node3D
 
 const TICK_DT := 1.0 / 60.0
 
-const SIZE := 0.84          # u, the slab's footprint (the tile is 1 u)
+const SIZE := 2.9           # u, the slab's footprint: the 3x3 block (3 u) less 0.05 u a side
 const HEIGHT := 0.16        # u
-const RADIUS := 0.22        # u, corner radius of the footprint
-const BEVEL := 0.07         # u, the soft top edge
+const RADIUS := 0.55        # u, corner radius of the footprint
+const BEVEL := 0.10         # u, the soft top edge
 const CORNER_SEGS := 6
 const LIFT := 0.012         # u above the tile top ("sits just above the floor")
 
@@ -40,8 +42,8 @@ const REBOUND_K := 7.0      # 1/s, damping of the rebound
 const REBOUND_W := 18.0     # rad/s, the rebound's ring frequency
 const ANIM_S := 0.9         # s after which the slab is back at rest
 const RIPPLE_S := 0.45      # s, ring lifetime
-const RIPPLE_R0 := 0.45     # u
-const RIPPLE_R1 := 2.1      # u
+const RIPPLE_R0 := 1.5      # u
+const RIPPLE_R1 := 4.4      # u
 
 var _pads: Array = []          # [x, z, y]
 var _slabs: Array = []         # MeshInstance3D per pad (the squash target)
@@ -115,6 +117,17 @@ func set_removed(keys: Dictionary) -> void:
 	_removed = keys
 
 
+## True when ANY cell of pad i's block is in the world's removed set (D-JUMPPAD-8): a pad whose
+## block lost a tile is hidden, exactly as a gift on a removed tile is.
+func _any_removed(jp: RefCounted, i: int) -> bool:
+	if _removed.is_empty():
+		return false
+	for k in jp.tile_keys(i):
+		if _removed.has(str(k)):
+			return true
+	return false
+
+
 func pad_count() -> int:
 	return _slabs.size()
 
@@ -130,7 +143,7 @@ func sync(jp: RefCounted, tick: int) -> void:
 	var now := float(tick) * TICK_DT
 	for i in _slabs.size():
 		var root: Node3D = (_slabs[i] as Node3D).get_parent()
-		var gone: bool = jp.is_lost(i) or _removed.has(jp.tile_key(i))
+		var gone: bool = jp.is_lost(i) or _any_removed(jp, i)
 		root.visible = not gone
 		if gone:
 			continue

@@ -1,6 +1,6 @@
 extends RefCounted
 #
-# game/terrain/jump_pads.gd - JUMP PAD placement (D-JUMPPAD-1; DESIGN.md section 3.4).
+# game/terrain/jump_pads.gd - JUMP PAD placement (D-JUMPPAD-1, -6, -7; DESIGN.md section 3.4).
 #
 # NOT the generator's launch pads. voidgen.gd's W.pads / level "pads" / canonical "X" line are
 # the ballistic LAUNCH pads that make spires reachable; they are frozen with the generator
@@ -8,31 +8,32 @@ extends RefCounted
 # clear of them.
 #
 # A jump pad is placed AFTER voidgen.generate() has built the Level dict:
-#   place_jump_pads(L, cfg) -> Array of [x, z, y]   (tile coords, y in HU = the tile top)
+#   place_jump_pads(L, cfg) -> Array of [x, z, y]   (the ANCHOR = the block's centre tile)
 #   attach(L)                -> stores that as L["jump_pads"] (loads data/jump_pads.json)
 # It is a pure function of the Level dict (plus the data file): it draws from its own VoidRng
 # stream seeded from the Level's own (seed, level, gen_version, attempt), so the level hash
 # still determines the pads, and voidgen.to_text() - which never reads "jump_pads" - is
 # byte-identical with or without them.
 #
-# Placement rule (the owner's spec, item 1: "next to paths, never on them"):
-#   - the ROUTE is a walkway's middle line: the generator's own centre column (o == 0), read
-#     off the packed piece's bbox for a straight 3-wide walkway, plus any tile the GEN 4
-#     centre_lane() test marks (all four neighbour columns walkable, and along one axis the cell
-#     two away empty on both sides);
-#   - a candidate is a FLOOR tile (kind 0) of a straight walkway (kind 1) one lane to the side
-#     of that middle line, with the route tile right beside it (toward the middle, same piece,
-#     same height) - the lane one tile beside the route. A walkway whose bbox cannot say which
-#     axis is its width (square, or not a straight run) carries no pad;
-#   - never on: the hub piece (the beacon dais lives there), a `stair` (jump stairs) or `ramp`
-#     walkway, a ramp tile, a tile with a 4-neighbour on its piece over 1 HU above or below
-#     (a ledge / jump-stair riser edge; a stepped climb's 1 HU tread is allowed), a tile
-#     carrying a prop, a gift slot or tripmine slot or the 8 tiles around one, a launch pad or
-#     its landing tile (or the 8 tiles around either);
-#   - headroom: no tile or prop in the 3x3 columns above it within headroom_hu (the fling must
-#     not bonk a ceiling);
-#   - count from count_by_level, at most one pad per walkway piece, pairwise XZ distance >=
-#     min_spacing_tiles; candidates are shuffled with the pad stream and taken greedily.
+# Placement rule (the owner's words, cycle 7: "jump pads revamp (3x3 tiles, outside paths,
+# 2 to 6 per level)"):
+#   - a pad is a size_tiles x size_tiles BLOCK of tiles (3x3, D-JUMPPAD-6) at ONE height, and
+#     the stored [x, z, y] is its centre tile; footprint() lists the 9 cells;
+#   - OUTSIDE the paths: every tile of the block is a FLOOR tile (kind 0) of a platform piece.
+#     A walkway tile (kind 1) IS the path and a walkway's middle line is the ROUTE, so a block
+#     of floor tiles can never cover either - the 3-wide walkway has no room for a 3x3 block
+#     that misses its centre lane, which is why the pads moved off the walkways entirely;
+#   - never on: the hub piece (the beacon dais lives there), a ramp tile, a tile carrying a
+#     prop, a gift slot, a tripmine slot, the beacon tile, a launch pad or its landing tile;
+#   - headroom: no tile or prop in the block's own columns above it within headroom_hu (the
+#     fling must not bonk a ceiling);
+#   - count from count_by_level (2 at level 1 up to 6 on big levels), at most one pad per
+#     platform piece, pairwise XZ distance >= min_spacing_tiles;
+#   - NEAREST THE PATH FIRST (D-JUMPPAD-7): candidates carry their XZ gap to the nearest
+#     walkway tile within path_step_hu vertically, and are taken nearest first (ties broken by
+#     the pad stream), so a pad is as close to the path as the level allows. The gap is a
+#     preference, not a filter: a hard "within N tiles" cap leaves some levels with no legal
+#     spot at all (measured, D-JUMPPAD-7), and the owner's floor is 2 pads per level.
 
 const VoidRngScript := preload("res://terrain/void_rng.gd")
 const VoidGenScript := preload("res://terrain/voidgen.gd")
@@ -42,21 +43,17 @@ const DATA_PATH := "res://data/jump_pads.json"
 # streams are, with a value no ST_* constant uses ("JPAD").
 const ST_JUMP_PADS := 0x4A504144
 const CLEAR := 12                     # voidgen.CLEAR: two layers are distinct at >= 12 HU
-# TERRAIN_SPEC section 2 names the walkway arches: `step` = stepped climbs (1 HU risers the
-# auto step-up walks), `stair` = jump stairs (2 HU risers), `ledge` = drop ledges, `flat`, `ramp`.
-# "Never on stairs" bars the jump stairs and the ramps; a stepped climb's tread is legal as long
-# as no neighbour on the piece is over STEP_HU off (no pad at a ledge or stair riser).
-const NO_PAD_ARCHS := ["stair", "ramp"]
-const STEP_HU := 1
 const N4 := [Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(0, -1)]
 
 # Mirrors data/jump_pads.json; the file wins for every key it carries.
 const DEFAULTS := {
+	"size_tiles": 3,
 	"count_by_level": [
-		{"from": 1, "count": 1}, {"from": 3, "count": 2},
-		{"from": 6, "count": 3}, {"from": 10, "count": 4},
+		{"from": 1, "count": 2}, {"from": 4, "count": 3}, {"from": 8, "count": 4},
+		{"from": 14, "count": 5}, {"from": 20, "count": 6},
 	],
-	"min_spacing_tiles": 12,
+	"min_spacing_tiles": 8,
+	"path_step_hu": 4,
 	"headroom_hu": 18,
 	"launch_speed": 20.0,
 	"rearm_s": 0.5,
@@ -98,6 +95,27 @@ static func attach(L: Dictionary, cfg: Dictionary = {}) -> Array:
 	return pads
 
 
+## The block's half extent in tiles: 1 for the 3x3 pad (D-JUMPPAD-6). Odd sizes only; an even
+## size_tiles is rounded down to the odd block below it, so the anchor is always a real tile.
+static func half_extent(cfg: Dictionary) -> int:
+	var n := int(cfg.get("size_tiles", DEFAULTS["size_tiles"]))
+	if n < 1:
+		n = 1
+	if n % 2 == 0:
+		n -= 1
+	return (n - 1) / 2
+
+
+## The cells a pad anchored at (x, z, y) covers, as [[x, z, y], ...] in row-major order. The
+## anchor is the centre tile; the sim triggers on any of them and the view draws the whole block.
+static func footprint(x: int, z: int, y: int, half: int) -> Array:
+	var out: Array = []
+	for dx in range(-half, half + 1):
+		for dz in range(-half, half + 1):
+			out.append([x + dx, z + dz, y])
+	return out
+
+
 ## The pad stream's seed: the generator's per-attempt base, mixed with ST_JUMP_PADS.
 static func stream_seed(L: Dictionary) -> int:
 	var M := VoidRngScript.M32
@@ -110,6 +128,7 @@ static func stream_seed(L: Dictionary) -> int:
 
 static func _index(L: Dictionary) -> Dictionary:
 	var col: Dictionary = {}
+	var cell: Dictionary = {}
 	var tiles: Array = L["tiles"]
 	for i in tiles.size():
 		var t: Array = tiles[i]
@@ -117,13 +136,14 @@ static func _index(L: Dictionary) -> Dictionary:
 		if not col.has(key):
 			col[key] = []
 		(col[key] as Array).append(i)
+		cell[Vector3i(int(t[0]), int(t[1]), int(t[2]))] = i
 	var pcol: Dictionary = {}
 	for p in L["props"]:
 		var key2 := Vector2i(int(p[0]), int(p[1]))
 		if not pcol.has(key2):
 			pcol[key2] = []
 		(pcol[key2] as Array).append(p)
-	return {"col": col, "pcol": pcol}
+	return {"col": col, "cell": cell, "pcol": pcol}
 
 
 static func _has_prop(ix: Dictionary, x: int, z: int, y: int) -> bool:
@@ -158,115 +178,89 @@ static func on_route(L: Dictionary, ix: Dictionary, i: int) -> bool:
 	return false
 
 
-static func _tile_at(L: Dictionary, ix: Dictionary, x: int, z: int, y: int) -> int:
-	for j in ix["col"].get(Vector2i(x, z), []):
-		if int(L["tiles"][j][2]) == y:
-			return j
-	return -1
-
-
-## Every tile index a pad may legally sit on, ascending (before count / spacing).
+## Every legal pad BLOCK, as [x, z, y, gap, piece_id] (the anchor is the block's centre tile),
+## ascending by tile index (before count / spacing / ordering). `gap` is the XZ distance from
+## the block's footprint to the nearest walkway tile within path_step_hu vertically: 0 = the
+## path runs right against the block, 1 = one empty cell between, and so on (D-JUMPPAD-7).
 static func candidates(L: Dictionary, cfg: Dictionary) -> Array:
 	var ix := _index(L)
 	var tiles: Array = L["tiles"]
 	var pieces: Array = L["pieces"]
+	var half := half_extent(cfg)
 	var headroom := int(cfg.get("headroom_hu", DEFAULTS["headroom_hu"]))
-	# cells a pad must keep clear of: gift / mine slots and launch pads + landings, each with
-	# its 8 neighbours (XZ only, every layer - cheap and conservative)
+	var step_hu := int(cfg.get("path_step_hu", DEFAULTS["path_step_hu"]))
+	# tiles a pad must keep clear of: gift / mine slots, the beacon, launch pads + landings.
+	# "Never ON" (the owner's words): the block may sit right beside one, never over it.
 	var banned: Dictionary = {}
-	var ban := func(x: int, z: int) -> void:
-		for dx in range(-1, 2):
-			for dz in range(-1, 2):
-				banned[Vector2i(x + dx, z + dz)] = true
 	for g in L.get("gifts", []):
-		ban.call(int(g["x"]), int(g["z"]))
+		banned[Vector2i(int(g["x"]), int(g["z"]))] = true
 	for p in L.get("pads", []):
-		ban.call(int(p[0]), int(p[1]))
-		ban.call(int(p[3]), int(p[4]))
+		banned[Vector2i(int(p[0]), int(p[1]))] = true
+		banned[Vector2i(int(p[3]), int(p[4]))] = true
 	var bx: Array = L.get("beacon", [0, 0, 1])
-	ban.call(int(bx[0]), int(bx[1]))
-	var route_cache: Dictionary = {}
+	banned[Vector2i(int(bx[0]), int(bx[1]))] = true
+	# the path: every walkway tile, as Vector3i(x, y, z)
+	var walk: Array = []
+	for i in tiles.size():
+		if int(pieces[int(tiles[i][4])]["kind"]) == 1:
+			walk.append(Vector3i(int(tiles[i][0]), int(tiles[i][2]), int(tiles[i][1])))
 	var out: Array = []
 	for i in tiles.size():
 		var t: Array = tiles[i]
 		var x := int(t[0])
 		var z := int(t[1])
 		var y := int(t[2])
-		var pid := int(t[4])
-		if int(t[3]) != 0:
-			continue                                     # a ramp tile
-		var pc: Dictionary = pieces[pid]
-		if int(pc["role"]) == VoidGenScript.ROLE_HUB or int(pc["kind"]) != 1:
-			continue                                     # hub / beacon, or not a walkway
-		if NO_PAD_ARCHS.has(str(pc["arch"])):
-			continue                                     # jump stairs, ramps
-		if banned.has(Vector2i(x, z)) or _has_prop(ix, x, z, y):
-			continue
-		var ax := lateral_axis(pc)
-		if ax < 0:
-			continue                                     # not a straight walkway: no lane read
-		if _route(L, ix, i, route_cache):
-			continue                                     # ON the path: never
-		# the lane one tile beside the middle line, and the route tile right next to it
-		# (toward the middle, same height) must exist on the same walkway
-		var bb: Array = pc["bbox"]
-		var mid2: int = int(bb[ax]) + int(bb[ax + 2])
-		var lat: int = x if ax == 0 else z
-		if absi(lat * 2 - mid2) != 2:
-			continue
-		var step_in: int = -1 if lat * 2 > mid2 else 1
-		var rx: int = x + (step_in if ax == 0 else 0)
-		var rz: int = z + (step_in if ax == 1 else 0)
-		var r := _tile_at(L, ix, rx, rz, y)
-		if r < 0 or int(tiles[r][4]) != pid or not _route(L, ix, r, route_cache):
-			continue
-		var flat := true
-		for d in N4:
-			for jj in ix["col"].get(Vector2i(x + d.x, z + d.y), []):
-				var tj: Array = tiles[jj]
-				if int(tj[4]) == pid and absi(int(tj[2]) - y) < CLEAR 						and (absi(int(tj[2]) - y) > STEP_HU or int(tj[3]) != 0):
-					flat = false
-		if not flat:
+		if not _block_ok(L, ix, x, z, y, half, banned):
 			continue
 		if not _headroom_ok(L, ix, x, z, y, headroom):
 			continue
-		out.append(i)
+		out.append([x, z, y, _path_gap(walk, x, z, y, half, step_hu), int(t[4])])
 	return out
 
 
-## A straight walkway's lateral axis read off its packed bbox: 0 = the lanes run along z (the
-## width is on x), 1 = the width is on z; -1 when the bbox cannot say (both extents or neither
-## equal the width - a square walkway, or a piece that is not a straight run).
-static func lateral_axis(pc: Dictionary) -> int:
-	if int(pc["kind"]) != 1:
-		return -1
-	var bb: Array = pc["bbox"]
-	var ex: int = int(bb[2]) - int(bb[0]) + 1
-	var ez: int = int(bb[3]) - int(bb[1]) + 1
-	var w: int = int(pc["w"])
-	if ex == w and ez != w:
-		return 0
-	if ez == w and ex != w:
-		return 1
-	return -1
+## True when the whole block anchored at (x, z, y) is legal: every cell is a FLOOR tile of one
+## non-hub platform piece at that height, no ramp tile, no prop, and none of the banned cells.
+## A walkway tile (kind 1) is the PATH and a walkway's middle line is the ROUTE, so this one
+## test is what keeps a pad outside the paths and off the route (D-JUMPPAD-6).
+static func _block_ok(L: Dictionary, ix: Dictionary, x: int, z: int, y: int, half: int,
+		banned: Dictionary) -> bool:
+	var tiles: Array = L["tiles"]
+	var pieces: Array = L["pieces"]
+	var cell: Dictionary = ix["cell"]
+	for dx in range(-half, half + 1):
+		for dz in range(-half, half + 1):
+			var key := Vector3i(x + dx, z + dz, y)
+			if not cell.has(key):
+				return false
+			var tj: Array = tiles[int(cell[key])]
+			var pc: Dictionary = pieces[int(tj[4])]
+			if int(tj[3]) != 0:
+				return false                       # a ramp tile
+			if int(pc["kind"]) != 0:
+				return false                       # a walkway tile IS the path: never
+			if int(pc["role"]) == VoidGenScript.ROLE_HUB:
+				return false                       # the hub / beacon dais
+			if _has_prop(ix, x + dx, z + dz, y):
+				return false
+			if banned.has(Vector2i(x + dx, z + dz)):
+				return false
+	return true
 
 
-## The ROUTE: a walkway tile on the generator's GEN 4 centre lane, or on the middle line of a
-## straight walkway (the generator's own centre column, o == 0 - the GEN 4 test misses it at a
-## row whose neighbour is a gap or a prop, and that tile is still walked).
-static func _route(L: Dictionary, ix: Dictionary, i: int, cache: Dictionary) -> bool:
-	if not cache.has(i):
-		var t: Array = L["tiles"][i]
-		var pc: Dictionary = L["pieces"][int(t[4])]
-		var on := false
-		if int(pc["kind"]) == 1:
-			var ax := lateral_axis(pc)
-			if ax >= 0:
-				var bb: Array = pc["bbox"]
-				on = int(t[ax]) * 2 == int(bb[ax]) + int(bb[ax + 2])
-			on = on or on_route(L, ix, i)
-		cache[i] = on
-	return bool(cache[i])
+## The XZ gap from the block's footprint to the nearest walkway tile within step_hu vertically:
+## 0 = the path runs right against the block, 1 = one empty cell between, ... 99 = no walkway
+## within step_hu of this height (a spire reached only by a launch pad).
+static func _path_gap(walk: Array, x: int, z: int, y: int, half: int, step_hu: int) -> int:
+	var best := 99
+	for w in walk:
+		if absi(int(w.y) - y) > step_hu:
+			continue
+		var d: int = maxi(absi(int(w.x) - x), absi(int(w.z) - z)) - half - 1
+		if d < best:
+			best = d
+			if best <= 0:
+				return 0
+	return best
 
 
 static func _headroom_ok(L: Dictionary, ix: Dictionary, x: int, z: int, y: int, hu: int) -> bool:
@@ -286,7 +280,8 @@ static func _headroom_ok(L: Dictionary, ix: Dictionary, x: int, z: int, y: int, 
 	return true
 
 
-## THE placement function. Returns Array of [x, z, y] in placement order (deterministic).
+## THE placement function. Returns Array of [x, z, y] (the block's centre tile) in placement
+## order (deterministic): nearest the path first, ties broken by the pad stream.
 static func place_jump_pads(L: Dictionary, cfg: Dictionary) -> Array:
 	var want := count_for_level(cfg, int(L.get("level", 1)))
 	if want <= 0:
@@ -296,26 +291,31 @@ static func place_jump_pads(L: Dictionary, cfg: Dictionary) -> Array:
 		return []
 	var rng = VoidRngScript.new(stream_seed(L))
 	rng.shuffle(cand)
+	# nearest the path first; the shuffled index breaks ties, so the order is total
+	var order: Array = []
+	for i in cand.size():
+		order.append([int(cand[i][3]), i])
+	order.sort_custom(func(a, b) -> bool: return a[0] < b[0] or (a[0] == b[0] and a[1] < b[1]))
 	var spacing := float(cfg.get("min_spacing_tiles", DEFAULTS["min_spacing_tiles"]))
 	var sp2 := spacing * spacing
 	var used_piece: Dictionary = {}
 	var out: Array = []
-	for i in cand:
+	for o in order:
 		if out.size() >= want:
 			break
-		var t: Array = L["tiles"][i]
-		var pid := int(t[4])
+		var c: Array = cand[int(o[1])]
+		var pid := int(c[4])
 		if used_piece.has(pid):
 			continue
 		var ok := true
 		for p in out:
-			var dx := float(int(t[0]) - int(p[0]))
-			var dz := float(int(t[1]) - int(p[1]))
+			var dx := float(int(c[0]) - int(p[0]))
+			var dz := float(int(c[1]) - int(p[1]))
 			if dx * dx + dz * dz < sp2:
 				ok = false
 				break
 		if not ok:
 			continue
 		used_piece[pid] = true
-		out.append([int(t[0]), int(t[1]), int(t[2])])
+		out.append([int(c[0]), int(c[1]), int(c[2])])
 	return out

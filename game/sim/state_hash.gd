@@ -42,15 +42,19 @@ extends RefCounted
 #                                          runs whose collapse.json differed would hash the same
 #                                          until the first zone fell (B10 review finding 1).
 #   JUMPPADS <pads x:z:y csv> <ready ticks csv> <lost hex> <rearm_ticks> <launch_speed bits>
-#                                          (D-JUMPPAD-4) the jump pads: their ordered coordinates
+#            <size_tiles>
+#                                          (D-JUMPPAD-4, -9) the jump pads: their ordered
+#                                          coordinates - the CENTRE tile of each 3x3 block
 #                                          (placement depends on data/jump_pads.json, which the
 #                                          level hash does not cover - Terra review finding 2),
 #                                          then their live state: per pad the
 #                                          first tick it may fire again and the bitset of pads
-#                                          whose tile fell in the collapse, then the two data
-#                                          knobs (data/jump_pads.json). Only when the level
-#                                          carries jump pads (lv.jump_pads non-null), so every
-#                                          dump of a level built without them is unchanged.
+#                                          whose block lost a tile in the collapse, then the
+#                                          three data knobs (data/jump_pads.json): re-arm ticks,
+#                                          launch speed and the block size, which decides the
+#                                          footprint the coordinates stand for. Only when the
+#                                          level carries jump pads (lv.jump_pads non-null), so
+#                                          every dump of a level built without them is unchanged.
 # Level content itself is NOT dumped: it is a pure function of the seed and enters the hash once,
 # via LEVELHASH.
 
@@ -152,9 +156,9 @@ static func dump(rs: RefCounted) -> PackedStringArray:
 	# and the lost bitset are live state, the two knobs are data.
 	var jp = lv.get("jump_pads")
 	if jp != null:
-		out.append("JUMPPADS %s %s %s %d %s" % [str(jp.pads_csv()), str(jp.ready_csv()),
+		out.append("JUMPPADS %s %s %s %d %s %d" % [str(jp.pads_csv()), str(jp.ready_csv()),
 				(jp.lost as PackedByteArray).hex_encode(), int(jp.rearm_ticks),
-				bits(float(jp.launch_speed))])
+				bits(float(jp.launch_speed)), int(jp.size_tiles)])
 	return out
 
 

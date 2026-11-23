@@ -1,23 +1,24 @@
 extends RefCounted
 #
-# sim/jump_pads.gd - the JUMP PAD runtime (D-JUMPPAD-2..4; DESIGN.md section 3.4).
+# sim/jump_pads.gd - the JUMP PAD runtime (D-JUMPPAD-2..4, -8; DESIGN.md section 3.4).
 #
 # NOT the launch pads (controller._try_launch_pad, level "pads"). The pad SET is level data -
-# terrain/jump_pads.gd places it as Level["jump_pads"] = [[x, z, y], ...], a pure function of
-# the Level dict AND data/jump_pads.json - the config is outside the level hash, so the ordered
-# pad coordinates ARE dumped (pads_csv, Terra review finding 2). Also on the JUMPPADS line:
+# terrain/jump_pads.gd places it as Level["jump_pads"] = [[x, z, y], ...] where [x, z, y] is the
+# CENTRE tile of a size_tiles x size_tiles block (3x3, D-JUMPPAD-6) - a pure function of the
+# Level dict AND data/jump_pads.json - the config is outside the level hash, so the ordered pad
+# coordinates ARE dumped (pads_csv, Terra review finding 2). Also on the JUMPPADS line:
 #   ready_tick[i]  the first level tick at which pad i may fire again (0 = armed from the start)
-#   lost           bitset: pad i's tile fell in the platform collapse (it falls with the tile)
-#   rearm_ticks / launch_speed - data (data/jump_pads.json), pinned so two runs whose data
-#                  differ cannot hash the same.
+#   lost           bitset: pad i's block lost a tile in the platform collapse (it falls with it)
+#   rearm_ticks / launch_speed / size_tiles - data (data/jump_pads.json), pinned so two runs
+#                  whose data differ cannot hash the same.
 #
 # tick(lv, ctls, w, tick, events) runs once per sim tick AFTER the controllers stepped (the
 # same slot MinesScript.tick runs in). A pad fires for a player who is grounded with feet on
-# the pad tile's top and centre inside its cell, while the pad is armed (tick >= ready_tick),
-# not lost and its tile is in collision (not in w["removed"]). Firing calls the controller's
-# jump_pad_launch() - the one place the movement refill lives - and sets
-# ready_tick = tick + rearm_ticks, so a player standing on it cannot chain-fire. Integer ticks
-# only: no float timer, no RNG.
+# the top of ANY of the block's tiles and centre inside that cell (D-JUMPPAD-8), while the pad
+# is armed (tick >= ready_tick), not lost and the tile under the player is in collision (not in
+# w["removed"]). Firing calls the controller's jump_pad_launch() - the one place the movement
+# refill lives - and sets ready_tick = tick + rearm_ticks, so a player standing on it cannot
+# chain-fire. Integer ticks only: no float timer, no RNG.
 
 const CollisionScript := preload("res://sim/collision.gd")
 const JumpPadPlaceScript := preload("res://terrain/jump_pads.gd")
@@ -25,12 +26,14 @@ const JumpPadPlaceScript := preload("res://terrain/jump_pads.gd")
 const TICK_HZ := 60.0
 const FEET_EPS := 0.01
 
-var pads: Array = []                       # [x, z, y] per pad (Level["jump_pads"])
+var pads: Array = []                       # [x, z, y] per pad: the block's CENTRE tile
 var ready_tick := PackedInt32Array()
 var lost := PackedByteArray()
 var rearm_ticks: int = 30
 var launch_speed: float = 20.0
-var _at: Dictionary = {}                   # "x,z" -> Array[int] pad ids (lookup only)
+var size_tiles: int = 3                    # the block is size_tiles x size_tiles (D-JUMPPAD-6)
+var half: int = 1                          # (size_tiles - 1) / 2
+var _at: Dictionary = {}                   # "x,z" -> Array[int] pad ids, every block cell
 
 
 ## null when the Level carries no jump pads (the key is absent or empty), so a level without
@@ -43,13 +46,18 @@ static func create(level: Dictionary, cfg: Dictionary = {}) -> RefCounted:
 	var jp := new()
 	jp.rearm_ticks = maxi(1, int(round(float(c.get("rearm_s", 0.5)) * TICK_HZ)))
 	jp.launch_speed = float(c.get("launch_speed", 20.0))
+	jp.size_tiles = maxi(1, int(c.get("size_tiles", 3)))
+	jp.half = (jp.size_tiles - 1) / 2
 	for p in lst:
 		var id: int = jp.pads.size()
 		jp.pads.append([int(p[0]), int(p[1]), int(p[2])])
-		var key := "%d,%d" % [int(p[0]), int(p[1])]
-		if not jp._at.has(key):
-			jp._at[key] = []
-		(jp._at[key] as Array).append(id)
+		# every cell of the block maps to the pad, so standing on any of them fires it
+		for dx in range(-jp.half, jp.half + 1):
+			for dz in range(-jp.half, jp.half + 1):
+				var key := "%d,%d" % [int(p[0]) + dx, int(p[1]) + dz]
+				if not jp._at.has(key):
+					jp._at[key] = []
+				(jp._at[key] as Array).append(id)
 	jp.ready_tick.resize(jp.pads.size())
 	jp.ready_tick.fill(0)
 	jp.lost.resize((jp.pads.size() + 7) >> 3)
@@ -68,10 +76,21 @@ func is_armed(i: int, tick: int) -> bool:
 	return not is_lost(i) and tick >= ready_tick[i]
 
 
-## The collision tile key of pad i's tile (collision.gd's own format).
+## The collision tile key of pad i's CENTRE tile (collision.gd's own format).
 func tile_key(i: int) -> String:
 	var p: Array = pads[i]
 	return CollisionScript.tile_key(int(p[0]), int(p[1]), int(p[2]))
+
+
+## The collision tile keys of every cell of pad i's block (D-JUMPPAD-8): the collapse takes the
+## pad when ANY of them falls, and the view hides it while any of them is removed.
+func tile_keys(i: int) -> PackedStringArray:
+	var p: Array = pads[i]
+	var out := PackedStringArray()
+	for dx in range(-half, half + 1):
+		for dz in range(-half, half + 1):
+			out.append(CollisionScript.tile_key(int(p[0]) + dx, int(p[1]) + dz, int(p[2])))
+	return out
 
 
 ## The pad under a body at (px, py feet, pz), or -1. Height must match the tile top.
@@ -83,8 +102,8 @@ func pad_at(px: float, py: float, pz: float) -> int:
 	return -1
 
 
-## The platform collapse took these tile keys ("x,z,y"): a pad on one falls with it, for good.
-## Returns the pad ids this call dropped.
+## The platform collapse took these tile keys ("x,z,y"): a pad that loses ANY cell of its block
+## falls with it, for good (D-JUMPPAD-8). Returns the pad ids this call dropped.
 func sweep(fallen_keys: Array) -> Array:
 	var out: Array = []
 	if fallen_keys.is_empty():
@@ -93,9 +112,13 @@ func sweep(fallen_keys: Array) -> Array:
 	for k in fallen_keys:
 		gone[str(k)] = true
 	for i in pads.size():
-		if not is_lost(i) and gone.has(tile_key(i)):
-			lost[i >> 3] |= 1 << (i & 7)
-			out.append(i)
+		if is_lost(i):
+			continue
+		for k in tile_keys(i):
+			if gone.has(str(k)):
+				lost[i >> 3] |= 1 << (i & 7)
+				out.append(i)
+				break
 	return out
 
 
@@ -112,7 +135,9 @@ static func tick(lv, ctls: Array, w: Dictionary, tick: int, events: Array) -> vo
 		if pid < 0 or not jp.is_armed(pid, tick):
 			continue
 		var p: Array = jp.pads[pid]
-		if not CollisionScript.tile_alive(w, int(p[0]), int(p[1]), int(p[2])):
+		# the cell the player actually stands on, not the block's centre (D-JUMPPAD-8)
+		if not CollisionScript.tile_alive(w, int(floor(float(ctl.x))), int(floor(float(ctl.z))),
+				int(p[2])):
 			continue
 		jp.ready_tick[pid] = tick + jp.rearm_ticks
 		var ev: Array = []
