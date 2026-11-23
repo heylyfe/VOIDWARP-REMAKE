@@ -8708,10 +8708,17 @@ was already T8a's (`bankai_selected`, one draw keyed by run seed and level, in s
 replays match). T8b adds activation, the kill and the finish.
 
 The split is deliberate. The SIM owns the timing: `start()` sets `bankai_active` when the
-roll selects, `bankai_tick` counts, and at `bankai.hit_tick` (1260 = 21.0 s, the
-cinematic's own first `target_hit`) it emits `bankai_hit` and kills Peter outright from
-full HP; at `bankai.end_tick` (1530 = 25.5 s, the cinematic's `TOTAL_DURATION`) it emits
-`bankai_finished`. Both ticks are data. The VIEW owns the show: `boss_view.gd` creates
+roll selects, `bankai_tick` counts, and at `bankai.hit_tick` (1290 = 21.5 s) it emits
+`bankai_hit` and kills Peter outright from full HP; at `bankai.end_tick` (1530 = 25.5 s,
+the cinematic's `TOTAL_DURATION`) it emits `bankai_finished`. Both ticks are data.
+
+`hit_tick` moved from 1260 to 1290 in review round 2. 1260 is the cinematic's own first
+`target_hit`, which is the frame the FIRST gift lands - but the swarm keeps arriving for
+another half second, so killing Peter on that exact tick let the sim's death race the
+rest of the gifts. 1290 is 0.5 s later, after the swarm has landed, so the gifts always
+finish arriving before Peter dies. The view additionally hides the sprite on the
+cinematic's `target_hit` rather than on the sim's `bankai_hit`, so the visual death
+coincides with the gifts and the sim's kill is the authority for the win flow. The VIEW owns the show: `boss_view.gd` creates
 the cinematic on `bankai_started`, calls `play(_sprite)` so the gifts target Peter, and
 follows `animation_started`, `target_hit` and `animation_finished` for presentation only.
 The cinematic runs on render time and will drift from the sim's tick clock by a frame or
@@ -8726,3 +8733,119 @@ beacon for the 25.5 s. The beacon opens at the kill (21.0 s) through the ordinar
 The test finds a seed the roll selects, proves the roll and the whole event stream replay
 identically, and asserts the kill lands on `hit_tick` from full HP and the finish on
 `end_tick`.
+
+## D-T8B-5 (2026-11-23) Telegraphs: the lane is committed at wind-up, and the marker runs on ticks
+
+Review round 2 found the bowling wind-up had no visible cue at all: the delay was real
+but the player could not tell an attack had started. It also found the green_fn's ground
+marker expired after 40 RENDER FRAMES, so at 144 FPS it vanished after ~278 ms - before
+the 500 ms wind-up had even finished - and that it marked the player's WIND-UP position
+while the shot aims at their RELEASE position, so moving during the wind-up made the
+marker a lie.
+
+Three fixes, and the first one is a SIM change because the marker cannot be truthful
+otherwise:
+
+1. The bowling lane is committed at wind-up. `boss.gd` now stores `_aim` (a unit XZ
+   direction) when the wind-up event fires and rolls the ball down that lane, and the
+   wind-up event carries `aim` so the view can draw the exact lane. `_aim` is in
+   `snapshot()`, so it is hashed and replays. Before this the ball re-aimed at the player
+   at release, which meant any marker drawn at wind-up would have been a guess. The
+   player can now read the lane and step out of it, which is the dodge the brief asks
+   for. This is the one place the contract grew; it is additive (a new event key and a
+   new snapshot field) and the header comment says so.
+2. The marker's lifetime is tick-driven. `_age_marker()` runs at the top of `on_events`,
+   which the world calls exactly once per sim tick, and counts down `MARKER_TICKS`. The
+   `_process` override is gone, so the marker's life is the same at 30 FPS and at 240.
+3. The green_fn wind-up claims no line. It shows a charge disc at Peter's feet - honest,
+   because the shot is not aimed yet - and the real aim line appears on release, built
+   from `boss_projectile_spawned`'s position and velocity. That line is the shot's actual
+   path, not a prediction.
+
+The bowling wind-up also swaps Peter to a held-ball pose with a `BOWLING_TINT` on the
+sprite, so the pose change and the lane marker together read as "a bowling ball is
+coming" without any text.
+
+## D-T8B-6 (2026-11-23) The Bankai is sequenced: the sim clock is authority, the view sequences presentation
+
+Review round 2 found the sequence was not actually sequenced. The sim clock killed Peter
+and the view freed the cinematic independently, so under render drift Peter could die
+before the gifts landed, and the node could be freed before `animation_finished` - which
+bypasses the cinematic's own `stop()`, the only thing that restores the player's camera.
+
+The split is now explicit:
+
+- The SIM still owns the kill tick. `bankai.hit_tick` is 1290 (see D-T8B-4), after the
+  swarm has landed, and `bankai_hit` is what the win flow keys off. A replay reproduces
+  it exactly.
+- The VIEW sequences the presentation. The sprite hides on the cinematic's `target_hit`,
+  not on the sim's `bankai_hit`, so the visual death coincides with the gifts. The sim's
+  `bankai_hit` is a fallback that only fires when `_bankai == null` (no cinematic to
+  follow).
+- `_release_bankai()` calls `stop()` before `queue_free()`, unconditionally, so the
+  camera is restored on every path out - normal finish, sim finish, or teardown.
+- `bankai_finished` does not free the node immediately. It arms `_bankai_grace`, a
+  bounded countdown from `bankai.grace_ticks` (60 = 1 s) in data, aged per tick by
+  `_age_bankai()`. If `animation_finished` arrives inside the grace the node is released
+  by the signal; if the grace runs out first, `_release_bankai()` stops it explicitly.
+  Either way the camera is restored and the node is freed exactly once.
+
+`grace_ticks` is data, passed to the view through `setup()`, so the bound is tunable
+without touching code.
+
+Two source fixes fell out of making this testable headless, both in the dormant
+cinematic and both real defects rather than test scaffolding:
+
+- `play()` read `get_viewport().get_camera_3d()` unguarded. `get_viewport()` is null
+  outside the tree, so the cinematic crashed anywhere it was driven without a viewport.
+  It now guards, and null means "no camera to restore".
+- The procedural rig was built only in `_ready()`, which does not run outside the tree,
+  so `_anim_cam` was null and `play()` crashed. The build moved into `_ensure_built()`,
+  called from both `_ready()` and `play()`, and the guard makes a second call a no-op.
+  `_update_animation`'s `to_local(target.global_position)` is likewise skipped when
+  neither node is in a tree, falling back to the cinematic's own target point.
+
+## D-T8B-7 (2026-11-23) The Bankai input lock covers the look, not just the move
+
+The lock was incomplete. `world.gd` gated `ctl.step` on `not boss.bankai_active`, which
+stops movement, jumping and gift firing - but mouse-look is handled in `_unhandled_input`
+and writes the rig's yaw and pitch directly, so the player could still swing the camera
+around while the cinematic owned it. `_unhandled_input` now returns early on
+`lstate.boss.bankai_active`, so the whole input surface is locked for the 25.5 s.
+
+The lock stays SIM-side for movement (the sim must not advance the player, or a replay
+would diverge) and view-side for the look (the look never touches sim state, so gating it
+in the view is enough and keeps the sim free of input concerns).
+
+## D-T8B-8 (2026-11-23) The window tests measure the window, in ticks, and the replay is a real replay
+
+Two test defects, both found in review round 2.
+
+**The window arithmetic mixed units.** Both calculations added a flight time in SECONDS
+to a wind-up in TICKS and then multiplied the sum by DT, so the number they asserted was
+not the wind-up-to-arrival time at all. Everything is now in ticks: airtime, flight,
+hit window, dodge and the gap between arrivals. The arithmetic also measures travel to
+CONTACT rather than to the player's centre - the projectile hits when its leading edge
+meets the player's near edge, so the distance is `dist - (radius + half_width)`. That is
+the shorter, honest window, and it is the number the sim actually produces.
+
+**The arithmetic was only checked against itself.** A new `_measured_windows` leg runs
+the real sim against a stationary player, records the tick the wind-up event fired and
+the tick the hit landed, and asserts the measured wind-up-to-arrival count matches the
+data within 2 ticks and clears the 400 ms floor. Measured: bowling 103 ticks against a
+predicted 104, green_fn 67 against 68. The tolerance is 2 ticks because the sim's
+discrete step can land the contact one tick either side of the continuous prediction.
+This leg has teeth: with the pre-fix centre-distance arithmetic it failed by 5 ticks.
+
+**The replay was not a replay.** The old leg ran the same scripted formula twice and
+compared the hashes, which proves the sim is deterministic but not that a recorded
+command stream reproduces it. `_record_and_replay` now does what the replay system does
+(see `test_replay.gd`): run one records every command dict it issued, run two feeds that
+captured stream back verbatim, and the state hash must agree at every 30th tick. It runs
+twice - once for an ordinary fight (240 ticks, several attack cycles) and once for a
+Bankai fight (past `hit_tick`, so the Bankai clock and the death are inside the hashed
+span). A command that is not captured, or a sim field that is not hashed, shows up as a
+divergence. The harness supports this shape, so no "harness cannot do it" caveat applies.
+
+The negative control for the cooldown is unchanged and still works: setting
+`cooldown_ticks` to 0 fails the gap assertion with "attacks arrive 1 ticks apart".

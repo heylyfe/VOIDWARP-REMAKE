@@ -18,7 +18,14 @@ extends RefCounted
 #   4. any hit kills the player and Peter laughs (through the real World dispatch).
 #   5. the Bankai roll is deterministic across seeds and replays, and the kill path
 #      insta-kills Peter at the cinematic's own hit tick.
-#   6. the arena state hash is deterministic across a replay with the attacks live.
+#   6. the arena state hash is deterministic across a REAL record/replay - run one records
+#      its command stream, run two replays it verbatim - for both an ordinary fight and a
+#      Bankai fight, so the Bankai clock and the death are inside the hashed span.
+#
+# The window arithmetic in (1) is a claim about the DATA. _measured_windows then runs the
+# real sim against a stationary player and asserts the measured wind-up-to-arrival tick
+# count matches the data, so the claim is checked against the shipped code and not just
+# against itself.
 #
 # Every loop is bounded. The attack legs run the boss and the controller directly (no
 # World) so one attack can be isolated from the other; the death and hash legs use the
@@ -44,11 +51,13 @@ const JUMP_LEAD_TICKS := 20
 func run() -> Array[String]:
 	var f: Array[String] = []
 	_windows(f)
+	_measured_windows(f)
 	_bowling_ball(f)
 	_green_fn(f)
 	_hit_kills_and_laughs(f)
 	_bankai(f)
-	_replay_hash(f)
+	_record_and_replay(f, false)
+	_record_and_replay(f, true)
 	return f
 
 
@@ -61,43 +70,98 @@ func _windows(f: Array[String]) -> void:
 	var dist := absf(float(arena["spawn_z"]) - float(arena["boss_z"]))
 	var gravity := float(body["gravity"])
 	var jump_v := float(body["jump_velocity"])
-	var airtime := 2.0 * jump_v / gravity
-	var apex := jump_v * jump_v / (2.0 * gravity)
 	var half_w := float(body["half_width"])
 	var run_speed := float(body["run_speed"])
+	# EVERY number below is in TICKS. The first version of this test added a flight time in
+	# SECONDS to a wind-up in TICKS and then multiplied by DT, so it never established the
+	# wind-up-to-arrival timing it claimed. Ticks throughout, and _measured_windows then
+	# checks the same numbers against the real sim.
+	var airtime := 2.0 * jump_v / gravity * 60.0
+	var apex := jump_v * jump_v / (2.0 * gravity)
 
+	# Travel is measured to CONTACT, not to the player's centre: the projectile hits when its
+	# leading edge meets the player's near edge, so the distance covered is
+	# dist - (radius + half_width). That is the shorter, honest window.
 	var bb: Dictionary = cfg["bowling_ball"]
-	var bb_flight := dist / float(bb["speed_u_per_s"])
-	var bb_hit := 2.0 * (float(bb["radius_u"]) + half_w) / float(bb["speed_u_per_s"])
+	var bb_reach := float(bb["radius_u"]) + half_w
+	var bb_flight := (dist - bb_reach) / float(bb["speed_u_per_s"]) * 60.0
+	var bb_window := float(bb["windup_ticks"]) + bb_flight
+	var bb_hit := 2.0 * bb_reach / float(bb["speed_u_per_s"]) * 60.0
+	if bb_window < 24.0:
+		f.append("bowling ball: %.0f ticks (%.0f ms) from wind-up to arrival is under 400 ms"
+			% [bb_window, bb_window * 1000.0 / 60.0])
 	if airtime < bb_hit * 2.0:
-		f.append("bowling ball: a %.3f s jump does not cover the %.3f s hit window twice"
+		f.append("bowling ball: a %.1f-tick jump does not cover the %.1f-tick hit window twice"
 			% [airtime, bb_hit])
 	if float(bb["height_u"]) >= apex:
 		f.append("bowling ball: %.2f u tall is not under the %.2f u jump apex"
 			% [float(bb["height_u"]), apex])
-	var bb_window := (float(bb["windup_ticks"]) + bb_flight) * DT
-	if bb_window < 0.4:
-		f.append("bowling ball: %.0f ms from windup to arrival is under 400 ms"
-			% (bb_window * 1000.0))
 
 	var gf: Dictionary = cfg["green_fn"]
-	var gf_flight := dist / float(gf["speed_u_per_s"])
-	var gf_window := (float(gf["windup_ticks"]) + gf_flight) * DT
-	if gf_window < 0.4:
-		f.append("green_fn: %.0f ms from windup to arrival is under the 400 ms floor"
-			% (gf_window * 1000.0))
-	var dodge := (float(gf["radius_u"]) + half_w) / run_speed
+	var gf_reach := float(gf["radius_u"]) + half_w
+	var gf_flight := (dist - gf_reach) / float(gf["speed_u_per_s"]) * 60.0
+	var gf_window := float(gf["windup_ticks"]) + gf_flight
+	if gf_window < 24.0:
+		f.append("green_fn: %.0f ticks (%.0f ms) from wind-up to arrival is under the 400 ms floor"
+			% [gf_window, gf_window * 1000.0 / 60.0])
+	var dodge := gf_reach / run_speed * 60.0
 	if dodge * 2.0 >= gf_flight:
-		f.append("green_fn: the %.3f s sideways dodge does not fit the %.3f s flight"
+		f.append("green_fn: the %.1f-tick sideways dodge does not fit the %.1f-tick flight"
 			% [dodge, gf_flight])
 
 	# The two attacks must not land inside one jump, or the fight is a single dodge.
-	var bb_arrive := float(bb["windup_ticks"]) + bb_flight * 60.0
-	var gf_arrive := float(bb["windup_ticks"]) + float(cfg["cooldown_ticks"]) \
-		+ float(gf["windup_ticks"]) + gf_flight * 60.0
-	if gf_arrive - bb_arrive <= airtime * 60.0:
+	var bb_arrive := float(bb["windup_ticks"]) + bb_flight
+	var gap := float(cfg["cooldown_ticks"])
+	var gf_arrive := float(bb["windup_ticks"]) + gap + float(gf["windup_ticks"]) + gf_flight
+	if gf_arrive - bb_arrive <= airtime:
 		f.append("attacks arrive %.0f ticks apart; a %.0f-tick jump covers both"
-			% [gf_arrive - bb_arrive, airtime * 60.0])
+			% [gf_arrive - bb_arrive, airtime])
+
+
+## The arithmetic above is a claim about the DATA. This leg measures the same numbers off
+## the real sim: the boss runs against a stationary player and, per attack, the tick the
+## wind-up event fired and the tick the hit landed are recorded. The measured window must
+## match the data and clear the 400 ms floor.
+func _measured_windows(f: Array[String]) -> void:
+	var rig := _rig()
+	if rig.is_empty():
+		f.append("measured windows: the arena rig failed to build")
+		return
+	var boss: RefCounted = rig["boss"]
+	var ctl: RefCounted = rig["ctl"]
+	var w: Dictionary = rig["w"]
+	var boss_pos: Vector3 = rig["boss_pos"]
+	var cfg: Dictionary = boss.config
+	var dist := absf(float(cfg["arena"]["spawn_z"]) - float(cfg["arena"]["boss_z"]))
+	var windup_at := {}
+	var measured := {}
+	for i in 400:
+		ctl.step(DT, IDLE, w)
+		var feet := Vector3(ctl.x, ctl.y, ctl.z)
+		var ev: Array = boss.tick(null, {"tick": i + 1, "player_position": feet,
+			"boss_position": boss_pos})
+		for e in ev:
+			var kind := str(e["kind"])
+			var attack := str(e.get("attack", ""))
+			if kind == "boss_attack_windup":
+				windup_at[attack] = i + 1
+			elif kind == "boss_projectile_hit_player" and windup_at.has(attack):
+				if not measured.has(attack):
+					measured[attack] = (i + 1) - int(windup_at[attack])
+	for attack in ["bowling_ball", "green_fn"]:
+		if not measured.has(attack):
+			f.append("measured windows: %s never reached a stationary player" % attack)
+			continue
+		var ticks := float(measured[attack])
+		var reach := float(cfg[attack]["radius_u"]) + float(Controller.load_constants()["half_width"])
+		var flight := (dist - reach) / float(cfg[attack]["speed_u_per_s"]) * 60.0
+		var want := float(cfg[attack]["windup_ticks"]) + flight
+		if absf(ticks - want) > 2.0:
+			f.append("measured windows: %s took %.0f ticks from wind-up to arrival, the data says %.0f"
+				% [attack, ticks, want])
+		if ticks < 24.0:
+			f.append("measured windows: %s arrived %.0f ticks after the wind-up, under 400 ms"
+				% [attack, ticks])
 
 
 ## A seed whose fight is NOT the easter egg, so the attack legs see attacks. The roll is
@@ -218,10 +282,12 @@ func _green_fn(f: Array[String]) -> void:
 ## Enters the level-10 arena through the real World (the framework's own flow: collect
 ## every black gift but the last, then take the last one). Fixture only - the assertions
 ## about the teleport and the win flow belong to test_boss_framework.gd.
-func _arena(f: Array[String]) -> Node3D:
+func _arena(f: Array[String], seed_value: int = -1) -> Node3D:
 	var world := World.new()
 	world.atmosphere = false
-	if not world.build(_plain_seed(), 10, {"class": "dasher", "votes": {}, "curses": {},
+	if seed_value < 0:
+		seed_value = _plain_seed()
+	if not world.build(seed_value, 10, {"class": "dasher", "votes": {}, "curses": {},
 			"stacks": {}, "purse": 35}):
 		f.append("level 10 failed to build")
 		world.free()
@@ -293,13 +359,7 @@ func _bankai_trace(seed_value: int) -> Array[String]:
 
 
 func _bankai(f: Array[String]) -> void:
-	var seed_value := -1
-	for s in 4096:
-		var probe := Boss.new()
-		probe.start(s, 10)
-		if probe.bankai_selected:
-			seed_value = s
-			break
+	var seed_value := _bankai_seed()
 	if seed_value < 0:
 		f.append("no seed in 4096 selected the Bankai")
 		return
@@ -345,21 +405,66 @@ func _bankai(f: Array[String]) -> void:
 		f.append("the Bankai finished at tick %d, want %d" % [finished_at, end_tick])
 
 
-# ---- 6. the state hash across a replay --------------------------------------------
+# ---- 6. a real record/replay ------------------------------------------------------
 
-## A zig-zagging bot: it keeps the player alive long enough for several attack cycles, so
-## the hash covers live projectiles, the cooldown and the attack index, not just the entry.
-func _hash_trace(f: Array[String]) -> Array[String]:
+## A seed whose fight IS the easter egg. The roll is 1/1000, so this scans a bounded range
+## and gives up rather than looping forever.
+static func _bankai_seed() -> int:
+	for s in 4096:
+		var probe := Boss.new()
+		probe.start(s, 10)
+		if probe.bankai_selected:
+			return s
+	return -1
+
+
+## A REAL record/replay, the shape the replay system itself uses (see test_replay.gd): run
+## one records every command it issued, run two feeds that captured stream back verbatim,
+## and the state hash must agree at every checkpoint. Two scripted runs regenerating the
+## same formula is not the same proof - this one replays the recorded stream, so a command
+## that is not captured, or a sim field that is not hashed, shows up as a divergence.
+func _record_and_replay(f: Array[String], bankai: bool) -> void:
+	var recorded: Array = []
+	var first := _replay_run(f, bankai, recorded, true)
+	if first.is_empty():
+		return
+	var second := _replay_run(f, bankai, recorded, false)
+	if first != second:
+		f.append("the %s boss fight diverged when its recorded commands were replayed"
+			% ("Bankai" if bankai else "ordinary"))
+
+
+## One leg of the pair. `record` true captures the command stream; false replays it. The
+## zig-zag keeps the player alive through several attack cycles, so the hash covers live
+## projectiles, the cooldown and the attack index, not just the arena entry. The Bankai leg
+## runs past the kill tick so the Bankai clock and the death are inside the hashed span.
+func _replay_run(f: Array[String], bankai: bool, recorded: Array, record: bool) -> Array[String]:
 	var trace: Array[String] = []
-	var world := _arena(f)
+	var seed_value := _bankai_seed() if bankai else _plain_seed()
+	if seed_value < 0:
+		f.append("no seed in 4096 selected the Bankai")
+		return trace
+	var world := _arena(f, seed_value)
 	if world == null:
 		return trace
-	var state := RunState.new_run(_plain_seed(), 1, [])
+	var state := RunState.new_run(seed_value, 1, [])
 	state.level_number = 10
 	state.level = world.lstate
-	for i in 240:
-		var move_x := 1 if (i / 60) % 2 == 0 else -1
-		world.step(DT, {"buttons": 0, "move_x": move_x, "move_z": 0})
+	var span := 240
+	if bankai:
+		span = int(world.lstate.boss.config["bankai"]["hit_tick"]) + 30
+	for i in span:
+		var command: Dictionary
+		if record:
+			var move_x := 1 if (i / 60) % 2 == 0 else -1
+			command = {"buttons": 0, "move_x": move_x, "move_z": 0}
+			recorded.append(command.duplicate())
+		else:
+			if i >= recorded.size():
+				f.append("the recorded command stream ran out at tick %d" % i)
+				break
+			command = recorded[i]
+		world.step(DT, command)
 		if i % 30 == 0:
 			trace.append(StateHash.sha256(state))
 		if world.ctl.dead:
@@ -367,12 +472,3 @@ func _hash_trace(f: Array[String]) -> Array[String]:
 	trace.append(StateHash.sha256(state))
 	world.free()
 	return trace
-
-
-func _replay_hash(f: Array[String]) -> void:
-	var first := _hash_trace(f)
-	if first.is_empty():
-		return
-	var second := _hash_trace(f)
-	if first != second:
-		f.append("the arena state hash diverged across a replay")

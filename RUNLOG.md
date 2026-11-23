@@ -948,3 +948,48 @@ with no base material, so the thrown gift would have rendered Godot's default wh
 `sim/state_hash.gd` read `lv.boss` directly, which raises "Invalid access to property or
 key 'boss'" on every test `StubLevel` and is read by the gate as a script error. Both are
 fixed at the source (a vertex-colour base pass; `.get("boss")`), not allow-listed.
+
+### T8b review round 2: the telegraphs, the sequence, the lock and the tests
+
+Terra xhigh returned ADOPT WITH FIXES on `777c8ab` with five defects and a replay ask.
+All five are fixed, plus the replay.
+
+1. **The bowling wind-up had no visible cue.** The delay was real but unreadable. The
+   lane is now committed at wind-up in the sim (`_aim`, hashed, carried on the wind-up
+   event) so the marker can be truthful, and the view shows a held-ball pose, a
+   `BOWLING_TINT` and a lane marker. This is the one contract extension: an additive
+   `aim` key on the wind-up event and an `_aim` field in `snapshot()`, both noted in
+   `boss.gd`'s header.
+2. **The green marker was frame-rate dependent and a lie.** It expired after 40 RENDER
+   frames (~278 ms at 144 FPS, before the 500 ms wind-up ended) and marked the wind-up
+   position while the shot aims at the release position. Lifetime is now tick-driven
+   (`_age_marker()` at the top of `on_events`, `_process` removed), the wind-up shows a
+   charge disc that claims no line, and the real aim line is drawn on release from
+   `boss_projectile_spawned`'s position and velocity.
+3. **The Bankai was not sequenced.** `hit_tick` moved 1260 -> 1290 so the swarm lands
+   before Peter dies; the sprite hides on the cinematic's `target_hit` rather than the
+   sim's `bankai_hit`; `_release_bankai()` calls `stop()` before `queue_free()` on every
+   path; and `bankai_finished` arms a bounded `grace_ticks` (60, in data) so a drifted
+   cinematic is stopped explicitly rather than freed mid-play.
+4. **The input lock missed the look.** `world.gd` `_unhandled_input` now returns early on
+   `bankai_active`, so mouse-look is locked too.
+5. **The window tests did not test the window.** Both calculations added a flight time in
+   seconds to a wind-up in ticks and multiplied by DT. Everything is in ticks now, travel
+   is measured to CONTACT (`dist - (radius + half_width)`), and a new `_measured_windows`
+   leg runs the real sim and asserts the measured wind-up-to-arrival count against the
+   data within 2 ticks. Measured: bowling 103 vs predicted 104, green_fn 67 vs 68. The
+   leg has teeth - with the old centre-distance arithmetic it failed by 5 ticks.
+6. **The replay was not a replay.** `_record_and_replay` now records the command stream
+   in run one and feeds it back verbatim in run two, comparing `StateHash.sha256` every
+   30th tick - the shape `test_replay.gd` uses. It runs for an ordinary fight and for a
+   Bankai fight (past `hit_tick`, so the Bankai clock and the death are hashed).
+
+Three source fixes fell out of driving the dormant cinematic headless, all real defects:
+`play()` read `get_viewport().get_camera_3d()` unguarded (null outside the tree), the
+procedural rig was built only in `_ready()` so `_anim_cam` was null outside the tree (now
+`_ensure_built()`, called from both), and `_update_animation` called
+`to_local(target.global_position)` with neither node in a tree (now skipped, falling back
+to the cinematic's own target point). None are allow-list changes.
+
+D-entries: D-T8B-5 (telegraphs), D-T8B-6 (Bankai sequencing), D-T8B-7 (input lock),
+D-T8B-8 (window tests and the real replay). D-T8B-4's `hit_tick` rationale updated.
