@@ -204,6 +204,33 @@ func _test_no_public_preload(f: Array[String]) -> void:
 # ---- (d): app gate + sim ignorance --------------------------------------------------------------
 
 
+func _test_sim_ignores_tester(f: Array[String]) -> void:
+	for path in _scan_gd("res://sim"):
+		var text := FileAccess.get_file_as_string(path)
+		if text.contains("tester"):
+			f.append("tester: sim file %s mentions \"tester\" - the sim must not know it exists"
+					% path)
+	var wtext := FileAccess.get_file_as_string("res://app/world.gd")
+	if not wtext.contains("func apply_tester_upgrade_stack"):
+		f.append("tester: world.gd lost apply_tester_upgrade_stack (the panel's give-upgrade path)")
+	# Terra review round 1: the granted stack's event hooks must go live the SAME level -
+	# the dispatcher rebuild inside apply_tester_upgrade_stack (D-T2-5-amend).
+	var rebuilt := false
+	for line in wtext.split("\n", false):
+		if str(line).contains("_upgrades = UpgradeRuntimeScript.new()"):
+			rebuilt = true
+	if not rebuilt:
+		f.append("tester: world.gd no longer rebuilds the upgrade-hook dispatcher in apply_tester_upgrade_stack")
+	# D-T2-9: the per-tick probe + the arena god guard exist on the world.
+	if not wtext.contains("var tester_tick_hook"):
+		f.append("tester: world.gd lost tester_tick_hook (the panel's tick probe, D-T2-9)")
+	if not wtext.contains("var tester_god"):
+		f.append("tester: world.gd lost tester_god (the arena god guard, D-T2-6-amend)")
+	for guardline in ["boss_projectile_hit_player", "not tester_god"]:
+		if not wtext.contains(guardline):
+			f.append("tester: world.gd's arena kill path lost its god guard (%s)" % guardline)
+
+
 func _test_app_gate(f: Array[String]) -> void:
 	var text := FileAccess.get_file_as_string("res://app/app.gd")
 	if text == "":
@@ -221,17 +248,9 @@ func _test_app_gate(f: Array[String]) -> void:
 		f.append("tester: app.gd PRELOADS the panel - the public build would bake it in")
 	if not text.contains("\"tester\": true"):
 		f.append("tester: app.gd no longer flags tester runs in the run-log header")
-
-
-func _test_sim_ignores_tester(f: Array[String]) -> void:
-	for path in _scan_gd("res://sim"):
-		var text := FileAccess.get_file_as_string(path)
-		if text.contains("tester"):
-			f.append("tester: sim file %s mentions \"tester\" - the sim must not know it exists"
-					% path)
-	var wtext := FileAccess.get_file_as_string("res://app/world.gd")
-	if not wtext.contains("func apply_tester_upgrade_stack"):
-		f.append("tester: world.gd lost apply_tester_upgrade_stack (the panel's give-upgrade path)")
+	# D-T2-9: the world handoff that arms the probe before a world ever steps.
+	if not text.contains("call(\"on_world_built\""):
+		f.append("tester: app.gd lost the on_world_built handoff (the god-mode first-tick fix)")
 
 
 # ---- (e): the CI matrix cannot pick the Tester preset up ----------------------------------------

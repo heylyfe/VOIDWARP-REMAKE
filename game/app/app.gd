@@ -148,8 +148,9 @@ func _ready() -> void:
 ## The tester build's only entry point (D-T2-2): load() - never preload(), which would bake
 ## the panel into every build's dependency graph - behind the custom "tester" feature tag.
 ## Editor runs get the same tag with: tools\godot\godot.exe --path game --features tester.
-## In a public build the tag is absent (the branch is dead code) AND the file is not in the
-## pack (exclude_filter="view/tester/*"), so there is no reference to it at all.
+## In a public build this file holds one GUARDED REFERENCE to the panel (the load() call
+## below) whose branch can never run (the feature tag is absent, and the file is not in the
+## pack either - exclude_filter="view/tester/*"), so the panel itself never loads there.
 func _try_load_tester_panel() -> void:
 	if not OS.has_feature("tester"):
 		return
@@ -320,6 +321,11 @@ func _build_world(p_level: int, p_ledger: Dictionary) -> bool:
 	_world = built
 	if _world == null:
 		return false
+	# TESTER (D-T2-9): the panel arms its per-tick probe on the fresh world NOW, before
+	# the world enters the tree or takes its first step - a promised god mode therefore
+	# covers the new world's very first tick. A no-op in the public build (no panel).
+	if _tester_panel != null:
+		_tester_panel.call("on_world_built", _world)
 	# The class the run was born with: the carried pick, else the level-1 replay's own
 	# CLASS-bay pick (world._resolve_run). The run telemetry (run_started) reads it.
 	_run_class = str(_world.run_ledger().get("class", _run_class))

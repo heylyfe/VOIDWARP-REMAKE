@@ -6,9 +6,11 @@ extends Control
 #
 # This script lives ONLY in exports built with the custom "tester" feature tag
 # (export_presets.cfg preset "Tester"; the three public presets exclude view/tester/* from
-# their pack). app.gd loads it with load() - never preload() - behind
-# OS.has_feature("tester"), so a public build has no reference to it at all. It is never
-# uploaded, never in a release, and CI's matrix only names the three public presets.
+# their pack). app.gd holds exactly one GUARDED REFERENCE to it - a load() (never
+# preload()) behind OS.has_feature("tester") - so a public build can never resolve the
+# path: the tag is absent (the branch is dead) and the file is not in the pack either.
+# It is never uploaded, never in a release, and CI's matrix only names the three public
+# presets.
 #
 # WHAT IT DOES (all actions mutate LIVE app/world state through the game's own public
 # functions - the sim layer's code, its state-hash dump format and its 60 Hz determinism
@@ -21,8 +23,10 @@ extends Control
 #                          apply_tester_upgrade_stack; the stack's EVENT hooks go live from
 #                          the next level's build)
 #   give gold / give gifts gold straight into the economy's purse; N gifts collected
-#                          through sim/gifts.gd collect() nearest-first - the normal
-#                          collection path, including the phase flip and the beacon open
+#                          through sim/gifts.gd collect() nearest-first AS A QUEUED TICK
+#                          JOB (D-T2-4/D-T2-9) - the natural collect path, beacon open
+#                          included, with the SAME tick's economy / upgrade-hook / fx
+#                          passes consuming the events (payouts and hooks land)
 #   skip to level N /      the app's own level-transition calls (run_ledger -> build ->
 #                          go live), never a sim bypass
 #   skip the current level world completion signal path -> the Antechamber
@@ -31,11 +35,12 @@ extends Control
 #                          and void charges never run out (D-T2-6)
 #   force a collapse       sim/collapse.gd CollapseScript.start() on the live schedule -
 #                          world.step() then drives the cracks/falls exactly as normal
-#   force Peter boss /     probed at runtime with has_method()/has_script_method() against
-#   force Bankai           the T8 boss API (game/sim/boss.gd, events boss_spawned /
-#                          bankai_started): the buttons light up once that track merges;
-#                          Bankai falls back to playing the dormant owner cinematic
-#                          (view/cinematics/bankai_gift_animation.gd) directly
+#   force Peter boss /     through the REAL T8 API (merged main): _enter_boss_arena() -
+#   force Bankai           the arena's own full entry (teleport, first-person rig, HUD) -
+#                          as a queued tick job; Bankai plays the dormant owner cinematic
+#                          THROUGH its signals (target_hit drives boss.damage(hp_max) -
+#                          the easter egg's insta-kill); an explicit boss-API force
+#                          entry, if the T8b track adds one, wins over the fallback
 #   state hash             sim/state_hash.gd's digest over the LIVE level: the same dump
 #                          every replay checkpoint pins, minus the RNG lines (D-T2-8: the
 #                          app driver holds no sim rng streams - the sim-driver contexts
@@ -60,14 +65,16 @@ const SPAWN_AHEAD_U := 4.0    # "in front of the player": this many u along the 
 const CURSOR_MAX_U := 200.0   # "at the cursor": the ray never marches past this
 const GROUND_LIMIT_U := 12.0  # ground snap window over the target's feet plane
 
-## The T8 boss-API indirection (D-T2-7). The names are probed in order on the candidate
-## objects; whatever the boss track ends up exposing, the first match is called once, with
-## no arguments. game/sim/boss.gd does not exist yet here (that track runs in parallel).
-const BOSS_FORCE_METHODS: Array[String] = [
-	"force_boss_fight", "force_boss", "force_spawn", "force_start", "start_boss_fight",
-]
+## T8 (merged, D-T2-7-amend): the real boss API - sim/boss.gd one instance per arena,
+## lstate.boss holds it; world.gd's _enter_boss_arena() is the arena's own full entry
+## (boss.start(run_seed, level), the arena rebuild, the teleport, the first-person rig,
+## the HUD), so the panel routes FORCE PETER through it, never through boss.start alone.
+const BossScript := preload("res://sim/boss.gd")
+## Bankai: an explicit force entry on the boss object (the T8b attack track may add one)
+## is preferred when present; otherwise the panel plays the dormant owner cinematic
+## through its own signals (D-T2-7-amend): target_hit drives boss.damage() - the
+## contract's insta-kill - animation_finished frees the node.
 const BANKAI_FORCE_METHODS: Array[String] = ["force_bankai", "play_bankai"]
-const BOSS_SCRIPT_PATH := "res://sim/boss.gd"
 const BANKAI_CINEMATIC_PATH := "res://view/cinematics/bankai_gift_animation.gd"
 
 var _app: Node = null          # game/app/app.gd (passed by setup(); never a scene ref)
@@ -86,6 +93,10 @@ var _meta_line: Label = null
 var _hash_line: Label = null
 var _god := false
 var _frame := 0
+## Queued per-tick jobs (D-T2-4/D-T2-9): each {"run": Callable} drains INSIDE the world's
+## next tick; the callable appends its events to the tick's own list and may return true
+## to finish the tick itself (the forced arena entry does).
+var _pending: Array = []
 
 
 ## Binds the panel to the app. Called by app.gd's tester hook, behind the feature tag.
@@ -172,7 +183,7 @@ func _init() -> void:
 	_gift_spin.value = 1
 	_gift_spin.custom_minimum_size = Vector2(112.0, UiStyle.BUTTON_H)
 	column.add_child(_gift_spin)
-	var give_gifts := _mkbtn(column, "GIVE N GIFTS (NEAREST, NORMAL COLLECT)", _give_gifts,
+	var give_gifts := _mkbtn(column, "GIVE N GIFTS (NEAREST, VIA THE TICK)", _give_gifts,
 			UiStyle.SECONDARY, -1.0)
 	give_gifts.name = "GiveGifts"
 
@@ -212,10 +223,8 @@ func _init() -> void:
 	column.add_child(_section_label("BOSS (T8)"))
 	_boss_button = _mkbtn(column, "FORCE PETER BOSS", _force_boss, UiStyle.SECONDARY, -1.0)
 	_boss_button.name = "ForceBoss"
-	_boss_button.disabled = true
 	_bankai_button = _mkbtn(column, "FORCE BANKAI", _force_bankai, UiStyle.SECONDARY, -1.0)
 	_bankai_button.name = "ForceBankai"
-	_bankai_button.disabled = true
 
 	# ---- state hash --------------------------------------------------------------------
 	column.add_child(_section_label("STATE HASH (D-T2-8)"))
@@ -260,7 +269,7 @@ func open() -> void:
 	visible = true
 	_layer.visible = true
 	_refresh_options()
-	_refresh_probes()
+	_refresh_boss_labels()
 	_set_capture(false)
 	_status("tester panel open - the mouse is free while it shows")
 
@@ -357,35 +366,53 @@ func _refresh_options() -> void:
 	_upgrade_pick.selected = 0 if _upgrade_pick.item_count > 0 else -1
 
 
-## Probe the T8 boss API (D-T2-7): has_method() / has_static_method() at runtime, so the
-## buttons light up once the boss track merges - and say so until it does.
-func _refresh_probes() -> void:
-	var boss := _first_matching(_boss_targets(), BOSS_FORCE_METHODS)
-	_boss_button.disabled = boss.is_empty()
-	_boss_button.text = "FORCE PETER BOSS" if not boss.is_empty() \
-			else "PETER BOSS (boss track not merged)"
-	var bankai := _first_matching(_boss_targets(), BANKAI_FORCE_METHODS)
-	_bankai_button.disabled = bankai.is_empty()
-	_bankai_button.text = "FORCE BANKAI" if not bankai.is_empty() \
-			else "FORCE BANKAI (plays the dormant cinematic)"
+## T8 (merged) worked buttons: the labels say what the press will act on.
+func _refresh_boss_labels() -> void:
+	if _boss_button != null:
+		_boss_button.text = "FORCE PETER BOSS"
+	if _bankai_button != null:
+		_bankai_button.text = "FORCE BANKAI"
 
 
-## The candidate objects for the boss-call indirection, most specific first.
-func _boss_targets() -> Array:
-	var out: Array = []
-	var w := _world()
-	if w != null:
-		var b = w.get("boss")
-		if b != null:
-			out.append(b)
-	var K = load(BOSS_SCRIPT_PATH)   # null until the T8 track merges; load() keeps the
-	if K != null:                     # public build's dependency graph free of it
-		out.append(K)
-	if w != null:
-		out.append(w)
-	if _app != null:
-		out.append(_app)
+## app.gd's handoff point (D-T2-9): every world reaches the panel here BEFORE it enters
+## the tree and takes its first step, so the per-tick probe is armed from the world's
+## first tick on - a promised god mode covers it, and queued jobs always find their hook.
+## A fallback in _process() catches worlds that arrive any other way.
+func on_world_built(p_world: Node) -> void:
+	if p_world == null:
+		return
+	_arm_world(p_world)
+
+
+func _arm_world(p_world: Node) -> void:
+	p_world.set("tester_tick_hook", Callable(self, "_tick_hook"))
+	p_world.set("tester_god", _god)
+	if _god:
+		_god_pass()
+
+
+## The panel's per-tick probe (world.gd step() calls it at the tick top, before anything
+## this tick can kill - D-T2-9). Returns {"ev": this tick's panel events, "skip": whether
+## an action finished the tick itself} so the queued jobs' events ride the SAME list the
+## tick's own economy / upgrade-hook / fx passes consume (Terra review round 1 findings
+## 1-5). God mode tops up HERE as well, so it protects a fresh world's first tick.
+func _tick_hook() -> Dictionary:
+	var out := {"ev": [], "skip": false}
+	if _god:
+		_god_pass()
+	while not _pending.is_empty():
+		var job: Dictionary = _pending.pop_front()
+		var run: Callable = job.get("run", Callable())
+		if run.is_valid():
+			if bool(run.call(out["ev"])):
+				out["skip"] = true
 	return out
+
+
+## Queue one job for the world's next tick.
+func _queue_job(p_run: Callable, p_note: String) -> void:
+	_pending.append({"run": p_run})
+	_status(p_note)
 
 
 ## Pure: the first (object, method) pair where the object answers the method. Script
@@ -415,9 +442,16 @@ func _process(_delta: float) -> void:
 	if _god:
 		_god_pass()
 	_frame += 1
+	# Arming fallback (D-T2-9): app.gd hands every _build_world world to on_world_built;
+	# worlds that arrive by any other path get the probe here, before their visible checks.
+	var live := _world()
+	if live != null:
+		var hook = live.get("tester_tick_hook")
+		if hook == null or not (hook as Callable).is_valid():
+			_arm_world(live)
 	if not visible:
 		return
-	var w := _world()
+	var w := live
 	if _frame % 15 != 0:
 		return
 	if w == null:
@@ -431,7 +465,7 @@ func _process(_delta: float) -> void:
 	var g = ls.get("gifts") if ls != null else null
 	var phase := str(g.get("phase")) if g != null else "-"
 	var eco = w.get("_economy")
-	var purse := int(eco.get("purse_gold")) if eco != null else -1
+	var purse := int(eco.call("purse_gold")) if eco != null else -1
 	_meta_line.text = "SEED %d  STATE %s  LEVEL %d  TICK %d   PHASE %s   PURSE %d" % [
 		int(_app.call("run_seed")), str(_app.state()), level, tick, phase, purse]
 	var rs := _build_live_run_state(w)
@@ -573,22 +607,36 @@ func _give_gold() -> void:
 		return
 	var n := int(_gold_spin.value)
 	eco.set("purse_centi", int(eco.get("purse_centi")) + n * EconomyScript.CENTI)
-	_status("gave %d gold (purse %d)" % [n, int(eco.get("purse_gold"))])
+	_status("gave %d gold (purse %d)" % [n, int(eco.call("purse_gold"))])
 
 
 ## N gifts collected nearest-first through sim/gifts.gd's own collect() - the normal
 ## collection path, and the beacon open exactly as GiftsScript.tick performs it.
+## QUEUED (Terra review round 1 finding 2, D-T2-4-amend): the job runs inside the world's
+## next tick and appends to that tick's own event list, so the gold payouts, the upgrade
+## hooks and every other per-tick consumer of gift_collected see the collects - never a
+## collect that skips its normal effects. In the boss arena there are no gifts: the run
+## inside _run_give_gifts reports it live, on the tick.
 func _give_gifts() -> void:
 	var w := _world()
 	if w == null:
 		_status("no live level - gifts need a run in WORLD state")
 		return
+	var n := int(_gift_spin.value)
+	_queue_job(Callable(self, "_run_give_gifts").bind(n),
+			"giving %d gift(s) on the next tick" % n)
+
+
+## The queued job body: returns false (a normal collect; the tick continues).
+func _run_give_gifts(n: int, ev: Array) -> bool:
+	var w := _world()
+	if w == null:
+		return false
 	var ls: RefCounted = w.get("lstate")
 	var g = ls.get("gifts") if ls != null else null
 	if g == null:
-		_status("no gift state on this level")
-		return
-	var n := int(_gift_spin.value)
+		_status("no gift state on this tick (the boss arena has no gifts)")
+		return false
 	var feet := _player_feet(w)
 	var by_dist: Array = []
 	for i in int(g.get("slots").size()):
@@ -599,7 +647,6 @@ func _give_gifts() -> void:
 	by_dist.sort_custom(func(a, b) -> bool: return float(a["d"]) < float(b["d"]))
 	var got := 0
 	var opened := false
-	var ev: Array = []
 	for row in by_dist:
 		if got >= n:
 			break
@@ -613,6 +660,7 @@ func _give_gifts() -> void:
 			ev.append(b.call("open", int(ls.get("tick"))))
 	_status("collected %d gift(s) nearest-first%s" % [got,
 			"; the beacon is open" if opened else ""])
+	return false
 
 
 func _set_charges() -> void:
@@ -632,11 +680,17 @@ func _set_charges() -> void:
 
 func _toggle_god() -> void:
 	_god = not _god
-	if _god:
+	# the world mirror (D-T2-6-amend): the boss ARENA kills via ctl._die directly, so the
+	# flag rides the world too (world.gd honours it there); the tick hook also tops the
+	# controller up at every tick top, which covers a fresh world's first tick.
+	var w := _world()
+	if w != null:
+		w.set("tester_god", _god)
+	if _god and w != null:
 		_god_pass()
 	if _god_button != null:
 		_god_button.text = "GOD MODE: %s" % ("ON" if _god else "OFF")
-	_status("god mode %s - kills suppressed and falls never drain the last charge" %
+	_status("god mode %s - kills suppressed (levels and arena), falls never drain the last charge" %
 			("on" if _god else "off"))
 
 
@@ -734,45 +788,129 @@ func _force_collapse() -> void:
 			int(cev.get("zone", 0)), int(cev.get("n", 0)), int(cst.get("crack_ticks", 0))])
 
 
-## Force the Peter boss fight through the T8 API indirection (D-T2-7). The probe runs
-## again here; the disabled state can lag (a merge while the panel is open).
+## FORCE PETER through the REAL arena entry (Terra review round 1 finding 1, D-T2-7-amend):
+## _enter_boss_arena() is the arena's own full setup - boss.start(run_seed, level), the
+## arena terrain rebuild, the teleport, the first-person rig, the HUD - so the panel never
+## calls boss.start() alone. On a level whose build made no boss instance (any level but
+## the boss level), the object the level-10 build would carry is created first from
+## boss.gd's own config path. The whole entry runs as a QUEUED tick job (D-T2-9) so the
+## tick's own list carries the entry events, and the job finishes the tick itself (the
+## all-collected path in world.step returns after the same entry triple).
 func _force_boss() -> void:
-	var t := _first_matching(_boss_targets(), BOSS_FORCE_METHODS)
-	if t.is_empty():
-		_status("no boss API found - the framework track (boss.gd) has not merged yet")
-		_refresh_probes()
+	var w := _world()
+	if w == null:
+		_status("no live level - the boss fight needs a run in WORLD state")
 		return
-	t["obj"].call(t["method"])
-	_status("boss forced via %s()" % str(t["method"]))
+	var ls: RefCounted = w.get("lstate")
+	if ls == null:
+		_status("no level state on this level")
+		return
+	var ctl = w.get("ctl")
+	if ctl != null and bool(ctl.get("dead")):
+		_status("the run is dead - retry or cheat the respawn first")
+		return
+	var boss = ls.get("boss")
+	if boss != null and bool(boss.get("arena_entered")):
+		_status("already fighting Peter - finish this one or skip the level")
+		return
+	if boss == null:
+		# not the boss level: the owner forces the encounter anyway - the same object
+		# shape the level-10 build() carries (sim/boss.gd one instance per arena).
+		boss = BossScript.new()
+		boss.set("config", BossScript.load_config())
+		ls.set("boss", boss)
+	_queue_job(Callable(self, "_run_force_boss"),
+			"boss fight queued - the arena entry runs on the next tick")
 
 
-## Force the Bankai. Preferred: the boss API's own force entry (signals bankai_started).
-## Fallback until that track merges: play the owner's dormant cinematic directly
-## (view/cinematics/bankai_gift_animation.gd - view-only, uses the engine RNG by design);
-## it frees itself on animation_finished.
+## The queued job body: the entry + economy + publish triple the all-collected path in
+## world.step runs. Returns true: the action finished this tick itself.
+func _run_force_boss(ev: Array) -> bool:
+	var w := _world()
+	var ls: RefCounted = w.get("lstate") if w != null else null
+	var boss = ls.get("boss") if ls != null else null
+	if w == null or ls == null or boss == null or bool(boss.get("arena_entered")):
+		_status("boss force skipped - the world changed under it")
+		return false
+	w.call("_enter_boss_arena", ev)
+	w.call("_economy_pass", ev)
+	w.call("_publish_boss_tick", ev)
+	_status("boss fight forced: teleported into the arena - close the panel with F10 and"
+			+ " throw gifts at Peter")
+	return true
+
+
+## FORCE BANKAI (D-T2-7-amend). Preferred: an explicit force entry on the live boss
+## object (the T8b attack track may add one) - probed with has_method(). Otherwise the
+## dormant owner cinematic is played THROUGH its signals: bankai_active stands the boss
+## down (the contract's own flag), target_hit drives boss.damage(hp_max) - the easter
+## egg's insta-kill - through the world's own _apply_boss_events (reward, beacon), and
+## animation_finished frees the node. With no live boss it plays as a standalone preview.
 func _force_bankai() -> void:
-	var t := _first_matching(_boss_targets(), BANKAI_FORCE_METHODS)
-	if not t.is_empty():
-		t["obj"].call(t["method"])
-		_status("bankai forced via the boss API (%s())" % str(t["method"]))
+	var w := _world()
+	var ls: RefCounted = w.get("lstate") if w != null else null
+	var boss = ls.get("boss") if ls != null else null
+	if boss != null:
+		var forced := _first_matching([boss], BANKAI_FORCE_METHODS)
+		if not forced.is_empty():
+			boss.call(str(forced["method"]))
+			_status("bankai forced via the boss API (%s())" % str(forced["method"]))
+			return
+		if bool(boss.get("active")) and not bool(boss.get("bankai_active")):
+			_play_bankai(w, boss)
+			return
+	_status("no active boss to bankai - FORCE PETER BOSS first (this previews standalone)")
+	var anim = _make_bankai_anim(w)
+	if anim == null:
+		_status("bankai: the dormant cinematic did not load")
 		return
+	anim.play()
+	_status("bankai: standalone preview (no active boss on this level)")
+
+
+## Instantiate the cinematic, attach it to the live world (it owns its cameras), position
+## it at the player, free it on animation_finished. Returns the node, or null.
+func _make_bankai_anim(w: Node):
 	var K = load(BANKAI_CINEMATIC_PATH)
 	if K == null:
-		_status("bankai: neither the boss API nor the dormant cinematic is available")
-		return
-	var w := _world()
-	var host = w if w != null else self
+		return null
 	var anim = K.new()
-	host.add_child(anim)
-	if w != null:
+	if w != null and w.is_inside_tree():
+		w.add_child(anim)
 		anim.position = _player_feet(w)
+	else:
+		add_child(anim)
 	if anim.has_signal("animation_finished"):
 		anim.animation_finished.connect(func() -> void:
 				_status("bankai cinematic finished")
-				anim.queue_free())
-	anim.play()
-	_status("bankai: playing the dormant owner cinematic (the bankai_started wiring lands"
-			+ " with the boss track)")
+				if is_instance_valid(anim):
+					anim.queue_free())
+	return anim
+
+
+## The in-arena force: the boss stands down via bankai_active (its tick() returns nothing
+## while it plays - the contract's own mechanism), and the cinematic's target_hit drives
+## the insta-kill through the sim API + the world's own event handling.
+func _play_bankai(w: Node, boss) -> void:
+	var anim = _make_bankai_anim(w)
+	if anim == null:
+		_status("bankai: the dormant cinematic did not load")
+		return
+	boss.set("bankai_active", true)
+	if anim.has_signal("animation_started"):
+		anim.animation_started.connect(func() -> void:
+				_status("bankai forced: cinematic playing - input stays yours meanwhile"))
+	if anim.has_signal("target_hit"):
+		anim.target_hit.connect(func(_target) -> void:
+				var dmg: Array = boss.call("damage", int(boss.get("hp_max")), false)
+				var world_now := _world()
+				if world_now == null:
+					return
+				world_now.call("_apply_boss_events", dmg, dmg)
+				world_now.call("_publish_boss_tick", dmg)
+				_status("bankai target_hit: Peter insta-killed through boss.damage()"))
+	var target = w.get("_boss_view") if w != null else null
+	anim.play(target)
 
 
 # ---- the live state hash (D-T2-8) ------------------------------------------------------------

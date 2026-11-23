@@ -323,6 +323,16 @@ var platform_collapse := true
 var _collapse: Dictionary = {}
 var collapse_view: Node3D = null
 var last_events: Array = []   # the last step's event list (read-only, for tests/probes)
+# TESTER (cycle 7 T2, D-T2-9): the tester debug panel's tick probe, set by the panel before
+# the world ever steps (the panel lands on every world via app.gd's on_world_built handoff
+# plus its own per-frame fallback). Never valid in a public build - the panel is not there
+# to set it - so every public tick pays only the is_valid() check. Called at the tick top;
+# returns {"ev": Array, "skip": bool} (see step()).
+var tester_tick_hook: Callable = Callable()
+# TESTER (D-T2-6): the panel's god toggle, mirrored on the world so the ARENA's own kill
+# path (boss projectiles dispatch ctl._die directly, not controller.try_kill) respects it.
+# False in every public build - nothing sets it.
+var tester_god := false
 
 
 func _ready() -> void:
@@ -705,10 +715,25 @@ func step(dt: float, command: Dictionary = {}) -> void:
 		return
 	if _run_over_emitted or (_boss_view != null and _completed_emitted):
 		return   # the run is over: a dead run never ticks again (DESIGN.md section 3)
+	# TESTER (D-T2-9): the debug panel's per-tick probe, armed before the world ever steps
+	# (app.gd hands every built world to the panel first). Runs BEFORE anything this tick
+	# can kill, so a promised god mode covers a fresh world's first tick, and the panel's
+	# queued commands (D-T2-4: gift collects, the forced arena entry) append their events
+	# to ev so the SAME tick's economy / upgrade-hook / fx passes consume them - the exact
+	# treatment the tick's own events get. {"skip": true} means an action finished this
+	# tick itself (the forced arena entry runs the same entry + economy + publish triple
+	# the all-collected path below runs, then returns - this is that return).
+	var tester_ev: Array = []
+	if tester_tick_hook.is_valid():
+		var tres = tester_tick_hook.call()
+		if tres is Dictionary:
+			tester_ev = (tres as Dictionary).get("ev", []) as Array
+			if bool((tres as Dictionary).get("skip", false)):
+				return
 	var a_in: Dictionary = _capture_input() if command.is_empty() else command
 	_mouse_lock_pass(int(a_in.get("app", 0)))
 	if lstate.boss != null and lstate.boss.arena_entered:
-		_step_boss_arena(dt, a_in)
+		_step_boss_arena(dt, a_in, tester_ev)
 		return
 	# The respawn safe-tile search reads w["hazards"] (controller.gd valid_safe_tile). Nothing
 	# published that list before, so a void-fall could put the player back down inside a mine.
@@ -717,6 +742,10 @@ func step(dt: float, command: Dictionary = {}) -> void:
 	w["hazards"] = LevelStateScript.hazard_footprints(lstate.mines, rt.live_telegraphs())
 	_upgrade_speed_pass()
 	var ev: Array = ctl.step(dt, a_in, w)
+	# TESTER (D-T2-9): the panel's queued-command events ride this tick's list from here
+	# on, so the curse / beacon-phase / economy / upgrade-hook / fx passes below see them.
+	if not tester_ev.is_empty():
+		ev.append_array(tester_ev)
 	# on_void_fall: one dispatch per void_fall event the controller reported this tick
 	# (free falls included - the fall happened; what it costs is the module's call).
 	if _curses != null:
@@ -935,10 +964,11 @@ func _boss_target_position() -> Vector3:
 			float(tile[1]) + 0.5)
 
 
-func _step_boss_arena(dt: float, command: Dictionary) -> void:
+func _step_boss_arena(dt: float, command: Dictionary, prefill: Array = []) -> void:
 	var boss: RefCounted = lstate.boss
 	lstate.tick += 1
-	var events: Array = []
+	var events: Array = prefill   # TESTER (D-T2-9): the panel's queued-command events for
+	# this arena tick (empty on every normal tick)
 	var feet := Vector3(float(ctl.x), float(ctl.y), float(ctl.z))
 	if not boss.bankai_active:
 		events.append_array(ctl.step(dt, command, w))
@@ -965,7 +995,9 @@ func _apply_boss_events(incoming: Array, events: Array) -> void:
 	for event in incoming:
 		match event["kind"]:
 			"boss_projectile_hit_player":
-				if not ctl.dead:
+				# TESTER (D-T2-6): the boss projectiles die() directly, so the panel's
+				# god toggle is honoured here; tester_god is never true in a public build.
+				if not ctl.dead and not tester_god:
 					ctl._die("D-PETER", "Peter Griffin", events)
 			"boss_died":
 				if not lstate.beacon.is_open():
@@ -1090,9 +1122,13 @@ func _upgrade_knobs(plan: Dictionary, kit: String) -> Dictionary:
 ##     grants) re-run over the whole ledger, unchanged by repetition;
 ##   - the one ADDITIVE consumer, the athletic double-jump count, is applied as the delta
 ##     only, so repeated grants do not inflate air jumps;
-##   - NOT re-applied: Field Dressing's per-level free-fall budget (granted once per level)
-##     and the per-level event-hook dispatcher _upgrades (the new stack's event hooks go
-##     live from the next level's build - the panel's status line says so).
+##   - the per-level event-hook dispatcher _upgrades is REBUILT from the updated stacks
+##     (Terra review round 1, D-T2-5-amend): the new stack's event hooks are live from the
+##     next tick. The rebuild is a fresh UpgradeRuntime (setup() builds clean module
+##     instances), so it also resets the owned modules' once-per-level scratch memory and
+##     any running run-speed boost - the tester accepts both;
+##   - NOT re-applied: Field Dressing's per-level free-fall budget (granted once per level
+##     at build; a mid-level grant would double the budget).
 func apply_tester_upgrade_stack(id: String) -> void:
 	if ctl == null or _ledger.is_empty() or not _ledger.has("stacks"):
 		return
@@ -1129,6 +1165,14 @@ func apply_tester_upgrade_stack(id: String) -> void:
 		ctl.apply_updraft()
 	if _economy != null:
 		_economy.apply_gift_yield(_signature_stacks(_ledger, ["on_gift_collected"], "", "", false))
+	# TESTER (D-T2-5-amend, Terra review round 1 finding 4): a FRESH event-hook dispatcher
+	# over the updated stacks - the same construction build() runs - so the granted stack's
+	# hooks are dispatched from the next tick, not from the next level.
+	_upgrades = UpgradeRuntimeScript.new()
+	_upgrades.setup(stacks, Callable(self, "_upgrade_module"), {
+		"players": [ctl], "economy": _economy, "beacon": lstate.beacon,
+		"level": _level_number, "tick": int(lstate.tick),
+	})
 	_apply_phase_stats()
 
 
