@@ -232,7 +232,7 @@ static func _block_ok(L: Dictionary, ix: Dictionary, x: int, z: int, y: int, hal
 ## The height tolerance is not a loophole. voidgen steps a walkway 1-2 HU off the platform it
 ## runs beside at the junction, so a path tile is NEVER at the same height as the platform
 ## floor next to it: measured over 20 seeds x 8 levels, a same-height edge neighbour exists on
-## 0 of 20 levels at 5 of the 8 sizes and never more than 4 blocks anywhere (D-JUMPPAD-7).
+## 0 of 20 levels at 5 of the 8 sizes and at most 4 blocks anywhere (D-JUMPPAD-7).
 ## step_hu (4 HU) covers that junction step and the first stair row and stays well under
 ## CLEAR (12 HU), so a walkway on another storey can never satisfy it.
 static func _edge_adjacent(walk: Dictionary, x: int, z: int, y: int, half: int,
