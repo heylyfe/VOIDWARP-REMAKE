@@ -1,6 +1,7 @@
 extends Node3D
 ## Boss presentation driven by the event stream. Positions use world units.
 
+const HudStyle := preload("res://view/hud/hud_style.gd")
 const PETER_PATH := "res://assets/owner_third_party/peter/peter_griffin.png"
 const GREEN_PATH := "res://assets/owner_third_party/peter/peter_green_fn.png"
 const GIFT_MODEL := "res://assets/models/gold_gift.glb"
@@ -9,6 +10,7 @@ var _sprite: Sprite3D
 var _normal: Texture2D
 var _green: Texture2D
 var _bar: ProgressBar
+var _title: Label
 var _overlay: Control
 var _gift_model: PackedScene
 var _gifts: Dictionary = {}
@@ -32,27 +34,41 @@ func setup(target: Vector3, sprite_height: float, canvas: CanvasLayer) -> void:
 	canvas.add_child(_overlay)
 	_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
+	var panel := PanelContainer.new()
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_theme_stylebox_override("panel", HudStyle.panel())
+	_overlay.add_child(panel)
+	panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
+	panel.offset_left = -HudStyle.COUNTER_W * 0.5
+	panel.offset_right = HudStyle.COUNTER_W * 0.5
+	panel.offset_top = HudStyle.COLLAPSE_TOP
+
 	var stack := VBoxContainer.new()
 	stack.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_overlay.add_child(stack)
-	stack.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
-	stack.offset_left = -156.0
-	stack.offset_right = 156.0
-	stack.offset_top = 20.0
-	var title := Label.new()
-	title.text = "Peter Griffin"
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	stack.add_child(title)
+	panel.add_child(stack)
+	_title = Label.new()
+	_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	HudStyle.style_label(_title, HudStyle.FONT_BODY)
+	stack.add_child(_title)
 	_bar = ProgressBar.new()
-	_bar.custom_minimum_size.y = 18.0
+	_bar.custom_minimum_size.y = HudStyle.PAD_Y
 	_bar.show_percentage = false
+	_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var fill := HudStyle.cell()
+	fill.bg_color = HudStyle.GOLD
+	_bar.add_theme_stylebox_override("fill", fill)
 	stack.add_child(_bar)
+	var hint := Label.new()
+	hint.text = "Hold left mouse to throw gifts"
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	HudStyle.style_label(hint, HudStyle.FONT_SMALL)
+	stack.add_child(hint)
 
 	var reticle := Label.new()
 	reticle.text = "+"
 	reticle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	reticle.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	reticle.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	HudStyle.style_label(reticle, HudStyle.FONT_BODY)
 	_overlay.add_child(reticle)
 	reticle.set_anchors_and_offsets_preset(Control.PRESET_CENTER, Control.PRESET_MODE_KEEP_SIZE)
 	_overlay.hide()
@@ -69,6 +85,8 @@ func on_events(events: Array) -> void:
 				_set_hp(event)
 			"boss_attack_windup":
 				_set_texture(_green if event["attack"] == "green_fn" and _green != null else _normal)
+			"boss_projectile_hit_player":
+				_overlay.hide()
 			"boss_died", "arena_exited":
 				_sprite.hide()
 				_overlay.hide()
@@ -93,6 +111,7 @@ func on_events(events: Array) -> void:
 func _set_hp(event: Dictionary) -> void:
 	_bar.max_value = float(event["hp_max"])
 	_bar.value = float(event["hp"])
+	_title.text = "Peter Griffin  %d / %d" % [event["hp"], event["hp_max"]]
 
 
 func _set_texture(texture: Texture2D) -> void:

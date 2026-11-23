@@ -11,6 +11,12 @@ const SEED := 17
 const IDLE := {"buttons": 0}
 
 
+# Keep the gift replay fixture independent of the attack timing T8b adds.
+class PassiveBoss extends Boss:
+	func tick(_state, _ctx: Dictionary) -> Array[Dictionary]:
+		return []
+
+
 class HitBoss extends Boss:
 	func tick(_state, _ctx: Dictionary) -> Array[Dictionary]:
 		return [{"kind": "boss_projectile_hit_player", "attack": "bowling_ball"}]
@@ -26,7 +32,7 @@ func run() -> Array[String]:
 		failures.append("same level, seed and commands diverged in the arena replay")
 	var perturbed := _fight(failures, true)
 	if perturbed.is_empty() or trace[0] == perturbed[0]:
-		failures.append("withholding initial held fire left the state hash unchanged")
+		failures.append("reversing the first gift aim left the state hash unchanged")
 	_hit_is_lethal(failures)
 	return failures
 
@@ -58,7 +64,7 @@ func _rolls_and_damage(failures: Array[String]) -> void:
 		failures.append("unexpected crit/Bankai counts across 4096 seeds: %d/%d" % [crits, selected])
 
 
-func _enter(failures: Array[String]) -> Node3D:
+func _enter(failures: Array[String], boss_override: RefCounted) -> Node3D:
 	var world := World.new()
 	world.atmosphere = false
 	if not world.build(SEED, 10, {"class": "dasher", "votes": {}, "curses": {},
@@ -66,6 +72,11 @@ func _enter(failures: Array[String]) -> Node3D:
 		failures.append("level 10 failed to build")
 		world.free()
 		return null
+	if world.lstate.boss == null or int(world.lstate.gifts.black_quota) != -1:
+		failures.append("playable level 10 did not opt into the full gift quota and boss")
+		world.free()
+		return null
+	world.lstate.boss = boss_override
 	var gifts: RefCounted = world.lstate.gifts
 	var slots: Array[int] = []
 	for i in gifts.slots.size():
@@ -96,7 +107,7 @@ func _enter(failures: Array[String]) -> Node3D:
 
 func _fight(failures: Array[String], perturb: bool) -> Array[String]:
 	var trace: Array[String] = []
-	var world := _enter(failures)
+	var world := _enter(failures, PassiveBoss.new())
 	if world == null:
 		return trace
 	var state := RunState.new_run(SEED, 1, [])
@@ -106,10 +117,11 @@ func _fight(failures: Array[String], perturb: bool) -> Array[String]:
 	var feet := Vector3(world.ctl.x, world.ctl.y, world.ctl.z)
 	var aim: Vector3 = (world._boss_target_position() - world._boss_eye(feet)).normalized()
 	var fire := {"buttons": InputScript.BUTTON_FIRE, "gift_aim": aim}
+	var miss := {"buttons": InputScript.BUTTON_FIRE, "gift_aim": -aim}
 	var last_shot := -1
 	var shot_count := 0
 	for i in 2700:
-		world.step(DT, IDLE if perturb and i == 0 else fire)
+		world.step(DT, miss if perturb and i == 0 else fire)
 		if i % 60 == 0:
 			trace.append(StateHash.sha256(state))
 		if _has(world.last_events, "boss_gift_spawned"):
@@ -141,12 +153,9 @@ func _fight(failures: Array[String], perturb: bool) -> Array[String]:
 
 
 func _hit_is_lethal(failures: Array[String]) -> void:
-	var world := _enter(failures)
+	var world := _enter(failures, HitBoss.new())
 	if world == null:
 		return
-	var boss := HitBoss.new()
-	boss.start(SEED, 10)
-	world.lstate.boss = boss
 	var charges: int = world.ctl.charges
 	world.ctl.invuln = 1.0
 	var deaths: Array[Dictionary] = []
