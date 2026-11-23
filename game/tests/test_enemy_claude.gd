@@ -9,12 +9,15 @@ extends RefCounted
 #   - the roster data vs the behavior's mirror: enemy.json's stats block, cfg() and clawd_cfg() (D-T4-1..3);
 #   - the clawd count across level sizes: 5 on a small map, 15 on a very big one, the count_by_tiles table
 #     between them, and the [5, 15] clamp (D-T4-3);
-#   - placement: walkable tiles only, never a gift slot / mine / beacon / hub / pad / spawn, spread out, and a
-#     pure function of the Level dict (two attaches agree, a different seed does not) (D-T4-4);
-#   - the body: 2.0 u tall, 1.6 u hit diameter, contact kills carry D-CLAUDE, the 30-tick spawn fade blocks it;
+#   - placement: walkable tiles only, never a gift slot / mine / beacon / hub / pad / spawn, spread out, never
+#     two clawds on one tile, and a pure function of the Level dict (two attaches agree, a different seed does
+#     not) (D-T4-4);
+#   - the body: 2.0 u tall, 1.6 u hit diameter, and NO contact kill - the 180 s timer is his only lethal act
+#     (D-T4-1, review round 1); the 30-tick spawn fade is cosmetic;
 #   - "does nothing by himself": 600 ticks of a live body produce no ring, shot, sweep or plushie and no motion;
 #   - the anger timer: warnings at EXACTLY 3600 and 7200 ticks, the kill at EXACTLY 10800 with cause "Claude",
-#     a pickup resetting it to 0, and the freeze while the beacon is open (D-T4-5);
+#     a pickup resetting it to 0 and re-arming the warning ladder, the kill retrying while the player is
+#     protected, and the freeze while the beacon is open (D-T4-5);
 #   - the state hash: a CLAWDS line, two replays of one script hashing identically, a perturbed one diverging,
 #     and the timer itself moving the hash (D-T4-6);
 #   - the view: the anim block's spawn/idle wiring, the anger tint, the warning flash, the HUD pill's strings;
@@ -59,11 +62,14 @@ func run() -> Array[String]:
 	_roster_data(f)
 	_counts_across_level_sizes(f)
 	_placement_rules(f)
+	_placement_never_overlaps(f)
 	_body_and_contact(f)
-	_spawn_fade_blocks_contact(f)
+	_spawn_fade_is_cosmetic(f)
 	_no_attack_no_movement(f)
 	_timer_thresholds(f)
 	_pickup_resets(f)
+	_warned_rearms_on_pickup(f)
+	_kill_retries_while_protected(f)
 	_pause_in_gold_phase(f)
 	_hash_and_replay(f)
 	_anim_block_wiring(f)
@@ -196,7 +202,7 @@ func _roster_data(f: Array[String]) -> void:
 	_eq(f, "name", str(doc["name"]), "Claude")
 	_num(f, "min_level", float(doc["min_level"]), 15.0)
 	_num(f, "max_votes", float(doc["max_votes"]), 1.0)
-	_num(f, "contact_kill", 1.0 if bool(doc["contact_kill"]) else 0.0, 1.0)
+	_num(f, "contact_kill", 1.0 if bool(doc["contact_kill"]) else 0.0, 0.0)
 	if str(doc["vote_effect"]).find("one Claude") < 0:
 		f.append("data: vote_effect %s, want the one-Claude line" % str(doc["vote_effect"]))
 	var st: Dictionary = doc["stats"]
@@ -474,7 +480,48 @@ func _placement_rules(f: Array[String]) -> void:
 		f.append("placement: create() built a swarm for a Level that carries none")
 
 
-# ---- body: 2.0 u tall / 1.6 u diameter; contact kills carry D-CLAUDE ----------
+# ---- placement never stacks two clawds on one tile (D-T4-4, review round 1) ----------
+
+func _placement_never_overlaps(f: Array[String]) -> void:
+	var cfg: Dictionary = ClaudeEnemy.clawd_cfg()
+	# the ladder bottoms out at spacing 0, where the distance test passes for EVERY candidate - the used-set
+	# is what keeps the picks distinct, so sweep the small maps where the ladder actually reaches that rung
+	for n in [3, 4, 5, 6]:
+		var L := _flat_level(n)
+		var spots: Array = ClawdsScript.place_clawds(L, cfg)
+		var seen := {}
+		for p in spots:
+			var k := Vector2i(int(p[0]), int(p[1]))
+			if seen.has(k):
+				f.append("overlap: the %dx%d map placed two clawds on tile %s" % [n, n, str(k)])
+			seen[k] = true
+		if spots.size() > int(cfg["count_max"]):
+			f.append("overlap: the %dx%d map placed %d clawds, over the max %d"
+				% [n, n, spots.size(), int(cfg["count_max"])])
+	# a map with fewer legal tiles than the floor places FEWER, never duplicates
+	var few := _flat_level(2)
+	var kept := 0
+	for t in few["tiles"]:
+		var k3 := Vector2i(int(t[0]), int(t[1]))
+		if absi(k3.x) <= 1 and absi(k3.y) <= 1:
+			continue                       # the beacon/spawn ban already covers these
+		if kept < 3:
+			kept += 1
+			continue
+		t[3] = 1                           # a ramp: not a legal clawd tile
+	var fs: Array = ClawdsScript.place_clawds(few, cfg)
+	if fs.size() != 3:
+		f.append("overlap: a map with 3 legal tiles placed %d clawds, want 3 (place fewer, never duplicate)"
+			% fs.size())
+	var fseen := {}
+	for p3 in fs:
+		var k4 := Vector2i(int(p3[0]), int(p3[1]))
+		if fseen.has(k4):
+			f.append("overlap: the 3-tile map placed two clawds on tile %s" % str(k4))
+		fseen[k4] = true
+
+
+# ---- body: 2.0 u tall / 1.6 u diameter, and NO contact kill (D-T4-1, review round 1) ----
 
 func _body_and_contact(f: Array[String]) -> void:
 	# SR-2's FINAL row: height 2.0, hit diameter 1.6 (0.8 x the 2.0 u body width)
@@ -483,35 +530,45 @@ func _body_and_contact(f: Array[String]) -> void:
 	_run(spawned[0], 31)   # past the fade: the full body is live
 	_num(f, "body height", float(row["height_u"]), 2.0)
 	_num(f, "hit diameter", float(row["diameter_u"]), 1.6)
-	# a body 3 u away never touches (contact = overlap of the cylinders only)
-	var c := _spawn(Vector3(4.0, 0.0, 0.5))
-	_run(c[0], 40)
+	# "Claude does NOTHING by himself" (review round 1): a player standing INSIDE the body for 600 ticks is
+	# never killed - the 180 s anger timer is his only lethal act, so contact_kill is false
+	var c := _spawn(Vector3(0.9, 0.0, 0.5))
+	_run(c[0], 600)
 	if c[2].dead:
-		f.append("contact: a body 3 u away killed the player")
+		f.append("contact: standing inside the body killed the player (contact_kill must be false)")
+	for kind in ["death", "kill_suppressed"]:
+		if not _filter_events(kind).is_empty():
+			f.append("contact: the body emitted %d '%s' events while the player stood inside it"
+				% [_filter_events(kind).size(), kind])
+	# the data and the behavior's mirror both say so
+	if bool(_cfg().get("contact_kill", true)):
+		f.append("contact: enemy.json stats.contact_kill is true")
+	if bool(ClaudeEnemy.cfg().get("contact_kill", true)):
+		f.append("contact: cfg() still reports contact_kill true")
 
 
-# ---- the spawn fade blocks contact for its 30 ticks (the anim block) ----------
+# ---- the spawn fade is cosmetic: it never gates a kill (D-T4-1, review round 1) ----------
 
-func _spawn_fade_blocks_contact(f: Array[String]) -> void:
-	# overlapping bodies from tick 1; the anim block's spawn row: the body cannot
-	# touch or kill until the fade completes
+func _spawn_fade_is_cosmetic(f: Array[String]) -> void:
+	# overlapping bodies from tick 1: the fade still runs (the anim block's spawn row), but with no contact
+	# kill there is nothing for it to gate - the player survives the fade and the 600 ticks after it
 	var spawned := _spawn(Vector3(0.9, 0.0, 0.5))
 	var rt = spawned[0]
 	var row = spawned[1]
 	var ctl = spawned[2]
-	_run(rt, 30)   # ticks 1..30: the fade - no contact kill yet
+	_run(rt, 29)   # ticks 1..29: still inside the fade
 	if ctl.dead:
 		f.append("fade: the body killed during the 30-tick spawn fade")
-	_run(rt, 5)    # the fade is over: the overlap kills now
-	if not ctl.dead:
-		f.append("fade: the overlapping body never killed after the fade ended")
-	else:
-		var found := false
-		for d in _filter_events("death"):
-			if str(d["code"]) == "D-CLAUDE":
-				found = true   # the contact path passes cfg death_code (D-T030-1)
-		if not found:
-			f.append("fade: death events %s, want D-CLAUDE" % str(_filter_events("death")))
+	if str(row["anim_state"]) != "spawn":
+		f.append("fade: the anim state is '%s' during the fade, want spawn" % str(row["anim_state"]))
+	_run(rt, 2)    # age 31: the fade is over
+	if str(row["anim_state"]) != "idle":
+		f.append("fade: the anim state is '%s' after the fade, want idle" % str(row["anim_state"]))
+	_run(rt, 600)
+	if ctl.dead:
+		f.append("fade: the overlapping body killed the player after the fade (contact_kill must be false)")
+	if not _filter_events("death").is_empty():
+		f.append("fade: death events %s, want none" % str(_filter_events("death")))
 
 
 # ---- "does nothing by himself": no attack, no movement (D-T4-1) ---------------
@@ -690,6 +747,101 @@ func _pickup_resets(f: Array[String]) -> void:
 	if cl.remaining() != before:
 		f.append("pickup: a dead player still collected a clawd")
 	ctl.dead = false
+
+
+# ---- a pickup re-arms the warning ladder (D-T4-5, review round 1) -------------
+
+func _warned_rearms_on_pickup(f: Array[String]) -> void:
+	var L := _flat_level(22)
+	ClawdsScript.attach(L, ClaudeEnemy.clawd_cfg())
+	var lv := _holder(L)
+	var cl = lv["clawds"]
+	var w := _world(L)
+	var ctl = _spent_ctl(w)
+	var ev: Array = []
+	var warns: Array = []
+	# run to just past the first warning
+	for t in range(1, WARN_1 + 2):
+		ev.clear()
+		ClawdsScript.tick(lv, [ctl], w, t, ev)
+		for e in ev:
+			if str((e as Dictionary).get("e", (e as Dictionary).get("type", ""))) == "clawd_warning":
+				warns.append(t)
+	if warns.size() != 1 or int(warns[0]) != WARN_1:
+		f.append("rearm: warnings %s before the pickup, want [%d]" % [str(warns), WARN_1])
+	if int(cl.warned) != 1:
+		f.append("rearm: warned %d after the first warning, want 1" % int(cl.warned))
+	# collect a clawd: the timer AND the warning count reset
+	_stand_on(ctl, cl, 0)
+	ev.clear()
+	ClawdsScript.tick(lv, [ctl], w, WARN_1 + 2, ev)
+	if int(cl.anger_ticks) != 0:
+		f.append("rearm: anger %d after the pickup, want 0" % int(cl.anger_ticks))
+	if int(cl.warned) != 0:
+		f.append("rearm: warned %d after the pickup, want 0 (the ladder must re-arm)" % int(cl.warned))
+	# the next period fires BOTH warnings again, at the same offsets from the reset
+	warns.clear()
+	var t0 := WARN_1 + 2
+	for t2 in range(t0 + 1, t0 + KILL + 1):
+		ev.clear()
+		ClawdsScript.tick(lv, [ctl], w, t2, ev)
+		for e in ev:
+			if str((e as Dictionary).get("e", (e as Dictionary).get("type", ""))) == "clawd_warning":
+				warns.append(t2 - t0)
+		if warns.size() >= 2:
+			break
+	if warns.size() != 2:
+		f.append("rearm: %d warnings in the second period, want 2 (the pickup must re-arm the ladder)"
+			% warns.size())
+	elif int(warns[0]) != WARN_1 or int(warns[1]) != WARN_2:
+		f.append("rearm: the second period's warnings at %s ticks after the reset, want [%d, %d]"
+			% [str(warns), WARN_1, WARN_2])
+
+
+# ---- the 180 s kill retries while the player is protected (D-T4-5, review round 1) ----
+
+func _kill_retries_while_protected(f: Array[String]) -> void:
+	var L := _flat_level(22)
+	ClawdsScript.attach(L, ClaudeEnemy.clawd_cfg())
+	var lv := _holder(L)
+	var cl = lv["clawds"]
+	var w := _world(L)
+	var ctl = _spent_ctl(w)
+	var ev: Array = []
+	# run to the kill tick with the player INVULNERABLE: the blow is turned aside every tick
+	for t in range(1, KILL + 1):
+		ctl.invuln = 5.0          # refreshed every tick: the protection never lapses
+		ev.clear()
+		ClawdsScript.tick(lv, [ctl], w, t, ev)
+	if ctl.dead:
+		f.append("retry: an invulnerable player died at the 180 s kill")
+	if bool(cl.killed):
+		f.append("retry: the kill is marked spent although it never landed")
+	if int(cl.anger_ticks) != KILL:
+		f.append("retry: anger %d while protected, want it pinned at %d" % [int(cl.anger_ticks), KILL])
+	# the protection lapses: the very next tick lands the kill
+	ctl.invuln = 0.0
+	ev.clear()
+	ClawdsScript.tick(lv, [ctl], w, KILL + 1, ev)
+	if not ctl.dead:
+		f.append("retry: the kill never landed after the protection lapsed")
+	if str(ctl.dead_code) != "D-CLAUDE":
+		f.append("retry: the death code is '%s', want D-CLAUDE" % str(ctl.dead_code))
+	if not bool(cl.killed):
+		f.append("retry: the kill is not marked spent after it landed")
+	var got_kill := false
+	for e in ev:
+		if str((e as Dictionary).get("e", (e as Dictionary).get("type", ""))) == "clawd_kill":
+			got_kill = true
+	if not got_kill:
+		f.append("retry: no clawd_kill event on the tick the kill landed")
+	# and it fires exactly once: 300 more ticks emit nothing
+	for t2 in range(KILL + 2, KILL + 302):
+		ev.clear()
+		ClawdsScript.tick(lv, [ctl], w, t2, ev)
+		if not ev.is_empty():
+			f.append("retry: the spent timer emitted %s after the kill" % str(ev))
+			break
 
 
 # ---- the timer pauses while the beacon is open (the gold phase) (D-T4-5) ------

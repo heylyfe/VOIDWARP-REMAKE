@@ -264,6 +264,14 @@ func _claude_check(wired: bool) -> Array[String]:
 					% int(v._last_warned))
 		if int(v._flash) <= 0:
 			p.append("claude: the view left no warning flash on the logo")
+		# review round 1: a clawd pickup resets the sim's warning count, so the view must re-arm - the next
+		# period's warnings have to flash and play again instead of being swallowed by a stale counter
+		v.rearm()
+		if int(v._last_warned) != 0:
+			p.append("claude: rearm() left _last_warned at %d, want 0" % int(v._last_warned))
+		v.on_warning(1)
+		if int(v._last_warned) != 1:
+			p.append("claude: the warning after a rearm recorded %d, want 1" % int(v._last_warned))
 	v.free()
 	return p
 

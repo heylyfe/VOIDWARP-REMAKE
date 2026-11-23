@@ -8626,8 +8626,8 @@ emits exactly two anim states, `spawn` then `idle`. It never moves, never telegr
 its own action. Everything the old kit did is deleted, not disabled: no dead code path survives, because a
 disabled attack that still runs its clock is a lie in the state hash.
 
-**What is kept and why.** (a) The body: `world_height` 2.0, `hit_diameter` 1.6, `contact_kill` true - the SR-2
-row and the framework's body rule, unchanged, so `tools/check_enemy_data.gd` stays green. (b) `base_speed` 4.0 and
+**What is kept and why.** (a) The body: `world_height` 2.0, `hit_diameter` 1.6 - the SR-2 row, unchanged, so
+`tools/check_enemy_data.gd` stays green. (b) `base_speed` 4.0 and
 `pursuit_ceiling` 0.55 stay in `enemy.json` because the SR-5 table pins them and the checker compares the file to
 the table; the behavior simply never calls the float body, so the numbers are inert data, not a movement rule.
 (c) The 30-tick spawn fade, because the anim block's `spawn` row is the sheet's contract and `test_anim_sync.gd`
@@ -8635,10 +8635,17 @@ drives it. (d) `content/enemies/claude/sprites.json` is NOT edited: its nine T-0
 (the same "dormant, wired by a later ticket" status the owner's Bankai cinematic has), so `tools/check_anim_data.gd`
 and `test_anim_sync.gd` stay green without a threshold moving.
 
-**Contact kill is kept [CONTESTABLE].** "Does nothing by himself" is read as "no attack, no movement", not "no
-body": walking into a stationary 2.0 u body still kills, exactly as every other enemy's body does, and the
-framework's `contact_kill` is a body property rather than an action. A player who wants to be safe from Claude
-simply does not walk into him. One boolean in `enemy.json` flips it if the owner meant otherwise.
+**Contact kill REMOVED (review round 1, 2026-11-23).** The first cut kept `contact_kill: true` and called it
+[CONTESTABLE]: "does nothing by himself" was read as "no attack, no movement", not "no body". Terra's review
+rejected that reading, and it is right - killing a player who walks into him IS an additional lethal behaviour,
+and the owner's sentence rules out every lethal act except the one he named. `contact_kill` is now **false** in
+both places `enemy.json` carries it (top level and `stats`) and in `enemy.gd`'s `cfg()` mirror, so the framework's
+body-contact path skips him entirely (`sim/enemy_runtime.gd` `_contact_kills` reads the flag). The 180 s anger
+timer is Claude's ONLY lethal act. The spawn fade stays (the anim block's `spawn` row is the sheet's contract and
+`test_anim_sync.gd` drives it) but it is now purely cosmetic: the old code zeroed `diameter_u` for its 30 ticks to
+gate the contact kill, and that zeroing is deleted with the kill it gated - the body mirror keeps the real 1.6 u
+diameter from tick 1. `DESIGN.md` section 5.11 and the SR-2 row say so, and `test_enemy_claude.gd` asserts a
+player standing inside the body for 600 ticks is never killed.
 
 ## D-T4-2 (2026-11-23): the clawd swarm and the anger timer live in sim/clawds.gd, not in the behavior
 
@@ -8800,3 +8807,56 @@ of these is a threshold change; each is a fixture whose subject no longer exists
 - `game/sim/clawds.gd` - the header's owner quote says "a second, louder one" instead of "a second, more urgent
   sound": the boundary scan (`test_boundaries.gd`) matches whole words against the content ids, and "more" is a
   curse id. The verbatim quote lives here, in the D-entries, where the scan does not look.
+
+## D-T4-10 (2026-11-23): review round 1 - the contact kill goes, the warning ladder re-arms, the kill retries, placement never stacks, and the bot answers the clock
+
+**Source.** Terra xhigh reviewed `t3/claude-clawd-revamp` and returned ADOPT WITH FIXES with four merge-blocking
+defects plus one bot-routing gap. All five are fixed in this round; the dropped 30 s periodic-spawn clause, the
+dormant anim states, the unreferenced old WAVs and the inert strings-line machinery were ruled acceptable cleanup
+and are left alone.
+
+**1. The contact kill contradicted the owner.** Fixed in D-T4-1 (amended above): `contact_kill` is false in
+`enemy.json` (both places), in `enemy.gd`'s `cfg()` mirror, and the fade's `diameter_u` zeroing is deleted with
+the kill it gated. The 180 s anger timer is Claude's only lethal act.
+
+**2. A pickup reset the timer but not `warned`.** `sim/clawds.gd` `pickup()` now sets `warned = 0` with
+`anger_ticks`, so the warning ladder counts the warnings of the CURRENT anger period. Without it every period
+after the first pickup passed in silence. The view side follows: `view/claude_view.gd` gains `rearm()` (clears
+`_last_warned`, no flash, no cue) and `view/enemies/enemy_view_host.gd` calls it when the sim's count goes
+BACKWARDS, so the next 60 s / 120 s warnings flash and play their cues again. `test_enemy_claude.gd`'s
+`_warned_rearms_on_pickup` asserts the second period fires both warnings at exactly 3600 and 7200 ticks after the
+reset; `test_audio_cues.gd` asserts `rearm()` and the warning after it.
+
+**3. The kill was marked spent before it landed.** `advance()` used to set `killed = true` and then call
+`_kill()`. Last Light, respawn invulnerability or a barrier can turn the blow aside, and the timer then never
+tried again - the specified 180 s kill silently did not happen. Now `_kill()` returns whether a player actually
+died (`ctl.dead` after `try_kill`), `killed` is set only on that, and while the player is protected the timer
+stays pinned at `kill_ticks` and retries every tick. A suppressed retry emits nothing (the controller's
+`kill_suppressed` events are dropped), so a protected player does not fill the replay with one event per tick.
+`test_enemy_claude.gd`'s `_kill_retries_while_protected` holds the player invulnerable through tick 10800, asserts
+`killed` is still false and anger pinned, then drops the shield and asserts the kill lands on the very next tick
+with `D-CLAUDE`, one `clawd_kill` event, and nothing after.
+
+**4. The spacing ladder could pick one tile twice.** At the bottom rung (spacing 0) the distance test passes for
+every candidate, including the ones already chosen, so a small map could stack two clawds on one tile.
+`place_clawds()` now keeps a `used` set of candidate indices and never returns a tile twice; if the candidates run
+out the swarm is simply smaller than the count formula asked for (a map with fewer legal tiles than the floor),
+never overlapping. `test_enemy_claude.gd`'s `_placement_never_overlaps` sweeps the small maps where the ladder
+reaches that rung and a hand-built 3-legal-tile map that must place exactly 3.
+
+**5. The bot did not route to clawds.** `tools/bot_run.gd` gains a clawd goal kind: `_clawd_urgent()` (urgent from
+the DATA's first warning tick, `anger_warning_ticks[0]`, and never while the timer is frozen or spent),
+`_nearest_clawd()` (nearest reachable uncollected clawd on the route distances, skipping released slots),
+`_goal_point()`/`_goal_stale()` for the new kind, `mem["clawd_tiles"]` built from `lv.clawds.spots` with the gift
+slots' own mapping, and a repath on `clawd_collected`. Before the first warning the bot plays the level normally,
+which is what PACES the swarm instead of eating it at once; from the first chime on, the nearest clawd outranks
+the nearest gift. A clawd the follower cannot actually reach (a deep drop the jump validator refuses) is released
+for the level after `CLAWD_GIVE_UP_TICKS` (600 = 10 s, the `_stuck_window` window) and the next nearest is tried,
+so an unreachable clawd cannot pin the bot while the timer climbs. With every clawd released the bot falls back to
+gifts and takes the kill - honest, and no longer systematic. `tools/bot/answers.gd`'s claude caveat and KNOWN GAPS
+note say so. `test_bot_run.gd`'s `_clawd_routing` asserts the decision functions directly and pins one integration
+run (seed 20, level 15, a Claude vote) that used to die at tick 14140 with `D-CLAUDE` and now does not.
+
+**Measured.** 20 level-15 runs that vote Claude (seeds 23..42): 0 deaths with `D-CLAUDE` (8 complete, 10 stuck, 1
+mine death, 1 timeout - the stuck/timeout outcomes are the bot's pre-existing behaviour on those maps and are
+identical with and without the Claude vote).

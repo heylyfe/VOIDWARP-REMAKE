@@ -8,9 +8,11 @@ extends "res://sim/enemy_runtime.gd".EnemyBehavior
 # So this module is a BODY and nothing else. The old musical kit (drums / strings / wind, the beat clock, the
 # agitation meter, the clawd Crab plushies) is deleted, not disabled: a disabled attack that still runs its clock
 # is a lie in the state hash. What the module still does:
-#   - the 30-tick spawn fade (the anim block's `spawn` row: alpha 0 -> 1, scale 0.8 -> 1.0, and the body cannot
-#     touch or kill until it completes), then the `idle` state forever;
-#   - the body: 2.0 u tall, hit diameter 1.6 u (SR-2), contact kills (the framework's cylinder check, unchanged).
+#   - the 30-tick spawn fade (the anim block's `spawn` row: alpha 0 -> 1, scale 0.8 -> 1.0), then the `idle`
+#     state forever;
+#   - the body: 2.0 u tall, hit diameter 1.6 u (SR-2) - and NO contact kill (review round 1, D-T4-1): "does
+#     nothing by himself" rules out a body that kills a player who walks into it, so contact_kill is false and
+#     the 180 s anger timer is his only lethal act.
 # It never moves, never telegraphs, never fires, never kills by its own action.
 #
 # THE SWARM AND THE TIMER ARE NOT HERE. They live in sim/clawds.gd (D-T4-2), because the anger timer must be in
@@ -68,7 +70,7 @@ static func cfg() -> Dictionary:
 		"hit_diameter": HIT_DIAMETER,
 		"preferred_kind": "open",
 		"spawn_fade_ticks": SPAWN_FADE_TICKS,
-		"contact_kill": true,
+		"contact_kill": false,
 		"death_code": DEATH_CODE,
 		"cycle_s": 0.0,
 		"cycle_ticks": 0,
@@ -106,10 +108,6 @@ func on_spawn(row: Dictionary, _api) -> void:
 	row["age"] = 0
 	row["anim_state"] = "spawn"
 	row["anim_state_t"] = 0
-	# the spawn fade blocks contact (the anim block's spawn row): no body contact until the fade completes -
-	# the framework reads row diameter_u, so zero it
-	row["diameter_full"] = float(row["diameter_u"])
-	row["diameter_u"] = 0.0
 
 
 ## One 60 Hz tick: the fade, then nothing. No movement, no attack, no clock (D-T4-1).
@@ -120,10 +118,6 @@ func tick(row: Dictionary, api, dt_ticks: int) -> void:
 
 func _tick_one(row: Dictionary, api) -> void:
 	row["age"] = int(row["age"]) + 1
-	# the anim block's spawn row blocks contact for its 30 ticks (the anim's own contact_blocked covers
-	# ticks_in_state 0..29): the body returns at age 31
-	if int(row["age"]) == SPAWN_FADE_TICKS + 1:
-		row["diameter_u"] = float(row["diameter_full"])   # the fade is done: contact kills
 	_pick_anim_state(row)
 
 

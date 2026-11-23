@@ -280,7 +280,7 @@ body width per the HITBOXES hard rule, height = body height):
 | toucher | 1.4 | 0.8 | hurdle-able only with a clean jump (0.85 u margin at apex) |
 | seal | 0.6 | 0.6 | easily hurdle-able; its dash is the threat (§5.9) |
 | address me | 2.5 | — | no body contact; it is a countdown, not an obstacle |
-| Claude | 2.0 | 1.6 | not hurdle-able; does not move (cycle 7 revamp, D-T4-1) |
+| Claude | 2.0 | 1.6 | not hurdle-able; does not move and never kills on contact (cycle 7 revamp, D-T4-1) |
 | gin ichimaru | 1.8 | 0.7 | stands 15–25 u away on platform tiles only (D-072); contact is not his threat |
 
 The nuke has no body; gift Larper occupies gift slots as the tripmine (§3.3) — the roster's other
@@ -511,11 +511,12 @@ anger timer resets to 0.
 **Anger timer** in sim ticks, in the state hash, reset every level: a warning chime at 60 s (3600
 ticks), a louder alarm at 120 s (7200), and at 180 s (10800) he **insta-kills** the player (cause
 "Claude"). The timer pauses while the beacon is open (the gold phase) and never advances after the kill.
-His body is still 2.0 u tall with a 1.6 u hit diameter and still kills on contact (SR-2).
+His body is 2.0 u tall with a 1.6 u hit diameter, and it **never kills**: the 180 s timer is his only
+lethal act (D-T4-1, review round 1).
 *Pressure:* a second collectible that competes with gifts for your route, on a clock.
 *Terrain:* the clawds are spread over the walkable tiles, so the route is the map.
 *Tell:* a warning chime at 60 s and a louder alarm at 120 s; the HUD pill counts the clawds left and the seconds to the next warning
-*Answer:* collect clawds: each one resets the anger timer, so the swarm is the clock. The timer pauses once the beacon opens, so the gold phase is free - but the kill is real before it. His body still kills on contact: do not walk into him.
+*Answer:* collect clawds: each one resets the anger timer, so the swarm is the clock. The timer pauses once the beacon opens, so the gold phase is free - but the kill is real before it. His body never kills: the 180 s timer is his only lethal act.
 
 ### 5.12 gin ichimaru — Image 16 = "gin idle.png", Image 17 = "ginsword.png"
 Fades in on a tile 15–25 u from the player. **He stands on platform tiles only (D-072):** his

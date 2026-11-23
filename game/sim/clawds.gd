@@ -76,7 +76,9 @@ var anger_ticks: int = 0
 ## How many warnings have fired (0, 1 or 2). Part of the hash: a run that heard a warning is not a run that did
 ## not, even at the same anger_ticks.
 var warned: int = 0
-## True once the kill has fired, so it fires exactly once and the timer stops.
+## True once the kill has LANDED (a player actually died), so it fires exactly once and the timer stops. A blow
+## that Last Light or invulnerability turned aside leaves this false: the timer stays pinned at kill_ticks and
+## retries every tick until the protection lapses (review round 1).
 var killed: bool = false
 ## The data knobs, pinned in the hash (D-T4-6).
 var warning_ticks: Array = []
@@ -222,6 +224,11 @@ static func place_clawds(L: Dictionary, cfg: Dictionary) -> Array:
 	# spots the previous rung refused, so the result is a prefix-stable superset and stays deterministic.
 	var rungs: Array = [int(c["min_spacing_tiles"])]
 	rungs.append_array(SPACING_LADDER)
+	# `used` is what keeps the bottom rung honest (review round 1): at spacing 0 the distance test passes for
+	# every candidate, including the ones already picked, so without this set the last rung would stack two
+	# clawds on one tile. A tile is picked at most once; if the candidates run out the swarm is simply smaller
+	# than `want` (a map with fewer legal tiles than the count formula asks for), never overlapping.
+	var used := {}
 	for spacing in rungs:
 		if out.size() >= want:
 			break
@@ -229,6 +236,8 @@ static func place_clawds(L: Dictionary, cfg: Dictionary) -> Array:
 		for i in cand:
 			if out.size() >= want:
 				break
+			if used.has(i):
+				continue
 			var t: Array = tiles[i]
 			var ok := true
 			for p in out:
@@ -238,6 +247,7 @@ static func place_clawds(L: Dictionary, cfg: Dictionary) -> Array:
 					ok = false
 					break
 			if ok:
+				used[i] = true
 				out.append([int(t[0]), int(t[1]), int(t[2])])
 	return out
 
@@ -375,6 +385,11 @@ func pickup(ctl, player_index: int, tick: int, events: Array) -> bool:
 		# D-T4-7: a curse can leave anger behind instead of calming completely.
 		anger_ticks = maxi(0, calm_leftover_ticks)
 		_anger_carry = 0.0
+		# The warning ladder re-arms with the timer (review round 1): `warned` counts the warnings of the
+		# CURRENT anger period, so a pickup that resets the timer must also reset the count - otherwise the
+		# next 60 s and 120 s periods would pass in silence for the rest of the level. The view re-arms its
+		# own `_last_warned` off the same reset (view/enemies/enemy_view_host.gd).
+		warned = 0
 		var ev := EventsScript.make(EventsScript.EV_CLAWD_COLLECTED, tick, player_index)
 		ev["clawd"] = i
 		ev["remaining"] = remaining()
@@ -401,28 +416,43 @@ func advance(lv, ctls: Array, w: Dictionary, tick: int, events: Array) -> void:
 		ev["cue"] = str(cues[warned - 1]) if warned - 1 < cues.size() else ""
 		events.append(ev)
 	if anger_ticks >= kill_ticks:
-		killed = true
 		anger_ticks = kill_ticks
-		_kill(ctls, w, tick, events)
+		# The kill is only SPENT once it lands (review round 1). Last Light, respawn invulnerability or a
+		# barrier can turn the blow aside; marking it spent first left the timer dead and the specified
+		# 180 s kill silently never happened. While the player is protected the timer stays pinned at
+		# kill_ticks and tries again next tick, so the kill lands the moment the protection lapses.
+		if _kill(ctls, w, tick, events):
+			killed = true
 
 
 ## The 180 s kill: every live player runs the controller's own kill ladder (D-T4-5), so Last Light and respawn
-## invulnerability answer exactly as they do for a body contact. The event carries the cause for the view.
-func _kill(ctls: Array, w: Dictionary, tick: int, events: Array) -> void:
+## invulnerability answer exactly as they do for any other killing blow. Returns true when at least one player
+## actually died; the event carries the cause for the view. A blow that was saved or suppressed emits nothing -
+## the retry is silent, so a protected player does not fill the replay with one suppression per tick.
+func _kill(ctls: Array, w: Dictionary, tick: int, events: Array) -> bool:
+	var landed := false
+	var out: Array = []
 	for i in ctls.size():
 		var ctl = ctls[i]
 		if ctl == null or bool(ctl.dead):
 			continue
 		var ev: Array = []
 		ctl.try_kill(death_code, killer_id, w, ev)
-		for e in ev:
-			if e is Dictionary and not e.has("player"):
-				e["player"] = i
-			events.append(e)
+		if bool(ctl.dead):
+			landed = true
+			for e in ev:
+				if e is Dictionary and not e.has("player"):
+					e["player"] = i
+				out.append(e)
+	if not landed:
+		return false
 	var ev2 := EventsScript.make(EventsScript.EV_CLAWD_KILL, tick, -1)
 	ev2["killer"] = killer_id
 	ev2["code"] = death_code
-	events.append(ev2)
+	out.append(ev2)
+	for e in out:
+		events.append(e)
+	return true
 
 
 # ---- the state hash helpers (D-T4-6) ---------------------------------------------------------

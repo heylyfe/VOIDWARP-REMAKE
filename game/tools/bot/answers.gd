@@ -47,8 +47,10 @@ extends RefCounted
 #
 # KNOWN GAPS (copied from section 4, each also noted on its entry):
 #   - claude's answer is a ROUTE (collect clawds), not an input sequence: the bot
-#     does not path to clawds, so a bot run that votes Claude dies at 180 s
-#     (cycle 7 revamp, D-T4-5).
+#     now routes to the nearest reachable clawd once the anger timer passes its
+#     first warning tick (tools/bot_run.gd _clawd_urgent, review round 1), so a
+#     Claude-voting run answers the clock instead of dying at 180 s. A clawd the
+#     follower cannot reach is released after 10 s and the next one is tried.
 #   - isagi with Egoist down a flat in-line lane has no answer (F6).
 #   - address me is answerable only with F8 (co-arrival with a chaser).
 
@@ -76,7 +78,7 @@ const TABLE := {
 			{"tick_offset": 0, "action": "move_around", "note": "route to the nearest clawd; the pickup radius is the gift radius (1.6 u) and the clawds are spread over the walkable tiles"},
 		],
 		"source": "research/fable-enemies.md section 4 (counter-play map), row 'Claude' - rewritten for the cycle-7 revamp (D-T4-5): content/enemies/claude/enemy.json, sim/clawds.gd",
-		"caveat": "the bot does not route to clawds, so a bot run that votes Claude dies at 180 s; the body still kills on contact",
+		"caveat": "the bot routes to the nearest reachable clawd once the first warning sounds; a clawd it cannot reach is released after 10 s, and with every clawd released the 180 s kill lands",
 	},
 	"coil": {
 		"enemy": "coil",

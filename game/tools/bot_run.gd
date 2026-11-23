@@ -100,6 +100,10 @@ const SEED_BASE := 60717          # run i uses SEED_BASE + i; fixed, so 200 runs
 const MAX_TICKS_PER_LEVEL := 18000  # 5 min of sim per level; a run past it is "stuck"
 const REPLAY_CHECK_EVERY := 60    # checkpoint cadence for the A4 replay proof (every 60 ticks)
 const REPLAN_TICKS := 45          # route refresh cadence (also on collect / phase flip)
+## T4 (review round 1): how long the bot holds ONE clawd goal before releasing it for the level. A clawd the
+## follower cannot reach (a deep drop the jump validator refuses) must not pin the bot while the anger timer
+## climbs; the next nearest clawd is tried instead. 600 ticks = 10 s, the same window _stuck_window uses.
+const CLAWD_GIVE_UP_TICKS := 600
 const REACT_TICKS := 15           # 250 ms at 60 Hz (DESIGN.md section 9)
 const FOOT_INFLATE := 0.45        # body radius applied to telegraph footprints
 const MAX_LEVEL_DEFAULT := 18
@@ -599,6 +603,13 @@ static func _play_level(api: RefCounted, ledger: Dictionary, seed: int, level: i
 			mine_n += 1
 		slots_n += 1
 		slot_tiles.append(VoidGenScript.find_tile(w2, int(sd["x"]), int(sd["z"]), int(sd["y"])))
+	# T4 (review round 1): the clawd swarm's tiles, the same way - the anger timer is a clock the bot has to
+	# answer, so a clawd is a routable goal like a gift slot. Empty when the level carries no swarm.
+	var clawd_tiles: Array[int] = []
+	if lv.clawds != null:
+		for i in lv.clawds.count():
+			var sp: Array = lv.clawds.spots[i]      # [x, z, y_hu], the same triple the gift slots use
+			clawd_tiles.append(VoidGenScript.find_tile(w2, int(sp[0]), int(sp[1]), int(sp[2])))
 	# the player controller, same class the lobby picked, charges carried between levels
 	var ctl = ControllerScript.new()
 	var consts := ControllerScript.load_constants()
@@ -635,6 +646,7 @@ static func _play_level(api: RefCounted, ledger: Dictionary, seed: int, level: i
 	# the per-level bot memory
 	var mem := _fresh_mem()
 	mem["slot_tiles"] = slot_tiles
+	mem["clawd_tiles"] = clawd_tiles
 	while lv.tick < MAX_TICKS_PER_LEVEL:
 		var a_in: Dictionary
 		if p_rec.has("playback"):
@@ -766,7 +778,8 @@ static func _play_level(api: RefCounted, ledger: Dictionary, seed: int, level: i
 			return {"result": "complete", "complete_tick": int(lv.tick)}
 		for e in ev:
 			var ek := str(e.get("e", ""))
-			if ek == "gift_collected" or ek == "respawn" or ek == "last_light_save":
+			if ek == "gift_collected" or ek == "respawn" or ek == "last_light_save" \
+					or ek == "clawd_collected":
 				mem["repath"] = true
 			if ek == "push":
 				# an enemy overwrote the player's velocity: whatever arc was committed
@@ -803,6 +816,8 @@ static func _fresh_mem() -> Dictionary:
 		"overtime_on": false, "jump_hold": 0,
 		"stuck_timer": 0, "last_pos": Vector2(-9999.0, -9999.0),
 		"slot_tiles": [], "cur_tile": -1,
+		"clawd_tiles": [],   # T4: the clawd swarm's tiles, the gift slots' own mapping
+		"clawd_released": {}, "clawd_goal_slot": -1, "clawd_goal_at": 0,   # T4: unreachable clawds
 		"air_ticks": 0, "air_released": {},   # gifts this level we gave up reaching (thicc_ben pin)
 		"banned": {}, "lift_at": 0,           # refused edges (D-FIX-A3-1) + the lift cooldown
 		"was_grounded": true,
@@ -1611,6 +1626,31 @@ static func _replan(mem: Dictionary, lv, ctl, cur: int, w2, gtiles: Array, adj: 
 				return
 	elif cur >= 0:
 		var route: Dictionary = _route(adj, gtiles, cur, mem.get("banned", {}), rm)
+		# T4 (review round 1): the clawd swarm is a CLOCK. Once the anger timer has passed its first warning
+		# tick (the data's own anger_warning_ticks[0]), the next thing on the ladder is the 180 s kill, so the
+		# nearest reachable clawd outranks the nearest gift - collecting it resets the timer. Before that
+		# warning the bot plays the level normally, which is what paces the swarm instead of eating it at once.
+		var cl = lv.get("clawds") if lv != null else null
+		if cl != null and _clawd_urgent(cl, lv):
+			# A clawd the follower cannot actually reach (a 15 HU drop the jump validator refuses, a ledge
+			# it will not step off) must not pin the bot: after CLAWD_GIVE_UP_TICKS on one clawd goal the
+			# slot is released for the level and the next nearest is tried, exactly like air_released does
+			# for gifts. With every clawd released the bot falls back to gifts and takes the kill.
+			var held := int(mem.get("clawd_goal_slot", -1))
+			if held >= 0 and int(lv.tick) - int(mem.get("clawd_goal_at", 0)) >= CLAWD_GIVE_UP_TICKS:
+				(mem["clawd_released"] as Dictionary)[held] = true
+				mem["clawd_goal_slot"] = -1
+			var cp: Array = _nearest_clawd(cl, route["dist"], mem)
+			if int(cp[0]) >= 0:
+				if int(cp[1]) != int(mem.get("clawd_goal_slot", -1)):
+					mem["clawd_goal_slot"] = int(cp[1])
+					mem["clawd_goal_at"] = int(lv.tick)
+				mem["path"] = _path_to(route["parent"], cur, int(cp[0]))
+				mem["path_i"] = 0
+				mem["goal_kind"] = "clawd"
+				mem["goal_tile"] = int(cp[0])
+				mem["goal_slot"] = int(cp[1])
+				return
 		var pick: Array = _nearest_gift(lv, mem, route["dist"], false)
 		if int(pick[0]) < 0 and int(lv.tick) >= int(mem.get("lift_at", 0)):
 			# nothing reachable: the bans (or the thicc_ben releases) over-constrained
@@ -1677,12 +1717,57 @@ static func _nearest_gift(lv, mem: Dictionary, dist_v: Variant, ignore_released:
 	return [goal_tile, goal_slot]
 
 
+## Nearest reachable UNCOLLECTED clawd on `dist` (route distances from the player's tile). Returns
+## [goal_tile, goal_slot]; [-1, -1] when none is reachable. Pure. T4 (review round 1).
+static func _nearest_clawd(cl, dist_v: Variant, mem: Dictionary) -> Array:
+	var dist: PackedInt32Array = dist_v
+	var tiles: Array = mem.get("clawd_tiles", [])
+	var best_d := -1
+	var goal_tile := -1
+	var goal_slot := -1
+	var released: Dictionary = mem.get("clawd_released", {})
+	for i in range(mini(tiles.size(), cl.count())):
+		if cl.is_taken(i) or (released as Dictionary).has(i):
+			continue
+		var gi: int = int(tiles[i])
+		if gi < 0 or gi >= dist.size():
+			continue
+		var d := int(dist[gi])
+		if d < 0:
+			continue
+		if best_d < 0 or d < best_d or (d == best_d and i < goal_slot):
+			best_d = d
+			goal_tile = gi
+			goal_slot = i
+	return [goal_tile, goal_slot]
+
+
+## Is the anger timer far enough along that a clawd outranks a gift? The threshold is the DATA's first warning
+## tick (enemy.json's anger_warning_ticks[0], 3600 = 60 s): from the first chime on, the next rung of the ladder
+## is the kill, so the bot answers the clock. A frozen timer (the beacon is open) or a spent one is not urgent.
+## T4 (review round 1).
+static func _clawd_urgent(cl, lv) -> bool:
+	if cl == null or bool(cl.killed):
+		return false
+	if cl.paused(lv):
+		return false
+	var wt: Array = cl.warning_ticks
+	if wt.is_empty():
+		return false
+	return int(cl.anger_ticks) >= int(wt[0])
+
+
 ## The goal world position (gift hover point / beacon trigger centre), XZ used by the bot.
 static func _goal_point(mem: Dictionary, lv) -> Vector3:
 	if str(mem["goal_kind"]) == "beacon":
 		return Vector3(float(lv.beacon.cx), float(lv.beacon.base_y), float(lv.beacon.cz))
 	var slot := int(mem["goal_slot"])
 	if slot >= 0:
+		if str(mem["goal_kind"]) == "clawd":
+			var cl = lv.get("clawds") if lv != null else null
+			if cl != null and slot < cl.count():
+				return cl.spot_pos(slot)
+			return Vector3(0.0, 0.0, 0.0)
 		return lv.gifts.slot_pos(slot)
 	return Vector3(0.0, 0.0, 0.0)
 
@@ -1697,6 +1782,16 @@ static func _goal_point(mem: Dictionary, lv) -> Vector3:
 static func _goal_stale(mem: Dictionary, lv) -> bool:
 	if str(mem["goal_kind"]) == "beacon":
 		return false
+	if str(mem["goal_kind"]) == "clawd":
+		# T4 (review round 1): a clawd goal dies with the clawd (collected or swept with its tile), with the
+		# swarm, and with the urgency itself - a pickup resets the timer, so the bot goes back to gifts.
+		var cl = lv.get("clawds") if lv != null else null
+		if cl == null or bool(cl.killed) or cl.paused(lv):
+			return true
+		var cs := int(mem["goal_slot"])
+		if cs < 0 or cs >= cl.count() or cl.is_taken(cs):
+			return true
+		return not _clawd_urgent(cl, lv)
 	if bool(lv.beacon.is_open()):
 		return true
 	var slot := int(mem["goal_slot"])

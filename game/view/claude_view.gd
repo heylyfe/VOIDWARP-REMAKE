@@ -143,6 +143,12 @@ func on_warning(level: int) -> void:
 	ClaudeAudio.play(self, ClaudeAudio.cue_for_level(level), 1.0)
 
 
+## The sim's warning count went BACKWARDS: a clawd pickup reset the anger timer, so the ladder re-arms and the
+## next 60 s / 120 s warnings must play again (review round 1). No flash and no cue - nothing fired this tick.
+func rearm() -> void:
+	_last_warned = 0
+
+
 ## --- one frame of view -------------------------------------------------------------
 
 ## row is the sim row (read-only); dt is seconds elapsed; cam_pos points the billboard.
