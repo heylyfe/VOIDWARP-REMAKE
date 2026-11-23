@@ -1,6 +1,6 @@
 # U2b RESPONSE — tester-spawned Claude must get clawds (cycle 8, Terra finding 1)
 
-**Verdict: DONE.** Branch `t3/tester-claude-swarm`, tip `__TIP__`. Gate exit code `__GATE__`.
+**Verdict: DONE.** Branch `t3/tester-claude-swarm`. Gate exit code **0**.
 
 ## What was built
 
@@ -71,14 +71,24 @@ TESTS 143 passed 0 failed
 
 (143 = the previous 142 plus this suite's new file; run before this branch had 142 files.)
 
-Gate:
+Gate (`powershell -File tools\gate.ps1`, exit code 0, read by me):
 
 ```
-__GATE_TAIL__
+---- gate summary ----
+OK   python oracle checks (TESTS OK, SELFTEST 18/18, GALLERY 16/16 OK)
+OK   terrain parity (PARITY 56/56 OK)
+OK   run_all (TESTS 143 passed 0 failed)
+OK   boundary scan (ran in run_all: game/tests/test_boundaries.gd)
+OK   content schema (ran in run_all: game/tests/test_content.gd)
+OK   drop-in fixture (ran in run_all: game/tests/test_dropin.gd)
+OK   replay determinism (ran in run_all: game/tests/test_replay.gd)
+OK   sprite validator
+OK   fog readability
+GATE OK (9 ran, 0 skipped, 633 s)
 ```
 
-Error-string scan over this run's output: `SCRIPT ERROR` __SCRIPT_ERROR_COUNT__, `Parse Error`
-__PARSE_ERROR_COUNT__, `null instance` __NULL_INSTANCE_COUNT__.
+Error-string scan over this run's output and over the whole gate log: `SCRIPT ERROR` 0,
+`Parse Error` 0, `null instance` 0.
 
 ## Files touched
 
