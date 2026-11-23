@@ -9,7 +9,7 @@ one back, and the third fall ends the run.
 
 The world is serious. The enemies are not.
 
-> **Status: alpha — `v0.1.13-alpha.3`.** Playable end to end, level after level, with the lobby, the
+> **Status: alpha — `v0.1.14-alpha.3`.** Playable end to end, level after level, with the lobby, the
 > shop and the collapse all wired. Not yet a proven 30-level run — see
 > [What works today](#what-works-today) for the honest list.
 
@@ -359,6 +359,40 @@ variants, so their builds are unchanged by it.
 ## Changelog
 
 <details open>
+<summary><b>What changed in v0.1.14-alpha.3</b> — jump pads, and legs you can actually read</summary>
+
+**Jump pads.** A blue translucent slab sits beside a walkway — never on it — and flings the player
+straight up at 20 u/s, about two stair runs of height, keeping the horizontal momentum. It refills the
+movement kit: air jumps, dash, bonus dashes, glide energy and the updraft. It deliberately does *not*
+refill void charges, gold, the beacon shield, Last Light or Field Dressing. Placement is deterministic
+and data-driven (`terrain/jump_pads.gd`, `data/jump_pads.json`): one pad on levels 1-2, two from level
+3, three from 6, four from 10, at most one per walkway and at least 12 tiles apart, never on stairs or
+ramps, never on the hub, a beacon, a gift, a tripmine or a launch pad. A pad re-arms after 0.5 s and
+falls with its tile when the collapse takes it. Rulings D-JUMPPAD-1..5.
+
+**The legs read in game.** The whole leg was authored as one block in the boot colour (#0C0D10,
+near-black), so thigh, shin and boot were a single black column under the dark-grey robe with no ankle
+and no sole edge — which is why the legs looked like a mess in motion. The boot segment's vertex
+colours are now scaled so its main face renders #3A3F4C, a cool slate a little lighter than the robe,
+with the other faces keeping their authored shading ratios. View-side tone only: no geometry,
+silhouette, base material, pose, controller, collision, hitbox or state-hash change. Verified on
+before/after in-game captures from the real world camera, lighting and fog, walking a real stair run
+and a real downhill run.
+
+**The jump tuck and the descent camera.** The jump holds a knee tuck at thighs 1.90 rad with the knees
+at the rig's 2.35 fold limit; the binding constraint is the folded boot against the torso block, not
+the thigh. The descent rear view sits about 37 degrees off straight behind, chosen from an 11-offset
+sweep. Two reviewer notes are recorded rather than fixed: the tuck still reads compact, and no rear
+camera separates the legs in every frame — a rear view cannot show depth when the legs stack behind
+the robe. The owner judges the real in-game motion.
+
+**Proof.** The contact-sheet tool renders all 16 poses from three fixed cameras with a proof-only leg
+tint (left orange, right cyan, thigh lightest to boot darkest), because the body material is unshaded
+vertex colour and a light could not separate the segments. The gate is green: 138 tests, terrain
+parity 56/56, the 18 oracle self-tests and the 16 pinned gallery records.
+</details>
+
+<details>
 <summary><b>What changed in v0.1.13-alpha.3</b> — the run cycle, rebuilt so the legs cannot stretch</summary>
 
 **"What the absolute fuck is this... the legs are so messed up when going side to side or up and down
