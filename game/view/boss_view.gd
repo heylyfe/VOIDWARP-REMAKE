@@ -36,7 +36,6 @@ var _bar: ProgressBar
 var _title: Label
 var _overlay: Control
 var _gift_model: PackedScene
-var _gift_material: StandardMaterial3D
 var _gifts: Dictionary = {}
 var _balls: Dictionary = {}
 var _marker: MeshInstance3D = null
@@ -64,7 +63,6 @@ func setup(target: Vector3, sprite_height: float, canvas: CanvasLayer,
 		_sprite.pixel_size = sprite_height / float(_normal.get_height())
 	_set_texture(_normal)
 	_gift_model = load(GiftsView.GOLD_MODEL)
-	_gift_material = GiftsView._gold_body_material()
 
 	_overlay = Control.new()
 	_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -255,7 +253,6 @@ func on_events(events: Array) -> void:
 			"boss_gift_spawned":
 				if _gift_model != null:
 					var gift: Node3D = _gift_model.instantiate()
-					GiftsView._add_body(gift, _gift_material)
 					add_child(gift)
 					_add_body(gift, _gift_material())
 					gift.position = event["position"]
