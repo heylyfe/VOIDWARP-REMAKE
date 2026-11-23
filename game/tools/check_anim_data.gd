@@ -158,7 +158,7 @@ const EXPECTED := {
 		"states": {
 			"spawn": {"spec_frames": ["you_00"], "loop": false, "total_ticks": 30, "ticks_per_frame": 30.0, "tick_ranges": null},
 			"idle_chase": {"spec_frames": ["you_00", "you_01", "you_02", "you_03", "you_04"], "loop": true, "total_ticks": null, "ticks_per_frame": 7.5, "tick_ranges": null, "fps": 8.0},
-			"telegraph": {"spec_frames": ["you_00", "you_01", "you_02", "you_03", "you_04"], "loop": true, "total_ticks": 90, "ticks_per_frame": 3.75, "tick_ranges": null, "fps": 16.0},
+			"telegraph": {"spec_frames": ["you_00", "you_01", "you_02", "you_03", "you_04"], "loop": true, "total_ticks": 180, "ticks_per_frame": 3.75, "tick_ranges": null, "fps": 16.0},
 			"attack": {"spec_frames": ["you_04"], "loop": false, "total_ticks": null, "ticks_per_frame": null, "tick_ranges": null},
 			"recover": {"spec_frames": ["you_00", "you_01", "you_02", "you_03", "you_04"], "loop": true, "total_ticks": 240, "ticks_per_frame": 7.5, "tick_ranges": null, "fps": 8.0},
 		},

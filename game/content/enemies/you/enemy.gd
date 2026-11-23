@@ -9,10 +9,12 @@ extends "res://sim/enemy_runtime.gd".EnemyBehavior
 #
 # - floats toward the nearest player at 3.4 u/s; pursuit ceiling 0.55, so never
 #   above 4.95 u/s after any multiplier (SR-5); feet ease at 2.0 u/s (SR-1);
-# - within 10 u: corrupted rumble 1.5 s (90 ticks) -> a shockwave ring from its
-#   position; the rumble is the tell (its view effect is the 90-tick `telegraph`
-#   row of the T-083 anim block);
-# - the ring expands 9 u/s to radius 14 u, is 1.0 u tall and 0.6 u thick,
+# - within 8 u: it STOPS and rumbles 3.0 s (180 ticks) -> a shockwave ring from its
+#   position; the rumble is the tell (its view effect is the 180-tick `telegraph`
+#   row of the T-083 anim block). It holds position for the whole tell (D-YOU-C7-2):
+#   at 3.4 u/s a 3.0 s tell would otherwise carry it 10.2 u, straight through the
+#   player's body, and the touch kill would land before the ring ever released;
+# - the ring expands 9 u/s to radius 8 u, is 1.0 u tall and 0.6 u thick,
 #   travels in the horizontal plane of its feet; hit = kill; jumpable;
 #   the kill window is the player's feet strictly inside
 #   (ring_feet - 1.5, ring_feet + 1.0) - D-T-035-1; the radial hit window is
@@ -21,16 +23,23 @@ extends "res://sim/enemy_runtime.gd".EnemyBehavior
 #   unchanged - this module never decides contact kills itself);
 # - 5-frame corrupted run cycle (sprites/cycle_00..04.png, 8 fps).
 #
+# Cycle 7 (owner: "you?!" smaller range + slower strike): the ring's reach is 8 u
+# (57% of the old 14 u) and the tell is 3.0 s (2x the old 1.5 s). The ring's SPEED
+# is unchanged at 9 u/s on purpose - the crossing time a jump must cover is
+# 2 x 0.7 u / 9 u/s = 0.156 s whatever the radius is, so a smaller ring does not
+# shrink the jump window; it only shortens how long the band lives (0.89 s instead
+# of 1.56 s). D-YOU-C7-1 has the arithmetic.
+#
 # Echo Ring (the double_ring curse) is T-051's; this behavior makes each release
 # observable on the row ("ring_seq" / "last_ring_tick") so its on_tick can detect
 # a release and schedule the follow-up ring - D-T-035-10.
 
 const RT := preload("res://sim/enemy_runtime.gd")
 
-const TRIGGER_DISTANCE := 10.0
-const RUMBLE_TICKS := 90                  # 1.5 s at 60 Hz
+const TRIGGER_DISTANCE := 8.0
+const RUMBLE_TICKS := 180                 # 3.0 s at 60 Hz
 const RING_SPEED := 9.0                   # u/s
-const RING_MAX := 14.0                    # u, hard cap
+const RING_MAX := 8.0                     # u, hard cap
 const RING_THICK := 0.6                   # u, radial thickness
 const RING_RADIAL_WINDOW := RING_THICK * 0.5 + 0.4   # 0.7 u (D-T-035-2)
 const RING_HEIGHT := 1.0                  # u, the drawn band + the upper kill edge
@@ -45,6 +54,32 @@ const TELEGRAPH_KIND := "you_rumble"
 func _init() -> void:
 	id = "you"
 	display_name = "YOU?!"
+
+
+## The runtime cfg this enemy hands to EnemyRuntime.plan()/spawn_at(): the stats block
+## of content/enemies/you/enemy.json. Mirror - the test asserts the two agree.
+static func cfg() -> Dictionary:
+	return {
+		"base_speed": 3.4,
+		"pursuit_ceiling": 0.55,
+		"burst_ceiling": 1.0,
+		"world_height": 1.8,
+		"hit_diameter": 0.7,
+		"preferred_kind": "open",
+		"contact_kill": true,
+		"death_code": "D-YOU",
+		"cycle_s": 0.625,
+		"trigger_distance": TRIGGER_DISTANCE,
+		"rumble_ticks": RUMBLE_TICKS,
+		"ring_speed_u_per_s": RING_SPEED,
+		"ring_max_radius": RING_MAX,
+		"ring_thickness": RING_THICK,
+		"ring_height": RING_HEIGHT,
+		"ring_below_feet": RING_BELOW,
+		"ring_cooldown_ticks": RING_COOLDOWN,
+		"attack_hold_ticks": ATTACK_HOLD,
+		"recover_ticks": RECOVER_TICKS,
+	}
 
 
 func on_spawn(row: Dictionary, _api) -> void:
@@ -68,13 +103,19 @@ func tick(row: Dictionary, api, dt_ticks: int) -> void:
 	if int(row["cooldown_left"]) > 0:
 		row["cooldown_left"] = maxi(0, int(row["cooldown_left"]) - dt_ticks)
 	var near: Dictionary = api.nearest_player(Vector3(float(row["x"]), float(row["y"]), float(row["z"])))
-	# floats toward the nearest player at 3.4 u/s through every phase (D-T-035-6)
+	# floats toward the nearest player at 3.4 u/s through every phase EXCEPT the tell
+	# (D-T-035-6, narrowed by D-YOU-C7-2): during the 3.0 s rumble it charges in place,
+	# so the ring releases from the distance it telegraphed from and the touch kill
+	# cannot land before the ring does. update() keeps h_speed/tempo_mul live (SR-5).
 	if not near.is_empty():
 		var fb: Variant = row.get("float", null)
 		if fb == null:
 			fb = RT.FloatBody.from_cfg(row["cfg"])
 			row["float"] = fb
-		fb.step(row, api, dt_ticks, float(near["x"]), float(near["z"]))
+		if str(row["anim_state"]) == "telegraph":
+			fb.update(api, dt_ticks)
+		else:
+			fb.step(row, api, dt_ticks, float(near["x"]), float(near["z"]))
 	_advance_state(row, api, near, dt_ticks)
 
 
@@ -129,7 +170,7 @@ func _step_ring_once(row: Dictionary, api) -> void:
 	var keep: Array = []
 	for ring in rings:
 		if bool(ring.get("done", false)):
-			continue   # the 14 u tick is spent; the ring expires
+			continue   # the 8 u tick is spent; the ring expires
 		ring["r"] = float(ring["r"]) + RING_SPEED / 60.0
 		if float(ring["r"]) >= RING_MAX:
 			ring["r"] = RING_MAX

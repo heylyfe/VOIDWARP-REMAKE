@@ -35,7 +35,7 @@ const TELEGRAPH := {
 	"thicc_ben": {"telegraph": 75},
 	"isagi": {"telegraph": 72},
 	"nuke": {"telegraph_tracking": 150, "telegraph_locked": 90},
-	"you": {"telegraph": 90},
+	"you": {"telegraph": 180},
 	"gift_larper": {},
 	"toucher": {"telegraph": 18},
 	"seal": {"telegraph": 45},

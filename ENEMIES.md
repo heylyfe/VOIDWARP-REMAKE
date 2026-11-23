@@ -109,7 +109,7 @@ File names must be written EXACTLY as below (including the typos — these are t
 
 ## 💀 Husk → YOU?!
 
-**Behavior (1:1):** slow mover that creates shockwave rings that kill instantly when it gets close; a corrupted rumble ~1.5s before every shockwave. Jump the rings as they expand.
+**Behavior (1:1):** slow mover that creates shockwave rings that kill instantly when it gets close; a corrupted rumble ~3.0s before every shockwave. Jump the rings as they expand.
 
 **New sound:** quiet corrupted static + reversed glitch screech building up before each shockwave — like the player model screaming through the corruption.
 

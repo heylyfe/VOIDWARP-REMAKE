@@ -5,10 +5,13 @@ extends RefCounted
 # player's LAST LIGHT already spent (D-057) - otherwise the save masks the kill
 # and the assertion is worthless.
 #
-# Readings under test (DECISIONS D-T-035-1..13):
+# Readings under test (DECISIONS D-T-035-1..13, D-YOU-C7-1..3):
 # - ring kill window: player feet strictly inside (ring_feet - 1.5, ring_feet + 1.0);
 # - radial window: |dist - r| <= 0.7 u;
-# - the rumble keeps the body floating; the release hold is 18 ticks; recover 240.
+# - the rumble holds the body in place; the release hold is 18 ticks; recover 240;
+# - cycle 7 (owner: "you?!" smaller range + slower strike): the ring's reach is 8 u
+#   (<= 60% of the old 14 u), the tell is 180 ticks (2x the old 90), and the jump
+#   window that clears the band is still there - asserted against the real controller.
 
 const EnemyRuntime := preload("res://sim/enemy_runtime.gd")
 const Util := preload("res://tests/sim_testutil.gd")
@@ -31,10 +34,12 @@ func run() -> Array[String]:
 	_ring_expires_and_never_accumulates(f)
 	_ring_vertical_windows(f)
 	_ring_kills_and_death_code(f)
+	_jump_window_clears_the_ring(f)
 	_cooldown_blocks_retrigger(f)
 	_contact_kills(f)
 	_echo_ring_row_hooks(f)
 	_anim_block_wiring(f)
+	_roster_data(f)
 	_lobby_exhibit(f)
 	return f
 
@@ -80,7 +85,17 @@ func _cfg(base_speed: float = 3.4) -> Dictionary:
 	return {"world_height": 1.8, "frame_w": 256, "frame_h": 256,
 			"body_rect": [16, 16, 224, 224], "contact_kill": true,
 			"cycle_s": 0.625, "preferred_kind": "open",
-			"base_speed": base_speed, "pursuit_ceiling": 0.55, "burst_ceiling": 1.0}
+			"base_speed": base_speed, "pursuit_ceiling": 0.55, "burst_ceiling": 1.0,
+			"trigger_distance": YouEnemy.TRIGGER_DISTANCE,
+			"rumble_ticks": YouEnemy.RUMBLE_TICKS,
+			"ring_speed_u_per_s": YouEnemy.RING_SPEED,
+			"ring_max_radius": YouEnemy.RING_MAX,
+			"ring_thickness": YouEnemy.RING_THICK,
+			"ring_height": YouEnemy.RING_HEIGHT,
+			"ring_below_feet": YouEnemy.RING_BELOW,
+			"ring_cooldown_ticks": YouEnemy.RING_COOLDOWN,
+			"attack_hold_ticks": YouEnemy.ATTACK_HOLD,
+			"recover_ticks": YouEnemy.RECOVER_TICKS}
 
 
 # [rt, row, ctl]; the controller sits on the spawn tile and never moves.
@@ -133,37 +148,37 @@ func _pursuit_speed_and_ceiling(f: Array[String]) -> void:
 		f.append("pursuit: tempo_mul %.6f, want %.6f (raw/clamped)" % [float(fb.tempo_mul), raw / 4.95])
 
 
-# ---- the 10 u rumble trigger -------------------------------------------------
+# ---- the 8 u rumble trigger --------------------------------------------------
 
 func _trigger_distance(f: Array[String]) -> void:
-	# 12.5 u away: 25 ticks closes 1.4 u - still beyond 10 u, nothing fires
+	# 12.5 u away: 25 ticks closes 1.4 u - still beyond 8 u, nothing fires
 	var far := _spawn(Vector3(12.5, 0.0, 0.5))
 	var rt = far[0]
 	for i in range(25):
 		rt.step(DT)
 	if str(far[1]["anim_state"]) == "telegraph":
-		f.append("trigger: rumble started from beyond 10 u")
+		f.append("trigger: rumble started from beyond 8 u")
 	if not _telegraph_events(rt).is_empty():
-		f.append("trigger: a telegraph fired from beyond 10 u")
-	# exactly 10.0 u: triggers ("within 10 u" is inclusive)
-	var edge := _spawn(Vector3(10.5, 0.0, 0.5))
+		f.append("trigger: a telegraph fired from beyond 8 u")
+	# exactly 8.0 u: triggers ("within 8 u" is inclusive)
+	var edge := _spawn(Vector3(8.5, 0.0, 0.5))
 	rt = edge[0]
 	rt.step(DT)
 	if str(edge[1]["anim_state"]) != "telegraph":
-		f.append("trigger: no rumble at exactly 10.0 u (anim_state %s)" % str(edge[1]["anim_state"]))
+		f.append("trigger: no rumble at exactly 8.0 u (anim_state %s)" % str(edge[1]["anim_state"]))
 	else:
 		var tele := _telegraph_events(rt)
-		if tele.is_empty() or int(tele[0]["ticks"]) != 90:
-			f.append("trigger: telegraph ticks %s, want 90" % str(tele))
-	# 9.5 u: triggers as well
-	var near := _spawn(Vector3(10.0, 0.0, 0.5))
+		if tele.is_empty() or int(tele[0]["ticks"]) != 180:
+			f.append("trigger: telegraph ticks %s, want 180" % str(tele))
+	# 7.5 u: triggers as well
+	var near := _spawn(Vector3(8.0, 0.0, 0.5))
 	rt = near[0]
 	rt.step(DT)
 	if str(near[1]["anim_state"]) != "telegraph":
-		f.append("trigger: no rumble at 9.5 u")
+		f.append("trigger: no rumble at 7.5 u")
 
 
-# ---- rumble (90 ticks) -> attack (18) -> recover (240) -> chase -------------
+# ---- rumble (180 ticks) -> attack (18) -> recover (240) -> chase -------------
 
 func _rumble_release_and_recover_timing(f: Array[String]) -> void:
 	var spawned := _spawn(Vector3(5.0, 0.0, 0.5), "YOU?!", 0.0)
@@ -188,8 +203,8 @@ func _rumble_release_and_recover_timing(f: Array[String]) -> void:
 		f.append("timing: the ring never released")
 		return
 	var rumble_ticks := t_attack - t_trig
-	if absi(rumble_ticks - 90) > 1:
-		f.append("timing: rumble lasted %d ticks, want 90 +/-1" % rumble_ticks)
+	if absi(rumble_ticks - 180) > 1:
+		f.append("timing: rumble lasted %d ticks, want 180 +/-1" % rumble_ticks)
 	if (row["rings"] as Array).is_empty():
 		f.append("timing: no ring at the attack tick")
 	var t_recover := -1
@@ -215,7 +230,7 @@ func _rumble_release_and_recover_timing(f: Array[String]) -> void:
 	if absi(t_chase - t_recover - 240) > 1:
 		f.append("timing: recover lasted %d ticks, want 240 +/-1" % (t_chase - t_recover))
 
-# ---- ring: 9 u/s expansion, 14 u cap ----------------------------------------
+# ---- ring: 9 u/s expansion, 8 u cap -----------------------------------------
 
 func _release_ring_now(spawned: Array) -> int:
 	var rt = spawned[0]
@@ -252,7 +267,7 @@ func _ring_expansion_and_cap(f: Array[String]) -> void:
 	var r10 := float(rings[0]["r"]) if not rings.is_empty() else -1.0
 	if absf(r10 - 1.5) > 0.02:
 		f.append("ring: r after 10 ticks %.4f, want 1.5 +/-0.02" % r10)
-	# cap: the band expands to 14 u and then vanishes (never past 14)
+	# cap: the band expands to 8 u and then vanishes (never past 8)
 	var saw_cap := false
 	for i in range(120):
 		rt.step(DT)
@@ -260,18 +275,18 @@ func _ring_expansion_and_cap(f: Array[String]) -> void:
 		if rings.is_empty():
 			break
 		var r := float(rings[0]["r"])
-		if r > 14.0 + 1e-9:
-			f.append("ring: radius %.4f exceeded the 14 u cap" % r)
+		if r > 8.0 + 1e-9:
+			f.append("ring: radius %.4f exceeded the 8 u cap" % r)
 			break
-		if absf(r - 14.0) < 1e-9:
+		if absf(r - 8.0) < 1e-9:
 			saw_cap = true
 	if not saw_cap:
-		f.append("ring: never reached the 14 u cap")
+		f.append("ring: never reached the 8 u cap")
 
 
-# A ring lives exactly through the tick it reaches 14 u (its last kill check, marked done)
+# A ring lives exactly through the tick it reaches 8 u (its last kill check, marked done)
 # and is gone from row["rings"] on the next tick, so the view - which draws the newest
-# ring with no `done` check of its own - never holds a spent 14 u band through the 4.0 s
+# ring with no `done` check of its own - never holds a spent 8 u band through the 4.0 s
 # recover. Across several release cycles row["rings"] never holds more than the one live
 # ring (the list does not grow for the level). The player is kept unkillable so the
 # behavior keeps re-triggering.
@@ -292,10 +307,10 @@ func _ring_expires_and_never_accumulates(f: Array[String]) -> void:
 			capped = rings[0]
 			break
 	if capped == null:
-		f.append("ring expiry: the ring never reached the 14 u cap")
+		f.append("ring expiry: the ring never reached the 8 u cap")
 		return
 	if not bool((capped as Dictionary).get("done", false)):
-		f.append("ring expiry: the ring at 14 u is not marked done on its cap tick")
+		f.append("ring expiry: the ring at 8 u is not marked done on its cap tick")
 	rt.step(DT)
 	if not (row["rings"] as Array).is_empty():
 		f.append("ring expiry: %d ring(s) still on the row one tick after the cap, want 0"
@@ -310,7 +325,7 @@ func _ring_expires_and_never_accumulates(f: Array[String]) -> void:
 		f.append("ring expiry: the view still draws the band (scale %.2f) after the ring expired"
 				% float(v.band.scale.x))
 	v.free()
-	# three more full cycles (cooldown 240 + rumble 90 + travel ~94 ticks each)
+	# three more full cycles (rumble 180 + attack 18 + recover 240 = 438 ticks each)
 	var seq0 := int(row["ring_seq"])
 	var most := 0
 	for i in range(3 * 450):
@@ -386,6 +401,133 @@ func _ring_kills_and_death_code(f: Array[String]) -> void:
 		f.append("kill: death event %s, want code D-YOU killer YOU" % str(deaths))
 	if str(DeathScript.killer_for("D-YOU")) != "YOU?!":
 		f.append("kill: death.gd maps D-YOU to %s, want YOU?!" % str(DeathScript.killer_for("D-YOU")))
+
+
+# ---- the jump window still clears the smaller ring (cycle 7) -------------------
+#
+# The band's crossing time is 2 x RING_RADIAL_WINDOW / RING_SPEED = 0.156 s whatever
+# the radius is, so shrinking the ring does NOT shrink the jump window - it only
+# shortens how long the band lives (8 u / 9 u/s = 0.89 s instead of 1.56 s). This
+# runs the REAL controller against the REAL ring: the tell holds position, so the
+# band is released at the trigger distance and reaches a standing player at
+# (d - window) / speed .. min(d + window, RING_MAX) / speed. A jump pressed inside
+# the window that keeps the feet above the 1.0 u band top for that whole span
+# survives; no jump, and a jump pressed on the release tick (landed before the band
+# arrives), both die. The airborne window comes from the shared kit, not a literal.
+
+func _jump_arm(d: float, press_s: float) -> bool:
+	var w := _arena()
+	var ctl = _spent_ctl(w)
+	var rt = EnemyRuntime.new()
+	rt.setup(_level(), w, [ctl], 4242)
+	var row: Dictionary = rt.spawn_at("you", "YOU?!", YouEnemy.new(), _cfg(0.0),
+			Vector3(0.5 + d, 0.0, 0.5))
+	var release_tick := -1
+	var press_tick := -1
+	# the button is HELD through the rise: releasing it while vy > 0 applies the
+	# shared kit's jump cut (x0.5) and the feet never reach the 1.0 u band top
+	var hold_ticks := 30
+	for i in range(600):
+		var buttons := 0
+		if release_tick >= 0 and press_s >= 0.0 and press_tick < 0 \
+				and float(i - release_tick) >= press_s * 60.0:
+			press_tick = i
+		if press_tick >= 0 and i - press_tick < hold_ticks:
+			buttons = 1                      # BTN_JUMP
+		ctl.step(DT, Util.mk_in(0, 0, buttons), w)
+		rt.step(DT)
+		if release_tick < 0 and str(row["anim_state"]) == "attack":
+			release_tick = i
+		if ctl.dead:
+			return false
+		if release_tick >= 0 and (row["rings"] as Array).is_empty():
+			break
+	return not ctl.dead
+
+
+func _jump_window_clears_the_ring(f: Array[String]) -> void:
+	var d := YouEnemy.TRIGGER_DISTANCE
+	var win := YouEnemy.RING_RADIAL_WINDOW
+	var spd := YouEnemy.RING_SPEED
+	var t_hit_lo := maxf(d - win, 0.0) / spd
+	var t_hit_hi := minf(d + win, YouEnemy.RING_MAX) / spd
+	# the shared kit's airborne window above the band top (v0 12, g 32, h 1.0 u)
+	var C: Dictionary = Util.consts()
+	var v0 := float(C["jump_velocity"])
+	var g := float(C["gravity"])
+	var h := YouEnemy.RING_HEIGHT
+	var disc := v0 * v0 - 2.0 * g * h
+	if disc <= 0.0:
+		f.append("jump: the shared kit cannot clear a %.2f u band at all" % h)
+		return
+	var t_up := (v0 - sqrt(disc)) / g
+	var t_down := (v0 + sqrt(disc)) / g
+	var press_lo := t_hit_hi - t_down
+	var press_hi := t_hit_lo - t_up
+	if press_hi <= press_lo:
+		f.append("jump: no jump window at all (press %.3f..%.3f s after the release)" % [press_lo, press_hi])
+		return
+	var press_s := (press_lo + press_hi) * 0.5
+	if not _jump_arm(d, press_s):
+		f.append("jump: a jump %.3f s after the release did not clear the ring (window %.3f..%.3f s)"
+				% [press_s, press_lo, press_hi])
+	if _jump_arm(d, -1.0):
+		f.append("jump: the grounded player survived the ring - the ring must still kill")
+	if _jump_arm(d, 0.0):
+		f.append("jump: a jump on the release tick survived - the window is not a window")
+
+
+# ---- the roster data vs the behavior's mirror (cycle 7) ------------------------
+
+func _roster_data(f: Array[String]) -> void:
+	var txt := FileAccess.get_file_as_string("res://content/enemies/you/enemy.json")
+	var doc = JSON.parse_string(txt)
+	if not (doc is Dictionary):
+		f.append("data: enemy.json does not parse")
+		return
+	var st: Dictionary = (doc as Dictionary).get("stats", {})
+	if st.is_empty():
+		f.append("data: enemy.json has no stats block")
+		return
+	# the owner's cycle-7 ask, as thresholds: "you?!" smaller range + slower strike
+	var radius := float(st.get("ring_max_radius", 0.0))
+	if radius > 8.4 + 1e-9:
+		f.append("data: ring_max_radius %.2f, want <= 8.4 (60%% of the old 14 u)" % radius)
+	var rumble := int(st.get("rumble_ticks", 0))
+	if rumble < 180:
+		f.append("data: rumble_ticks %d, want >= 180 (2x the old 90)" % rumble)
+	var trig := float(st.get("trigger_distance", 0.0))
+	if trig > radius + 1e-9:
+		f.append("data: trigger_distance %.2f is outside the ring's own reach %.2f" % [trig, radius])
+	# the mirror in the behavior agrees with the json (kiwi/claude cfg-mirror convention)
+	var mirror: Dictionary = YouEnemy.cfg()
+	for k in mirror.keys():
+		if not st.has(k):
+			f.append("mirror: enemy.json stats has no '%s' (the behavior mirrors it)" % str(k))
+			continue
+		if not _vals_agree(st[k], mirror[k]):
+			f.append("mirror: stats.%s = %s, behavior cfg says %s" % [str(k), str(st[k]), str(mirror[k])])
+	# the audio timing mirrors the tell: the binding cue ends on the release tick
+	var cue: Dictionary = (st.get("audio_cue_timing", {}) as Dictionary).get("you_corrupted_rumble", {})
+	if int(cue.get("attack_offset_ticks", -1)) != rumble:
+		f.append("data: cue attack_offset_ticks %s, want the tell's %d"
+				% [str(cue.get("attack_offset_ticks")), rumble])
+	if int(cue.get("binding_cue_ticks", -1)) != rumble:
+		f.append("data: cue binding_cue_ticks %s, want the tell's %d"
+				% [str(cue.get("binding_cue_ticks")), rumble])
+	var atk: Dictionary = ((st.get("lethal_attacks", []) as Array)[0] as Dictionary)
+	if int(atk.get("attack_offset_ticks", -1)) != rumble:
+		f.append("data: ring_kill attack_offset_ticks %s, want the tell's %d"
+				% [str(atk.get("attack_offset_ticks")), rumble])
+
+
+## Numeric-tolerant value agreement: scalars compare as numbers, strings as strings.
+func _vals_agree(jv: Variant, cv: Variant) -> bool:
+	if jv is String or cv is String:
+		return str(jv) == str(cv)
+	if (jv is float or jv is int) and (cv is float or cv is int):
+		return absf(float(jv) - float(cv)) <= 0.000001
+	return str(jv) == str(cv)
 
 
 # ---- ring cooldown 4.0 s: no re-telegraph before attack+recover elapse ---------

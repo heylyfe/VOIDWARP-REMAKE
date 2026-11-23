@@ -429,17 +429,19 @@ and the sky** — both answers are named because either works on its own.
 
 ### 5.6 YOU?! — Image 8 = "character to be corrupted.png"
 Floats toward the nearest player at 3.4 u/s (pursuit ceiling 0.55 → never above 4.95 u/s, SR-5);
-feet ease at 2.0 u/s (SR-1). Within 10 u: corrupted rumble 1.5 s → shockwave ring from its position:
-expands 9 u/s to radius 14 u, 1.0 u tall, 0.6 u thick, travels in the horizontal plane of its feet
-± 1.5 u, drawn as a 1.0 u **tall translucent red band, not a ground decal** (its plane must be
-readable); hit = **kill**. Jumpable. Ring cooldown 4.0 s. Touch = **kill**. 5-frame corrupted run
-cycle.
+feet ease at 2.0 u/s (SR-1). Within 8 u: it **stops** and rumbles 3.0 s → shockwave ring from its
+position: expands 9 u/s to radius 8 u, 1.0 u tall, 0.6 u thick, travels in the horizontal plane of
+its feet ± 1.5 u, drawn as a 1.0 u **tall translucent red band, not a ground decal** (its plane must
+be readable); hit = **kill**. Jumpable. Ring cooldown 4.0 s. Touch = **kill**. 5-frame corrupted run
+cycle. (Cycle 7, owner: "you?!" smaller range + slower strike — the reach was 14 u and the tell
+1.5 s; D-YOU-C7-1..3.)
 *Pressure:* rhythm tax — you must jump on its beat while doing everything else.
 *Terrain:* open platforms and the spawn hub (nowhere to break the plane); terraces and stair runs are the answer — one
 step up of ≥ 1.5 u and the ring passes below.
 *Answer:* jump as the ring reaches you (jump height > 1.0 u from 0.10 s to 0.65 s — a 0.56 s window
-for a 0.16 s crossing), or stand ≥ 1.5 u above or below its feet. Under Echo Ring: jump 0.25–0.65 s
-before the first ring and jump again on landing — hard but learnable.
+for a 0.16 s crossing), or stand ≥ 1.5 u above or below its feet, or be more than 8.7 u away when it
+releases (the 8 u cap plus the 0.7 u hit band). Under Echo Ring: jump 0.25–0.65 s before the first
+ring and jump again on landing — hard but learnable.
 
 ### 5.7 gift Larper — Image 9 = "tripine.png"
 The tripmine (§3.3). Stationary, sits in gift slots. 5-frame rotation cycle. Each vote = +3 flat mines.

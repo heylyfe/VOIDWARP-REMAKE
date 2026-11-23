@@ -8613,3 +8613,58 @@ squashes to 35 % in 0.06 s and springs back through ~1.19x (settled by 0.9 s), t
 0.45 u to 2.1 u over 0.45 s. Audio: `player/jump_pad` (synth_cues.gd seed 24, 0.55 s) - a 140 -> 620 Hz
 rising sine with a decaying 26 Hz wobble over a 70 Hz thump, played on the `jump_pad_launch` event. No
 first-use hint (optional in the spec). Screenshot proof: tools/shot_jump_pad.gd (windowed).
+
+## D-YOU-C7-1 (2026-11-23): "you?!" smaller range + slower strike - the numbers
+
+**Owner's words (cycle 7 brief, T1):** "you?!" smaller range + slower strike.
+
+**Ruling.** `game/content/enemies/you/enemy.json` stats: `ring_max_radius` 14.0 -> **8.0** (57.1 % of the
+old reach, inside the brief's "at most 60 %" = 8.4), `rumble_ticks` 90 -> **180** (3.0 s, exactly 2x the
+old tell), `trigger_distance` 10.0 -> **8.0** so he never telegraphs from outside his own reach (the
+telegraph footprint is drawn at `r = ring_max_radius`, so a 10 u trigger would have shown a circle that
+could not reach the player). `ring_speed_u_per_s` stays **9.0** and `ring_cooldown_ticks` /
+`attack_hold_ticks` / `recover_ticks` stay 240 / 18 / 240.
+
+**Why the speed does not move.** The brief asked to re-check the jump window "because a smaller ring
+crosses the player faster". It does not: the band's crossing time is `2 x RING_RADIAL_WINDOW / RING_SPEED`
+= 1.4 u / 9 u/s = **0.156 s** at any radius - the radius only decides how long the band lives (8 u / 9 u/s
+= 0.89 s instead of 1.56 s). The shared kit's jump (v0 12, g 32) keeps the feet above the 1.0 u band top
+from 0.0955 s to 0.6545 s, so the jump-timing window is `[t_hit_hi - 0.6545, t_hit_lo - 0.0955]` =
+**0.234 s .. 0.716 s** after the release at the trigger distance - 0.48 s wide, wider than the old
+0.40 s because the band now arrives sooner after the release. `test_enemy_you._jump_window_clears_the_ring`
+runs the REAL controller against the REAL ring and asserts all three arms: a jump inside the window
+survives, no jump dies, and a jump on the release tick dies (landed before the band arrives).
+
+**Mirrors updated with it** (the number lives in data; every reader follows): `enemy.gd`'s constants +
+a new `cfg()` mirror pinned to the json by `test_enemy_you._roster_data`; `sprites.json`'s telegraph
+`total_ticks` 90 -> 180 and attack `max_radius_u` 14.0 -> 8.0; `content/curses/double_ring.gd`'s echo
+ring cap 14.0 -> 8.0 (it is "YOU's own ring"); `data/tips.json` tip_you_rumble; `tools/synth_audio.py`
++ the regenerated `you_corrupted_rumble.wav` (1.5 s -> 3.0 s = exactly 180 ticks, so check_audio.gd's
+assertion 3 still lands the cue on the release tick); `research/fable-tickets.md` sections 1.6 and 3;
+`DESIGN.md` 5.6; `ENEMIES.md`'s Husk row; `tools/check_anim_data.gd`; `tools/bot/answers.gd`.
+
+## D-YOU-C7-2 (2026-11-23): the tell holds position (narrowing D-T-035-6)
+
+**Ruling.** During the `telegraph` state YOU?! no longer floats toward the player: `tick()` calls
+`FloatBody.update()` (which keeps `h_speed` / `tempo_mul` live, so SR-5 is untouched) instead of
+`FloatBody.step()`. D-T-035-6's "floats through every phase" is narrowed to "every phase except the tell".
+
+**Why.** At 3.4 u/s a 3.0 s tell carries him 10.2 u. Starting from an 8 u trigger he would reach the
+player's body (0.75 u contact radius) after 2.13 s - **before** the ring releases at 3.0 s - so a
+standing player would die to the touch kill and the ring would never be the threat. The tell would be a
+lie and the counter-play text ("jump as the ring reaches you") would describe nothing. Holding makes the
+release distance the distance he telegraphed from, which is what makes the 8 u ring a fair, jumpable
+strike. Cost, stated plainly: a player who simply runs away now outruns the ring, so YOU?! is a weaker
+enemy than before - which is what "smaller range + slower strike" asks for. The touch kill is unchanged.
+
+## D-YOU-C7-3 (2026-11-23): the numbers stay in data, the mirror is pinned
+
+**Ruling.** No new constant was added to code. `enemy.gd` keeps its existing constants (they are the
+mirror the bot and the Echo Ring curse read) and gains a `cfg()` static that returns the same block, in
+the kiwi_cat / claude / seal convention. `test_enemy_you._roster_data` fails if any mirrored key is
+missing from `enemy.json`, if any value disagrees, or if the three cycle-7 thresholds regress
+(`ring_max_radius <= 8.4`, `rumble_ticks >= 180`, `trigger_distance <= ring_max_radius`), and it also
+pins the audio timing (`attack_offset_ticks` / `binding_cue_ticks` == the tell) so the cue cannot drift
+from the tell again. Enemy rows are not in the state hash (pre-existing: `state_hash.gd` dumps run state,
+not enemy rows); this change adds no new sim state, so the replay determinism test is unaffected and the
+sim stays deterministic at 60 Hz with no RNG.

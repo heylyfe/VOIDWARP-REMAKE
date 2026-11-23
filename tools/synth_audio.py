@@ -293,10 +293,10 @@ def _you_corrupted_rumble():
     noise = Noise(0xBADD)
     def fn(t):
         gate = 1.0 if sine(30.0, t) >= 0.0 else 0.15  # white noise gated at 30 Hz
-        rise = 0.15 + 0.55 * (t / 1.5)                # volume rises over the rumble
+        rise = 0.15 + 0.55 * (t / 3.0)                # volume rises over the rumble
         s = noise.next() * gate * rise * 0.8
-        if t >= 1.0:                                  # reversed-envelope tone, last 0.5 s
-            lt = t - 1.0
+        if t >= 2.5:                                  # reversed-envelope tone, last 0.5 s
+            lt = t - 2.5
             f = 400.0 + (900.0 - 400.0) * (lt / 0.5)
             s += sine(f, lt) * math.exp(6.0 * (lt / 0.5) - 6.0) * 0.6
         return s
@@ -499,7 +499,7 @@ RECIPES = {
     # gift_larper (mine_hum, loop)
     "mine_hum": (2.0, _mine_hum),
     # you
-    "you_corrupted_rumble": (1.5, _you_corrupted_rumble),
+    "you_corrupted_rumble": (3.0, _you_corrupted_rumble),
     "ring_release": (0.3, _ring_release),
     # address_me
     "spawn_trumpet": (0.9, _spawn_trumpet),
