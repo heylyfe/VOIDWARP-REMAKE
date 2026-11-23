@@ -9767,3 +9767,38 @@ still at 0.9011 on the jump's first airborne frame and 0.0113 on the fall's.
 every speed) and keeps the ramp/stair checks as absolute numbers (10 and 5 plants, slide 0.0042 and 0.0096, knee
 -0.049 and 0.077, lift 0.255 and 0.561, swing bend 1.90 and 2.07, peak frame angle 0.237 and 0.243). The 16 contact
 sheets are regenerated from the same POSES table.
+
+## D-ANIM-16 (2026-11-23) Cycle 8: the takeoff rig switch was measured, not argued
+
+Terra's U1 review returned REJECT on one blocking finding: "Takeoff sets `_rigid_weight` to
+zero in one frame. The next pose uses the articulated solver immediately, replacing the
+previously straight rigid knee and boot transforms; filtering `_pose` does not filter those
+solved joint transforms. A jump or ledge departure can therefore pop at the knee and boot."
+
+The concern is sound in principle - the rigid knee and boot ARE solved joint rotations, and
+the pose filter does not touch them - so it was measured instead of argued. Per-frame steps
+were taken over the four leg parts (two shins, two boots), each step being the origin
+distance plus the basis angle between consecutive rendered frames at 120 Hz.
+
+- JUMP TAKEOFF, instant drop: the first airborne frame moves shin_l 0.0503, shin_r 0.0400,
+  boot_l 0.1407, boot_r 0.0249. The frames after it run 0.1542, 0.1720, 0.1957, 0.2263,
+  0.2300, 0.2058, 0.1854. The takeoff frame is the SMALLEST of the run, not a spike.
+- LEDGE DEPARTURE, instant drop: 0.1477, 0.1157, 0.0882, 0.0647, 0.0449, 0.0283, 0.0145 -
+  a smooth continuation of the walk, decreasing, with no discontinuity at the switch.
+- A RAMP WAS TRIED AND REJECTED. A linear ramp out of the lobby gait over 0.07 s was
+  implemented and measured: it made the first airborne frame move MORE, not less
+  (shin_l 0.0809, shin_r 0.1479, boot_l 0.0325, boot_r 0.1522 against 0.0503/0.0400/
+  0.1407/0.0249). The reason is that the rigid pose and the articulated pose are already
+  close at takeoff, so the switch itself is small, while the blend adds motion of its own.
+  Keeping the ramp would have been cargo-culting the review at the cost of the thing the
+  review was protecting, so it was reverted and the instant drop kept.
+
+What was added instead is the guard the finding actually asked for: `_takeoff_continuity` in
+`test_player_anim_baseline.gd` asserts the step into the first airborne frame is not a spike
+against the eight frames that follow it. Teeth checked by injecting a genuine one-frame pop
+(the weight forced to 1.0 on the first airborne frame only): the test fails with "the first
+airborne frame is a spike (1.6148 against 0.3581 after)", and `_no_bleed` fails with it. The
+shipped code reports "first airborne step 0.1407, worst of the next 8 0.2300".
+
+The owner's requirement is unchanged and still holds: the lobby gait contributes nothing to
+an airborne frame, and the jump, fall and stairs-up poses are the ones that shipped.

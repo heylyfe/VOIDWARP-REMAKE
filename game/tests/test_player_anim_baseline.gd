@@ -53,7 +53,72 @@ func run() -> Array[String]:
 			f.append("baseline %s: the posed transforms changed (%s, want %s)"
 					% [case[0], digest, want])
 	_no_bleed(f)
+	_takeoff_continuity(f)
 	return f
+
+
+## Terra (cycle 8) read the instant takeoff as a one-frame rig swap that could pop at the
+## knee and the boot, because the rigid knee and boot are SOLVED joint rotations and the
+## pose filter does not filter them. It does not pop, and this pins that: the step into the
+## first airborne frame must not be a spike against the frames that follow it. Measured on
+## the shipped code the jump's first airborne frame moves the shins 0.050/0.040 and the
+## boots 0.141/0.025 (origin distance + basis angle), against 0.154-0.230 on the frames
+## after it, and a ledge departure runs 0.148, 0.116, 0.088, 0.065, 0.045 - a smooth
+## continuation of the walk. A ramp out of the lobby gait was tried and made the first frame
+## move MORE (0.081/0.148/0.033/0.152), so it was reverted rather than kept for the look of
+## the thing.
+func _takeoff_continuity(f: Array[String]) -> void:
+	var pose: Array = AnimTest.POSES[11]
+	var world = WorldScript.new()
+	(Engine.get_main_loop() as SceneTree).root.add_child(world)
+	world.set_process(false)
+	AnimTest.stage(world, pose)
+	AnimTest.warm_up(world, pose)
+	var rig = world._leg_rig
+	var parts: Array = [rig.shins[0], rig.shins[1], rig.boots[0], rig.boots[1]]
+	var span: float = pose[8] if float(pose[8]) > 0.0 else 1.0
+	var frames := int(round(span / RENDER_DT))
+	var prev: Array = []
+	var steps: Array = []
+	var takeoff := -1
+	for frame in frames:
+		if frame % 2 == 0:
+			var held: Array[bool] = AnimTest.buttons_at(pose, frame)
+			AnimTest.tick(world, pose, held[0], held[1])
+		world._process(RENDER_DT)
+		var cur: Array = []
+		for part in parts:
+			cur.append((part as Node3D).transform)
+		if takeoff < 0 and not bool(world.ctl.grounded):
+			takeoff = frame
+		if not prev.is_empty():
+			var d := 0.0
+			for i in cur.size():
+				var a: Transform3D = prev[i]
+				var b: Transform3D = cur[i]
+				d = maxf(d, a.origin.distance_to(b.origin)
+						+ a.basis.get_rotation_quaternion().angle_to(b.basis.get_rotation_quaternion()))
+			steps.append(d)
+		prev = cur
+	world.free()
+	if takeoff < 0 or steps.is_empty():
+		f.append("takeoff continuity: the jump span never left the ground")
+		return
+	# steps[k] is the step into frame k + 1, so the step into the takeoff frame is
+	# steps[takeoff - 1]; a span that starts airborne has no such step and uses steps[0].
+	var at := maxi(0, takeoff - 1)
+	var after := 0.0
+	for i in range(at + 1, mini(steps.size(), at + 9)):
+		after = maxf(after, float(steps[i]))
+	if after <= 0.0:
+		f.append("takeoff continuity: no frames after takeoff to compare against")
+		return
+	if float(steps[at]) > after * 1.05:
+		f.append("takeoff continuity: the first airborne frame is a spike (%.4f against %.4f after)"
+				% [float(steps[at]), after])
+	else:
+		print("BASELINE takeoff continuity: first airborne step %.4f, worst of the next 8 %.4f"
+				% [float(steps[at]), after])
 
 
 ## The hash above pins the ARTICULATED pose of the three frozen cases, which is what the

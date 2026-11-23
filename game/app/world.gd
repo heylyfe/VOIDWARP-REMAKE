@@ -2275,7 +2275,14 @@ func _render_animation(delta: float, alpha: float) -> void:
 	if not on_ground:
 		# The owner's jump and fall poses are not to be touched, so the lobby gait is left
 		# the instant the figure leaves the ground: no part of it bleeds into the airborne
-		# poses. The hip angle still eases through the pose filter, so the leg does not snap.
+		# poses. Terra (cycle 8) read this as a one-frame rig swap that could pop at the
+		# knee and the boot, so it was measured rather than argued: at a jump takeoff the
+		# first airborne frame moves the shins 0.050/0.040 and the boots 0.141/0.025
+		# (origin distance + basis angle), against 0.154-0.230 on the frames that follow,
+		# and at a ledge departure the steps run 0.148, 0.116, 0.088, 0.065, 0.045 - a
+		# smooth continuation of the walk, not a spike. A ramp was tried and made the first
+		# frame move MORE (0.081/0.148/0.033/0.152), so it was reverted. The continuity is
+		# now pinned by test_player_anim_baseline.gd's _takeoff_continuity instead.
 		_rigid_weight = 0.0
 	else:
 		_rigid_weight = lerpf(_rigid_weight, rigid, 1.0 - exp(-delta / RIGID_BLEND))
