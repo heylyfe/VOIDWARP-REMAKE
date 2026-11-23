@@ -6,7 +6,7 @@
   "max_votes": 3,
   "vote_effect": "each extra vote -3 s on his strike cooldown",
   "anchor_kinds": [],
-  "preferred_kind": "perch",
+  "preferred_kind": "none",
   "arbiter": {
     "appear_requires": [],
     "yields_to": [
@@ -14,133 +14,35 @@
     ]
   },
   "stats": {
-    "world_height": 1.8,
-    "hit_diameter": 0.7,
-    "pursuit_ceiling": 0.0,
-    "burst_ceiling": 0.0,
-    "frame_w": 256,
-    "frame_h": 256,
-    "body_rect": [
-      16,
-      16,
-      224,
-      224
-    ],
-    "contact_kill": true,
+    "bodyless": true,
+    "contact_kill": false,
     "death_code": "D-GIN",
-    "preferred_kind": "perch",
-    "spawn_dist_min_u": 15.0,
-    "spawn_dist_max_u": 25.0,
-    "platform_tiles_only": true,
-    "spawn_fade_ticks": 30,
-    "telegraph_ticks": 120,
-    "spear_travel_ticks": 18,
-    "zone_start_tick": 138,
-    "zone_ticks": 600,
-    "fade_back_ticks": 30,
-    "fade_out_after_launch_ticks": 60,
-    "cooldown_ticks": 840,
-    "cooldown_vote_discount_ticks": 180,
-    "cooldown_min_ticks": 300,
-    "patch_half_tiles": 2,
-    "patch_outline_color": "#FF2A2A",
-    "mark_blink_hz_first": 2.0,
-    "mark_blink_hz_second": 4.0,
-    "audio_cues": [
-      "crack_rumble",
-      "shing",
-      "whoosh",
-      "zone_open",
-      "zone_close"
-    ],
-    "tbd_audio": true,
-    "audio_cue_timing": {
-      "crack_rumble": {
-        "event": "telegraph",
-        "kind": "mark",
-        "occurrence": 1,
-        "offset_ticks": 0,
-        "length_s": 2.0,
-        "role": "binding",
-        "attack": "zone_kill",
-        "attack_offset_ticks": 138,
-        "binding_cue_ticks": 138,
-        "parked": "PARKED.md #15"
-      },
-      "shing": {
-        "event": "telegraph",
-        "kind": "mark",
-        "occurrence": 1,
-        "offset_ticks": 120,
-        "length_s": 0.3,
-        "role": "binding",
-        "attack": "zone_kill",
-        "attack_offset_ticks": 138,
-        "binding_cue_ticks": 18
-      },
-      "whoosh": {
-        "event": "telegraph",
-        "kind": "mark",
-        "occurrence": 1,
-        "offset_ticks": 120,
-        "length_s": 0.3,
-        "role": "on_attack",
-        "attack": "zone_kill",
-        "attack_offset_ticks": null,
-        "binding_cue_ticks": null
-      },
-      "zone_open": {
-        "event": "telegraph",
-        "kind": "mark",
-        "occurrence": 1,
-        "offset_ticks": 138,
-        "length_s": 0.4,
-        "role": "on_attack",
-        "attack": "zone_kill",
-        "attack_offset_ticks": null,
-        "binding_cue_ticks": null
-      },
-      "zone_close": {
-        "event": "telegraph",
-        "kind": "mark",
-        "occurrence": 1,
-        "offset_ticks": 738,
-        "length_s": 0.4,
-        "role": "stinger",
-        "attack": null,
-        "attack_offset_ticks": null,
-        "binding_cue_ticks": null
-      }
+    "sword_attack": {
+      "voice_ticks": 108,
+      "flight_ticks": 39,
+      "min_launch_distance_u": 8.0,
+      "clearance_u": 0.35,
+      "twin_clearance_u": 0.85,
+      "cooldown_ticks": 840,
+      "cooldown_vote_discount_ticks": 180,
+      "cooldown_min_ticks": 300,
+      "sword_radius_u": 0.1
     },
+    "audio_cues": [
+      "bye_bye"
+    ],
     "lethal_attacks": [
       {
-        "attack": "zone_kill",
+        "attack": "ground_sword",
         "code": "D-GIN",
-        "event": "telegraph",
-        "kind": "mark",
-        "occurrence": 1,
-        "attack_offset_ticks": 138,
-        "binding_cue": "shing",
-        "binding_cue_ticks": 18,
-        "parked": null
-      },
-      {
-        "attack": "body_contact",
-        "code": "D-GIN",
-        "event": "none",
-        "kind": "",
-        "occurrence": 1,
-        "attack_offset_ticks": null,
-        "binding_cue": null,
-        "binding_cue_ticks": null,
-        "parked": "PARKED.md #12"
+        "binding_cue": "bye_bye"
       }
     ]
   },
   "sprites": "res://content/enemies/gin/sprites.json",
   "script": true,
-  "contact_kill": true,
-  "behavior": "fades in on a platform tile 15-25 u from the player (farthest spawn-hub tile as fallback, D-072), then strikes: the 5x5 tile patch centred on the player's tile is marked for 2.0 s (red outline #FF2A2A, deep cracking rumble), sword-spears streak to the patch in 0.3 s (view-layer VFX only), and the patch is a void zone for 10 s - its tiles are non-solid and anything that enters its column is killed; the tiles fade back over 0.5 s and a player inside is lifted onto the surface",
-  "counter_play": "walk out of the patch — 3 cells, 0.33 s of running inside a 2.0 s mark — and change direction during a Twin Fangs double mark; his body is never on the path (D-072), so only the patch threatens you.",
-  "tell": "the 5×5 tile patch centred on the player's tile is marked (red outline #FF2A2A, deep cracking rumble) for 2.0 s"
+  "contact_kill": false,
+  "behavior": "appears on screen, says bye bye, then throws a sword along the ground toward your feet",
+  "counter_play": "jump as the sword closes in.",
+  "tell": "gin's smiling portrait and bye bye call precede the sword throw"
 }

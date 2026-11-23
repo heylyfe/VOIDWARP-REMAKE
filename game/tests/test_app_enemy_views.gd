@@ -201,13 +201,22 @@ func _fed(id: String, view, row: Dictionary) -> String:
 		"you":
 			if float(view._t) <= 0.0:
 				return "you view clock never advanced"
-		"address_me", "gin":
+		"address_me":
 			# the state-entered latch tracks the row's anim_state ("" until fed)
 			if str(view._prev_state) != str(row.get("anim_state", "")) or str(view._prev_state) == "":
 				return "state latch '%s', row anim_state '%s'" % [str(view._prev_state),
 						str(row.get("anim_state", ""))]
-			if id == "gin" and (view.billboard.anims as Dictionary).is_empty():
-				return "gin billboard never loaded its sheet"
+		"gin":
+			if view._overlay == null or view._sword == null or view._sword.texture == null:
+				return "gin overlay or imported sword failed to build"
+			if not view._overlay.visible or view._last_voice_tick != row.get("gin_voice_tick", -1):
+				return "gin portrait or voice failed to follow the warning tick"
+			var voice: AudioStreamWAV = view._overlay._voice.stream
+			var warning_s := float(row["cfg"]["sword_attack"]["voice_ticks"]) * DT
+			if voice == null or voice.get_length() <= 0.0 or voice.get_length() > warning_s:
+				return "gin voice is missing or would be cut off by the throw"
+			if view.billboard.visible:
+				return "gin retained the old world billboard"
 		"claude":
 			if str(view._state) != str(row.get("anim_state", "")) \
 					or str(view.anim_player.state_id) != str(row.get("anim_state", "")):

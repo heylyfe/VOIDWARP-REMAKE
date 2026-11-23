@@ -49,8 +49,10 @@ func run() -> Array[String]:
 # ---- fixtures -------------------------------------------------------------------
 
 static func _json(id: String) -> Dictionary:
-	var doc: Variant = JSON.parse_string(FileAccess.get_file_as_string(
-			"res://content/enemies/%s/enemy.json" % id))
+	var path := "res://content/enemies/%s/enemy.json" % id
+	if id == "gin":
+		path = "res://tests/gin_legacy_metadata.json"
+	var doc: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
 	return doc if doc is Dictionary else {}
 
 
@@ -133,8 +135,7 @@ static func _cues(tv, cue: String, full: int = -1) -> Array:
 
 func _table(f: Array[String]) -> void:
 	var tc = ThreatCues.new()
-	for pair in [["mark", "shing"], ["mark", "crack_rumble"], ["mark", "zone_open"],
-			["coil_ring", "coil_boing"], ["strings_line", "string_sweep"],
+	for pair in [["coil_ring", "coil_boing"], ["strings_line", "string_sweep"],
 			["ground_ring", "rocket_booster_roar"], ["teleport", "thicc_ben_chime"]]:
 		var found := false
 		for entry in tc.by_kind.get(pair[0], []):
@@ -143,11 +144,9 @@ func _table(f: Array[String]) -> void:
 		if not found:
 			f.append("table: telegraph '%s' carries no '%s' cue (by_kind %s)"
 					% [pair[0], pair[1], str(tc.by_kind.keys())])
-	var shing: Dictionary = _timing("gin", "shing")
 	for entry in tc.by_kind.get("mark", []):
-		if str(entry["cue"]) == "shing" and int(entry["offset"]) != int(shing.get("offset_ticks", -1)):
-			f.append("table: shing offset %d, enemy.json says %s"
-					% [int(entry["offset"]), str(shing.get("offset_ticks"))])
+		if entry["enemy"] == "gin":
+			f.append("table: live Gin registered a retired mark cue")
 	if not tc.by_appear.has("address_me"):
 		f.append("table: address me's appear cues (rumble_build) not loaded")
 
@@ -311,6 +310,13 @@ func _gin_check(wired: bool) -> Array[String]:
 	var tv = _view(rt, wired)
 	var row: Dictionary = rt.spawn_at("gin", "gin ichimaru", GinBehavior.new(), {},
 			Vector3(2.1, 0.0, 0.5))
+	var cue_table: Dictionary = _json("gin")["stats"]["audio_cue_timing"]
+	tv.threat_cues.by_kind["mark"] = []
+	for cue in cue_table:
+		var timing: Dictionary = cue_table[cue]
+		tv.threat_cues.by_kind["mark"].append({"cue": cue, "enemy": "gin",
+				"offset": timing["offset_ticks"], "occurrence": timing["occurrence"],
+				"attack": str(timing.get("attack", "")), "role": timing["role"]})
 	var all: Array = []
 	var mark_at := -1
 	var void_at := -1

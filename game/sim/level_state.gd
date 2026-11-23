@@ -55,6 +55,8 @@ var boss: RefCounted = null
 var boss_gifts: RefCounted = null
 var arena_controller: RefCounted = null
 var arena_purse_centi := 0
+## Attached by the runtime-driving world and replay bot.
+var enemy_runtime: RefCounted = null
 
 
 ## level_number is 1-based (the run's current level). player_count in 1..8 (TERRAIN_SPEC.md spawns).

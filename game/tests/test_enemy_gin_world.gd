@@ -1,277 +1,174 @@
 extends RefCounted
-#
-# W12-B - gin ichimaru through the REAL run loop: world.build() + world.step().
-#
-# test_enemy_gin.gd drives the behavior's tick() by hand (beh.tick); nothing
-# there goes through rt.step or a real world, so nothing proves the void zone
-# actually ends a run. This file does: a level-17 world with gin voted into
-# the run (the lobby's carried ledger shape), stepped until the
-# mark -> zone cycle runs through world.step(). Last Light is pre-spent
-# (D-057) so the zone's kill is a real death, not a save.
-#
-#   KILL leg      - the player, parked on a real floor tile (the spawn sits on
-#                   the monument cell, which the mark always cuts out of the
-#                   patch, so the player is stepped onto an ordinary tile at
-#                   build), is caught by the void zone: death code D-GIN,
-#                   killer gin, and the four pre-kill cues logged by the
-#                   world's own telegraph view in order
-#                   (crack_rumble < shing == whoosh < zone_open).
-#   SURVIVOR leg  - the OTHER half of the assertion, the negative control:
-#                   the identical build, but once the mark lands the player
-#                   is moved onto a floor tile outside the 5x5 patch. The
-#                   zone opens and closes and the player is never harmed;
-#                   all five cues fire in order (zone_close last).
-#   ABSENT twin   - the same build with no votes at all: no enemy, no cue,
-#                   never a death.
-#
-# Negative control (test_app_enemy_views.gd's pattern): every assertion set is
-# ALSO run against the twin that lacks the thing; those failures are counted
-# and printed. The test fails if any control passes.
 
-const WorldScript := preload("res://app/world.gd")
+const Controller := preload("res://sim/controller.gd")
+const RunState := preload("res://sim/run_state.gd")
+const StateHash := preload("res://sim/state_hash.gd")
+const EnemyRuntime := preload("res://sim/enemy_runtime.gd")
+const Gin := preload("res://content/enemies/gin/enemy.gd")
+const Util := preload("res://tests/sim_testutil.gd")
 
 const SEED := 1
 const LEVEL := 17
 const DT := 1.0 / 60.0
-const KILL_MAX := 900        # spawn delay 360 + fade 30 + mark 120 + launch 18 = 528
-const EXIT_MAX := 1400       # through the 600-tick zone plus the 30-tick fade back
+const KILL_MAX := 900
 
-var negative_failures := 0
+
+class BotWorld extends "res://app/world.gd":
+	var input_frame: Dictionary
+
+	func _capture_input() -> Dictionary:
+		return input_frame
 
 
 func run() -> Array[String]:
-	var f: Array[String] = []
-	var neg := _leg(f)
-	print("NEGATIVE CONTROL failures=%d per leg %s" % [neg, str({"gin": neg})])
-	return f
+	var failures: Array[String] = []
+	var still := _play(false, true)
+	var jump := _play(true, true)
+	var absent := _play(false, false)
+	var replay := _play(false, true, jump.get("inputs", []))
+	for trace in [still, jump, absent, replay]:
+		if trace.is_empty():
+			failures.append("Gin world failed to build")
+			return failures
+	if not still["dead"] or still["outcome"] != "kill" or still["code"] != "D-GIN" or still["killer"] != "gin":
+		failures.append("a grounded player must die to Gin's sword")
+	if jump["dead"] or jump["outcome"] != "clear" or not jump["jump_seen"]:
+		failures.append("a bot's normal jump must clear the sword at arrival")
+	if absent["dead"] or absent["launch"] >= 0 or absent["voice"] >= 0:
+		failures.append("the no-vote control produced a Gin attack")
+	if jump["hashes"] != replay["hashes"] or not replay["jump_seen"] or replay["dead"]:
+		failures.append("replayed controller inputs diverged across Gin checkpoints")
+	if not jump["hash_sensitive"]:
+		failures.append("the sword's live position is missing from the state hash")
+	for trace in [still, jump]:
+		var launch: int = trace["launch"]
+		var arrival: int = trace["arrival"]
+		var ms := float(arrival - launch) * DT * 1000.0
+		if launch < 0 or ms < 500.0 or ms > 750.0 or arrival - launch != 39:
+			failures.append("throw-to-arrival window was %.1f ms, expected 650 ms" % ms)
+		if trace["voice"] < 0 or trace["voice"] >= launch:
+			failures.append("Gin's voice must precede the launch")
+	if jump["contact"] > 0.001:
+		failures.append("the unobstructed sword missed its fixed release endpoint")
+	if still["impact"] < still["launch"] + 30 or still["impact"] > still["arrival"]:
+		failures.append("standing at the aim point must be dangerous inside the trigger window")
+	if not jump["pending_sensitive"]:
+		failures.append("the pending Gin tick or placement target is missing from the hash")
+	_moving_crossing(failures)
+	return failures
 
 
-# ---- the two world twins -----------------------------------------------------
-
-func _ledger(votes: Dictionary) -> Dictionary:
-	return {"class": "dasher", "votes": votes, "curses": {}, "stacks": {},
+func _play(jump: bool, gin: bool, playback: Array = []) -> Dictionary:
+	var world := BotWorld.new()
+	var votes := {"gin": 1} if gin else {}
+	var ledger := {"class": "dasher", "votes": votes, "curses": {}, "stacks": {},
 			"purse": 0, "tithes": 0, "hunger": 0, "last_vote": ""}
-
-
-func _build(votes: Dictionary):
-	var world = WorldScript.new()
-	if not world.build(SEED, LEVEL, _ledger(votes)):
+	if not world.build(SEED, LEVEL, ledger):
 		world.free()
-		return null
-	return world
-
-
-func _drop(world) -> void:
-	if world != null:
-		world.teardown()
-		world.free()
-
-
-# The monument cell the level spawns the player onto (collision's default
-# dais): the mark always cuts it out of the patch, so a run parked there is
-# unkillable by construction. Read it off the collision world, not a literal.
-func _dais_cell(world) -> Vector2i:
-	var d: Array = world.rt.world.get("dais", [1, 1, 1])
-	return Vector2i(int(d[0]), int(d[1]))
-
-
-func _first_tile_away(world, from: Vector2i, chebyshev: int) -> Dictionary:
-	for t in world.lv["tiles"]:
-		var dx := absi(int(t[0]) - from.x)
-		var dz := absi(int(t[1]) - from.y)
-		if maxi(dx, dz) < chebyshev:
-			continue
-		return {"x": int(t[0]), "y": int(t[2]), "z": int(t[1])}
-	return {}
-
-
-func _park(world, tile: Dictionary) -> void:
-	world.ctl.x = float(tile["x"]) + 0.5
-	world.ctl.y = float(tile["y"]) * 0.5
-	world.ctl.z = float(tile["z"]) + 0.5
-	world.ctl.vx = 0.0
-	world.ctl.vy = 0.0
-	world.ctl.vz = 0.0
-	world.ctl.cur_key = "%d,%d,%d" % [int(tile["x"]), int(tile["z"]), int(tile["y"])]
-
-
-# Park the player on an ordinary floor tile (Chebyshev >= 2 from the monument),
-# so the marked patch centres on a tile that is NOT cut out of it.
-func _park_off_dais(world) -> bool:
-	var dais: Vector2i = _dais_cell(world)
-	var tile: Dictionary = _first_tile_away(world, dais, 2)
-	if tile.is_empty():
-		return false
-	_park(world, tile)
-	return true
-
-
-# Move the player onto a floor tile outside the 5x5 patch (Chebyshev >= 3 from
-# its centre). Called once the mark lands, when the patch is final.
-func _park_outside(world, patch: Dictionary) -> bool:
-	var centre := Vector2i(int(patch.get("cx", 0)), int(patch.get("cz", 0)))
-	var tile: Dictionary = _first_tile_away(world, centre, 3)
-	if tile.is_empty():
-		return false
-	_park(world, tile)
-	return true
-
-
-func _gin_row(world) -> Dictionary:
-	for row in world.rt.enemies:
-		if str(row.get("id", "")) == "gin":
-			return row
-	return {}
-
-
-func _cue_tick(world, cue: String) -> int:
-	for e in world.telegraph_view.cue_log:
-		if str(e.get("cue", "")) == cue:
-			return int(e.get("tick", -1))
-	return -1
-
-
-func _cue_seen(world, cue: String) -> bool:
-	return _cue_tick(world, cue) >= 0
-
-
-# The four cues the world logs before the kill tick must fire in order:
-# crack_rumble (the mark) -> shing / whoosh (the launch) -> zone_open (the zone).
-func _assert_pre_kill_cues(world, errs: Array[String]) -> void:
-	var crack := _cue_tick(world, "crack_rumble")
-	var shing := _cue_tick(world, "shing")
-	var whoosh := _cue_tick(world, "whoosh")
-	var open_ := _cue_tick(world, "zone_open")
-	for pair in [["crack_rumble", crack], ["shing", shing], ["whoosh", whoosh], ["zone_open", open_]]:
-		if int(pair[1]) < 0:
-			errs.append("gin: %s never logged by the world's cue view" % str(pair[0]))
-	if crack >= 0 and shing >= 0 and crack >= shing:
-		errs.append("gin: crack_rumble (tick %d) not before shing (tick %d)" % [crack, shing])
-	if shing >= 0 and open_ >= 0 and shing > open_:
-		errs.append("gin: shing (tick %d) after zone_open (tick %d)" % [shing, open_])
-	if whoosh >= 0 and open_ >= 0 and whoosh > open_:
-		errs.append("gin: whoosh (tick %d) after zone_open (tick %d)" % [whoosh, open_])
-
-
-# The kill expectations. Used twice: appended to the failures when the thing
-# is present, counted (not appended) when the thing is absent.
-func _kill_expect(world) -> Array[String]:
-	var errs: Array[String] = []
-	world.ctl.last_light_spent = true   # D-057: otherwise the save masks the kill
-	if not _park_off_dais(world):
-		errs.append("gin: no ordinary floor tile found away from the spawn monument")
-		return errs
-	var zone_seen := false
-	var steps := 0
-	while steps < KILL_MAX and not bool(world.ctl.dead):
-		world.step(DT)
-		steps += 1
-		var row: Dictionary = _gin_row(world)
-		if not row.is_empty() and str(row.get("phase", "")) == "void":
-			zone_seen = true
-	if not zone_seen and not bool(world.ctl.dead):
-		errs.append("gin: the zone never opened within %d steps" % KILL_MAX)
-	if not bool(world.ctl.dead):
-		errs.append("gin: the void zone did not kill the parked player")
-		return errs
-	if str(world.ctl.dead_code) != "D-GIN":
-		errs.append("gin: death code %s, want D-GIN" % str(world.ctl.dead_code))
-	if str(world.ctl.dead_killer) != "gin":
-		errs.append("gin: killer %s, want gin" % str(world.ctl.dead_killer))
-	_assert_pre_kill_cues(world, errs)
-	return errs
-# The survivor expectations (the negative control half). move_out == true is
-# the leg; move_out == false is the control twin re-check (the player left on
-# the patch centre's own tile).
-func _survivor_expect(world, move_out: bool) -> Array[String]:
-	var errs: Array[String] = []
+		return {}
 	world.ctl.last_light_spent = true
-	if not _park_off_dais(world):
-		errs.append("gin: no ordinary floor tile found away from the spawn monument")
-		return errs
-	var moved := false
-	var zone_seen := false
-	var steps := 0
-	while steps < EXIT_MAX:
+	var rs := RunState.new_run(SEED, 1, [])
+	rs.load_level(world.lv, LEVEL)
+	rs.level = world.lstate
+	rs.run_votes = votes
+	var pending_sensitive := false
+	if gin and not world.rt.planned.is_empty():
+		var before := StateHash.sha256(rs)
+		world.rt.spawn_delay_ticks += 1
+		var tick_sensitive := StateHash.sha256(rs) != before
+		world.rt.spawn_delay_ticks -= 1
+		var entry: Dictionary = world.rt.planned[0]
+		entry["spawn_target"] = 1
+		pending_sensitive = tick_sensitive and StateHash.sha256(rs) != before
+		entry["spawn_target"] = 0
+	var inputs: Array = []
+	var hashes: Array[String] = []
+	var launch := -1
+	var voice := -1
+	var arrival := -1
+	var impact := -1
+	var outcome := ""
+	var contact := INF
+	var jump_seen := false
+	var hash_sensitive := false
+	for i in range(KILL_MAX if playback.is_empty() else playback.size()):
+		var buttons := 0
+		# Wait until roughly the apex will coincide with the sword's arrival.
+		if jump and launch >= 0 and world.rt.tick >= launch + 17:
+			buttons = Controller.BTN_JUMP
+		var frame := {"move_x": 0, "move_z": 0, "buttons": buttons, "aim_x": 0.0, "aim_z": 1.0}
+		world.input_frame = frame if playback.is_empty() else playback[i]
+		inputs.append(world.input_frame)
 		world.step(DT)
-		steps += 1
-		if bool(world.ctl.dead):
+		for event in world.last_events:
+			jump_seen = jump_seen or event.get("e") == "jump"
+		if world.rt.enemies.is_empty():
+			continue
+		var row: Dictionary = world.rt.enemies[0]
+		voice = int(row.get("gin_voice_tick", -1))
+		launch = int(row.get("gin_launch_tick", -1))
+		if launch < 0:
+			continue
+		var checkpoint := StateHash.sha256(rs)
+		hashes.append(checkpoint)
+		if not hash_sensitive:
+			var pos: Vector3 = row["gin_sword_pos"]
+			row["gin_sword_pos"] = pos + Vector3.RIGHT
+			hash_sensitive = StateHash.sha256(rs) != checkpoint
+			row["gin_sword_pos"] = pos
+		if row["phase"] == "cooldown":
+			arrival = int(row["gin_arrival_tick"])
+			impact = int(world.rt.tick) - 1
+			outcome = str(row["gin_outcome"])
+			var pos: Vector3 = row["gin_sword_pos"]
+			contact = Vector2(pos.x, pos.z).distance_to(Vector2(world.ctl.x, world.ctl.z))
 			break
-		var row: Dictionary = _gin_row(world)
-		if not row.is_empty():
-			var patch: Dictionary = row.get("patch", {})
-			if move_out and not moved and patch.size() > 0:
-				moved = _park_outside(world, patch)
-			if zone_seen == false and str(row.get("phase", "")) == "void":
-				zone_seen = true
-		if _cue_seen(world, "zone_close"):
-			break
-	if move_out and not moved:
-		errs.append("gin: the mark never landed (no patch ever set)")
-	if bool(world.ctl.dead):
-		errs.append("gin: the player outside the patch died (code %s)" % str(world.ctl.dead_code))
-	if not zone_seen:
-		errs.append("gin: the zone never opened within %d steps" % EXIT_MAX)
-	if not _cue_seen(world, "zone_close"):
-		errs.append("gin: zone_close never logged; the zone never fully cycled")
-	# all five cues, in order, when the run survives the zone
-	var crack := _cue_tick(world, "crack_rumble")
-	var shing := _cue_tick(world, "shing")
-	var whoosh := _cue_tick(world, "whoosh")
-	var open_ := _cue_tick(world, "zone_open")
-	var close_ := _cue_tick(world, "zone_close")
-	for pair in [["crack_rumble", crack], ["shing", shing], ["whoosh", whoosh],
-			["zone_open", open_], ["zone_close", close_]]:
-		if int(pair[1]) < 0:
-			errs.append("gin: %s never logged by the world's cue view" % str(pair[0]))
-	if crack >= 0 and shing >= 0 and crack >= shing:
-		errs.append("gin: crack_rumble (tick %d) not before shing (tick %d)" % [crack, shing])
-	if shing >= 0 and open_ >= 0 and shing > open_:
-		errs.append("gin: shing (tick %d) after zone_open (tick %d)" % [shing, open_])
-	if whoosh >= 0 and open_ >= 0 and whoosh > open_:
-		errs.append("gin: whoosh (tick %d) after zone_open (tick %d)" % [whoosh, open_])
-	if open_ >= 0 and close_ >= 0 and open_ >= close_:
-		errs.append("gin: zone_open (tick %d) not before zone_close (tick %d)" % [open_, close_])
-	return errs
+	var result := {"inputs": inputs, "hashes": hashes, "voice": voice, "launch": launch,
+			"arrival": arrival, "impact": impact, "dead": world.ctl.dead, "code": world.ctl.dead_code,
+			"killer": world.ctl.dead_killer, "outcome": outcome, "contact": contact,
+			"jump_seen": jump_seen, "hash_sensitive": hash_sensitive,
+			"pending_sensitive": pending_sensitive}
+	world.teardown()
+	world.free()
+	return result
 
 
-# The leg. Returns the negative-control failure count for the report line.
-func _leg(f: Array[String]) -> int:
-	var neg := 0
-	# KILL twin: gin voted, the player parked on an ordinary tile
-	var world = _build({"gin": 1})
-	if world == null:
-		f.append("gin: the held world failed to build")
-	else:
-		for line in _kill_expect(world):
-			f.append(line)
-		_drop(world)
-	# SURVIVOR twin: same build, the player steps out once the mark lands
-	world = _build({"gin": 1})
-	if world == null:
-		f.append("gin: the survivor world failed to build")
-	else:
-		for line in _survivor_expect(world, true):
-			f.append(line)
-		_drop(world)
-	# ABSENT twin (negative control): no votes -> the kill expectations must FAIL
-	world = _build({})
-	if world == null:
-		f.append("gin: the negative-control world failed to build")
-	else:
-		var neg_a: Array[String] = _kill_expect(world)
-		_drop(world)
-		neg += neg_a.size()
-	# SAME-BUILD twin, player never steps out (negative control):
-	# the survivor expectations must FAIL
-	world = _build({"gin": 1})
-	if world == null:
-		f.append("gin: the outside negative-control world failed to build")
-	else:
-		var neg_b: Array[String] = _survivor_expect(world, false)
-		_drop(world)
-		neg += neg_b.size()
-	if neg == 0:
-		f.append("gin: NEGATIVE CONTROL passed with the thing absent - the assertions prove nothing")
-	negative_failures += neg
-	return neg
+func _moving_crossing(failures: Array[String]) -> void:
+	var doc: Dictionary = JSON.parse_string(
+			FileAccess.get_file_as_string("res://content/enemies/gin/enemy.json"))
+	var cfg: Dictionary = doc["stats"]
+	var floor_tiles: Array = []
+	for x in range(-2, 12):
+		for z in range(-2, 3):
+			floor_tiles.append([x, z, 0])
+	for jump in [false, true]:
+		var w := Util.world_from_tiles(floor_tiles)
+		w["dais"] = [0, 0, 0]
+		var player := Controller.new()
+		player.setup("dasher", Util.consts())
+		player.place(w)
+		player.last_light_spent = true
+		var rt := EnemyRuntime.new()
+		rt.setup({}, w, [player], SEED)
+		var row := rt.spawn_at("gin", "gin ichimaru", Gin.new(), cfg, Vector3(8.5, 0.0, 0.5))
+		var jump_seen := false
+		var traveled := false
+		for _i in range(KILL_MAX):
+			var flying: bool = row["phase"] == "sword"
+			var events := player.step(DT, {"move_x": 127 if flying else 0, "move_z": 0,
+					"buttons": Controller.BTN_JUMP if flying and jump else 0}, w)
+			for event in events:
+				jump_seen = jump_seen or event.get("e") == "jump"
+			rt.step(DT)
+			traveled = traveled or player.x > 1.5
+			if row["phase"] == "cooldown":
+				break
+		if not traveled:
+			failures.append("moving Gin fixture failed to travel toward the sword")
+		if jump:
+			if not jump_seen or player.dead or row["gin_outcome"] != "clear":
+				failures.append("moving jump must cross the projectile and survive")
+			elif (row["gin_sword_pos"] as Vector3).distance_to(row["gin_goal"]) > 0.001:
+				failures.append("the sword followed a moving player away from its release endpoint")
+		elif not player.dead or player.dead_code != "D-GIN" or rt.tick - 1 >= int(row["gin_arrival_tick"]):
+			failures.append("moving ground player must die before the sword reaches its endpoint")

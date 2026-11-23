@@ -83,6 +83,12 @@ class EnemyBehavior:
 	func on_vote(_row: Dictionary, _api, _count: int) -> void:
 		pass
 
+	func hash_state(_row: Dictionary) -> Array:
+		return []
+
+	func hash_pending(_entry: Dictionary) -> Array:
+		return []
+
 
 # A fixture behavior: a stationary body whose contact kills (the KILL RULE default); used by
 # the T-027 tests and drop-in fixtures until real Wave-3 behaviors land.
@@ -477,7 +483,7 @@ func add_vote(id: String, max_votes: int) -> int:
 func plan(id: String, display_name: String, behavior: RefCounted, cfg: Dictionary,
 		copies: int) -> void:
 	planned.append({"id": id, "name": display_name, "behavior": behavior, "cfg": cfg,
-			"copies": copies})
+			"copies": copies, "spawn_target": int(cfg.get("spawn_target", 0))})
 	plan_copies_total += maxi(copies, 0)
 
 
@@ -603,7 +609,7 @@ func _spawn_planned() -> void:
 		while k < copies and budget > 0:
 			# re-read the live copies each round: copy 1 must clear copy 0 (and so on)
 			var exclude: Array = _copy_positions(id)
-			var spot: Variant = pick_spawn_tile(level, kind, _player_pos(0), exclude,
+			var spot: Variant = pick_spawn_tile(level, kind, _player_pos(int(plan_row["spawn_target"])), exclude,
 					COPY_SEP if copies > 1 else 0.0, _round_trip_cached())
 			if spot == null:
 				break   # D-T027-4: no legal tile this tick - the entry waits
@@ -636,6 +642,8 @@ func _spawn_one(plan_row: Dictionary, spot: Dictionary, copy_index: int, copies:
 	var diameter_u: float = float(body["diameter_u"])
 	if cfg.has("hit_diameter"):
 		diameter_u = maxf(float(cfg["hit_diameter"]), 0.0)
+	if bool(cfg.get("bodyless", false)):
+		diameter_u = 0.0
 	var row := {
 		"id": plan_row["id"], "name": plan_row["name"], "behavior": plan_row["behavior"],
 		"cfg": cfg, "x": float(spot["x"]), "y": float(spot["y"]), "z": float(spot["z"]),
@@ -659,8 +667,9 @@ func _spawn_one(plan_row: Dictionary, spot: Dictionary, copy_index: int, copies:
 		row["float"] = FloatBody.from_cfg(cfg)
 	enemies.append(row)
 	var mirror := {"x": row["x"], "y": row["y"], "z": row["z"], "r": row["diameter_u"] * 0.5}
-	row["body_mirror"] = mirror
-	world["enemies"].append(mirror)
+	if not bool(cfg.get("bodyless", false)):
+		row["body_mirror"] = mirror
+		world["enemies"].append(mirror)
 	var api := Api.new()
 	api.rt = self
 	api.row = row
@@ -979,6 +988,8 @@ static func resting_key(w: Dictionary, px: float, pz: float, feet: float, limit:
 ## and it can no longer kill (see _contact_kills).
 func _support_pass(dt: float) -> void:
 	for e in enemies:
+		if bool(e["cfg"].get("bodyless", false)):
+			continue
 		if bool(e.get("gone", false)):
 			continue
 		if not bool(e.get("falling", false)):
@@ -1023,6 +1034,8 @@ static func is_out_of_play(row: Dictionary) -> bool:
 ## and radar tick see the pushed body, never the point it stood on.
 func push_bodies(origin: Vector3, radius: float) -> void:
 	for e in enemies:
+		if bool(e["cfg"].get("bodyless", false)):
+			continue
 		var dx: float = float(e["x"]) - origin.x
 		var dz: float = float(e["z"]) - origin.z
 		var d: float = sqrt(dx * dx + dz * dz)
@@ -1523,7 +1536,7 @@ func move_toward(row: Dictionary, tx: float, tz: float, h_speed: float, target_y
 
 
 func _player_pos(i: int) -> Vector3:
-	if i < controllers.size() and controllers[i] != null:
+	if i >= 0 and i < controllers.size() and controllers[i] != null:
 		return Vector3(float(controllers[i].x), float(controllers[i].y), float(controllers[i].z))
 	if not level.get("spawns", []).is_empty():
 		var s: Array = level["spawns"][0]

@@ -589,6 +589,7 @@ static func _play_level(api: RefCounted, ledger: Dictionary, seed: int, level: i
 		opts["spawn_delay_ticks"] = 120
 	var rt = EnemyRuntime.new()
 	rt.setup(L, w, [ctl], int((rs.rng["enemy_ai"] as RefCounted).s), opts)
+	lv.enemy_runtime = rt
 	rt.curse_speed_mul = pow(1.08, int(curses.get("rush_hour", 0))) * pow(1.05, int(ledger["hunger"]))
 	if curses.has("long_night"):
 		rt.overtime_period = 14.0
@@ -603,7 +604,10 @@ static func _play_level(api: RefCounted, ledger: Dictionary, seed: int, level: i
 		var beh = _make_behavior(str(id))
 		if beh == null:
 			continue
-		rt.plan(str(id), str(entry.get("name", id)), beh, _cfg_for(entry, str(id), level, n), n)
+		var cfg := _cfg_for(entry, str(id), level, n)
+		if cfg.has("sword_attack") and int(curses.get("twin_fangs", 0)) > 0:
+			cfg["twin_fangs"] = true
+		rt.plan(str(id), str(entry.get("name", id)), beh, cfg, n)
 		planned_enemies += n
 	# T-080: the level_start record - slots from the level dict, "enemies in play" =
 	# the enemy vote COPIES just planned (the votes ARE the DESIGN section 6 column)
