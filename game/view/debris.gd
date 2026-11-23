@@ -1,6 +1,4 @@
 extends Node3D
-
-const AssetLoadScript := preload("res://view/asset_load.gd")   # U4: fail-soft loads (text/scene/texture/stream)
 #
 # Floating contour-outlined rocks (DECISIONS D-ATMO-2). Low-poly convex chunks drift in a wide
 # ring far outside the level, each with a thin bright outline.
@@ -29,6 +27,7 @@ const AssetLoadScript := preload("res://view/asset_load.gd")   # U4: fail-soft l
 #   var rocks: Array        # the layout rows
 #   var body_material / outline_material: ShaderMaterial
 
+const AssetLoadScript := preload("res://view/asset_load.gd")   # U4: fail-soft data-file read
 const PALETTE_PATH := "res://data/palette.json"
 const POINTS_PER_ROCK := 14
 const SEED_SALT := 0x0DEB215
