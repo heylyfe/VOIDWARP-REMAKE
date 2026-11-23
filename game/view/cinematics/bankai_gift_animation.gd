@@ -70,6 +70,17 @@ const ZERO_XFORM := Transform3D(Basis(Vector3.ZERO, Vector3.ZERO, Vector3.ZERO),
 
 
 func _ready() -> void:
+	_ensure_built()
+	if auto_play:
+		play()
+
+
+## The procedural rig is normally built by _ready(), which does not run when the node is
+## not in a tree - headless, or a test that drives the cinematic directly. Build on demand
+## so play() works either way; the guard makes a second call a no-op.
+func _ensure_built() -> void:
+	if _anim_cam != null:
+		return
 	_build_camera_and_fps_rig()
 	_build_water_ripple_mesh()
 	_build_giant_blades()
@@ -77,13 +88,11 @@ func _ready() -> void:
 	_build_voice_player()
 	_set_all_visuals_visible(false)
 
-	if auto_play:
-		play()
-
 
 ## VIEW-ONLY: never read or written by sim/. Plays on render time, uses the global RNG.
 ## Starts the Bankai animation. Pass a specific target, or leave null to pick randomly from `targets`.
 func play(target_override: Node3D = null) -> void:
+	_ensure_built()
 	_locked_target = target_override
 	if _locked_target == null:
 		var valid: Array[Node3D] = []
@@ -96,7 +105,10 @@ func play(target_override: Node3D = null) -> void:
 	if is_playing:
 		# Replaying: end the running one cleanly so the player's own camera is restored first.
 		stop()
-	_prev_camera = fps_camera if is_instance_valid(fps_camera) else get_viewport().get_camera_3d()
+	# get_viewport() is null when the node is not in a tree (headless, tests). The cinematic
+	# still plays - it just has no camera to restore afterwards.
+	var vp := get_viewport()
+	_prev_camera = fps_camera if is_instance_valid(fps_camera) else (vp.get_camera_3d() if vp != null else null)
 	_anim_cam.current = true
 
 	sim_time = 0.0
@@ -559,7 +571,9 @@ func _update_animation(t: float) -> void:
 		player_model.visible = not is_fp
 
 	var target_local: Vector3 = _fallback_target_local
-	if is_instance_valid(_locked_target):
+	# Global space only exists inside the tree. Headless (tests, the gate) has neither node in
+	# a tree, so the fallback target is the honest answer rather than a transform error.
+	if is_instance_valid(_locked_target) and is_inside_tree() and _locked_target.is_inside_tree():
 		target_local = to_local(_locked_target.global_position)
 
 	# 1. CAMERA CHOREOGRAPHY

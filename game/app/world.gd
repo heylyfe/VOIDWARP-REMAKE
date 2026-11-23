@@ -925,7 +925,7 @@ func _enter_boss_arena(events: Array) -> void:
 	_boss_view = BossViewScript.new()
 	add_child(_boss_view)
 	_boss_view.setup(_boss_target_position(), float(boss.config["sprite_height_u"]), _hud_layer,
-			boss.floor_y())
+			boss.floor_y(), int(boss.config["bankai"]["grace_ticks"]))
 
 
 func _boss_target_position() -> Vector3:
@@ -1815,6 +1815,12 @@ func apply_mouse_mode() -> void:
 ## _capture_input / _mouse_lock_pass, so the toggle remains the only capture transition.
 func _unhandled_input(event: InputEvent) -> void:
 	if not _mouse_locked or rig == null:
+		return
+	# The Bankai cinematic owns the camera for its whole run. Movement and firing are
+	# already locked sim-side (the arena tick skips ctl.step while bankai_active); the
+	# look is a view path, so it is locked here or the player could still swing the rig
+	# under the animation.
+	if lstate != null and lstate.boss != null and bool(lstate.boss.bankai_active):
 		return
 	if event is InputEventMouseMotion:
 		var mm := event as InputEventMouseMotion

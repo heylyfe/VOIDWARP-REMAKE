@@ -17,9 +17,17 @@ const GIFT_MODEL := "res://assets/models/gold_gift.glb"
 const BOWLING_COLOR := Color(0.10, 0.11, 0.16)
 const BASKETBALL_COLOR := Color(0.86, 0.42, 0.13)
 const MARKER_COLOR := Color(1.0, 0.16, 0.16, 0.55)
-## The green_fn marker lives for its windup; the sim owns the real timing, this is the
-## view's own fade so a dropped event cannot leave a line on the floor forever.
-const MARKER_TICKS := 40
+const CHARGE_COLOR := Color(0.35, 1.0, 0.45, 0.5)
+## Peter's tint during the bowling wind-up. No bowling art was provided, so the pose
+## cue is a warm flash plus the ball visibly in his hand.
+const BOWLING_TINT := Color(1.0, 0.72, 0.55)
+## How far the floor marker runs. The arena is 33 tiles across, so this covers a lane
+## from Peter to the far wall.
+const LANE_LENGTH := 32.0
+## The marker's BACKSTOP lifetime in SIM TICKS. on_events runs once per sim tick, so
+## this countdown is frame-rate independent; the release event normally clears the
+## marker first and this only catches a dropped event.
+const MARKER_TICKS := 60
 
 var _sprite: Sprite3D
 var _normal: Texture2D
@@ -32,13 +40,18 @@ var _gifts: Dictionary = {}
 var _balls: Dictionary = {}
 var _marker: MeshInstance3D = null
 var _marker_ticks := 0
+var _held_ball: MeshInstance3D = null
+var _charge: MeshInstance3D = null
 var _bankai: Node3D = null
+var _bankai_grace := 0
+var _bankai_grace_ticks := 60
 var _floor_y := 0.0
 
 
 func setup(target: Vector3, sprite_height: float, canvas: CanvasLayer,
-		floor_y: float = 0.0) -> void:
+		floor_y: float = 0.0, grace_ticks: int = 60) -> void:
 	_floor_y = floor_y
+	_bankai_grace_ticks = grace_ticks
 	_normal = _texture(PETER_PATH)
 	_green = _texture(GREEN_PATH)
 	_sprite = Sprite3D.new()
@@ -96,10 +109,14 @@ func setup(target: Vector3, sprite_height: float, canvas: CanvasLayer,
 	_overlay.hide()
 	_marker = _build_marker()
 	add_child(_marker)
+	_held_ball = _build_held_ball()
+	add_child(_held_ball)
+	_charge = _build_charge()
+	add_child(_charge)
 
 
-## The green_fn telegraph: a flat red bar on the arena floor from Peter to the spot the
-## shot is aimed at. Built once, moved and shown per windup.
+## The floor telegraph: a flat bar that runs along a lane. Built once, moved and shown
+## per wind-up.
 func _build_marker() -> MeshInstance3D:
 	var mesh := BoxMesh.new()
 	mesh.size = Vector3(1.0, 0.02, 1.0)
@@ -114,25 +131,67 @@ func _build_marker() -> MeshInstance3D:
 	return node
 
 
-## The marker is the view's own clock: it fades out MARKER_TICKS after the windup that
-## raised it, so a missed release event cannot leave a line on the floor.
-func _process(_delta: float) -> void:
+## The ball in Peter's hand during the bowling wind-up: the pose cue, since no bowling
+## art was provided.
+func _build_held_ball() -> MeshInstance3D:
+	var mesh := SphereMesh.new()
+	mesh.radius = 0.45
+	mesh.height = 0.9
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = BOWLING_COLOR
+	mesh.material = mat
+	var node := MeshInstance3D.new()
+	node.mesh = mesh
+	node.visible = false
+	return node
+
+
+## The green_fn charge disc at Peter's feet. It says "a shot is coming" and deliberately
+## claims no line: the shot aims at the player's position at RELEASE, so any line drawn
+## during the wind-up would be a lie the moment the player moves.
+func _build_charge() -> MeshInstance3D:
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = 1.0
+	mesh.bottom_radius = 1.0
+	mesh.height = 0.02
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.albedo_color = CHARGE_COLOR
+	mesh.material = mat
+	var node := MeshInstance3D.new()
+	node.mesh = mesh
+	node.visible = false
+	return node
+
+
+## The marker's lifetime is the SIM's clock, not the render frame rate: on_events runs
+## once per sim tick, so this countdown is tick-accurate at any FPS. The release event
+## normally clears the marker first; MARKER_TICKS is the backstop.
+func _age_marker() -> void:
 	if _marker_ticks <= 0:
 		return
 	_marker_ticks -= 1
-	if _marker_ticks == 0 and _marker != null:
+	if _marker_ticks == 0:
+		_hide_marker()
+
+
+func _hide_marker() -> void:
+	_marker_ticks = 0
+	if _marker != null:
 		_marker.visible = false
 
 
-## Lays the marker from `from` to `to` on the floor at `floor_y`, one bar wide.
-func _show_marker(from: Vector3, to: Vector3, floor_y: float) -> void:
+## Lays the marker from `from` along `dir` for `length`, on the arena floor.
+func _show_marker(from: Vector3, dir: Vector3, length: float) -> void:
 	if _marker == null:
 		return
-	var flat := Vector3(to.x - from.x, 0.0, to.z - from.z)
-	var length := flat.length()
-	if length < 0.01:
+	var flat := Vector3(dir.x, 0.0, dir.z)
+	if flat.length_squared() < 0.0001:
 		return
-	_marker.position = Vector3((from.x + to.x) * 0.5, floor_y + 0.03, (from.z + to.z) * 0.5)
+	flat = flat.normalized()
+	var mid := from + flat * (length * 0.5)
+	_marker.position = Vector3(mid.x, _floor_y + 0.03, mid.z)
 	_marker.rotation = Vector3(0.0, atan2(flat.x, flat.z), 0.0)
 	_marker.scale = Vector3(0.35, 1.0, length)
 	_marker.visible = true
@@ -140,6 +199,11 @@ func _show_marker(from: Vector3, to: Vector3, floor_y: float) -> void:
 
 
 func on_events(events: Array) -> void:
+	# on_events runs once per SIM TICK, so these two countdowns are tick-accurate at
+	# any frame rate. They age BEFORE the batch, so a marker raised by this batch gets
+	# its full lifetime.
+	_age_marker()
+	_age_bankai()
 	for event in events:
 		match event.get("kind", ""):
 			"boss_spawned":
@@ -165,9 +229,12 @@ func on_events(events: Array) -> void:
 			"bankai_started":
 				_start_bankai()
 			"bankai_hit":
-				_sprite.hide()
+				# The cinematic's own target_hit hides the sprite (the gifts land). This is
+				# the fallback for a fight with no cinematic node.
+				if _bankai == null:
+					_sprite.hide()
 			"bankai_finished":
-				_stop_bankai()
+				_on_bankai_sim_finished()
 			"boss_died":
 				_sprite.hide()
 				_overlay.hide()
@@ -179,7 +246,7 @@ func on_events(events: Array) -> void:
 				_sprite.hide()
 				_overlay.hide()
 				_clear_balls()
-				_stop_bankai()
+				_release_bankai()
 				for gift in _gifts.values():
 					gift.free()
 				_gifts.clear()
@@ -216,25 +283,53 @@ static func _texture(path: String) -> Texture2D:
 	return load(path) if ResourceLoader.exists(path) else null
 
 
-## A windup: the green_fn transform is a VIEW state driven by this event, never a sim
-## field, so the sprite swaps here and swaps back on the release. The green_fn also lays
-## its ground marker from Peter to the spot the shot is aimed at.
+## A wind-up, and the two attacks telegraph DIFFERENTLY on purpose.
+##
+## The bowling ball commits its lane at the wind-up (the sim's `aim`), so the marker drawn
+## here IS the lane the ball will take. Peter also holds the ball and takes a warm tint -
+## the pose cue, since no bowling art was provided.
+##
+## The green_fn keeps the owner's "aimed at the player's position at release", so it
+## commits nothing yet. It shows the transform and a charge disc at Peter's feet and
+## deliberately claims NO line: a line drawn now would be a lie the moment the player
+## moves. Its real aim line appears on the release.
 func _on_windup(event: Dictionary) -> void:
 	var attack := str(event.get("attack", ""))
-	_set_texture(_green if attack == "green_fn" and _green != null else _normal)
-	if attack == "green_fn" and event.has("player_position"):
-		_show_marker(_sprite.position, event["player_position"], _floor_y)
+	if attack == "green_fn":
+		_set_texture(_green if _green != null else _normal)
+		_sprite.modulate = Color(1.0, 1.0, 1.0)
+		if _held_ball != null:
+			_held_ball.visible = false
+		if _charge != null:
+			_charge.position = Vector3(_sprite.position.x, _floor_y + 0.04, _sprite.position.z)
+			_charge.visible = true
+		_hide_marker()
+		return
+	_set_texture(_normal)
+	_sprite.modulate = BOWLING_TINT
+	if _charge != null:
+		_charge.visible = false
+	if _held_ball != null:
+		_held_ball.position = _sprite.position + Vector3(0.7, -0.9, 0.0)
+		_held_ball.visible = true
+	_show_marker(_sprite.position, event.get("aim", Vector3.ZERO), LANE_LENGTH)
 
 
 ## One ball per live sim projectile, sized from the sim row so the visual matches the hit
-## volume. The green_fn release also drops the transform and the marker.
+## volume. The release drops the wind-up cue; the green_fn also lays the line the shot
+## will actually take, from the release point along its velocity.
 func _spawn_ball(event: Dictionary) -> void:
 	var attack := str(event.get("attack", ""))
+	if _held_ball != null:
+		_held_ball.visible = false
+	if _charge != null:
+		_charge.visible = false
+	_sprite.modulate = Color(1.0, 1.0, 1.0)
 	if attack == "green_fn":
 		_set_texture(_normal)
-		if _marker != null:
-			_marker.visible = false
-			_marker_ticks = 0
+		_show_marker(event["position"], event["velocity"], LANE_LENGTH)
+	else:
+		_hide_marker()
 	var radius := float(event.get("radius", 0.4))
 	var mesh := SphereMesh.new()
 	mesh.radius = radius
@@ -268,40 +363,73 @@ func _start_bankai() -> void:
 		return
 	_bankai = BankaiScript.new()
 	add_child(_bankai)
-	_bankai.fps_camera = get_viewport().get_camera_3d()
+	# Headless (tests, the gate) has no viewport and no camera. The cinematic already falls
+	# back to its own get_viewport() lookup and guards with is_instance_valid, so null is a
+	# supported value here - it just means "no camera to take".
+	var vp := get_viewport()
+	if vp != null:
+		_bankai.fps_camera = vp.get_camera_3d()
 	_bankai.animation_started.connect(_on_bankai_started)
 	_bankai.target_hit.connect(_on_bankai_target_hit)
-	_bankai.animation_finished.connect(_on_bankai_finished)
+	_bankai.animation_finished.connect(_on_bankai_animation_finished)
 	if ResourceLoader.exists(BankaiScript.CUSTOM_VOICE_PATH):
 		_bankai.senbonzakura_voice = load(BankaiScript.CUSTOM_VOICE_PATH)
 	_bankai.play(_sprite)
 
 
-## The cinematic has taken the camera: the fight HUD and the marker step aside.
+## The cinematic has taken the camera: the fight HUD and every telegraph step aside.
 func _on_bankai_started() -> void:
 	_overlay.hide()
-	if _marker != null:
-		_marker.visible = false
-		_marker_ticks = 0
+	_hide_marker()
+	if _held_ball != null:
+		_held_ball.visible = false
+	if _charge != null:
+		_charge.visible = false
 
 
-## The gifts reach Peter. The sim's bankai_hit does the same; this keeps the sprite gone
-## even if the two clocks drift apart by a frame.
+## The gifts reach Peter. This is the ONLY place the sprite dies during the Bankai, and it
+## is the cinematic's own hit tick, so the visual death always coincides with the gifts
+## landing rather than with the sim's deliberately later kill tick.
 func _on_bankai_target_hit(_target: Node3D) -> void:
 	_sprite.hide()
 
 
-func _on_bankai_finished() -> void:
-	if _bankai != null and is_instance_valid(_bankai):
-		_bankai.queue_free()
-	_bankai = null
+## The cinematic reached TOTAL_DURATION. It has already called its own stop() (which
+## restores the player's camera), so the node can go.
+func _on_bankai_animation_finished() -> void:
+	_release_bankai()
 
 
-func _stop_bankai() -> void:
+## The sim's bankai_finished. The cinematic normally finishes first; if render drift has
+## it still playing, wait a bounded number of ticks for animation_finished and then stop()
+## it explicitly. stop() is what restores the camera, so the node is never freed without
+## it - freeing a playing cinematic would leave the player looking through the anim camera.
+func _on_bankai_sim_finished() -> void:
 	if _bankai == null:
 		return
+	_bankai_grace = _bankai_grace_ticks
+	if _bankai_grace <= 0:
+		_release_bankai()
+
+
+## The bounded wait, aged once per sim tick by on_events.
+func _age_bankai() -> void:
+	if _bankai == null or _bankai_grace <= 0:
+		return
+	_bankai_grace -= 1
+	if _bankai_grace == 0:
+		_release_bankai()
+
+
+## Stops the cinematic (restoring the camera) and frees it. Safe to call twice.
+func _release_bankai() -> void:
+	if _bankai == null:
+		return
+	_bankai_grace = 0
 	if is_instance_valid(_bankai):
-		_bankai.free()
+		if bool(_bankai.is_playing):
+			_bankai.stop()
+		_bankai.queue_free()
 	_bankai = null
 
 

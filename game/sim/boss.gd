@@ -50,6 +50,11 @@ var _run_seed := 0
 var _player_half_width := 0.4
 var _player_height := 1.8
 var _next_projectile_id := 0
+## The lane the CURRENT wind-up committed to. The bowling ball fixes its lane at the
+## wind-up so the view's ground marker is the lane the ball will actually take; the
+## green_fn commits nothing here (it aims at the player's position at release, per the
+## owner's spec) and leaves this zero. Hashed through snapshot().
+var _aim := Vector3.ZERO
 
 
 static func load_config() -> Dictionary:
@@ -99,8 +104,9 @@ func tick(state, ctx: Dictionary) -> Array[Dictionary]:
 	var attacks := ["bowling_ball", "green_fn"]
 	var attack: String = attacks[attack_index]
 	if attack_tick == 0:
+		_aim = _lane_for(ctx) if attack == "bowling_ball" else Vector3.ZERO
 		events.append({"kind": "boss_attack_windup", "attack": attack,
-			"player_position": ctx["player_position"]})
+			"player_position": ctx["player_position"], "aim": _aim})
 	attack_tick += 1
 	if attack_tick >= int(config[attack]["windup_ticks"]):
 		events.append_array(_spawn_attack(attack, state, ctx))
@@ -114,6 +120,18 @@ func tick(state, ctx: Dictionary) -> Array[Dictionary]:
 ## tiles, and LevelState.HU is the tile-to-world scale.
 func floor_y() -> float:
 	return float(config["arena"]["floor_height"]) * 0.5
+
+
+## The bowling ball's lane, fixed at the wind-up: flat, from Peter to where the player
+## stood when he wound up. Committing here (not at the release) is what lets the view
+## draw a marker that is the truth rather than a guess.
+func _lane_for(ctx: Dictionary) -> Vector3:
+	var boss_pos: Vector3 = ctx["boss_position"]
+	var player_pos: Vector3 = ctx["player_position"]
+	var flat := Vector3(player_pos.x - boss_pos.x, 0.0, player_pos.z - boss_pos.z)
+	if flat.length_squared() < 0.0001:
+		return Vector3(0.0, 0.0, 1.0)
+	return flat.normalized()
 
 
 func _spawn_attack(attack: String, _state, ctx: Dictionary) -> Array[Dictionary]:
@@ -130,11 +148,8 @@ func _spawn_attack(attack: String, _state, ctx: Dictionary) -> Array[Dictionary]
 		# it is sideways or over the top. Its centre is half its height up, which puts the
 		# top at floor + height_u - the height the player's feet must beat.
 		var from := Vector3(boss_pos.x, floor + float(cfg["height_u"]) * 0.5, boss_pos.z)
-		var flat := Vector3(player_pos.x - from.x, 0.0, player_pos.z - from.z)
-		if flat.length_squared() < 0.0001:
-			flat = Vector3(0.0, 0.0, 1.0)
 		row["position"] = from
-		row["velocity"] = flat.normalized() * float(cfg["speed_u_per_s"])
+		row["velocity"] = _aim * float(cfg["speed_u_per_s"])
 	else:
 		# The three-pointer: aimed at the player's body centre AT RELEASE, so it is exact
 		# where they stood and stale the moment they move. Fast, flat, and dodgeable by
@@ -257,6 +272,7 @@ func snapshot() -> Dictionary:
 	return {"active": active, "hp": hp, "hp_max": hp_max, "phase": phase,
 		"attack_index": attack_index, "attack_tick": attack_tick, "projectiles": _projectiles,
 		"cooldown_tick": cooldown_tick, "next_projectile_id": _next_projectile_id,
+		"aim": _aim,
 		"bankai_rolled": bankai_rolled, "bankai_selected": bankai_selected,
 		"bankai_active": bankai_active, "bankai_tick": bankai_tick,
 		"dead": dead, "laugh_ticks": laugh_ticks,
