@@ -166,6 +166,7 @@ func hash_state(row: Dictionary) -> Array:
 			row["x"], row["z"], row.get("gin_target", -1), row.get("gin_voice_tick", -1),
 			row.get("gin_launch_tick", -1), row.get("gin_arrival_tick", -1),
 			row.get("gin_sword_pos", Vector3.ZERO), row.get("gin_outcome", ""),
+			row.get("gin_target_ground", 0.0), row["cfg"]["death_code"],
 			row.get("gin_flight_elapsed", -1), row.get("gin_twin_fangs", false),
 			row.get("gin_second_pos", Vector3.ZERO), cfg["twin_clearance_u"],
 			cfg["voice_ticks"], cfg["flight_ticks"], cfg["min_launch_distance_u"],

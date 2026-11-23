@@ -27,7 +27,7 @@ func run() -> Array[String]:
 		if trace.is_empty():
 			failures.append("Gin world failed to build")
 			return failures
-	if not still["dead"] or still["code"] != "D-GIN" or still["killer"] != "gin":
+	if not still["dead"] or still["outcome"] != "kill" or still["code"] != "D-GIN" or still["killer"] != "gin":
 		failures.append("a grounded player must die to Gin's sword")
 	if jump["dead"] or jump["outcome"] != "clear" or not jump["jump_seen"]:
 		failures.append("a bot's normal jump must clear the sword at arrival")

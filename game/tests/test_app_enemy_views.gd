@@ -209,6 +209,11 @@ func _fed(id: String, view, row: Dictionary) -> String:
 		"gin":
 			if view._overlay == null or view._sword == null or view._sword.texture == null:
 				return "gin overlay or imported sword failed to build"
+			if not view._overlay.visible or view._last_voice_tick != row.get("gin_voice_tick", -1):
+				return "gin portrait or voice failed to follow the warning tick"
+			var voice: AudioStreamWAV = view._overlay._voice.stream
+			if voice == null or voice.format != AudioStreamWAV.FORMAT_16_BITS:
+				return "gin 16-bit voice clip was not loaded"
 			if view.billboard.visible:
 				return "gin retained the old world billboard"
 		"claude":

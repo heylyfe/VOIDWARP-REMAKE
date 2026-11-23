@@ -45,6 +45,7 @@ static func _release(row: Dictionary, api, cfg: Dictionary, now: int) -> void:
 		_finish(row, cfg, now, "target_lost")
 		return
 	var feet := Vector3(player.x, player.y, player.z)
+	row["gin_target_ground"] = _ground_point(api.rt.world, feet).y
 	var origin := Vector3(row["x"], feet.y, row["z"])
 	var offset := origin - feet
 	if offset.length() < float(cfg["min_launch_distance_u"]):
@@ -66,20 +67,30 @@ static func _advance(row: Dictionary, api, cfg: Dictionary, now: int) -> void:
 		_finish(row, cfg, now, "target_lost")
 		return
 	var feet := Vector3(player.x, player.y, player.z)
-	var goal := _ground_point(api.rt.world, feet)
+	var support: float = Collision.support_at(api.rt.world, feet.x, feet.z, feet.y, 0.0)
+	if player.grounded:
+		row["gin_target_ground"] = feet.y
+	elif is_finite(support):
+		row["gin_target_ground"] = support
+	var goal := Vector3(feet.x, row["gin_target_ground"], feet.z)
 	row["gin_flight_elapsed"] = now - int(row["gin_launch_tick"])
 	var remaining := maxi(1, int(row["gin_arrival_tick"]) - now + 1)
 	for key in ["gin_sword_pos", "gin_second_pos"]:
 		if row.has(key):
 			var from: Vector3 = row[key]
-			row[key] = _ground_point(api.rt.world, from.lerp(goal, 1.0 / float(remaining)))
+			row[key] = goal if remaining == 1 else _ground_point(api.rt.world,
+					from.lerp(goal, 1.0 / float(remaining)))
 	if now < int(row["gin_arrival_tick"]):
 		return
 	var clearance := float(cfg["twin_clearance_u"] if row.has("gin_second_pos") else cfg["clearance_u"])
 	var hit := feet.y < goal.y + clearance
 	var outcome := "clear"
 	if hit:
-		outcome = "kill" if api.kill(player, str(row["id"]), str(row["cfg"]["death_code"])) else "saved"
+		var saved: bool = api.kill(player, str(row["id"]), str(row["cfg"]["death_code"]))
+		if player.dead:
+			outcome = "kill"
+		else:
+			outcome = "saved" if saved else "suppressed"
 	_finish(row, cfg, now, outcome)
 
 

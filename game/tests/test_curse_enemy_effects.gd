@@ -30,7 +30,7 @@ extends RefCounted
 #   second_strike a nuke blast records the player's position; the second missile 60 ticks later kills there (control: survives)
 #   spreading_rot the toucher's glitched tiles spread to an adjacent tile 360 ticks after the source appears (control: never)
 #   token_limit  a plushie placement re-arms the clock at 1800 ticks (control: 1500); a pickup removes 20 agitation (control: 35)
-#   twin_fangs   gin's mark phase announces a SECOND "mark" telegraph (control: exactly one)
+#   twin_fangs   Gin adds a second sword to the same arrival (control: exactly one)
 #
 # Test-side placement (teleporting a row or the player a few u) is the same fixture
 # pattern test_curse_dispatch.gd uses for its crowded dais body; no game file is touched.
