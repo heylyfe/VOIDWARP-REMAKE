@@ -356,6 +356,31 @@ macOS builds only work because [`game/project.godot`](game/project.godot) import
 texture variants: Godot refuses an arm64 export without them. The desktop presets do not pack those
 variants, so their builds are unchanged by it.
 
+### Tester build (owner only, never released)
+
+The owner's debug build: an exe with an F10 debug panel — spawn any enemy at the cursor or in front
+of the player, give any upgrade, give gold, collect the nearest gifts, skip to level N or skip the
+current level, set charges, toggle god mode, force the platform collapse, force the Peter boss and
+the Bankai cinematic, and read the live state hash. Debug actions go through the game's own paths
+(the enemy runtime's `spawn_at`, `sim/gifts.gd`'s `collect`, the app's level-transition calls), and
+no `sim/` file is touched: the 60 Hz determinism, the state-hash dump and the replay suite are
+exactly the public build's. A run played in the tester build is flagged `"tester": true` in its
+`user://runs` log header.
+
+```powershell
+powershell -File tools\build_tester.ps1   # -> game\out\tester\voidwrap_tester.exe
+```
+
+The panel ([`game/view/tester/debug_panel.gd`](game/view/tester/debug_panel.gd)) exists **only** in
+this exe, and this exe is **never** uploaded, attached to a release or shipped: the `Tester` preset
+in [`game/export_presets.cfg`](game/export_presets.cfg) is the only one with
+`custom_features="tester"`, the three public presets exclude `view/tester/*` from their pack, the
+CI workflow's matrix names the three public presets by hand (it cannot pick this one up), and
+`game/app/app.gd` loads the panel with `load()` — never `preload()` — behind
+`OS.has_feature("tester")`, so a public build holds no reference to it at all. An editor run can
+get the panel the same way: `godot --path game --features tester`. Everything a debug action does is
+live in-memory state on top of the seed's own run — the seed replay itself stays byte-identical.
+
 ## Changelog
 
 <details open>

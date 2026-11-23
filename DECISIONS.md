@@ -8613,3 +8613,121 @@ squashes to 35 % in 0.06 s and springs back through ~1.19x (settled by 0.9 s), t
 0.45 u to 2.1 u over 0.45 s. Audio: `player/jump_pad` (synth_cues.gd seed 24, 0.55 s) - a 140 -> 620 Hz
 rising sine with a decaying 26 Hz wobble over a 70 Hz thump, played on the `jump_pad_launch` event. No
 first-use hint (optional in the spec). Screenshot proof: tools/shot_jump_pad.gd (windowed).
+
+## D-T2-1 (2026-11-23): the tester panel is compiled OUT of the public build, three layers deep
+
+**Ruling.** The owner's words: "tester build with debug panel (owner only, never in public releases)". The
+panel is one folder, `game/view/tester/`, and it never reaches a public build by any of the three routes:
+(1) PACK: the three public presets in `game/export_presets.cfg` (0 Windows Desktop / 1 Linux / 2 macOS)
+carry `exclude_filter="view/tester/*"`, view.csv the preset block itself, so nothing from the tester folder
+is inside a public pck. (2) CODE: `game/app/app.gd` `_try_load_tester_panel()` is the only loading site in
+the game - `load()` (runtime), never `preload()` (compile-time), behind `OS.has_feature("tester")`, which
+no public preset sets (`custom_features=""` on 0/1/2). A public build holds the dead branch but no file to
+load and never executes it. (3) CI: `.github/workflows/build.yml` names the three public presets by hand in
+its matrix, so the "Tester" preset cannot be picked up; a one-line comment at the matrix states this.
+`game/tests/test_tester_build.gd` pins all three: the exclude_filter line per preset, zero `preload(`
+references to the panel anywhere with the `view/tester/` path, the load living in app.gd BEHIND the
+feature-gate line, and `preset: Tester` never appearing in the workflow.
+**Why contestable.** Not contestable: this is the brief's own requirement, implemented literally.
+
+## D-T2-2 (2026-11-23): no panel scene - the layout is `_init`-built, like the pause overlay
+
+**Ruling.** The brief says "the panel scene and script must not be exported". There is no scene:
+`view/tester/debug_panel.gd` builds its whole layout in `_init` (widgets only, UiStyle helpers) - the
+`view/app/pause_overlay.gd` and `view/hud/run_over.gd` precedent, which exists exactly so screens can be
+constructed and asserted headless. The `exclude_filter="view/tester/*"` covers the folder, so a scene
+added there later is excluded by the same rule. The preset "Tester" itself: `[preset.3]`, platform "Windows
+Desktop", `custom_features="tester"`, `runnable=false` (it is never the editor's Run preset; it exists only
+for `--export-release "Tester"`), `export_path="out/tester/voidwrap_tester.exe"`, `file_description`
+"VOIDWRAP RUN - TESTER" so the exe names itself. `tools/build_tester.ps1` runs the one-time import then
+`--export-release "Tester"` with the same 1 MB "that is a build" floor CI uses; output under
+`game/out/tester/` (gitignored, `out/` is a repo-wide ignore), never uploaded, never in a release.
+
+## D-T2-3 (2026-11-23): the replay rule is satisfied with ZERO sim changes; tester runs carry the flag
+
+**Ruling.** The brief: "Prefer zero sim changes; if you must add a field, it is a tester flag only and it
+does not enter the state hash." Zero sim changes it is: not one file under `game/sim/` is touched (the
+boundary test's content-id scan and the replay suite stay green on untouched code), and no field was
+added anywhere. The debug actions are app-layer mutations of LIVE state through the game's own functions
+(see D-T2-4..D-T2-6); the seed's own replay - the state hash - is therefore computed from exactly the
+inputs it always was, and `test_replay.gd` passes unchanged. The "or the replay is flagged 'tester' in its
+header" half is honoured at the build level: `app/run_log.gd` `run_started()` gained an optional additive
+payload dict (default `{}` - every existing caller, including bot_run and eight call sites in tests, passes
+nothing and records byte-identical output), and `app.gd` `_end_run()` passes `{"tester": true}` exactly
+when the tester panel loaded, i.e. exactly in a tester build. A run's log names the build it came from.
+
+## D-T2-4 (2026-11-23): every panel action goes through the game's own command path
+
+**Ruling.** In order: SPAWN - `enemy_runtime.spawn_at()` (the runtime's documented direct-spawn entry: "Same
+row shape as the D-056 rule produces"); cfg from the world's own `_cfg_for`, behavior from its own
+`_behavior_for`; the view/billboard pass adopts the new row on the next frame, as it does the planned
+bodies. GIFTS - `sim/gifts.gd`'s own `collect()` nearest-first, and when that opens the beacon, the panel
+performs the same `beacon.open()` `GiftsScript.tick` performs; the world's own next tick then runs the gold
+phase, the economy and the collapse schedule exactly as if the player had walked the pickups (the economy's
+gold-gift values and the run log's per-tick records do NOT see panel-made collections - the panel's GIVE
+GOLD goes to the purse directly instead). SKIP - the app's own `_on_level_completed()` (the lobby opens;
+the ledger is read first, never invented) and, for skip-to-level N, the same hand-off
+`_on_lobby_exited` runs (run_ledger -> `_build_world(N, ledger)` -> live) so the level stays a pure
+function of (seed, level, ledger). COLLAPSE - `sim/collapse.gd` `CollapseScript.start()` on the live
+schedule from IDLE; `world.step()`'s own tick then drives cracks, falls and the sweep; a later beacon open
+calls `start()` again and is the documented no-op it always is for a non-IDLE schedule. CHARGES - the
+controller's own `charges` field.
+**Known gap (deliberate):** panel gift collections bypass the per-tick event consumers (economy chain,
+upgrade hooks, run log), because they happen between ticks; gold given via GIVE GOLD lands in the purse
+directly. The panel's status line and README say GIVE N GIFTS is the slot/bits path only.
+
+## D-T2-5 (2026-11-23): give-upgrade is live re-application plus a carry, with one delta guard
+
+**Ruling.** `world.apply_tester_upgrade_stack(id)` (the ONE app-layer method the panel owns; nothing in the
+public game calls it): +1 stack into `_ledger["stacks"]` (carries to every later level through
+`run_ledger()`), then the build()-order pipeline re-applied live: `_run_modifiers` ->
+`_stats_black/_stats_gold`, `_upgrade_knobs`' assignments, the set-based consumers (straggler band, gift
+yield, twin dash, updraft - all replace semantics, safe to re-run), `_gift_radar_range_for`, and
+`_apply_phase_stats()`. THE ONE ADDITIVE CONSUMER, the athletic double-jump count, is applied as the DELTA
+only (before vs after the stack), so repeated grants do not inflate air jumps (the negative case: granting a
+non-athletic upgrade changes no jump count). NOT re-applied: Field Dressing's per-level free-fall budget
+(granted once per level per stack at build; a mid-level grant would double the budget) and the per-level
+event-hook dispatcher `_upgrades` - a stack granted mid-level has its stats immediately but its event hooks
+from the next level's build; the panel's status line says so.
+
+## D-T2-6 (2026-11-23): god mode is a per-frame top-up through existing kill semantics
+
+**Ruling.** No invulnerability concept is added to sim/. The panel's `_god_pass()` keeps
+`ctl.invuln >= 1.0` (the controller's own post-respawn window; `try_kill` then emits its existing
+`kill_suppressed` for every raised kill) and keeps `ctl.charges >= void_fall_charge_cost` (a void fall is
+paid and respawns instead of killing). Last Light, barriers, Field Dressing are untouched - god mode only
+ever ADDS the two topped-up values. It keeps running while the panel is closed (a toggle, not a modal
+state). Corner case (documented, accepted): a kill raise on the exact frame between panel `_process` calls
+cannot be suppressed - the top-up runs every frame in practice, and the tester is the only user.
+
+## D-T2-7 (2026-11-23): force-Peter / force-Bankai probe the T8 API at runtime; Bankai falls back to the dormant cinematic
+
+**Ruling.** The brief: "another worker is adding the boss API in parallel (game/sim/boss.gd, events
+boss_spawned / bankai_started). Do not block on it. Call through a small indirection that checks
+has_method() at runtime, so the buttons light up once that track merges." The panel's `_first_matching()`
+(probe list: the world's `boss` member if the framework sets one, then `load("res://sim/boss.gd")` as a
+Script - `has_static_method()` - then the world, then the app) checks candidate method names in order:
+boss buttons ["force_boss_fight", "force_boss", "force_spawn", "force_start", "start_boss_fight"], bankai
+["force_bankai", "play_bankai"], and calls the first hit once with no arguments. `res://sim/boss.gd` does not
+exist in this tree, so the buttons read "... (boss track not merged)" until a merge brings the API. When
+that lands, IF the method names differ from all five candidates, the T8 track (or the merge review) adds
+its name to the two arrays in the panel - the D-entry for that change names this as the contract. Bankai
+ALSO has a live fallback today: playing the dormant owner cinematic
+`view/cinematics/bankai_gift_animation.gd` directly (added by the owner in `fa0f1a7`, wired to nothing;
+`play()`, `animation_finished` -> self-free), which is view-only and uses the engine RNG by its own header's
+design - this is a tester preview path, not the boss-fight wiring; the bankai_started sim wiring stays the
+T8 track's job.
+
+## D-T2-8 (2026-11-23): the panel's state hash is state_hash's dump over the LIVE level, minus the RNG lines
+
+**Ruling.** `sim/state_hash.gd` is untouched. The panel builds a RunState-shaped holder (`LiveRunState`,
+an inner class of the panel: run_seed, players, content_ids, level_number, run_votes, run_hunger,
+`level` = the LIVE LevelState, `rng` = {}) and calls the unchanged `StateHashScript.sha256()` on it, so the
+label is the same digest function the replay checkpoints pin - LEVELHASH, TICK, the player row, the gift
+bitsets + phase knobs, the beacon, the mines, the COLLAPSE and JUMPPADS lines, all live state, per the
+dump's frozen field order. The RNG lines are the one omission, and the reason is structural, not chosen
+out of convenience: the app driver holds no sim rng streams at all (they exist only in the sim-driver
+contexts - test_replay's random-input run and bot_run's recorded runs - which keep the FULL hash, unchanged
+and untestable from here on purpose). Two different live states therefore always differ in the displayed
+digest, and the owner gets the level hash of any level in play.
+
