@@ -68,9 +68,7 @@ const GROUND_LIMIT_U := 12.0  # ground snap window over the target's feet plane
 ## the HUD), so the panel routes FORCE PETER through it, never through boss.start alone.
 const BossScript := preload("res://sim/boss.gd")
 ## Bankai: an explicit force entry on the boss object (the T8b attack track may add one)
-## is preferred when present; otherwise the panel activates the arena Bankai
-## through its own signals (D-T2-7-amend): target_hit drives boss.damage() - the
-## contract's insta-kill - animation_finished frees the node.
+## is preferred when present; otherwise the panel activates the regular arena Bankai.
 const BANKAI_FORCE_METHODS: Array[String] = ["force_bankai", "play_bankai"]
 const BANKAI_CINEMATIC_PATH := "res://view/cinematics/bankai_gift_animation.gd"
 
