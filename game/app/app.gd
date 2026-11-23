@@ -129,6 +129,11 @@ var _class_altar: Control = null
 # The loading clock ran out while the altar was still open: the run is held (state stays
 # LOADING, the world stays out of the tree) until the player confirms or skips.
 var _held_for_altar := false
+# The tester debug panel (cycle 7 T2): non-null ONLY in a build exported with the custom
+# "tester" feature tag (export_presets.cfg preset "Tester"). The public presets exclude
+# view/tester/ from the pack and never set the tag, so this hook never runs there and the
+# public build carries no reference to the panel at all - see _try_load_tester_panel().
+var _tester_panel: Control = null
 
 
 func _ready() -> void:
@@ -137,6 +142,26 @@ func _ready() -> void:
 	_pause_codes = _load_pause_codes()
 	_apply_saved_volume()
 	_show_menu()
+	_try_load_tester_panel()
+
+
+## The tester build's only entry point (D-T2-2): load() - never preload(), which would bake
+## the panel into every build's dependency graph - behind the custom "tester" feature tag.
+## Editor runs get the same tag with: tools\godot\godot.exe --path game --features tester.
+## In a public build this file holds one GUARDED REFERENCE to the panel (the load() call
+## below) whose branch can never run (the feature tag is absent, and the file is not in the
+## pack either - exclude_filter="view/tester/*"), so the panel itself never loads there.
+func _try_load_tester_panel() -> void:
+	if not OS.has_feature("tester"):
+		return
+	var TesterPanelScript = load("res://view/tester/debug_panel.gd")
+	if TesterPanelScript == null:
+		push_warning("app: tester feature set, but res://view/tester/debug_panel.gd did not load")
+		return
+	_tester_panel = TesterPanelScript.new()
+	_tester_panel.setup(self)
+	add_child(_tester_panel)
+	print("app: tester debug panel loaded (F10)")
 
 
 ## The saved master volume reaches the audio bus at BOOT, not only when the settings screen
@@ -296,6 +321,11 @@ func _build_world(p_level: int, p_ledger: Dictionary) -> bool:
 	_world = built
 	if _world == null:
 		return false
+	# TESTER (D-T2-9): the panel arms its per-tick probe on the fresh world NOW, before
+	# the world enters the tree or takes its first step - a promised god mode therefore
+	# covers the new world's very first tick. A no-op in the public build (no panel).
+	if _tester_panel != null:
+		_tester_panel.call("on_world_built", _world)
 	# The class the run was born with: the carried pick, else the level-1 replay's own
 	# CLASS-bay pick (world._resolve_run). The run telemetry (run_started) reads it.
 	_run_class = str(_world.run_ledger().get("class", _run_class))
@@ -548,7 +578,11 @@ func _end_run() -> void:
 		_records.load_from(records_path)
 	_records.record_run(_run_level_reached, _run_purse)
 	var log := RunLogScript.new()
-	log.run_started(_seed, _run_class)
+	# D-T2-3: a tester build names itself in the run log's header (the "replay is flagged
+	# tester" rule). _tester_panel is non-null exactly when the tester panel loaded, which
+	# happens only behind the "tester" feature tag, so a public build writes what it always did.
+	log.run_started(_seed, _run_class, 0,
+			{"tester": true} if _tester_panel != null else {})
 	log.run_finished(_run_level_reached, _run_purse)
 	log.close()
 

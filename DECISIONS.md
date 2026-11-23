@@ -8614,6 +8614,158 @@ squashes to 35 % in 0.06 s and springs back through ~1.19x (settled by 0.9 s), t
 rising sine with a decaying 26 Hz wobble over a 70 Hz thump, played on the `jump_pad_launch` event. No
 first-use hint (optional in the spec). Screenshot proof: tools/shot_jump_pad.gd (windowed).
 
+## D-T2-1 (2026-11-23): the tester panel is compiled OUT of the public build, three layers deep
+
+**Ruling.** The owner's words: "tester build with debug panel (owner only, never in public releases)". The
+panel is one folder, `game/view/tester/`, and it never reaches a public build by any of the three routes:
+(1) PACK: the three public presets in `game/export_presets.cfg` (0 Windows Desktop / 1 Linux / 2 macOS)
+carry `exclude_filter="view/tester/*"` per preset block, so nothing from the tester folder
+is inside a public pck. (2) CODE: `game/app/app.gd` `_try_load_tester_panel()` is the only loading site in
+the game - `load()` (runtime), never `preload()` (compile-time), behind `OS.has_feature("tester")`, which
+no public preset sets (`custom_features=""` on 0/1/2). A public build holds the dead branch but no file to
+load and never executes it. (3) CI: `.github/workflows/build.yml` names the three public presets by hand in
+its matrix, so the "Tester" preset cannot be picked up; a one-line comment at the matrix states this.
+`game/tests/test_tester_build.gd` pins all three: the exclude_filter line per preset, zero `preload(`
+references to the panel anywhere with the `view/tester/` path, the load living in app.gd BEHIND the
+feature-gate line, and `preset: Tester` never appearing in the workflow.
+
+**Review round 1 wording correction (2026-11-23, Terra xhigh: "ADOPT WITH FIXES").** Earlier drafts of this
+entry, the README and the panel header claimed the public build contains "no reference at all" to the
+panel. Inaccurate: `app.gd:156` holds ONE GUARDED REFERENCE - the `load("res://view/tester/debug_panel.gd")`
+call - whose branch can never run in a public build (the feature tag is absent and the file is not in the
+pack). All four documents now say "guarded reference", the honest claim the review asked for.
+**Why contestable.** Not contestable: this is the brief's own requirement, implemented literally.
+
+## D-T2-2 (2026-11-23): no panel scene - the layout is `_init`-built, like the pause overlay
+
+**Ruling.** The brief says "the panel scene and script must not be exported". There is no scene:
+`view/tester/debug_panel.gd` builds its whole layout in `_init` (widgets only, UiStyle helpers) - the
+`view/app/pause_overlay.gd` and `view/hud/run_over.gd` precedent, which exists exactly so screens can be
+constructed and asserted headless. The `exclude_filter="view/tester/*"` covers the folder, so a scene
+added there later is excluded by the same rule. The preset "Tester" itself: `[preset.3]`, platform "Windows
+Desktop", `custom_features="tester"`, `runnable=false` (it is never the editor's Run preset; it exists only
+for `--export-release "Tester"`), `export_path="out/tester/voidwrap_tester.exe"`, `file_description`
+"VOIDWRAP RUN - TESTER" so the exe names itself. `tools/build_tester.ps1` runs the one-time import then
+`--export-release "Tester"` with the same 1 MB "that is a build" floor CI uses; output under
+`game/out/tester/` (gitignored, `out/` is a repo-wide ignore), never uploaded, never in a release.
+
+## D-T2-3 (2026-11-23): the replay rule is satisfied with ZERO sim changes; tester runs carry the flag
+
+**Ruling.** The brief: "Prefer zero sim changes; if you must add a field, it is a tester flag only and it
+does not enter the state hash." Zero sim changes it is: not one file under `game/sim/` is touched (the
+boundary test's content-id scan and the replay suite stay green on untouched code), and no field was
+added anywhere. The debug actions are app-layer mutations of LIVE state through the game's own functions
+(see D-T2-4..D-T2-6); the seed's own replay - the state hash - is therefore computed from exactly the
+inputs it always was, and `test_replay.gd` passes unchanged. The "or the replay is flagged 'tester' in its
+header" half is honoured at the build level: `app/run_log.gd` `run_started()` gained an optional additive
+payload dict (default `{}` - every existing caller, including bot_run and eight call sites in tests, passes
+nothing and records byte-identical output), and `app.gd` `_end_run()` passes `{"tester": true}` exactly
+when the tester panel loaded, i.e. exactly in a tester build. A run's log names the build it came from.
+
+## D-T2-4 (2026-11-23): every panel action goes through the game's own command path
+
+**Ruling.** In order: SPAWN - `enemy_runtime.spawn_at()` (the runtime's documented direct-spawn entry: "Same
+row shape as the D-056 rule produces"); cfg from the world's own `_cfg_for`, behavior from its own
+`_behavior_for`; the view/billboard pass adopts the new row on the next frame, as it does the planned
+bodies. GIFTS - `sim/gifts.gd`'s own `collect()` nearest-first, and when that opens the beacon, the panel
+performs the same `beacon.open()` `GiftsScript.tick` performs; the world's own next tick then runs the gold
+phase, the economy and the collapse schedule exactly as if the player had walked the pickups (the economy's
+gold-gift values and the run log's per-tick records do NOT see panel-made collections - the panel's GIVE
+GOLD goes to the purse directly instead). SKIP - the app's own `_on_level_completed()` (the lobby opens;
+the ledger is read first, never invented) and, for skip-to-level N, the same hand-off
+`_on_lobby_exited` runs (run_ledger -> `_build_world(N, ledger)` -> live) so the level stays a pure
+function of (seed, level, ledger). COLLAPSE - `sim/collapse.gd` `CollapseScript.start()` on the live
+schedule from IDLE; `world.step()`'s own tick then drives cracks, falls and the sweep; a later beacon open
+calls `start()` again and is the documented no-op it always is for a non-IDLE schedule. CHARGES - the
+controller's own `charges` field.
+**Known gap (review round 1: CLOSED, finding 2 - D-T2-9).** The original implementation collected
+between ticks, so the per-tick event consumers (economy chain, upgrade hooks) missed the collects.
+GIVE N GIFTS now queues the job through `tester_tick_hook` and the collects ride the tick's own event
+list: the economy pays gold-phase collects, the upgrade hooks dispatch on them, the fx and HUD draw
+them, and the beacon opens through the tick's own phase block. The GIVE GOLD button still writes the
+purse directly (it is a purse write, not a collect).
+
+## D-T2-5 (2026-11-23): give-upgrade is live re-application plus a carry, with one delta guard
+
+**Ruling.** `world.apply_tester_upgrade_stack(id)` (the ONE app-layer method the panel owns; nothing in the
+public game calls it): +1 stack into `_ledger["stacks"]` (carries to every later level through
+`run_ledger()`), then the build()-order pipeline re-applied live: `_run_modifiers` ->
+`_stats_black/_stats_gold`, `_upgrade_knobs`' assignments, the set-based consumers (straggler band, gift
+yield, twin dash, updraft - all replace semantics, safe to re-run), `_gift_radar_range_for`, and
+`_apply_phase_stats()`. THE ONE ADDITIVE CONSUMER, the athletic double-jump count, is applied as the DELTA
+only (before vs after the stack), so repeated grants do not inflate air jumps (the negative case: granting a
+non-athletic upgrade changes no jump count). NOT re-applied: Field Dressing's per-level free-fall budget
+(granted once per level per stack at build; a mid-level grant would double the budget).
+
+**Amended (2026-11-23, Terra review round 1, finding 4).** The "its event hooks go live from the next
+level" limitation is GONE: the original D-entry ended by saying exactly that. `apply_tester_upgrade_stack`
+now also rebuilds the per-level event-hook dispatcher - `_upgrades = UpgradeRuntimeScript.new()` with the
+same (stacks, loader, ctx) construction `build()` uses - so the granted stack's hooks are dispatched
+from the NEXT TICK. The rebuild is a fresh instance (setup() builds clean modules), which also resets the
+owned modules' once-per-level scratch memory and any running run-speed boost; the tester accepts both,
+and the stack still carries into every later level through `run_ledger()`. test_tester_build.gd pins
+the rebuild line.
+
+## D-T2-6 (2026-11-23): god mode is a per-frame top-up through existing kill semantics
+
+**Ruling.** No invulnerability concept is added to sim/. The panel's `_god_pass()` keeps
+`ctl.invuln >= 1.0` (the controller's own post-respawn window; `try_kill` then emits its existing
+`kill_suppressed` for every raised kill) and keeps `ctl.charges >= void_fall_charge_cost` (a void fall is
+paid and respawns instead of killing). Last Light, barriers, Field Dressing are untouched - god mode only
+ever ADDS the two topped-up values. It keeps running while the panel is closed (a toggle, not a modal
+state). Corner case (documented, accepted): a kill raise on the exact frame between panel `_process` calls
+cannot be suppressed - the top-up runs every frame in practice, and the tester is the only user.
+
+**Amended (2026-11-23, Terra review round 1, finding 5 - D-T2-9).** Both gaps closed. (1) The top-up now
+also runs at the TICK TOP via `tester_tick_hook`, armed by `app.gd`'s `on_world_built` handoff BEFORE the
+world enters the tree, so a promoted god mode covers a fresh world's very first tick on every entry path -
+the per-frame pass stays only as belt-and-braces. (2) The boss ARENA kills via `ctl._die` directly
+(`_apply_boss_events`), which `invuln` never covered; the world now carries `var tester_god := false`
+(mirrored from the panel's toggle) and that kill path honours it - god mode works inside the Peter fight.
+
+## D-T2-7 (2026-11-23): force-Peter / force-Bankai probe the T8 API at runtime; Bankai falls back to the dormant cinematic
+
+**Ruling.** The brief: "another worker is adding the boss API in parallel (game/sim/boss.gd, events
+boss_spawned / bankai_started). Do not block on it. Call through a small indirection that checks
+has_method() at runtime, so the buttons light up once that track merges." The panel's `_first_matching()`
+(probe list: the world's `boss` member if the framework sets one, then `load("res://sim/boss.gd")` as a
+Script - `Script.has_script_method()`, which covers statics on this engine - then the world, then the app)
+checks candidate method names in
+order: boss buttons ["force_boss_fight", "force_boss", "force_spawn", "force_start", "start_boss_fight"],
+bankai ["force_bankai", "play_bankai"], and calls the first hit once with no arguments.
+`res://sim/boss.gd` does not exist in this tree, so the buttons read "... (boss track not merged)" until
+a merge brings the API. When that lands, IF the method names differ from all five candidates, the T8
+track (or the merge review) adds its name to the two arrays in the panel - the D-entry for that change
+names this as the contract. Bankai ALSO has a live fallback today: playing the dormant owner cinematic
+`view/cinematics/bankai_gift_animation.gd` directly (added by the owner in `fa0f1a7`, wired to nothing;
+`play()`, `animation_finished` -> self-free), which is view-only and uses the engine RNG by its own header's
+design - this is a tester preview path, not the boss-fight wiring; the bankai_started sim wiring stays the
+T8 track's job.
+
+**Amended (2026-11-23, Terra review round 1, finding 1 - the boss framework merged; D-T2-9).** The probe
+contract above is superseded for FORCE PETER: the real API is known now (`game/sim/boss.gd` on main), and
+`boss.start()` ALONE was found insufficient - the arena needs `world._enter_boss_arena()` (teleport,
+first-person rig, HUD, the level rebuild), and `start` takes `(run_seed, level_no)`. The button now routes
+through `_enter_boss_arena` as a queued tick job (D-T2-9) - the buttons never read "not merged"; the
+candidate-name arrays remain ONLY as the bankai explicit-force probe (`BANKAI_FORCE_METHODS`) against a
+future T8b entry, and the review's request to add a real force method name to that array is answered by that
+change's own D-entry. The Bankai fallback is no longer a bare preview either: it plays the cinematic THROUGH
+its signals with `bankai_active` standing the boss down and `target_hit` driving `boss.damage(hp_max)` into
+the world's own `_apply_boss_events` + `_publish_boss_tick` - the easter egg's insta-kill, live.
+
+## D-T2-8 (2026-11-23): the panel's state hash is state_hash's dump over the LIVE level, minus the RNG lines
+
+**Ruling.** `sim/state_hash.gd` is untouched. The panel builds a RunState-shaped holder (`LiveRunState`,
+an inner class of the panel: run_seed, players, content_ids, level_number, run_votes, run_hunger,
+`level` = the LIVE LevelState, `rng` = {}) and calls the unchanged `StateHashScript.sha256()` on it, so the
+label is the same digest function the replay checkpoints pin - LEVELHASH, TICK, the player row, the gift
+bitsets + phase knobs, the beacon, the mines, the COLLAPSE and JUMPPADS lines, all live state, per the
+dump's frozen field order. The RNG lines are the one omission, and the reason is structural, not chosen
+out of convenience: the app driver holds no sim rng streams at all (they exist only in the sim-driver
+contexts - test_replay's random-input run and bot_run's recorded runs - which keep the FULL hash, unchanged
+and untestable from here on purpose). Two different live states therefore always differ in the displayed
+digest, and the owner gets the level hash of any level in play.
+
 ## D-T7-1 (2026-11-23): fit the refined look to the shipped figure
 
 **Owner:** "evaluate and adopt the refined player model/animator proposal without regressing the locomotion".
@@ -8765,3 +8917,50 @@ with the constants (trigger 3.0, tell 60, cap 2.0, speed 6.0) and asserts the be
 the telegraph event carries 60 ticks, the band moves 0.1 u on its first tick, it caps at 2.0, and no
 rumble fires at 4.0 u. Hand-run negative control: forcing `_num` to return the constant makes that test
 report 5 failures, so it cannot pass by accident.
+
+## D-T2-9 (2026-11-23): the tester tick hook - queued commands and god mode run INSIDE the world's tick
+
+**Ruling (Terra review round 1, "ADOPT WITH FIXES", findings 1-5; amend D-T2-4/5/6/7).** A public build
+pays one extra `Callable.is_valid()` per tick; the panel, when it exists, arms one probe per world.
+`game/app/world.gd` gains `var tester_tick_hook: Callable` (never valid without the panel - the panel is
+the only setter, via `app.gd`'s `on_world_built` handoff in `_build_world`, which runs BEFORE the world
+enters the tree or takes its first step, with a per-frame fallback in the panel's `_process`). `step()`
+calls it at the tick top, after the run-over guard, BEFORE `_capture_input` and BEFORE the arena
+early-out; the panel returns `{"ev": Array, "skip": bool}`:
+  - **God mode tops up HERE** (finding 5): the top-up precedes everything that can kill this tick -
+    `ctl.step`'s void falls, the mines, the enemy runtime's contact kills - and because the hook is
+    armed by `on_world_built` before the world ever steps, a promoted god mode covers a fresh world's
+    VERY FIRST tick on every entry path. The world also carries `var tester_god := false`, mirrored from
+    the panel's toggle, because the boss ARENA kills via `ctl._die` directly (not `controller.try_kill`):
+    `_apply_boss_events`'s `boss_projectile_hit_player` honours it (finding 5, arena half).
+  - **Queued commands drain HERE** (finding 2): the panel queues jobs (`_pending`) and they run inside
+    the tick with the tick's own list - `_run_give_gifts` collects nearest-first and the collect
+    events ride `ev` into the SAME tick's `_curses` passes, beacon-open block, `_upgrades`
+    `dispatch_events` (hooks!), `_economy_pass` (gold payouts!), `_fx_events` and `_sync_hud`. Never
+    again a collect the economy never paid. The events merge into `ev` right after `ctl.step`'s own
+    events; in the arena they enter as `_step_boss_arena`'s new optional `prefill` so the same economy
+    + publish passes consume them there too.
+  - **`skip: true` finishes the tick** (finding 1): the forced arena entry (`_run_force_boss`) performs
+    the entry + `_economy_pass` + `_publish_boss_tick` triple the all-collected path in `world.step`
+    performs and returns, and the world's step returns immediately - the panel's entry cannot drag the
+    old level's mines/pads/enemy passes over a rebuilt `lstate`.
+  - **Finding 1, the real API**: FORCE PETER routes through `world._enter_boss_arena()` - the arena's
+    own full entry (boss.start(run_seed, level), the arena rebuild, `ctl.place` teleport, the
+    first-person rig, the HUD) - never `boss.start()` alone; on a non-boss level the boss object the
+    level-10 `build()` would carry is created from `sim/boss.gd`'s own config first (`lstate.boss`).
+    FORCE BANKAI prefers an explicit force method on the live boss object if one appears
+    (`_first_matching` on `BANKAI_FORCE_METHODS`), else plays the dormant cinematic THROUGH its
+    signals: `bankai_active` stands the boss down (the contract's own flag), `target_hit` drives
+    `boss.damage(hp_max, false)` - the easter egg's insta-kill - via `_apply_boss_events` (reward +
+    beacon) and `_publish_boss_tick` (HUD), `animation_finished` frees the node; with no live boss it
+    previews standalone. The buttons are no longer probe-gated and never read "not merged" on main.
+  - **Finding 3**: the meta line and the give-gold status call `purse_gold()` (a method), not `.get`.
+  - **Finding 4** is answered in D-T2-5's amendment (the dispatcher rebuild), not by a limitation note.
+  - **Finding 4's cost, accepted**: the fresh dispatcher also resets the owned modules'
+    once-per-level scratch and any running run-speed boost - the tester accepts both.
+
+**Sim untouched.** No `game/sim/` file mentions the tester; the state hash, boss.gd and every replay
+fixture are byte-identical to merged main's; the panel's actions remain app-layer mutations through
+public functions, now delivered at tick boundaries. test_tester_build.gd pins the hook (`var
+tester_tick_hook`), the arena god guard (`boss_projectile_hit_player` + `not tester_god`), the
+dispatcher rebuild line, and the `on_world_built` handoff.
