@@ -8706,13 +8706,14 @@ cannot be suppressed - the top-up runs every frame in practice, and the tester i
 boss_spawned / bankai_started). Do not block on it. Call through a small indirection that checks
 has_method() at runtime, so the buttons light up once that track merges." The panel's `_first_matching()`
 (probe list: the world's `boss` member if the framework sets one, then `load("res://sim/boss.gd")` as a
-Script - `has_static_method()` - then the world, then the app) checks candidate method names in order:
-boss buttons ["force_boss_fight", "force_boss", "force_spawn", "force_start", "start_boss_fight"], bankai
-["force_bankai", "play_bankai"], and calls the first hit once with no arguments. `res://sim/boss.gd` does not
-exist in this tree, so the buttons read "... (boss track not merged)" until a merge brings the API. When
-that lands, IF the method names differ from all five candidates, the T8 track (or the merge review) adds
-its name to the two arrays in the panel - the D-entry for that change names this as the contract. Bankai
-ALSO has a live fallback today: playing the dormant owner cinematic
+Script - `Script.has_script_method()`, which covers statics on this engine - then the world, then the app)
+checks candidate method names in
+order: boss buttons ["force_boss_fight", "force_boss", "force_spawn", "force_start", "start_boss_fight"],
+bankai ["force_bankai", "play_bankai"], and calls the first hit once with no arguments.
+`res://sim/boss.gd` does not exist in this tree, so the buttons read "... (boss track not merged)" until
+a merge brings the API. When that lands, IF the method names differ from all five candidates, the T8
+track (or the merge review) adds its name to the two arrays in the panel - the D-entry for that change
+names this as the contract. Bankai ALSO has a live fallback today: playing the dormant owner cinematic
 `view/cinematics/bankai_gift_animation.gd` directly (added by the owner in `fa0f1a7`, wired to nothing;
 `play()`, `animation_finished` -> self-free), which is view-only and uses the engine RNG by its own header's
 design - this is a tester preview path, not the boss-fight wiring; the bankai_started sim wiring stays the

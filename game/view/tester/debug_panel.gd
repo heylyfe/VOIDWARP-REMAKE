@@ -31,7 +31,7 @@ extends Control
 #                          and void charges never run out (D-T2-6)
 #   force a collapse       sim/collapse.gd CollapseScript.start() on the live schedule -
 #                          world.step() then drives the cracks/falls exactly as normal
-#   force Peter boss /     probed at runtime with has_method()/has_static_method() against
+#   force Peter boss /     probed at runtime with has_method()/has_script_method() against
 #   force Bankai           the T8 boss API (game/sim/boss.gd, events boss_spawned /
 #                          bankai_started): the buttons light up once that track merges;
 #                          Bankai falls back to playing the dormant owner cinematic
@@ -389,9 +389,11 @@ func _boss_targets() -> Array:
 
 
 ## Pure: the first (object, method) pair where the object answers the method. Script
-## objects are asked for STATIC methods (the T8 API is a sim script; the panel never
-## instantiates sim classes itself).
-static func _first_matching(p_objects: Array, p_methods: Array[String]) -> Dictionary:
+## objects are asked for SCRIPT methods via has_script_method() (the T8 API is a sim
+## script; the panel never instantiates sim classes itself, and get_script_method_list
+## proves statics are covered). p_methods is untyped deliberately: callers hand in
+## plain array literals, and a typed Array[String] parameter rejects those at runtime.
+static func _first_matching(p_objects: Array, p_methods: Array) -> Dictionary:
 	var is_script: bool = false
 	for o in p_objects:
 		is_script = o is Script
@@ -399,7 +401,7 @@ static func _first_matching(p_objects: Array, p_methods: Array[String]) -> Dicti
 			var ok := false
 			if is_script:
 				var s: Script = o
-				ok = s.has_static_method(m)
+				ok = s.has_script_method(m)
 			elif o is Object:
 				ok = (o as Object).has_method(m)
 			if ok:
