@@ -39,6 +39,7 @@ func run() -> Array[String]:
 	_contact_kills(f)
 	_echo_ring_row_hooks(f)
 	_anim_block_wiring(f)
+	_data_drives_the_behavior(f)
 	_roster_data(f)
 	_lobby_exhibit(f)
 	return f
@@ -405,15 +406,19 @@ func _ring_kills_and_death_code(f: Array[String]) -> void:
 
 # ---- the jump window still clears the smaller ring (cycle 7) -------------------
 #
-# The band's crossing time is 2 x RING_RADIAL_WINDOW / RING_SPEED = 0.156 s whatever
-# the radius is, so shrinking the ring does NOT shrink the jump window - it only
-# shortens how long the band lives (8 u / 9 u/s = 0.89 s instead of 1.56 s). This
-# runs the REAL controller against the REAL ring: the tell holds position, so the
-# band is released at the trigger distance and reaches a standing player at
-# (d - window) / speed .. min(d + window, RING_MAX) / speed. A jump pressed inside
-# the window that keeps the feet above the 1.0 u band top for that whole span
+# The band's radius is min(speed x t, cap), so the crossing a jump must cover is
+# CLIPPED at the cap: at the trigger distance the band stops at 8 u and its trailing
+# half never sweeps past the player, so the crossing is 0.078 s, not the nominal
+# 2 x 0.7 u / 9 u/s = 0.156 s (which only applies where d + window <= cap). That
+# clipping is why the jump window is slightly WIDER than before (0.403 s -> 0.481 s),
+# not narrower. This runs the REAL controller against the REAL ring: the tell holds
+# position, so the band is released at the trigger distance and reaches a standing
+# player at (d - window) / speed .. min(d + window, cap) / speed. A jump pressed
+# inside the window that keeps the feet above the 1.0 u band top for that whole span
 # survives; no jump, and a jump pressed on the release tick (landed before the band
 # arrives), both die. The airborne window comes from the shared kit, not a literal.
+# Both ENDPOINTS are asserted, each with a two-tick margin either side, and the
+# window is compared against the old numbers' window.
 
 func _jump_arm(d: float, press_s: float) -> bool:
 	var w := _arena()
@@ -467,6 +472,30 @@ func _jump_window_clears_the_ring(f: Array[String]) -> void:
 	if press_hi <= press_lo:
 		f.append("jump: no jump window at all (press %.3f..%.3f s after the release)" % [press_lo, press_hi])
 		return
+	# the crossing at the trigger distance is CLIPPED by the cap (the band stops at
+	# 8 u, so its trailing half never sweeps past the player): 0.078 s, not 0.156 s
+	var nominal := 2.0 * win / spd
+	if t_hit_hi - t_hit_lo >= nominal - 1e-9:
+		f.append("jump: the crossing %.4f s is not clipped below the nominal %.4f s"
+				% [t_hit_hi - t_hit_lo, nominal])
+	# the window is WIDER than the old numbers' window (d 10.0, cap 14.0, unclipped)
+	var old_lo := (10.0 + win) / spd - t_down
+	var old_hi := (10.0 - win) / spd - t_up
+	if press_hi - press_lo <= old_hi - old_lo:
+		f.append("jump: the window %.3f s is not wider than the old %.3f s"
+				% [press_hi - press_lo, old_hi - old_lo])
+	# both ENDPOINTS: two ticks inside survives, two ticks outside dies
+	var margin := 2.0 / 60.0
+	if not _jump_arm(d, press_lo + margin):
+		f.append("jump: a jump just inside the early edge (%.3f s) did not clear the ring" % (press_lo + margin))
+	if _jump_arm(d, press_lo - margin):
+		f.append("jump: a jump just outside the early edge (%.3f s) survived - the window is wider than claimed"
+				% (press_lo - margin))
+	if not _jump_arm(d, press_hi - margin):
+		f.append("jump: a jump just inside the late edge (%.3f s) did not clear the ring" % (press_hi - margin))
+	if _jump_arm(d, press_hi + margin):
+		f.append("jump: a jump just outside the late edge (%.3f s) survived - the window is wider than claimed"
+				% (press_hi + margin))
 	var press_s := (press_lo + press_hi) * 0.5
 	if not _jump_arm(d, press_s):
 		f.append("jump: a jump %.3f s after the release did not clear the ring (window %.3f..%.3f s)"
@@ -475,6 +504,71 @@ func _jump_window_clears_the_ring(f: Array[String]) -> void:
 		f.append("jump: the grounded player survived the ring - the ring must still kill")
 	if _jump_arm(d, 0.0):
 		f.append("jump: a jump on the release tick survived - the window is not a window")
+
+
+# ---- the DATA is authoritative, not the code constants (D-YOU-C7-4) ------------
+#
+# The behaviour reads every number from row["cfg"] (enemy.json's stats block, passed
+# through by world.gd). This spawns with a cfg that DISAGREES with the constants and
+# asserts the behaviour follows the cfg: the trigger, the tell, the ring speed and
+# the ring cap. Without this, a constant could silently win and editing enemy.json
+# alone would change nothing.
+
+func _data_drives_the_behavior(f: Array[String]) -> void:
+	var cfg := _cfg(0.0)
+	cfg["trigger_distance"] = 3.0
+	cfg["rumble_ticks"] = 60
+	cfg["ring_max_radius"] = 2.0
+	cfg["ring_speed_u_per_s"] = 6.0
+	var w := _arena()
+	var ctl = _spent_ctl(w)
+	ctl.invuln = 1.0e9          # the ring must not end the run mid-measurement
+	var rt = EnemyRuntime.new()
+	rt.setup(_level(), w, [ctl], 4242)
+	# 2.5 u away: inside the cfg's 3 u trigger, outside nothing
+	var row: Dictionary = rt.spawn_at("you", "YOU?!", YouEnemy.new(), cfg, Vector3(3.0, 0.0, 0.5))
+	rt.step(DT)
+	if str(row["anim_state"]) != "telegraph":
+		f.append("data: no rumble at 2.5 u with a 3.0 u trigger in the cfg (a constant won)")
+		return
+	var tele := _telegraph_events(rt)
+	if tele.is_empty() or int(tele[0]["ticks"]) != 60:
+		f.append("data: telegraph ticks %s, want the cfg's 60 (not the constant 180)" % str(tele))
+	var t_rel := _release_ring_now([rt, row, ctl])
+	if t_rel < 0:
+		f.append("data: the ring never released")
+		return
+	rt.step(DT)
+	var rings: Array = row["rings"]
+	if rings.is_empty():
+		f.append("data: no live ring one tick after the release")
+		return
+	if absf(float(rings[0]["r"]) - 0.1) > 0.001:
+		f.append("data: r after 1 tick %.4f, want 0.1 (the cfg's 6 u/s, not the constant 9)"
+				% float(rings[0]["r"]))
+	var saw_cap := false
+	for i in range(40):
+		rt.step(DT)
+		rings = row["rings"]
+		if rings.is_empty():
+			break
+		var r := float(rings[0]["r"])
+		if r > 2.0 + 1e-9:
+			f.append("data: radius %.4f exceeded the cfg's 2 u cap" % r)
+			break
+		if absf(r - 2.0) < 1e-9:
+			saw_cap = true
+	if not saw_cap:
+		f.append("data: the ring never reached the cfg's 2 u cap (the constant 8 won)")
+	# the trigger is the cfg's too: 4.0 u away is outside a 3 u trigger
+	var w2 := _arena()
+	var ctl2 = _spent_ctl(w2)
+	var rt2 = EnemyRuntime.new()
+	rt2.setup(_level(), w2, [ctl2], 4242)
+	var row2: Dictionary = rt2.spawn_at("you", "YOU?!", YouEnemy.new(), cfg, Vector3(4.5, 0.0, 0.5))
+	rt2.step(DT)
+	if str(row2["anim_state"]) == "telegraph":
+		f.append("data: the rumble fired at 4.0 u with a 3.0 u trigger in the cfg (the constant 8 won)")
 
 
 # ---- the roster data vs the behavior's mirror (cycle 7) ------------------------

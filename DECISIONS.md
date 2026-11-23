@@ -8626,14 +8626,20 @@ could not reach the player). `ring_speed_u_per_s` stays **9.0** and `ring_cooldo
 `attack_hold_ticks` / `recover_ticks` stay 240 / 18 / 240.
 
 **Why the speed does not move.** The brief asked to re-check the jump window "because a smaller ring
-crosses the player faster". It does not: the band's crossing time is `2 x RING_RADIAL_WINDOW / RING_SPEED`
-= 1.4 u / 9 u/s = **0.156 s** at any radius - the radius only decides how long the band lives (8 u / 9 u/s
-= 0.89 s instead of 1.56 s). The shared kit's jump (v0 12, g 32) keeps the feet above the 1.0 u band top
-from 0.0955 s to 0.6545 s, so the jump-timing window is `[t_hit_hi - 0.6545, t_hit_lo - 0.0955]` =
-**0.234 s .. 0.716 s** after the release at the trigger distance - 0.48 s wide, wider than the old
-0.40 s because the band now arrives sooner after the release. `test_enemy_you._jump_window_clears_the_ring`
-runs the REAL controller against the REAL ring and asserts all three arms: a jump inside the window
-survives, no jump dies, and a jump on the release tick dies (landed before the band arrives).
+crosses the player faster". It does not. The band's radius is `min(speed x t, cap)`, so the crossing a
+jump must cover is **clipped at the cap**: the nominal `2 x 0.7 u / 9 u/s = 0.156 s` only applies where
+`d + 0.7 <= cap`, and at the trigger distance (d = 8.0, cap = 8.0) the band stops at 8 u and its trailing
+half never sweeps past the player, so the crossing is `(8.0 - 7.3) / 9 = 0.078 s` - SHORTER, not longer.
+The shared kit's jump (v0 12, g 32) keeps the feet above the 1.0 u band top from 0.0955 s to 0.6545 s,
+so the jump-timing window is `[t_hit_hi - 0.6545, t_hit_lo - 0.0955]` = **0.234 s .. 0.716 s** after the
+release, 0.481 s wide against the old numbers' 0.403 s. The window widened because the clipped crossing
+is shorter, not because the band arrives sooner. `test_enemy_you._jump_window_clears_the_ring` runs the
+REAL controller against the REAL ring and asserts: the crossing is clipped below the nominal 0.156 s, the
+window is wider than the old numbers' window, BOTH endpoints (two ticks inside survives, two ticks outside
+dies), a jump at the midpoint survives, no jump dies, and a jump on the release tick dies (landed before
+the band arrives). Hand-run negative controls: with the old window's endpoints substituted the test
+reports 4 failures (both endpoint arms plus the width comparison), and with the behaviour's `_num` forced
+to return the constant the data test reports 5.
 
 **Mirrors updated with it** (the number lives in data; every reader follows): `enemy.gd`'s constants +
 a new `cfg()` mirror pinned to the json by `test_enemy_you._roster_data`; `sprites.json`'s telegraph
@@ -8668,3 +8674,32 @@ pins the audio timing (`attack_offset_ticks` / `binding_cue_ticks` == the tell) 
 from the tell again. Enemy rows are not in the state hash (pre-existing: `state_hash.gd` dumps run state,
 not enemy rows); this change adds no new sim state, so the replay determinism test is unaffected and the
 sim stays deterministic at 60 Hz with no RNG.
+
+## D-YOU-C7-4 (2026-11-23): the data is authoritative, the constants are only a fallback
+
+**Ruling (Terra review round 1, real defect).** `enemy.gd` now reads every one of its numbers from
+`row["cfg"]` at run time through `_num(row, key, fallback)`: `trigger_distance`, `rumble_ticks`,
+`ring_speed_u_per_s`, `ring_max_radius`, `ring_thickness`, `ring_height`, `ring_below_feet`,
+`ring_cooldown_ticks`, `attack_hold_ticks`, `recover_ticks`. `row["cfg"]` IS `enemy.json`'s `stats`
+block, passed through verbatim by `world.gd`'s `_cfg_for`, so editing `enemy.json` alone now changes
+gameplay. Before this, the constants at the top of the file were what the behaviour used and the json
+was documentation that only the mirror test compared - Terra's finding, and it was right.
+
+**What the constants are now.** The same values, kept because two readers outside the behaviour need a
+compile-time mirror: `tools/bot_run.gd`'s ring-threat model (`RING_SPEED`, `RING_MAX`,
+`RING_RADIAL_WINDOW`, `RING_BELOW`, `RING_HEIGHT`) and `test_enemy_you`'s window arithmetic. They are
+used by `_num` ONLY when a cfg omits the key - a hand-built fixture (`test_enemy_negcontrols._you_cfg`)
+or a curse's `spawn_at` - never as the source of truth. `test_enemy_you._roster_data` still fails if any
+mirrored key is missing from the json or disagrees with it, so the two cannot drift silently.
+
+**Why not delete the constants.** `bot_run.gd` is a headless tool with no row in hand when it models the
+threat, and the test's window arithmetic is a closed-form derivation that must not read the same dict it
+is checking. Deleting them would mean either duplicating the numbers in the bot (worse) or making the
+test read the value it asserts (worthless). The fallback is the honest compromise and is documented at
+the helper.
+
+**Proof the data wins.** New `test_enemy_you._data_drives_the_behavior` spawns with a cfg that DISAGREES
+with the constants (trigger 3.0, tell 60, cap 2.0, speed 6.0) and asserts the behaviour follows the cfg:
+the telegraph event carries 60 ticks, the band moves 0.1 u on its first tick, it caps at 2.0, and no
+rumble fires at 4.0 u. Hand-run negative control: forcing `_num` to return the constant makes that test
+report 5 failures, so it cannot pass by accident.

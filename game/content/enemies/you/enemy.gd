@@ -25,10 +25,14 @@ extends "res://sim/enemy_runtime.gd".EnemyBehavior
 #
 # Cycle 7 (owner: "you?!" smaller range + slower strike): the ring's reach is 8 u
 # (57% of the old 14 u) and the tell is 3.0 s (2x the old 1.5 s). The ring's SPEED
-# is unchanged at 9 u/s on purpose - the crossing time a jump must cover is
-# 2 x 0.7 u / 9 u/s = 0.156 s whatever the radius is, so a smaller ring does not
-# shrink the jump window; it only shortens how long the band lives (0.89 s instead
-# of 1.56 s). D-YOU-C7-1 has the arithmetic.
+# is unchanged at 9 u/s on purpose - the crossing a jump must cover is bounded by
+# 2 x 0.7 u / 9 u/s = 0.156 s, and at the trigger distance the cap clips it to
+# 0.078 s, so a smaller ring does not shrink the jump window; it widens it slightly
+# (0.403 s -> 0.481 s of jump timing). D-YOU-C7-1 has the arithmetic.
+#
+# EVERY number below is read from the row's cfg (enemy.json's stats block) at run
+# time through `_num`; the constants are the mirror the bot and the tests read and
+# are only a fallback for a cfg that omits a key - D-YOU-C7-4.
 #
 # Echo Ring (the double_ring curse) is T-051's; this behavior makes each release
 # observable on the row ("ring_seq" / "last_ring_tick") so its on_tick can detect
@@ -82,6 +86,18 @@ static func cfg() -> Dictionary:
 	}
 
 
+## One number of this enemy, read from the DATA: `row["cfg"]` is enemy.json's stats
+## block, passed through verbatim by world.gd's `_cfg_for` (D-YOU-C7-4). The constants
+## above are the mirror the bot and the tests read and are used ONLY when a cfg omits
+## the key (a hand-built fixture, a curse's spawn_at) - never as the source of truth,
+## so editing enemy.json alone changes gameplay.
+static func _num(row: Dictionary, key: String, fallback: float) -> float:
+	var cfg: Dictionary = row.get("cfg", {})
+	if cfg.has(key):
+		return float(cfg[key])
+	return fallback
+
+
 func on_spawn(row: Dictionary, _api) -> void:
 	row["ticks"] = 0                     # row-local tick counter (echo ring detection)
 	row["anim_state"] = "idle_chase"     # one of the T-083 anim block state keys
@@ -124,23 +140,25 @@ func _advance_state(row: Dictionary, api, near: Dictionary, dt_ticks: int) -> vo
 	match state:
 		"idle_chase":
 			if not near.is_empty() and int(row["cooldown_left"]) <= 0 \
-					and float(near.get("dist", INF)) <= TRIGGER_DISTANCE:
+					and float(near.get("dist", INF)) <= _num(row, "trigger_distance", TRIGGER_DISTANCE):
+				var tell := int(_num(row, "rumble_ticks", RUMBLE_TICKS))
 				row["anim_state"] = "telegraph"
 				row["anim_state_t"] = 0
-				row["rumble_left"] = RUMBLE_TICKS
+				row["rumble_left"] = tell
 				api.telegraph(TELEGRAPH_KIND,
 					{"shape": "circle", "cx": float(row["x"]), "cz": float(row["z"]),
-					"r": RING_MAX, "y0": float(row["y"]), "y1": float(row["y"]) + RING_HEIGHT},
-					RUMBLE_TICKS)
+					"r": _num(row, "ring_max_radius", RING_MAX), "y0": float(row["y"]),
+					"y1": float(row["y"]) + _num(row, "ring_height", RING_HEIGHT)},
+					tell)
 		"telegraph":
 			row["rumble_left"] = int(row["rumble_left"]) - dt_ticks
 			if int(row["rumble_left"]) <= 0:
 				_release_ring(row)
 		"attack":
-			if int(row["anim_state_t"]) >= ATTACK_HOLD:
+			if int(row["anim_state_t"]) >= int(_num(row, "attack_hold_ticks", ATTACK_HOLD)):
 				row["anim_state"] = "recover"
 				row["anim_state_t"] = 0
-				row["recover_left"] = RECOVER_TICKS
+				row["recover_left"] = int(_num(row, "recover_ticks", RECOVER_TICKS))
 		"recover":
 			row["recover_left"] = int(row["recover_left"]) - dt_ticks
 			if int(row["recover_left"]) <= 0:
@@ -160,41 +178,45 @@ func _release_ring(row: Dictionary) -> void:
 	row["last_ring_tick"] = int(row["ticks"])
 	row["anim_state"] = "attack"
 	row["anim_state_t"] = 0
-	row["cooldown_left"] = RING_COOLDOWN
+	row["cooldown_left"] = int(_num(row, "ring_cooldown_ticks", RING_COOLDOWN))
 
 
 func _step_ring_once(row: Dictionary, api) -> void:
 	var rings: Array = row.get("rings", [])
 	if rings.is_empty():
 		return
+	var speed := _num(row, "ring_speed_u_per_s", RING_SPEED)
+	var cap := _num(row, "ring_max_radius", RING_MAX)
 	var keep: Array = []
 	for ring in rings:
 		if bool(ring.get("done", false)):
-			continue   # the 8 u tick is spent; the ring expires
-		ring["r"] = float(ring["r"]) + RING_SPEED / 60.0
-		if float(ring["r"]) >= RING_MAX:
-			ring["r"] = RING_MAX
+			continue   # the cap tick is spent; the ring expires
+		ring["r"] = float(ring["r"]) + speed / 60.0
+		if float(ring["r"]) >= cap:
+			ring["r"] = cap
 			ring["done"] = true
-		_ring_kill_check(api, ring)
+		_ring_kill_check(api, ring, row)
 		keep.append(ring)
 	row["rings"] = keep
 
 
 # The ring hits the nearest player only through the section 12 API (D-T-035-13):
 # the head is ignored; the player's feet must sit strictly inside
-# (ring_feet - RING_BELOW, ring_feet + RING_HEIGHT) and within
-# RING_RADIAL_WINDOW of the expanding edge.
-func _ring_kill_check(api, ring: Dictionary) -> void:
+# (ring_feet - ring_below_feet, ring_feet + ring_height) and within the radial
+# window (ring_thickness / 2 + the player's 0.4 u half-width, D-T-035-2).
+func _ring_kill_check(api, ring: Dictionary, row: Dictionary) -> void:
 	var near: Dictionary = api.nearest_player(Vector3(float(ring["x"]), float(ring["y"]), float(ring["z"])))
 	if near.is_empty():
 		return
 	var dx := float(near["x"]) - float(ring["x"])
 	var dz := float(near["z"]) - float(ring["z"])
 	var dist := sqrt(dx * dx + dz * dz)
-	if absf(dist - float(ring["r"])) > RING_RADIAL_WINDOW:
+	var win := _num(row, "ring_thickness", RING_THICK) * 0.5 + 0.4
+	if absf(dist - float(ring["r"])) > win:
 		return
 	var feet := float(near["y"])
 	var ry := float(ring["y"])
-	if feet <= ry - RING_BELOW or feet >= ry + RING_HEIGHT:
+	if feet <= ry - _num(row, "ring_below_feet", RING_BELOW) \
+			or feet >= ry + _num(row, "ring_height", RING_HEIGHT):
 		return
 	api.kill(int(near["index"]), KILLER_ID)
