@@ -27,13 +27,12 @@ extends RefCounted
 #     prop, a gift slot, a tripmine slot, the beacon tile, a launch pad or its landing tile;
 #   - headroom: no tile or prop in the block's own columns above it within headroom_hu (the
 #     fling must not bonk a ceiling);
-#   - count from count_by_level (2 at level 1 up to 6 on big levels), at most one pad per
-#     platform piece, pairwise XZ distance >= min_spacing_tiles;
-#   - NEAREST THE PATH FIRST (D-JUMPPAD-7): candidates carry their XZ gap to the nearest
-#     walkway tile within path_step_hu vertically, and are taken nearest first (ties broken by
-#     the pad stream), so a pad is as close to the path as the level allows. The gap is a
-#     preference, not a filter: a hard "within N tiles" cap leaves some levels with no legal
-#     spot at all (measured, D-JUMPPAD-7), and the owner's floor is 2 pads per level.
+#   - ADJACENT TO THE PATHS, as a HARD rule (D-JUMPPAD-7): at least one tile EDGE-adjacent to
+#     the block - the 4-neighbourhood of its 9 cells, never a diagonal - is a path tile within
+#     path_step_hu vertically. A block with no such neighbour is not a candidate at all, so a
+#     pad can never sit out on a platform away from every path;
+#   - count from count_by_level (2 at level 1 up to 6 on big levels), pairwise XZ distance
+#     >= min_spacing_tiles, taken in the pad stream's shuffled order.
 
 const VoidRngScript := preload("res://terrain/void_rng.gd")
 const VoidGenScript := preload("res://terrain/voidgen.gd")
@@ -43,6 +42,7 @@ const DATA_PATH := "res://data/jump_pads.json"
 # streams are, with a value no ST_* constant uses ("JPAD").
 const ST_JUMP_PADS := 0x4A504144
 const CLEAR := 12                     # voidgen.CLEAR: two layers are distinct at >= 12 HU
+const N4 := [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
 
 # Mirrors data/jump_pads.json; the file wins for every key it carries.
 const DEFAULTS := {
@@ -154,10 +154,9 @@ static func _has_prop(ix: Dictionary, x: int, z: int, y: int) -> bool:
 	return false
 
 
-## Every legal pad BLOCK, as [x, z, y, gap, piece_id] (the anchor is the block's centre tile),
-## ascending by tile index (before count / spacing / ordering). `gap` is the XZ distance from
-## the block's footprint to the nearest walkway tile within path_step_hu vertically: 0 = the
-## path runs right against the block, 1 = one empty cell between, and so on (D-JUMPPAD-7).
+## Every legal pad BLOCK, as [x, z, y, piece_id] (the anchor is the block's centre tile),
+## ascending by tile index (before count / spacing / ordering). A block is legal only when it
+## is EDGE-ADJACENT to a path tile (D-JUMPPAD-7), so every entry here touches the path.
 static func candidates(L: Dictionary, cfg: Dictionary) -> Array:
 	var ix := _index(L)
 	var tiles: Array = L["tiles"]
@@ -175,11 +174,12 @@ static func candidates(L: Dictionary, cfg: Dictionary) -> Array:
 		banned[Vector2i(int(p[3]), int(p[4]))] = true
 	var bx: Array = L.get("beacon", [0, 0, 1])
 	banned[Vector2i(int(bx[0]), int(bx[1]))] = true
-	# the path: every walkway tile, as Vector3i(x, y, z)
-	var walk: Array = []
+	# the path: every walkway tile, as Vector3i(x, z, y) - the same key order as _index's cell
+	# map - for an O(1) adjacency lookup
+	var walk: Dictionary = {}
 	for i in tiles.size():
 		if int(pieces[int(tiles[i][4])]["kind"]) == 1:
-			walk.append(Vector3i(int(tiles[i][0]), int(tiles[i][2]), int(tiles[i][1])))
+			walk[Vector3i(int(tiles[i][0]), int(tiles[i][1]), int(tiles[i][2]))] = true
 	var out: Array = []
 	for i in tiles.size():
 		var t: Array = tiles[i]
@@ -188,9 +188,11 @@ static func candidates(L: Dictionary, cfg: Dictionary) -> Array:
 		var y := int(t[2])
 		if not _block_ok(L, ix, x, z, y, half, banned):
 			continue
+		if not _edge_adjacent(walk, x, z, y, half, step_hu):
+			continue
 		if not _headroom_ok(L, ix, x, z, y, headroom):
 			continue
-		out.append([x, z, y, _path_gap(walk, x, z, y, half, step_hu), int(t[4])])
+		out.append([x, z, y, int(t[4])])
 	return out
 
 
@@ -223,20 +225,27 @@ static func _block_ok(L: Dictionary, ix: Dictionary, x: int, z: int, y: int, hal
 	return true
 
 
-## The XZ gap from the block's footprint to the nearest walkway tile within step_hu vertically:
-## 0 = the path runs right against the block, 1 = one empty cell between, ... 99 = no walkway
-## within step_hu of this height (a spire reached only by a launch pad).
-static func _path_gap(walk: Array, x: int, z: int, y: int, half: int, step_hu: int) -> int:
-	var best := 99
-	for w in walk:
-		if absi(int(w.y) - y) > step_hu:
-			continue
-		var d: int = maxi(absi(int(w.x) - x), absi(int(w.z) - z)) - half - 1
-		if d < best:
-			best = d
-			if best <= 0:
-				return 0
-	return best
+## True when at least one tile EDGE-adjacent to the block is a path tile: the 4-neighbourhood
+## of the block's 9 cells (never a diagonal), at a height within step_hu of the block's own.
+## This is the owner's "outside the paths (adjacent to them)" as a HARD rule (D-JUMPPAD-7).
+##
+## The height tolerance is not a loophole. voidgen steps a walkway 1-2 HU off the platform it
+## runs beside at the junction, so a path tile is NEVER at the same height as the platform
+## floor next to it: measured over 20 seeds x 8 levels, a same-height edge neighbour exists on
+## 0 of 20 levels at 5 of the 8 sizes and never more than 4 blocks anywhere (D-JUMPPAD-7).
+## step_hu (4 HU) covers that junction step and the first stair row and stays well under
+## CLEAR (12 HU), so a walkway on another storey can never satisfy it.
+static func _edge_adjacent(walk: Dictionary, x: int, z: int, y: int, half: int,
+		step_hu: int) -> bool:
+	for dx in range(-half, half + 1):
+		for dz in range(-half, half + 1):
+			for n in N4:
+				var nx := x + dx + int(n.x)
+				var nz := z + dz + int(n.y)
+				for dy in range(-step_hu, step_hu + 1):
+					if walk.has(Vector3i(nx, nz, y + dy)):
+						return true
+	return false
 
 
 static func _headroom_ok(L: Dictionary, ix: Dictionary, x: int, z: int, y: int, hu: int) -> bool:
@@ -257,7 +266,8 @@ static func _headroom_ok(L: Dictionary, ix: Dictionary, x: int, z: int, y: int, 
 
 
 ## THE placement function. Returns Array of [x, z, y] (the block's centre tile) in placement
-## order (deterministic): nearest the path first, ties broken by the pad stream.
+## order (deterministic): the pad stream's shuffled candidate order, greedily filtered by
+## min_spacing_tiles. Every candidate already touches the path (D-JUMPPAD-7).
 static func place_jump_pads(L: Dictionary, cfg: Dictionary) -> Array:
 	var want := count_for_level(cfg, int(L.get("level", 1)))
 	if want <= 0:
@@ -267,22 +277,12 @@ static func place_jump_pads(L: Dictionary, cfg: Dictionary) -> Array:
 		return []
 	var rng = VoidRngScript.new(stream_seed(L))
 	rng.shuffle(cand)
-	# nearest the path first; the shuffled index breaks ties, so the order is total
-	var order: Array = []
-	for i in cand.size():
-		order.append([int(cand[i][3]), i])
-	order.sort_custom(func(a, b) -> bool: return a[0] < b[0] or (a[0] == b[0] and a[1] < b[1]))
 	var spacing := float(cfg.get("min_spacing_tiles", DEFAULTS["min_spacing_tiles"]))
 	var sp2 := spacing * spacing
-	var used_piece: Dictionary = {}
 	var out: Array = []
-	for o in order:
+	for c in cand:
 		if out.size() >= want:
 			break
-		var c: Array = cand[int(o[1])]
-		var pid := int(c[4])
-		if used_piece.has(pid):
-			continue
 		var ok := true
 		for p in out:
 			var dx := float(int(c[0]) - int(p[0]))
@@ -292,6 +292,5 @@ static func place_jump_pads(L: Dictionary, cfg: Dictionary) -> Array:
 				break
 		if not ok:
 			continue
-		used_piece[pid] = true
 		out.append([int(c[0]), int(c[1]), int(c[2])])
 	return out

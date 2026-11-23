@@ -8645,37 +8645,65 @@ pads possible at all - the 8-neighbourhood ban covers 9 cells per gift/mine/laun
 anywhere (measured: seed 1 level 3, seed 7 level 3, seed 42 level 20 and others had zero). A pad may now sit
 right beside a gift or a mine, never over one.
 
-**Count floor.** The sweep in D-JUMPPAD-7 (20 seeds x 8 levels) never produced fewer than 2 pads on any level,
-so the "a level genuinely has no room" case is not reachable on the current generator and the test asserts the
-floor of 2 rather than tolerating 1. The code still never invents a spot: it places `min(count_by_level,
-what the greedy can take)`, and the test asserts that a level which gets fewer than it wants is MAXIMAL - no
-further legal block could be added without breaking the spacing or the one-pad-per-platform rule.
+**Count floor.** CORRECTED in review round 1: the floor of 2 is NOT reachable on every level once edge
+adjacency is enforced (D-JUMPPAD-7 has the numbers - 15 of 160 measured levels get fewer than 2, all on levels
+1-5). The code never invents a spot: it places `min(count_by_level, what the greedy can take)`, and the test
+asserts that a level which gets fewer than it wants is MAXIMAL - no further legal block could be added without
+overlapping a placed pad - and that no more than `SHORT_MAX` of its 64 levels fall short.
 
-## D-JUMPPAD-7 (2026-11-23): "adjacent to the paths" is a preference, not a distance cap [CONTESTABLE]
+## D-JUMPPAD-7 (2026-11-23, rewritten in review round 1): edge adjacency is a HARD rule
 
-**Ruling.** Candidates carry their XZ gap to the nearest walkway tile within `path_step_hu` (data, 4 HU) of
-the block's height - 0 = the path runs right against the block, 1 = one empty cell between, and so on - and
-`place_jump_pads` takes them NEAREST FIRST (ties broken by the pad RNG stream), then greedily with
-`min_spacing_tiles` and at most one pad per platform piece. The gap is a preference, not a filter.
+**Owner's words (cycle 7 brief, T6):** "jump pads revamp (3x3 tiles, outside paths, 2 to 6 per level)" and
+"Pads must be 3x3 TILES big and NOT on the paths: outside the paths (adjacent to them)".
 
-**Why not a hard cap.** Measured over 20 seeds x 8 levels with the full D-JUMPPAD-6 rule: a hard "within 1
-tile of the path" cap leaves 0 legal blocks on most levels, "within 2" still leaves 0 on several, and even
-"within 4" leaves 0 on some (the generator separates pieces by at least one empty cell, and a platform's
-rim is ragged, so a 3x3 block rarely fits right at the walkway mouth). A hard cap therefore cannot honour the
-owner's floor of 2 pads. Nearest-first gets the same result where the level allows it and degrades to the
-closest available block where it does not: with the shipped data, 510 of 570 pads over that sweep sit at gap
-0 (the path runs against the block's edge), 45 at gap 1, 11 at gap 2, and the remaining 4 are on platforms
-whose nearest walkway is far (a spire reached only by a launch pad). The test asserts the ordering directly:
-the gaps never decrease in placement order, and pad 0 is the closest legal block on the level.
+**Ruling.** A block is a candidate only when BOTH hold: (a) none of its 9 tiles is a path tile (D-JUMPPAD-6),
+and (b) at least one tile EDGE-adjacent to the block - the 4-neighbourhood of its 9 cells, never a diagonal -
+is a path tile within `path_step_hu` (data, 4 HU) vertically. A block with no such neighbour is not a
+candidate at all, so a pad can never sit out on a platform away from every path. Candidates are then taken in
+the pad stream's shuffled order, greedily with `min_spacing_tiles`.
 
-**`path_step_hu` = 4.** The generator steps a walkway 1-2 HU off its parent platform at the junction, and a
-`stair` walkway climbs 2 HU per row, so a walkway at the same height as the platform is the exception. 4 HU
-covers the junction step and the first stair row without reaching a walkway on another storey (two layers are
-distinct at `CLEAR` = 12 HU).
+**This replaces the round-1 rule, which was wrong.** Round 1 ordered candidates by a "gap" to the nearest
+walkway and took them nearest-first, but never filtered on it: a block at gap 99 was still a candidate. Terra
+rejected that as the track's main requirement, correctly. The old gap metric was also looser than adjacency -
+it used Chebyshev distance to the nearest walkway within 4 HU, so a diagonal or two-cells-away path tile
+scored gap 0 - which is why the round-1 report claimed "510 of 570 pads at gap 0" while also claiming a
+one-tile cap left zero legal blocks on most levels. Both numbers were real, but they measured different
+things, and the histogram was not evidence of adjacency. The honest numbers are below.
 
-**`min_spacing_tiles` 12 -> 8.** The old 12 was tuned for 1-tile pads. A 3x3 pad is 9 tiles, so 8 keeps two
-pads clearly apart (their blocks are 5 tiles apart at the closest) while still letting a big level carry 6.
-At 12 the level-20 and level-30 sweeps lost pads to spacing rather than to a lack of legal blocks.
+**Same-height adjacency is impossible on this generator.** voidgen steps a walkway 1-2 HU off the platform it
+runs beside at the junction, so a path tile is almost never at the same height as the platform floor next to
+it. Measured over 20 seeds x 8 levels (160 levels): 23 same-height path/floor edge pairs in the whole sweep,
+against 2127 at +1 HU and 1257 at +2 HU. A strict same-height rule leaves 0 legal blocks on 20 of 20 levels at
+level sizes 2, 5, 8, 12 and 20, and never more than 4 blocks on any level anywhere. It cannot deliver the
+owner's floor of 2 without changing the generator, and the generator is frozen (GEN_VERSION 4, PARITY,
+GALLERY_PIN). `path_step_hu` = 4 is therefore the tolerance: it covers the junction step and the first stair
+row, and stays well under `CLEAR` (12 HU), so a walkway on another storey can never satisfy it. This is the
+one place where the rule is not literally "same height", and it is stated here rather than hidden.
+
+**The funnel, measured (20 seeds x 8 levels, shipped data).** Legal blocks (all 9 tiles free floor, no ramp,
+non-hub, no prop, no gift/mine/beacon/launch pad) average 14.9 at level 1 rising to 34.8 at level 20. Of
+those, edge-adjacent blocks average 6.0 at level 1, 4.8 at level 2, 6.1 at level 3, 6.8 at level 5, 8.2 at
+level 8, 13.2 at level 12, 16.9 at level 20 and 15.7 at level 30. Pads PLACED average 1.75 / 1.80 / 1.75 /
+2.60 / 3.25 / 3.85 / 5.50 / 5.65 on the same levels.
+
+**The floor of 2 does not hold everywhere, and this is the honest number.** Over those 160 levels, 15 get
+fewer than 2 pads: level 1 seeds 7, 11, 29, 37; level 2 seeds 17, 37, 43, 2024; level 3 seeds 1, 11, 17, 31,
+53; level 5 seeds 7 and 60717. Every one of them is MAXIMAL - no further legal block could be added without
+overlapping a placed pad - so the shortfall is the level's geometry, not the greedy's. Levels 8, 12, 20 and 30
+always reach 2. The test's own sweep (8 seeds x 8 levels = 64 levels) has 5 such levels - level 1 seed 7,
+level 2 seed 2024, level 3 seed 1, level 5 seeds 7 and 60717 - and `SHORT_MAX` pins that number: the test
+asserts every short level is maximal AND that no more than 5 of the 64 fall short, so a regression that
+starves more levels fails instead of hiding behind "the level had no room". The brief's escape clause ("never
+fewer than 2 unless the level genuinely has no room - if that can happen, say so in a D-entry and in the
+test") is what this paragraph is.
+
+**`min_spacing_tiles` 8 -> 4.** 4 is the smallest spacing that leaves a gap between two 3x3 blocks (centres
+4 apart = one empty tile between). 8 was tried and cost pads on the big levels (level 20 average 5.25 instead
+of 5.50) without helping the floor of 2 anywhere; 3 (blocks touching) rescues no level either, so 4 is the
+tightest spacing that still reads as two separate pads.
+
+**The one-pad-per-platform rule is gone.** It was a round-1 invention, not the owner's, and with edge
+adjacency it only removed pads from levels that had few candidates to begin with.
 
 ## D-JUMPPAD-8 (2026-11-23): the sim fires from any of the 9 cells, and the collapse takes the whole block
 
