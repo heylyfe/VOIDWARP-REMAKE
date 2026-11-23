@@ -139,7 +139,7 @@ func _init() -> void:
 	ahead.name = "SpawnAhead"
 	var atcur := _mkbtn(eh, "CURSOR", _spawn_at_cursor, UiStyle.PRIMARY, 92.0)
 	atcur.name = "SpawnCursor"
-	column.add_child(_mkbtn(column, "SPAWN ENEMY", _spawn_ahead, UiStyle.SECONDARY, -1.0))
+	_mkbtn(column, "SPAWN ENEMY (AHEAD)", _spawn_ahead, UiStyle.SECONDARY, -1.0)
 
 	# ---- upgrades / gold / gifts -------------------------------------------------------
 	column.add_child(_section_label("UPGRADE"))
