@@ -10,7 +10,7 @@ extends RefCounted
 # the YOU?! row - "ring_seq" increments and "last_ring_tick" advances together. On
 # the release tick this curse schedules a second ring from the SAME origin 36 ticks
 # (0.6 s) later, hosted in its state["curse_st"] scratch. The second ring grows at
-# YOU?!'s own 9 u/s to the 14 u cap and kills exactly like the first: the radial
+# YOU?!'s own 9 u/s to the 8 u cap and kills exactly like the first: the radial
 # window |d - r| <= 0.7 u (D-T-035-2) with the feet window (ring feet - 1.5, ring
 # feet + 1.0) (D-T-035-1). Killer id stays "YOU" (DESIGN.md section 3.1's closed
 # list carries D-YOU) - the second ring is still the shockwave's own echo.
@@ -20,7 +20,7 @@ const CURSE_ID := "double_ring"
 const YOU_ID := "you"             # the enemy the curse attaches to (content names content)
 const SECOND_DELAY_TICKS := 36    # 0.6 s after the first ring (the rule sentence)
 const RING_SPEED := 9.0           # u/s, YOU's own ring speed
-const RING_MAX := 14.0            # u, the hard cap
+const RING_MAX := 8.0             # u, the hard cap (YOU's own, cycle 7: 14 -> 8)
 const RADIAL_WINDOW := 0.7        # u: |d - r| <= 0.6/2 + 0.4 (D-T-035-2)
 const FEET_BELOW := 1.5           # u below the ring's feet plane, kill extends (D-T-035-1)
 const FEET_ABOVE := 1.0           # u above the ring's feet plane, kill extends (D-T-035-1)

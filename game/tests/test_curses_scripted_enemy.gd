@@ -465,11 +465,11 @@ func _t_direct_shot(f: Array[String]) -> void:
 func _t_double_ring(f: Array[String]) -> void:
 	_eqi(f, DoubleRing.SECOND_DELAY_TICKS, 36, "double_ring: the echo is not 0.6 s (36 ticks) later")
 	_eqf(f, DoubleRing.RING_SPEED, 9.0, "double_ring: the echo is not YOU's own 9 u/s ring")
-	_eqf(f, DoubleRing.RING_MAX, 14.0, "double_ring: the 14 u cap moved")
+	_eqf(f, DoubleRing.RING_MAX, 8.0, "double_ring: the 8 u cap moved")
 	_eqf(f, DoubleRing.radius_at(36), 5.4, "double_ring: a ring 36 ticks after ITS release is not 5.4 u")
 	_eqf(f, DoubleRing.radius_at(0), 0.0, "double_ring: the echo expanded before it flew")
-	_eqf(f, DoubleRing.radius_at(60), 9.0, "double_ring: the echo is not YOU's own 9 u/s ring")
-	_eqf(f, DoubleRing.radius_at(200), 14.0, "double_ring: the echo ignored the 14 u cap")
+	_eqf(f, DoubleRing.radius_at(30), 4.5, "double_ring: the echo is not YOU's own 9 u/s ring")
+	_eqf(f, DoubleRing.radius_at(200), 8.0, "double_ring: the echo ignored the 8 u cap")
 	var rt := _rt()
 	var you := _row(rt, "you", Vector3(0.0, 0.0, 0.0))
 	you["ring_seq"] = 1

@@ -191,7 +191,7 @@ const TABLE := {
 	"you": {
 		"enemy": "you",
 		"answer": "jump as the ring reaches you; or stand >= 1.5 u above or below its feet",
-		"trigger": "rumble 1.5 s; the ring is visible as it expands",
+		"trigger": "rumble 3.0 s; the ring is visible as it expands",
 		"anchor": "ring_crosses_player",
 		"inputs": [
 			{"tick_offset": 0, "action": "jump", "note": "jump 1.0 u height spans 0.10-0.65 s of the jump = 0.56 s window for a 0.16 s crossing; the Echo Ring double-jump (0.25-0.65 s before the first ring, again on landing) is hard but learnable"},

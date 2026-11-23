@@ -8676,3 +8676,92 @@ Terra's review found that the deadline hit could ignore an earlier crossing. The
 ## D-T5-5 (2026-11-23) Live and historical Gin data
 
 The shipped enemy metadata describes the bodyless ground sword and its bye bye cue. The mark and zone metadata moved to a test fixture. The legacy code path remains for archived timing, arbitration, audio, negative-control and answer-lab fixtures that construct Gin without the live attack configuration. Those checks still exercise the historical attack and keep their original timing thresholds.
+## D-YOU-C7-1 (2026-11-23): "you?!" smaller range + slower strike - the numbers
+
+**Owner's words (cycle 7 brief, T1):** "you?!" smaller range + slower strike.
+
+**Ruling.** `game/content/enemies/you/enemy.json` stats: `ring_max_radius` 14.0 -> **8.0** (57.1 % of the
+old reach, inside the brief's "at most 60 %" = 8.4), `rumble_ticks` 90 -> **180** (3.0 s, exactly 2x the
+old tell), `trigger_distance` 10.0 -> **8.0** so he never telegraphs from outside his own reach (the
+telegraph footprint is drawn at `r = ring_max_radius`, so a 10 u trigger would have shown a circle that
+could not reach the player). `ring_speed_u_per_s` stays **9.0** and `ring_cooldown_ticks` /
+`attack_hold_ticks` / `recover_ticks` stay 240 / 18 / 240.
+
+**Why the speed does not move.** The brief asked to re-check the jump window "because a smaller ring
+crosses the player faster". It does not. The band's radius is `min(speed x t, cap)`, so the crossing a
+jump must cover is **clipped at the cap**: the nominal `2 x 0.7 u / 9 u/s = 0.156 s` only applies where
+`d + 0.7 <= cap`, and at the trigger distance (d = 8.0, cap = 8.0) the band stops at 8 u and its trailing
+half never sweeps past the player, so the crossing is `(8.0 - 7.3) / 9 = 0.078 s` - SHORTER, not longer.
+The shared kit's jump (v0 12, g 32) keeps the feet above the 1.0 u band top from 0.0955 s to 0.6545 s,
+so the jump-timing window is `[t_hit_hi - 0.6545, t_hit_lo - 0.0955]` = **0.234 s .. 0.716 s** after the
+release, 0.481 s wide against the old numbers' 0.403 s. The window widened because the clipped crossing
+is shorter, not because the band arrives sooner. `test_enemy_you._jump_window_clears_the_ring` runs the
+REAL controller against the REAL ring and asserts: the crossing is clipped below the nominal 0.156 s, the
+window is wider than the old numbers' window, BOTH endpoints (two ticks inside survives, two ticks outside
+dies), a jump at the midpoint survives, no jump dies, and a jump on the release tick dies (landed before
+the band arrives). Hand-run negative controls: with the old window's endpoints substituted the test
+reports 4 failures (both endpoint arms plus the width comparison), and with the behaviour's `_num` forced
+to return the constant the data test reports 5.
+
+**Mirrors updated with it** (the number lives in data; every reader follows): `enemy.gd`'s constants +
+a new `cfg()` mirror pinned to the json by `test_enemy_you._roster_data`; `sprites.json`'s telegraph
+`total_ticks` 90 -> 180 and attack `max_radius_u` 14.0 -> 8.0; `content/curses/double_ring.gd`'s echo
+ring cap 14.0 -> 8.0 (it is "YOU's own ring"); `data/tips.json` tip_you_rumble; `tools/synth_audio.py`
++ the regenerated `you_corrupted_rumble.wav` (1.5 s -> 3.0 s = exactly 180 ticks, so check_audio.gd's
+assertion 3 still lands the cue on the release tick); `research/fable-tickets.md` sections 1.6 and 3;
+`DESIGN.md` 5.6; `ENEMIES.md`'s Husk row; `tools/check_anim_data.gd`; `tools/bot/answers.gd`.
+
+## D-YOU-C7-2 (2026-11-23): the tell holds position (narrowing D-T-035-6)
+
+**Ruling.** During the `telegraph` state YOU?! no longer floats toward the player: `tick()` calls
+`FloatBody.update()` (which keeps `h_speed` / `tempo_mul` live, so SR-5 is untouched) instead of
+`FloatBody.step()`. D-T-035-6's "floats through every phase" is narrowed to "every phase except the tell".
+
+**Why.** At 3.4 u/s a 3.0 s tell carries him 10.2 u. Starting from an 8 u trigger he would reach the
+player's body (0.75 u contact radius) after 2.13 s - **before** the ring releases at 3.0 s - so a
+standing player would die to the touch kill and the ring would never be the threat. The tell would be a
+lie and the counter-play text ("jump as the ring reaches you") would describe nothing. Holding makes the
+release distance the distance he telegraphed from, which is what makes the 8 u ring a fair, jumpable
+strike. Cost, stated plainly: a player who simply runs away now outruns the ring, so YOU?! is a weaker
+enemy than before - which is what "smaller range + slower strike" asks for. The touch kill is unchanged.
+
+## D-YOU-C7-3 (2026-11-23): the numbers stay in data, the mirror is pinned
+
+**Ruling.** No new constant was added to code. `enemy.gd` keeps its existing constants (they are the
+mirror the bot and the Echo Ring curse read) and gains a `cfg()` static that returns the same block, in
+the kiwi_cat / claude / seal convention. `test_enemy_you._roster_data` fails if any mirrored key is
+missing from `enemy.json`, if any value disagrees, or if the three cycle-7 thresholds regress
+(`ring_max_radius <= 8.4`, `rumble_ticks >= 180`, `trigger_distance <= ring_max_radius`), and it also
+pins the audio timing (`attack_offset_ticks` / `binding_cue_ticks` == the tell) so the cue cannot drift
+from the tell again. Enemy rows are not in the state hash (pre-existing: `state_hash.gd` dumps run state,
+not enemy rows); this change adds no new sim state, so the replay determinism test is unaffected and the
+sim stays deterministic at 60 Hz with no RNG.
+
+## D-YOU-C7-4 (2026-11-23): the data is authoritative, the constants are only a fallback
+
+**Ruling (Terra review round 1, real defect).** `enemy.gd` now reads every one of its numbers from
+`row["cfg"]` at run time through `_num(row, key, fallback)`: `trigger_distance`, `rumble_ticks`,
+`ring_speed_u_per_s`, `ring_max_radius`, `ring_thickness`, `ring_height`, `ring_below_feet`,
+`ring_cooldown_ticks`, `attack_hold_ticks`, `recover_ticks`. `row["cfg"]` IS `enemy.json`'s `stats`
+block, passed through verbatim by `world.gd`'s `_cfg_for`, so editing `enemy.json` alone now changes
+gameplay. Before this, the constants at the top of the file were what the behaviour used and the json
+was documentation that only the mirror test compared - Terra's finding, and it was right.
+
+**What the constants are now.** The same values, kept because two readers outside the behaviour need a
+compile-time mirror: `tools/bot_run.gd`'s ring-threat model (`RING_SPEED`, `RING_MAX`,
+`RING_RADIAL_WINDOW`, `RING_BELOW`, `RING_HEIGHT`) and `test_enemy_you`'s window arithmetic. They are
+used by `_num` ONLY when a cfg omits the key - a hand-built fixture (`test_enemy_negcontrols._you_cfg`)
+or a curse's `spawn_at` - never as the source of truth. `test_enemy_you._roster_data` still fails if any
+mirrored key is missing from the json or disagrees with it, so the two cannot drift silently.
+
+**Why not delete the constants.** `bot_run.gd` is a headless tool with no row in hand when it models the
+threat, and the test's window arithmetic is a closed-form derivation that must not read the same dict it
+is checking. Deleting them would mean either duplicating the numbers in the bot (worse) or making the
+test read the value it asserts (worthless). The fallback is the honest compromise and is documented at
+the helper.
+
+**Proof the data wins.** New `test_enemy_you._data_drives_the_behavior` spawns with a cfg that DISAGREES
+with the constants (trigger 3.0, tell 60, cap 2.0, speed 6.0) and asserts the behaviour follows the cfg:
+the telegraph event carries 60 ticks, the band moves 0.1 u on its first tick, it caps at 2.0, and no
+rumble fires at 4.0 u. Hand-run negative control: forcing `_num` to return the constant makes that test
+report 5 failures, so it cannot pass by accident.
