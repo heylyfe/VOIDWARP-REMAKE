@@ -8752,6 +8752,7 @@ future T8b entry, and the review's request to add a real force method name to th
 change's own D-entry. The Bankai fallback is no longer a bare preview either: it plays the cinematic THROUGH
 its signals with `bankai_active` standing the boss down and `target_hit` driving `boss.damage(hp_max)` into
 the world's own `_apply_boss_events` + `_publish_boss_tick` - the easter egg's insta-kill, live.
+D-T8B-11 supersedes this forced-fight fallback.
 
 ## D-T2-8 (2026-11-23): the panel's state hash is state_hash's dump over the LIVE level, minus the RNG lines
 
@@ -8788,6 +8789,7 @@ jump, stairs up and stairs down alongside the other ten cases.
 ## D-T8A-1 (2026-11-23) Boss contract and seeded rolls
 
 The owner asked for "Peter Griffin boss fight at level 10 (teleport to arena, first person gift throwing 1 dmg / 5% crit 5 dmg, 250 HP, bowling ball + green fn basketball attacks, laugh on death, 1/1000 Bankai easter egg using game/view/cinematics/bankai_gift_animation.gd, beacon + 300 gold after the kill)".
+D-T8B-9 supersedes the original Bankai odds.
 Boss attack cadence, gift tuning and arena dimensions live in boss.json. Bankai uses
 one draw keyed by run seed and level. Crits use a separate draw keyed by the shot
 tick and run seed. The arena uses packed floor tiles assembled outside voidgen.
@@ -9275,7 +9277,8 @@ The laugh fires on the `boss_laugh` event, which the sim emits in the same batch
 ## D-T8B-4 (2026-11-23) The Bankai easter egg: the sim owns the clock, the view owns the show
 
 The owner asked for a "1/1000 Bankai easter egg using game/view/cinematics/
-bankai_gift_animation.gd" where "the gifts target Peter and INSTA-KILL him". The roll
+bankai_gift_animation.gd" where "the gifts target Peter and INSTA-KILL him".
+D-T8B-9 supersedes the original odds, and D-T8B-11 supersedes the view clock below. The roll
 was already T8a's (`bankai_selected`, one draw keyed by run seed and level, in sim, so
 replays match). T8b adds activation, the kill and the finish.
 
@@ -9299,7 +9302,7 @@ merely follows. Nothing in the cinematic path reads or writes `sim/` or the stat
 
 Input is locked while it plays, and that lock is SIM-side: `world.gd` already gates
 `ctl.step` on `not boss.bankai_active`, so the player cannot move, throw or take the
-beacon for the 25.5 s. The beacon opens at the kill (21.0 s) through the ordinary
+beacon for the 25.5 s. The beacon opens at the kill (21.5 s) through the ordinary
 `boss_died` path, so the 300 gold and the beacon are the framework's, unchanged.
 
 The test finds a seed the roll selects, proves the roll and the whole event stream replay
@@ -9339,6 +9342,8 @@ sprite, so the pose change and the lane marker together read as "a bowling ball 
 coming" without any text.
 
 ## D-T8B-6 (2026-11-23) The Bankai is sequenced: the sim clock is authority, the view sequences presentation
+
+D-T8B-11 supersedes the independent presentation clock described here.
 
 Review round 2 found the sequence was not actually sequenced. The sim clock killed Peter
 and the view freed the cinematic independently, so under render drift Peter could die
@@ -9594,3 +9599,55 @@ hash VALUE changes for every level that has pads - that is the point of the reva
 golden fixture pins a state hash: `test_replay.gd` compares runs against each other, and the jump-pad suite
 compares a run against its own replay, so nothing had to be re-pinned. The determinism tests are unchanged and
 none was weakened.
+
+## D-T8B-9 (2026-11-23) Cycle 8: increase the seeded Bankai threshold
+
+The owner asked for 1 in 250, so the threshold is 0.004. The single draw remains
+keyed by run seed and level at fight start, unchanged in shape: one
+`_roll(VoidRng.mix(run_seed, level_no), chance)` at fight start, no second draw,
+no wall-clock or frame-count input. In the level-10 sweep of seeds 0 through 4095,
+the old 0.001 threshold selected 839 and 1364. The new threshold selects 18 seeds:
+70, 192, 297, 839, 1364, 1517, 1577, 1662, 1810, 1979, 2128, 2596, 2726, 3279,
+3448, 3734, 3769 and 3963. These seeds cross the increased threshold on the same
+draw, which changes their hashed Bankai selection and ensuing fight trace. The
+replay test dynamically chooses the first selected seed, so its Bankai leg moves
+from 839 to 70. The framework test now pins the full selected set in this sweep.
+The terrain gallery pins terrain hashes, and the boss replay checks compare traces
+between runs, so there are no stored hash values to re-pin.
+
+A note on how this entry was reached, because it is a process lesson rather than a
+design one: the first pass shipped 0.0025 and documented it as "1 in 400, an exact
+1 in 250 would be 0.004". That was the worker correctly reading a wrong number out
+of its brief - the orchestrator had written 0.0025 next to the words "1 in 250".
+The worker flagged the discrepancy instead of silently matching either the number
+or the words, which is why it was caught before the merge. The owner's intent is
+the odds, not the decimal, so the decimal was corrected to 0.004 and the pinned
+seed set recomputed from the RNG rather than guessed.
+
+## D-T8B-10 (2026-11-23) Cycle 8: the owner's voice and procedural support cues
+
+The unset Bankai voice resolves through the export-safe audio loader to the
+existing custom_voiceline.mp3. Both supplied and imported source files have MD5
+298fab131793a4edb83d835cfb201d79. The former fight-only assignment to the second
+voice slot is superseded by this fallback, shared with the tester preview.
+View-only PCM synthesis generates a looping hum at tick 0, charge at 612, impact
+at 750, volley at 1200 and kill at 1290. Their playback gains are respectively
+-28, -19, -17, -21 and -16 dB, with the owner voice at 0 dB.
+The windowed FORCE BANKAI probe observed playback at tick 468 (7.800 s) and the
+audio player's natural finished signal at tick 711 (11.850 s). The initial
+capture observed the finished signal at tick 702 (11.700 s). Audio completion
+is sampled against the arena clock when the mixer delivers the callback, so
+that observation can vary between runs. Both finishes precede the kill at
+21.5 s and the cinematic end at 25.5 s.
+
+## D-T8B-11 (2026-11-23) Cycle 8: the planted sword starts the camera pull-back
+
+The sword tip reaches the floor at tick 750. The camera leaves the first-person
+rig at that tick, eases backward from the same pose and orbits until the end,
+revealing the live player model as it clears the camera. The arena floor bounds
+keep the camera inside the footprint with near-plane clearance. The view reads
+the arena's Bankai clock and interpolates the pose between ticks. The sim still
+kills at 1290 and releases input at 1530, when the view restores the first-person
+camera and model visibility. FORCE BANKAI activates this same clock in an active
+fight, including the ordinary kill, 300 gold award and beacon. The headless
+test exercises the real buttons and the full sequence at 30 and 144 FPS.

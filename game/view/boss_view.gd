@@ -46,6 +46,10 @@ var _bankai: Node3D = null
 var _bankai_grace := 0
 var _bankai_grace_ticks := 60
 var _floor_y := 0.0
+var bankai_feet := Vector3.ZERO
+var bankai_model: Node3D
+var bankai_bounds := Rect2()
+var bankai_hit_tick := 1290
 
 
 func setup(target: Vector3, sprite_height: float, canvas: CanvasLayer,
@@ -229,8 +233,7 @@ func on_events(events: Array) -> void:
 			"bankai_started":
 				_start_bankai()
 			"bankai_hit":
-				# The cinematic's own target_hit hides the sprite (the gifts land). This is
-				# the fallback for a fight with no cinematic node.
+				# The cinematic also hides the sprite on target_hit at this tick.
 				if _bankai == null:
 					_sprite.hide()
 			"bankai_finished":
@@ -356,13 +359,23 @@ func _clear_balls() -> void:
 	_balls.clear()
 
 
-## The Bankai easter egg. The sim rolled it and owns the kill; this plays the owner's
-## dormant cinematic and follows its own signals. View-only: nothing here writes sim state.
+## The sim owns the kill and supplies the clock for the cinematic's presentation.
 func _start_bankai() -> void:
 	if _bankai != null:
 		return
 	_bankai = BankaiScript.new()
 	add_child(_bankai)
+	if is_inside_tree():
+		_bankai.global_position = bankai_feet
+	else:
+		_bankai.position = bankai_feet
+	_bankai.arena_bounds = bankai_bounds
+	_bankai.hit_tick = bankai_hit_tick
+	_bankai.externally_clocked = true
+	_bankai.player_model = bankai_model
+	if is_instance_valid(bankai_model) and bankai_model.is_inside_tree():
+		bankai_model.global_position = bankai_feet
+		bankai_model.rotation.y = 0.0
 	# Headless (tests, the gate) has no viewport and no camera. The cinematic already falls
 	# back to its own get_viewport() lookup and guards with is_instance_valid, so null is a
 	# supported value here - it just means "no camera to take".
@@ -372,9 +385,12 @@ func _start_bankai() -> void:
 	_bankai.animation_started.connect(_on_bankai_started)
 	_bankai.target_hit.connect(_on_bankai_target_hit)
 	_bankai.animation_finished.connect(_on_bankai_animation_finished)
-	if ResourceLoader.exists(BankaiScript.CUSTOM_VOICE_PATH):
-		_bankai.senbonzakura_voice = load(BankaiScript.CUSTOM_VOICE_PATH)
 	_bankai.play(_sprite)
+
+
+func sync_bankai_tick(tick: int) -> void:
+	if _bankai != null:
+		_bankai.sync_tick(tick)
 
 
 ## The cinematic has taken the camera: the fight HUD and every telegraph step aside.

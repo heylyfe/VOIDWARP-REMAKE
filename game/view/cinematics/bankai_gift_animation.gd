@@ -12,6 +12,12 @@ signal target_hit(target: Node3D)
 signal animation_finished
 
 const TOTAL_DURATION: float = 25.5
+const TICK_RATE := 60.0
+const IMPACT_TICK := 750
+const IMPACT_TIME := IMPACT_TICK / TICK_RATE
+const WORLD_SWORD_TIP_Y := 1.15
+const CueAudio := preload("res://view/audio/cue_audio.gd")
+const BankaiAudio := preload("res://view/audio/bankai_audio.gd")
 const DROP_POINT: Vector3 = Vector3(0.0, 0.0, -0.78)
 ## The owner's own voice line, shipped with this file but NOT wired in anywhere. To use it:
 ##   senbonzakura_voice = load(CUSTOM_VOICE_PATH)   (or assign it in the Inspector)
@@ -33,6 +39,9 @@ const SCRAP_COUNT: int = 54
 @export var bankai_voice: AudioStream
 @export var senbonzakura_voice: AudioStream
 
+var hit_tick := 1290
+var arena_bounds := Rect2()
+var externally_clocked := false
 var is_playing: bool = false
 var sim_time: float = 0.0
 var _current_phase: int = -1
@@ -40,6 +49,10 @@ var _locked_target: Node3D = null
 var _fallback_target_local: Vector3 = Vector3(0.0, 0.0, -12.0)
 var _prev_camera: Camera3D = null
 var _fired_events: Dictionary = {}
+var _player_was_visible := false
+var _cue_players: Dictionary = {}
+var _clock_tick := 0
+var _tick_fraction := 0.0
 
 # Internal nodes
 var _anim_cam: Camera3D
@@ -89,7 +102,7 @@ func _ensure_built() -> void:
 	_set_all_visuals_visible(false)
 
 
-## VIEW-ONLY: never read or written by sim/. Plays on render time, uses the global RNG.
+## VIEW-ONLY: the clock is elapsed time expressed in cinematic ticks.
 ## Starts the Bankai animation. Pass a specific target, or leave null to pick randomly from `targets`.
 func play(target_override: Node3D = null) -> void:
 	_ensure_built()
@@ -112,9 +125,16 @@ func play(target_override: Node3D = null) -> void:
 	_anim_cam.current = true
 
 	sim_time = 0.0
+	_clock_tick = 0
+	_tick_fraction = 0.0
 	_current_phase = -1
 	_fired_events.clear()
 	is_playing = true
+	if is_instance_valid(player_model):
+		_player_was_visible = player_model.visible
+	_voice_player.stream = bankai_voice if bankai_voice != null else CueAudio.load_stream(CUSTOM_VOICE_PATH)
+	_voice_player2.stream = senbonzakura_voice
+	_check_events(0)
 	_set_all_visuals_visible(true)
 	_update_animation(0.0)
 	animation_started.emit()
@@ -124,29 +144,47 @@ func stop() -> void:
 	is_playing = false
 	_voice_player.stop()
 	_voice_player2.stop()
+	for cue in _cue_players.values():
+		cue.stop()
 	_set_all_visuals_visible(false)
 	if is_instance_valid(player_model):
-		player_model.visible = true
+		player_model.visible = _player_was_visible
 	if is_instance_valid(_prev_camera):
 		_prev_camera.current = true
 	_anim_cam.current = false
 
 
+## Arena events run on the fight clock. Render updates interpolate within the tick.
+func sync_tick(tick: int) -> void:
+	if not is_playing or tick <= _clock_tick:
+		return
+	_clock_tick = tick
+	_tick_fraction = 0.0
+	sim_time = tick / TICK_RATE
+	_check_events(tick)
+	if sim_time >= TOTAL_DURATION:
+		_finish()
+
+
 func _process(delta: float) -> void:
 	if not is_playing:
 		return
-
-	sim_time += minf(delta, 0.08)
-	_check_events(sim_time)
-
-	if sim_time >= TOTAL_DURATION:
-		sim_time = TOTAL_DURATION
-		_update_animation(sim_time)
-		stop()
-		animation_finished.emit()
-		return
-
+	if externally_clocked:
+		_tick_fraction = minf(_tick_fraction + delta * TICK_RATE, 1.0)
+		sim_time = (_clock_tick + _tick_fraction) / TICK_RATE
+	else:
+		sim_time += minf(delta, 5.0 / TICK_RATE)
+		_check_events(floori(sim_time * TICK_RATE + 0.000001))
+		if sim_time >= TOTAL_DURATION - 0.000001:
+			_finish()
+			return
 	_update_animation(sim_time)
+
+
+func _finish() -> void:
+	sim_time = TOTAL_DURATION
+	stop()
+	animation_finished.emit()
 
 
 # ==============================================================================
@@ -483,6 +521,8 @@ func _build_voice_player() -> void:
 	add_child(_voice_player)
 	_voice_player2 = AudioStreamPlayer.new()
 	add_child(_voice_player2)
+	for cue in BankaiAudio.CUES:
+		_cue_players[cue] = BankaiAudio.make_player(self, cue)
 
 
 func _create_multimesh_child(mesh: Mesh, mat: Material, count: int) -> MultiMesh:
@@ -528,11 +568,12 @@ func _set_all_visuals_visible(vis: bool) -> void:
 # TIMELINE EVENTS (VOICELINES & TARGET HIT SIGNALS)
 # ==============================================================================
 
-func _check_events(t: float) -> void:
+func _check_events(tick: int) -> void:
+	var t := tick / TICK_RATE
 	var phase := 0
 	if t >= 20.0: phase = 5
 	elif t >= 16.5: phase = 4
-	elif t >= 12.7: phase = 3
+	elif t >= IMPACT_TIME: phase = 3
 	elif t >= 7.2: phase = 2
 	elif t >= 3.8: phase = 1
 
@@ -540,22 +581,23 @@ func _check_events(t: float) -> void:
 		_current_phase = phase
 		phase_changed.emit(phase)
 
-	if t >= 7.8 and not _fired_events.has("voice1"):
-		_fired_events["voice1"] = true
-		if bankai_voice != null:
-			_voice_player.stream = bankai_voice
-			_voice_player.play()
+	_play_at("hum", tick, 0, _cue_players["hum"])
+	_play_at("charge", tick, 612, _cue_players["charge"])
+	_play_at("impact", tick, IMPACT_TICK, _cue_players["impact"])
+	_play_at("volley", tick, 1200, _cue_players["volley"])
+	_play_at("voice1", tick, 468, _voice_player)
+	_play_at("voice2", tick, 750, _voice_player2)
+	if _play_at("kill", tick, hit_tick, _cue_players["kill"]):
+		target_hit.emit(_locked_target)
 
-	if t >= 12.5 and not _fired_events.has("voice2"):
-		_fired_events["voice2"] = true
-		if senbonzakura_voice != null:
-			_voice_player2.stream = senbonzakura_voice
-			_voice_player2.play()
 
-	for hit_key in [["hit1", 21.0], ["hit2", 21.9], ["hit3", 22.8]]:
-		if t >= hit_key[1] and not _fired_events.has(hit_key[0]):
-			_fired_events[hit_key[0]] = true
-			target_hit.emit(_locked_target)
+func _play_at(key: String, tick: int, start_tick: int, player: AudioStreamPlayer) -> bool:
+	if tick < start_tick or _fired_events.has(key):
+		return false
+	_fired_events[key] = true
+	if player.stream != null and is_inside_tree():
+		player.play()
+	return true
 
 
 # ==============================================================================
@@ -563,63 +605,19 @@ func _check_events(t: float) -> void:
 # ==============================================================================
 
 func _update_animation(t: float) -> void:
-	var is_fp: bool = t < 12.7
+	var is_fp := t < IMPACT_TIME or (externally_clocked and _clock_tick < IMPACT_TICK)
 	_fps_rig.visible = is_fp
 	_left_arm.visible = show_fps_hands
 	_right_arm.visible = show_fps_hands
-	if is_instance_valid(player_model):
-		player_model.visible = not is_fp
 
 	var target_local: Vector3 = _fallback_target_local
-	# Global space only exists inside the tree. Headless (tests, the gate) has neither node in
-	# a tree, so the fallback target is the honest answer rather than a transform error.
 	if is_instance_valid(_locked_target) and is_inside_tree() and _locked_target.is_inside_tree():
 		target_local = to_local(_locked_target.global_position)
 
-	# 1. CAMERA CHOREOGRAPHY
-	if is_fp:
-		var breath_y := sin(t * 2.1) * 0.012
-		var breath_x := cos(t * 1.3) * 0.008
-		var pitch := -0.58 * smoothstep(8.2, 10.6, t) if t >= 7.2 else 0.0
-		_anim_cam.position = Vector3(breath_x, 1.66 + breath_y, 0.0)
-		_anim_cam.rotation = Vector3(pitch, 0.0, 0.0)
-	else:
-		var cam_pos := Vector3.ZERO
-		var look_at_pt := Vector3.ZERO
-
-		if t < 16.5:
-			var p := _ease_in_out_cubic((t - 12.7) / 3.8)
-			var ang := lerpf(-0.35, 0.72, p)
-			var dist := lerpf(2.6, 7.4, p)
-			cam_pos = Vector3(sin(ang) * dist, lerpf(1.5, 2.35, p), cos(ang) * dist)
-			look_at_pt = Vector3(0.0, 1.65, -2.5)
-		elif t < 20.0:
-			var p := (t - 16.5) / 3.5
-			var ang := lerpf(0.72, -0.55, _ease_in_out_cubic(p))
-			cam_pos = Vector3(sin(ang) * 8.4, 2.6 + sin(p * PI) * 0.8, cos(ang) * 8.4)
-			look_at_pt = Vector3(0.0, 1.8, -3.0)
-		else:
-			var p := _ease_in_out_cubic((t - 20.0) / 2.2)
-			cam_pos = Vector3(
-				lerpf(-4.2, target_local.x * 0.38 + 2.8, p),
-				lerpf(2.6, 3.1, p),
-				lerpf(6.4, 2.2, p)
-			)
-			look_at_pt = Vector3(
-				lerpf(0.0, target_local.x * 0.85, p),
-				lerpf(1.6, 1.35, p),
-				lerpf(-3.0, target_local.z * 0.92, p)
-			)
-			if t >= 21.0 and t <= 24.0:
-				var shake := (1.0 - (t - 21.0) / 3.0) * 0.14
-				cam_pos.x += sin(t * 62.0) * shake
-				cam_pos.y += cos(t * 74.0) * shake
-
-		var dir := look_at_pt - cam_pos
-		if dir.length_squared() > 0.0001:
-			_anim_cam.transform = Transform3D(Basis.looking_at(dir, Vector3.UP), cam_pos)
-		else:
-			_anim_cam.position = cam_pos
+	_anim_cam.transform = _camera_pose(t, target_local)
+	if is_instance_valid(player_model):
+		# Reveal the avatar once its head clears the near plane during the pull-back.
+		player_model.visible = not is_fp and _anim_cam.position.length_squared() > 3.6
 
 	# 2. FIRST-PERSON PHASES (1: Inspect, 2: Unwrap & Reveal, 3: Slow Water Drop)
 	if is_fp:
@@ -728,8 +726,8 @@ func _update_animation(t: float) -> void:
 			else:
 				_fps_sword.visible = false
 				_world_sword.visible = true
-				var drop_p := clampf((t - 8.75) / 3.75, 0.0, 1.0)
-				var sword_y := lerpf(1.48, -0.72, _ease_in_out_cubic(drop_p))
+				var drop_p := clampf((t - 8.75) / (IMPACT_TIME - 8.75), 0.0, 1.0)
+				var sword_y := lerpf(1.48, WORLD_SWORD_TIP_Y, _ease_in_out_cubic(drop_p))
 				_world_sword.position = Vector3(DROP_POINT.x, sword_y, DROP_POINT.z)
 				_world_sword.rotation = Vector3(0.0, drop_p * 0.22, PI)
 
@@ -740,7 +738,10 @@ func _update_animation(t: float) -> void:
 					lerpf(-0.74, -0.64, pull_back)
 				)
 	else:
-		_world_sword.visible = false
+		_world_sword.visible = t < 16.5
+		var settle := smoothstep(IMPACT_TIME, IMPACT_TIME + 0.2, t)
+		_world_sword.position = Vector3(DROP_POINT.x, WORLD_SWORD_TIP_Y - 0.12 * settle, DROP_POINT.z)
+		_world_sword.rotation = Vector3(0.0, 0.22, PI)
 
 	# 3. FLYING PAPER SCRAPS (4.1s -> 6.9s)
 	if is_fp and t >= 4.1 and t <= 6.9:
@@ -819,6 +820,28 @@ func _update_animation(t: float) -> void:
 			_gift_box_mm.set_instance_transform(i, ZERO_XFORM)
 			_gift_ribbon_mm.set_instance_transform(i, ZERO_XFORM)
 			_gift_bow_mm.set_instance_transform(i, ZERO_XFORM)
+
+
+func _camera_pose(t: float, target_local: Vector3) -> Transform3D:
+	var eye := Vector3(cos(t * 1.3) * 0.008, 1.66 + sin(t * 2.1) * 0.012, 0.0)
+	var pitch := -0.83 * smoothstep(8.2, 10.6, t)
+	var first_person := Transform3D(Basis(Vector3.RIGHT, pitch), eye)
+	if t <= IMPACT_TIME:
+		return first_person
+
+	var pull := smoothstep(IMPACT_TIME, 17.0, t)
+	var orbit := smoothstep(IMPACT_TIME, TOTAL_DURATION, t)
+	var angle := lerpf(-0.52, 0.94, orbit)
+	var trailing := Vector3(sin(angle) * 7.0, 2.6 + 1.0 * orbit, cos(angle) * 7.0)
+	var cam_pos := eye.lerp(trailing, pull)
+	if arena_bounds.has_area() and is_inside_tree():
+		var world_pos := to_global(cam_pos)
+		world_pos.x = clampf(world_pos.x, arena_bounds.position.x, arena_bounds.end.x)
+		world_pos.z = clampf(world_pos.z, arena_bounds.position.y, arena_bounds.end.y)
+		cam_pos = to_local(world_pos)
+	var focus := Vector3(0.0, 1.05, 0.0).lerp(target_local, lerpf(0.12, 0.36, pull))
+	var orbit_basis := Basis.looking_at(focus - cam_pos, Vector3.UP)
+	return Transform3D(first_person.basis.slerp(orbit_basis, pull), cam_pos)
 
 
 # ==============================================================================

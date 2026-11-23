@@ -363,7 +363,7 @@ of the player, give any upgrade (its event hooks live from the next tick), give 
 nearest gifts (queued into the tick, so payouts and hooks land normally), skip to level N or skip the
 current level, set charges, toggle god mode (levels, arena and a new world's first tick), force the
 platform collapse, force the Peter boss fight (the real arena entry: teleport, first-person mode,
-HUD) and the Bankai cinematic (driven through its signals, insta-killing Peter on `target_hit`), and
+HUD) and the Bankai cinematic (using the arena clock and its regular kill and reward), and
 read the live state hash. Debug actions go through the game's own paths (the enemy runtime's
 `spawn_at`, `sim/gifts.gd`'s `collect`, queued tick jobs, the app's level-transition calls), and no
 `sim/` file is touched: the 60 Hz determinism, the state-hash dump and the replay suite are exactly
@@ -386,6 +386,12 @@ in-memory state on top of the seed's own run — the seed replay itself stays by
 
 ## Changelog
 
+**Bankai (unreleased).** The one seeded roll per level-10 boss fight uses a threshold of
+0.004 (1 in 250). The cinematic plays the owner's voice with quiet synthesized cues.
+When the sword plants, the camera pulls back and orbits the player for the rest of
+the sequence. Peter's defeat opens the beacon and pays 300 gold. First-person control
+returns at the end. See D-T8B-9 through D-T8B-11.
+
 <details open>
 <summary><b>What changed in v0.1.15-alpha.3</b> — the Peter Griffin boss fight, and four enemies rebuilt</summary>
 
@@ -396,8 +402,9 @@ mouselook. You throw gifts — 1 damage each, 5% chance to crit for 5, up to six
 green basketball pose, shoots a three-pointer aimed at where you were when he released it (move sideways
 in time; the wind-up is at least 400 ms and the marker is drawn on the floor). Any hit kills you and he
 laughs. Kill him and a beacon opens with 300 gold gifts, and level 11 carries on as usual. Once per
-fight, with a 1-in-1000 seeded roll made at fight start so replays match, the dormant Bankai cinematic
-plays instead: the gifts target Peter and he dies instantly. Rulings D-T8A-1..3, D-T8B-1..8.
+fight, a seeded roll can trigger the Bankai cinematic instead: the gifts target Peter
+and he dies instantly. The original release used 0.001 (1 in 1000); see the current
+threshold in the Bankai changelog above. Rulings D-T8A-1..3, D-T8B-1..8.
 
 **Claude.** He does nothing by himself now — no attack, no movement, no contact kill. He scatters 5 to
 15 mini clawds across the map at level start, more on bigger maps, on walkable tiles and never on a

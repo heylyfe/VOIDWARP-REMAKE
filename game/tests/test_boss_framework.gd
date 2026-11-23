@@ -39,7 +39,7 @@ func run() -> Array[String]:
 
 func _rolls_and_damage(failures: Array[String]) -> void:
 	var crits := 0
-	var selected := 0
+	var selected: Array[int] = []
 	var cfg := Boss.load_config()
 	for seed_value in 4096:
 		var boss := Boss.new()
@@ -51,7 +51,8 @@ func _rolls_and_damage(failures: Array[String]) -> void:
 				or crit != replay.gift_is_crit(314):
 			failures.append("seed %d changed its Bankai or crit roll in replay" % seed_value)
 			return
-		selected += int(boss.bankai_selected)
+		if boss.bankai_selected:
+			selected.append(seed_value)
 		crits += int(crit)
 		var events := boss.damage(int(cfg["crit_damage"] if crit else cfg["gift_damage"]), crit)
 		if boss.hp != (245 if crit else 249) or events[0]["is_crit"] != crit:
@@ -60,8 +61,11 @@ func _rolls_and_damage(failures: Array[String]) -> void:
 		if not boss.start(seed_value + 1, 10).is_empty():
 			failures.append("start accepted a second roll")
 			return
-	if crits < 160 or crits > 250 or selected < 1 or selected > 12:
-		failures.append("unexpected crit/Bankai counts across 4096 seeds: %d/%d" % [crits, selected])
+	if crits < 160 or crits > 250:
+		failures.append("unexpected crit count across 4096 seeds: %d" % crits)
+	if selected != [70, 192, 297, 839, 1364, 1517, 1577, 1662, 1810, 1979, 2128, 2596,
+			2726, 3279, 3448, 3734, 3769, 3963]:
+		failures.append("unexpected Bankai selection across 4096 seeds: %s" % str(selected))
 
 
 func _enter(failures: Array[String], boss_override: RefCounted) -> Node3D:

@@ -1052,3 +1052,26 @@ Session state: main is `d27cdb2`, clean, pushed, gate-green, tag pushed and rele
 U1 is the delicate one and the brief says so rather than pretending it is a copy-paste: the lobby rotates ONE rigid limb node at the hip (`lobby_player.gd` `_anim()`, GAIT_RATE 10.5, GAIT_SWING 0.9, limbs `[swing, -swing, -swing, swing]`) while the level poses a SEGMENTED rig through a clamped two-bone IK (`view/player_locomotion.gd`, 757 lines). "Identical" therefore needs a mechanism, not a duplicate: the brief requires ONE shared gait module called by both, jump/fall/stairs-up unchanged and proven unchanged against a recorded baseline, the constant-limb-length and no-leg-through-torso tests still passing, the 16 contact sheets regenerated, and a parity test that compares the ACTUAL posed transforms of the lobby figure and the game figure at the same phase and amplitude. Note the tension with cycle 7's D-T7-1, which rejected the proposal's animator precisely because it rotated single blocks at the hip: the owner has now asked for that look for idle/walk/run specifically, so the brief keeps the articulated solver for jump/fall/stairs and confines the rigid-hip look to the grounded states. That is the owner's call to make and it is recorded here as a deliberate reversal of scope, not an oversight.
 
 U3 carries a consequence the brief makes the worker handle honestly: `bankai_chance` 0.001 -> 0.0025 flips `bankai_selected` for some seeds, and that value is in the state hash (`sim/boss.gd:281`), so any pinned hash or "bankai happened" expectation for those seeds moves. The worker must find every one, update it, and say which pinned values moved and why that is correct rather than a regression. The owner's `bankai_sound.mp3` is byte-identical to the `custom_voiceline.mp3` already in the repo (both md5 298fab131793a4edb83d835cfb201d79), so no second copy is added; the job is to prove the cinematic really plays it and measure the timing rather than read it off the constants.
+
+Cycle 8 U3: tuned Bankai to the owner's 1 in 250, threshold 0.004. The first pass
+shipped 0.0025 because the orchestrator's brief wrote that number next to the words
+"1 in 250"; the worker flagged that 0.0025 is 1 in 400 rather than silently matching
+either, and the orchestrator corrected the decimal to the odds the owner asked for.
+The same seeded draw now selects 18 seeds in the level-10 sweep of 0 through 4095:
+70, 192, 297, 839, 1364, 1517, 1577, 1662, 1810, 1979, 2128, 2596, 2726, 3279, 3448,
+3734, 3769 and 3963, against 839 and 1364 at the old 0.001. The replay fixture's first
+qualifying seed moves from 839 to 70. No stored state or terrain gallery hash needed a
+new value.
+
+FORCE BANKAI now follows the live arena timeline. The fallback uses the existing
+owner MP3 (both files MD5 298fab131793a4edb83d835cfb201d79). The windowed probe
+started it at 468 (7.800 s), observed the natural finish at 711 (11.850 s), and
+restored the camera at 1530 (25.500 s). SHOT_EXIT=0, nine PNGs in
+C:/Users/Nathan/AppData/Local/Temp/bankai-u3-screenshots.zip. The headless smoke
+passed at 30 and 144 FPS, including input lock, 300 gold, beacon and level
+completion. Negative controls confirmed failures for the old threshold, removed
+voice fallback, missing impact, overly loud kill and delayed camera transition.
+Decisions D-T8B-9 through D-T8B-11.
+
+Gate: GATE_EXIT=0, GATE OK (9 ran, 0 skipped, 676 s), TESTS 143 passed 0 failed,
+PARITY 56/56, SELFTEST 18/18, GALLERY 16/16.

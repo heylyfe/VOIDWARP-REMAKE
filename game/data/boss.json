@@ -13,7 +13,7 @@
   "bowling_ball": {"windup_ticks": 39, "speed_u_per_s": 14.0, "radius_u": 0.45, "height_u": 0.45, "life_ticks": 180},
   "green_fn": {"windup_ticks": 30, "speed_u_per_s": 24.0, "radius_u": 0.4, "height_u": 0.8, "aim_height_u": 0.9, "life_ticks": 120},
   "bankai": {"hit_tick": 1290, "end_tick": 1530, "grace_ticks": 60},
-  "bankai_chance": 0.001,
+  "bankai_chance": 0.004,
   "reward_gold": 300,
   "arena": {"half_extent_tiles": 16, "floor_height": 1, "spawn_z": 8, "boss_z": -8, "boss_height_u": 1.25, "beacon_z": -8},
   "laugh_ticks": 90
