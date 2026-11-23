@@ -41,6 +41,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
+      # The matrix names the three public presets by hand, so the owner-only
+      # "Tester" preset in export_presets.cfg can never be picked up here.
       matrix:
         include:
           - name: Linux (x86_64)
