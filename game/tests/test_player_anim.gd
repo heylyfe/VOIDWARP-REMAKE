@@ -30,6 +30,7 @@ const WorldScript := preload("res://app/world.gd")
 const LobbyPlayerScript := preload("res://view/lobby/lobby_player.gd")
 const Collision := preload("res://sim/collision.gd")
 const Locomotion := preload("res://view/player_locomotion.gd")
+const PlayerGait := preload("res://view/player_gait.gd")
 const Hash := preload("res://sim/state_hash.gd")
 const RunState := preload("res://sim/run_state.gd")
 
@@ -111,37 +112,61 @@ func _leg_gaits(f: Array[String]) -> void:
 		f.append("gait: world failed to build")
 		world.free()
 		return
+	# Flat ground plays the Antechamber's gait (D-ANIM-15), so the flat samples run at the
+	# level's real run speed (9 u/s) and their amplitude is speed / 9. The ramp and stair
+	# samples keep the old full-speed staging: they are the articulated rig, unchanged.
 	var walk := _sample_gait(world, 3.0, 0)
 	var run := _sample_gait(world, 9.0, 0)
-	var ramp := _sample_gait(world, 3.0, 4)
-	var stairs := _sample_gait(world, 3.0, 5)
+	var ramp := _sample_gait(world, 3.0, 4, 60)
+	var stairs := _sample_gait(world, 3.0, 5, 60)
 	print("ANIM walk %s, run %s, ramp %s, stairs %s" % [walk, run, ramp, stairs])
-	if run.cadence < walk.cadence * 1.4 or run.stride < walk.stride * 1.3:
-		f.append("gait: run cadence and stride must exceed walking")
-	if run.arm < walk.arm * 1.4 or run.lean < walk.lean + 0.12 or run.bob < walk.bob * 1.5:
-		f.append("gait: running must swing the arms more, lean further and bob higher")
-	if ramp.stride > walk.stride * 0.85 or ramp.bob > walk.bob * 0.35:
-		f.append("gait: uphill stride and body bob must shrink")
-	if ramp.knee < walk.knee + 0.07 or ramp.lift < walk.lift + 0.09:
-		f.append("gait: uphill swing must carry the knee and boot higher")
-	if ramp.peak_frame_angle > 0.30 or stairs.peak_frame_angle > 0.36:
-		f.append("gait: a rising surface caused a single-frame thigh snap")
-	for gait in [walk, run, ramp, stairs]:
-		if gait.contacts < 5 or gait.slide > 0.015 or gait.sink > 0.005:
+	# The lobby gait: the phase runs at RATE x amplitude, the limbs swing SWING x amplitude,
+	# the stride is the same at every speed, and nothing else moves - no lean, no bob, no
+	# elbow bend, no planted foot, and the leg is one rigid block.
+	for gait in [walk, run]:
+		var amp: float = clampf(float(gait.speed) / 9.0, 0.0, 1.0)
+		if absf(float(gait.cadence) - PlayerGait.RATE * amp / TAU) > 0.02:
+			f.append("gait: the flat cadence must be the lobby's RATE x amp: %s" % gait)
+		if absf(float(gait.arm) - PlayerGait.SWING * amp) > 0.02:
+			f.append("gait: the flat arm swing must be the lobby's SWING x amp: %s" % gait)
+		if float(gait.lean) > 0.001 or float(gait.bob) > 0.001:
+			f.append("gait: the lobby gait has no lean and no bob: %s" % gait)
+		if int(gait.contacts) != 0:
+			f.append("gait: the lobby gait plants no feet: %s" % gait)
+		if float(gait.rigid_bend) > 0.001:
+			f.append("gait: the flat leg must be one rigid block: %s" % gait)
+		if float(gait.sink) > 0.005:
+			f.append("gait: a rigid boot went under the floor: %s" % gait)
+	if absf(float(run.stride) - float(walk.stride)) > 0.05:
+		f.append("gait: the lobby gait's stride is the same at every speed: %s / %s" % [walk, run])
+	# Stairs and slopes keep the articulated rig (the owner's "stairs-up pose is fine"), so
+	# their checks are the ones they always were - now stated absolutely, because the flat
+	# reference they used to be compared against is the lobby gait.
+	for gait in [ramp, stairs]:
+		if int(gait.contacts) < 5 or float(gait.slide) > 0.015 or float(gait.sink) > 0.005:
 			f.append("plant: expected repeated stationary soles above the floor: %s" % gait)
-		if gait.swing_bend < gait.plant_bend + 0.35:
+		if float(gait.swing_bend) < float(gait.plant_bend) + 0.35:
 			f.append("gait: the knee should straighten on plant and flex during swing: %s" % gait)
+	if float(ramp.peak_frame_angle) > 0.30 or float(stairs.peak_frame_angle) > 0.36:
+		f.append("gait: a rising surface caused a single-frame thigh snap")
+	if float(ramp.stride) > 2.0 or float(ramp.bob) > 0.03:
+		f.append("gait: uphill stride and body bob must shrink: %s" % ramp)
+	if float(ramp.knee) < -0.10 or float(ramp.lift) < 0.10:
+		f.append("gait: uphill swing must carry the knee and boot higher: %s" % ramp)
 	world.teardown()
 	world.free()
 
 
-func _sample_gait(world: MovingWorld, speed: float, surface: int) -> Dictionary:
+func _sample_gait(world: MovingWorld, speed: float, surface: int, settle := 90) -> Dictionary:
 	var tiles: Array = []
 	for x in range(-1, 2):
 		for z in range(-30, 1):
 			var height := -z - 1 if surface == 4 else (-z if surface == 5 else 0)
 			tiles.append([x, z, height, 4 if surface == 4 else 0, 0])
 	world.w = Collision.make_world(tiles, [], [])
+	# Only this loop may advance the render pass: the engine's own _process would add
+	# frames of its own and the measured cadence would not be the gait's.
+	world.set_process(false)
 	world.ctl.C["run_speed"] = speed
 	world.ctl.x = 0.5
 	world.ctl.z = -1.5
@@ -159,19 +184,37 @@ func _sample_gait(world: MovingWorld, speed: float, surface: int) -> Dictionary:
 	var thighs: Array[Quaternion] = [Quaternion.IDENTITY, Quaternion.IDENTITY]
 	var m := {"cadence": 0.0, "stride": 0.0, "contacts": 0, "slide": 0.0,
 			"sink": 0.0, "arm": 0.0, "lean": 0.0, "knee": -INF, "lift": 0.0, "bob": 0.0,
-			"plant_bend": INF, "swing_bend": 0.0, "peak_frame_angle": 0.0}
+			"plant_bend": INF, "swing_bend": 0.0, "peak_frame_angle": 0.0,
+			"speed": speed, "rigid_bend": 0.0}
 	var min_y := INF
 	var max_y := -INF
 	var advance := 0.0
+	var travelled := 0.0
+	var counted := 0
 	for frame in 300:
 		if frame % 2 == 0:
 			world.ctl.step(DT, world._capture_input(), world.w)
 			world._player_pass()
-		var phase := world._anim_phase
+		# The lobby gait keeps its own clock (D-ANIM-15); the articulated one still ticks
+		# underneath, so read whichever clock is drawing the legs - and never across a frame
+		# where the drawing rig changes, or the two clocks' difference lands in the sum.
+		var rigid_before: bool = world._rigid_weight >= 1.0
+		var phase: float = world._gait_phase if rigid_before else world._anim_phase
 		world._process(DT * 0.5)
-		if frame < 60:
+		# The lobby gait's weight eases in over RIGID_BLEND, and a frame measured while it is
+		# still crossing would mix the two clocks: the flat samples wait it out, the ramp and
+		# stair samples (which never leave the articulated rig) keep the old window.
+		if frame < settle:
 			continue
-		advance += fposmod(world._anim_phase - phase, TAU)
+		var rigid_after: bool = world._rigid_weight >= 1.0
+		if rigid_after != rigid_before:
+			continue
+		var now: float = world._gait_phase if rigid_after else world._anim_phase
+		advance += fposmod(now - phase, TAU)
+		counted += 1
+		# The controller's own speed, not the staged one: the kit's class multiplier scales
+		# it, and the lobby gait's amplitude is speed / run_speed.
+		travelled += Vector2(world.ctl.vx, world.ctl.vz).length()
 		min_y = minf(min_y, world._pose.body_y)
 		max_y = maxf(max_y, world._pose.body_y)
 		m.arm = maxf(m.arm, absf(world._pose.arm_l))
@@ -179,12 +222,13 @@ func _sample_gait(world: MovingWorld, speed: float, surface: int) -> Dictionary:
 		for side in 2:
 			var basis: Basis = world._limbs[side + 4].basis
 			var rotation := basis.get_rotation_quaternion()
-			if frame > 60:
+			if counted > 1:
 				m.peak_frame_angle = maxf(m.peak_frame_angle, thighs[side].angle_to(rotation))
 			thighs[side] = rotation
 		_measure_feet(world, surface, m, previous, plants)
-	m.cadence = advance / TAU / 2.0
-	m.stride = speed / m.cadence
+	m.cadence = advance / TAU / (maxf(1.0, float(counted)) * DT * 0.5)
+	m.speed = travelled / maxf(1.0, float(counted))
+	m.stride = m.speed / m.cadence
 	m.bob = max_y - min_y
 	return m
 
@@ -192,6 +236,10 @@ func _sample_gait(world: MovingWorld, speed: float, surface: int) -> Dictionary:
 func _measure_feet(world: MovingWorld, surface: int, m: Dictionary,
 		previous: Array[bool], plants: Array[Vector3]) -> void:
 	var rig = world._leg_rig
+	# The lobby gait (D-ANIM-15) has no solver, no stance and no plant: the leg is one rigid
+	# block at the hip, so the only thing left to measure is that the block stays straight
+	# and that its boot never cuts the floor.
+	var rigid: bool = world._rigid_weight >= 1.0
 	for side in 2:
 		var boot: MeshInstance3D = rig.boots[side]
 		var bounds := boot.get_aabb()
@@ -199,6 +247,13 @@ func _measure_feet(world: MovingWorld, surface: int, m: Dictionary,
 		var limb := world._limbs[side + 4] as Node3D
 		var shin: MeshInstance3D = rig.shins[side]
 		var bend := limb.global_basis.y.angle_to(shin.global_basis.y)
+		if rigid:
+			m.rigid_bend = maxf(m.rigid_bend, bend)
+			for z in [bounds.position.z, bounds.end.z]:
+				for x in [bounds.position.x, bounds.end.x]:
+					var corner := boot.to_global(Vector3(x, bounds.position.y, z))
+					m.sink = maxf(m.sink, _course_height(surface, corner.z) - corner.y)
+			continue
 		var planted: bool = rig.stance[side]
 		if planted:
 			m.plant_bend = minf(m.plant_bend, bend)
@@ -337,8 +392,9 @@ func _leg_pose_statics(f: Array[String]) -> void:
 		var p: Dictionary = WorldScript._pose_run(phase, full_amp)
 		if not is_equal_approx(float(p["leg_l"]), -float(p["leg_r"])):
 			f.append("run legs must mirror at phase %.2f: %s" % [phase, str(p)])
-		# arms counter the same-side leg (arm_l against leg_l)
-		if not is_equal_approx(float(p["arm_l"]), -0.85 * float(p["leg_l"])):
+		# arms counter the same-side leg (arm_l against leg_l), exactly as the lobby's do
+		# (view/player_gait.gd, D-ANIM-15: [swing, -swing, -swing, swing]).
+		if not is_equal_approx(float(p["arm_l"]), -float(p["leg_l"])):
 			f.append("arm_l must counter leg_l at phase %.2f: %s" % [phase, str(p)])
 		var mid: Dictionary = WorldScript._pose_run(phase, 0.5)
 		if absf(float(mid["leg_l"])) > absf(float(p["leg_l"])) + 1e-9:
@@ -540,7 +596,7 @@ const POSES := [
 	["up_stairs", "dasher", 9.0, Vector2(0, -1), "stairs", Vector2(0.5, 1.5), 0.0, 44, 0.0, ""],
 	["down_stairs", "dasher", 9.0, Vector2(0, 1), "stairs", Vector2(0.5, -16.5), PI, 44, 0.0, ""],
 	["jump", "dasher", 9.0, Vector2(0, -1), "flat", Vector2(0.5, 8.5), 0.0, 40, 0.75, "jump"],
-	["land", "dasher", 9.0, Vector2(0, -1), "flat", Vector2(0.5, 8.5), 0.0, 40, 0.50, "land"],
+	["land", "dasher", 9.0, Vector2(0, -1), "flat", Vector2(0.5, 8.5), 0.0, 40, 0.62, "land"],
 	["dash", "dasher", 9.0, Vector2(0, -1), "flat", Vector2(0.5, 8.5), 0.0, 40, 0.30, "dash"],
 	["glide", "glider", 9.0, Vector2(0, -1), "flat", Vector2(0.5, 8.5), 0.0, 40, 0.90, "glide"],
 	["idle", "dasher", 9.0, Vector2.ZERO, "flat", Vector2(0.5, 0.5), 0.0, 30, 3.0, ""],
@@ -930,7 +986,11 @@ func _check_review(world, track: Dictionary, faults: Dictionary) -> void:
 				_measure(track, "deep_floor", ground - point.y)
 				if point.y < ground - DEEP_FLOOR_TOL:
 					_fault(faults, "boot or shin below the course surface", ground - point.y)
-		_check_support(world, track, faults, side, boot)
+			# The lobby gait (D-ANIM-15) has no stance and no plant: the drawn boot is the
+		# rigid block, not the solver's planted sole, so the plant oracle judges only the
+		# solve.
+		if world._rigid_weight <= 0.0:
+			_check_support(world, track, faults, side, boot)
 	var root: Vector3 = world.player_model.global_position
 	var thigh_l: MeshInstance3D = world._limbs[4]
 	var hip_y := thigh_l.to_global(world._limb_mounts[4]).y

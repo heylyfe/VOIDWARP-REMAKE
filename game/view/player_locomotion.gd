@@ -615,6 +615,47 @@ func pose_leg(side: int, limb: MeshInstance3D, hip: Vector3, mount: Vector3,
 	boots[side].transform = inverse * Transform3D(boot_basis, ankle)
 
 
+## The lobby gait's leg (D-ANIM-15): the whole leg as ONE rigid block at the hip - thigh,
+## shin and boot collinear, rotated by `angle` about the hip joint, which is exactly the
+## block the Antechamber's walker rotates. `weight` blends it over the articulated pose
+## pose_leg has just written (0 = the solve, 1 = the rigid block).
+##
+## The blend is in JOINT ANGLE space, never in transform space: every segment keeps its own
+## length and only its rotation moves, so the constant-limb-length rule (D-ANIM-1) holds
+## through the blend as well as at both ends. The knee straightens on the curve that makes
+## the leg's LENGTH linear in `weight` (cos(flex / 2) is what sets it), because the drawn
+## body's height blends linearly too: the boot then stays on the floor all the way across
+## instead of dipping under it half-way.
+func pose_leg_rigid(side: int, limb: MeshInstance3D, hip: Vector3, mount: Vector3,
+		angle: float, weight: float) -> void:
+	if weight <= 0.0:
+		return
+	var down := Vector3.DOWN * SEGMENT
+	var rigid := Basis(Vector3.RIGHT, angle)
+	if weight >= 1.0:
+		limb.transform = Transform3D(rigid, hip - rigid * mount)
+		shins[side].transform = Transform3D(Basis.IDENTITY, mount + down)
+		boots[side].transform = Transform3D(Basis.IDENTITY, mount + down * 2.0)
+		return
+	var thigh := limb.transform.basis
+	var shin_local := shins[side].transform.basis
+	var boot_local := boots[side].transform.basis
+	var spin := shin_local.get_rotation_quaternion()
+	var flex := spin.get_angle()
+	var thigh_b := thigh.slerp(rigid, weight)
+	var shin_b := Basis.IDENTITY
+	if flex > 0.0001:
+		var half := acos(clampf(lerpf(cos(flex * 0.5), 1.0, weight), -1.0, 1.0))
+		shin_b = Basis(spin.get_axis(), half * 2.0)
+	var boot_b := boot_local.slerp(Basis.IDENTITY, weight)
+	var knee := hip + thigh_b * down
+	var ankle := knee + thigh_b * shin_b * down
+	limb.transform = Transform3D(thigh_b, hip - thigh_b * mount)
+	var inverse := limb.transform.affine_inverse()
+	shins[side].transform = Transform3D(shin_b, inverse * knee)
+	boots[side].transform = Transform3D(boot_b, inverse * ankle)
+
+
 ## How deep the leg's thigh (beyond `socket` along it) and shin blocks reach into the
 ## torso block, for a solve()'s [knee, ankle, bend]: a 3 x 5 x 3 grid through each block.
 ## `inv` takes the figure frame to the torso's mesh frame.
