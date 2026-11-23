@@ -890,3 +890,11 @@ game/sim/boss.gd for the event contract and snapshot() for the hashed fields.
 bankai_selected holds the once-per-fight roll. T8b owns activation, flight, lethal
 hit emission, and laugh/cinematic timing. T8a handles lethal hit dispatch, rewards
 and beacon exit. Build arena geometry with BossArena.build(level, boss.config).
+
+T8a framework integration: world.step(dt, command) can replay captured commands.
+The arena tick passes player feet as player_position and the centred boss hit target
+as boss_position. Its world event dispatcher applies lethal boss_projectile_hit_player
+and pays boss_died through the arena beacon. To clear and award via Bankai, emit the
+events from damage() through the same tick return. BossView.on_events receives
+the whole stream. The existing controller keeps the player alive during an ordinary
+void respawn, while a direct boss hit ends the run.

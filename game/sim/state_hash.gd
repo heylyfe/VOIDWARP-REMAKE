@@ -155,7 +155,40 @@ static func dump(rs: RefCounted) -> PackedStringArray:
 		out.append("JUMPPADS %s %s %s %d %s" % [str(jp.pads_csv()), str(jp.ready_csv()),
 				(jp.lost as PackedByteArray).hex_encode(), int(jp.rearm_ticks),
 				bits(float(jp.launch_speed))])
+	if lv.boss != null:
+		var encounter: Dictionary = lv.boss.snapshot()
+		if lv.arena_controller != null:
+			encounter["controller"] = _arena_controller_fields(lv.arena_controller)
+			encounter["gift_fire"] = lv.boss_gifts.snapshot()
+			encounter["purse_centi"] = lv.arena_purse_centi
+		out.append("BOSS " + var_to_bytes(_canonical(encounter)).hex_encode())
 	return out
+
+
+## Canonical binary values preserve the exact float bits in boss and controller state.
+static func _canonical(value: Variant) -> Variant:
+	if value is Dictionary:
+		var keys: Array = value.keys()
+		keys.sort()
+		var sorted := {}
+		for key in keys:
+			sorted[key] = _canonical(value[key])
+		return sorted
+	if value is Array:
+		var result: Array = []
+		for item in value:
+			result.append(_canonical(item))
+		return result
+	return value
+
+
+static func _arena_controller_fields(controller: RefCounted) -> Dictionary:
+	var fields := {}
+	for prop in controller.get_property_list():
+		if (int(prop["usage"]) & PROPERTY_USAGE_SCRIPT_VARIABLE) != 0 \
+				and int(prop["type"]) != TYPE_CALLABLE:
+			fields[prop["name"]] = controller.get(prop["name"])
+	return fields
 
 
 ## "VOTES id:n id:n" over the positive counts, ids sorted; "" when there are none.

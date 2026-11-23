@@ -5,6 +5,8 @@
   "crit_chance": 0.05,
   "crit_damage": 5,
   "fire_rate_per_s": 6.0,
+  "eye_height_u": 1.55,
+  "sprite_height_u": 3.0,
   "gift_speed_u_per_s": 32.0,
   "gift_hit_radius_u": 1.25,
   "bowling_ball": {"windup_ticks": 39, "speed_u_per_s": 14.0, "radius_u": 0.45, "height_u": 0.45},

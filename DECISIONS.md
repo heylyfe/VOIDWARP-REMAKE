@@ -8620,3 +8620,21 @@ The owner asked for "Peter Griffin boss fight at level 10 (teleport to arena, fi
 Boss attack cadence, gift tuning and arena dimensions live in boss.json. Bankai uses
 one draw keyed by run seed and level. Crits use a separate draw keyed by the shot
 tick and run seed. The arena uses packed floor tiles assembled outside voidgen.
+
+## D-T8A-2 (2026-11-23) Arena entry and clearing level 10
+
+Level 10 requires every real black gift even with a quota upgrade. Its final pickup
+moves the controller onto a separate flat platform and preserves the carried purse,
+charges and kit. The arena has its own terrain hash, collision and beacon. Map-specific
+enemy, curse, upgrade and collapse ticks stop on entry. The boss death event credits
+300 whole gold once and opens the beacon. Entering it on a subsequent tick pays the
+usual clear stipend and raises the normal level-completion signal.
+
+## D-T8A-3 (2026-11-23) First-person gift throws and replay state
+
+Left mouse is held fire in the arena. The fixed-tick command contains the fire bit and
+world-space aim captured from mouselook. A spawned gift snapshots its crit result and
+tests its swept segment against the boss hit sphere. The arena hash includes the boss,
+ordered in-flight gifts, cooldown, controller values and purse. The same commands
+drive live and replay ticks. An attack-worker hit event invokes the controller's
+death path directly so a charge, Last Light or respawn invulnerability cannot absorb it.
