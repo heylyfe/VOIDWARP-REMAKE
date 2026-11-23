@@ -19,15 +19,21 @@ extends RefCounted
 #
 # Format: one key per line, stable order, so a human can read it and a test can parse it.
 #   version=1
+#   build=<the menu pill's build tag, app/menu.gd's VERSION_TAG>
+#   utc=<the write's UTC time, ISO-like>
 #   seed=<the run's seed>
 #   level=<the level number>
 #   tick=<the level's own tick>
 #   phase=<black|gold|arena|dead|over|lobby>
 #
-# The file's mtime is the "when" - no wall clock is written, so the content is a pure
-# function of the run's own state and a test can assert it exactly.
+# utc is the only wall-clock field (the owner's spec asks for it: a crash report must say
+# WHEN). It never enters the sim - the state hash hashes sim state only, so the breadcrumb
+# stays view-only (test_run_breadcrumb.gd leg D proves the hash is identical on/off).
 
 const VERSION := 1
+## The build the owner is playing, the same tag the menu's BUILD pill shows (D-U4-2).
+const MenuScript := preload("res://app/menu.gd")
+const BUILD_TAG: String = MenuScript.VERSION_TAG
 ## One write per second at the sim's fixed 60 Hz step, plus one per phase edge.
 const REFRESH_TICKS := 60
 
@@ -67,6 +73,8 @@ func write(seed_value: int, level: int, tick: int, phase: String) -> void:
 				% [path, FileAccess.get_open_error()])
 		return
 	f.store_line("version=%d" % VERSION)
+	f.store_line("build=%s" % BUILD_TAG)
+	f.store_line("utc=%s" % Time.get_datetime_string_from_system(true))
 	f.store_line("seed=%d" % seed_value)
 	f.store_line("level=%d" % level)
 	f.store_line("tick=%d" % tick)

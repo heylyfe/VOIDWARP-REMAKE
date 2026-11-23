@@ -77,6 +77,16 @@ func _leg_a_level_start(f: Array[String]) -> void:
 	var fields: Dictionary = w.breadcrumb.read_fields()
 	if str(fields.get("version", "")) != "1":
 		f.append("leg A: version is %s, expected 1" % str(fields.get("version", "")))
+	# The owner's spec: the file carries the build and the UTC time of the write (D-U4-2).
+	if str(fields.get("build", "")) != BreadcrumbScript.BUILD_TAG:
+		f.append("leg A: build is %s, expected %s"
+			% [str(fields.get("build", "")), BreadcrumbScript.BUILD_TAG])
+	# Time.get_datetime_string_from_system(true) is "YYYY-MM-DDTHH:MM:SS", UTC, 19 chars.
+	var utc := str(fields.get("utc", ""))
+	var utc_ok := utc.length() == 19 and utc.substr(4, 1) == "-" and utc.substr(7, 1) == "-" \
+		and utc.substr(10, 1) == "T" and utc.substr(13, 1) == ":" and utc.substr(16, 1) == ":"
+	if not utc_ok:
+		f.append("leg A: utc is '%s', expected an ISO-like UTC timestamp" % utc)
 	if str(fields.get("seed", "")) != str(SEED):
 		f.append("leg A: seed is %s, expected %d" % [str(fields.get("seed", "")), SEED])
 	if str(fields.get("level", "")) != str(LEVEL):
