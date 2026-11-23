@@ -21,6 +21,8 @@ const MinesScript := preload("res://sim/mines.gd")
 const Util := preload("res://tests/sim_testutil.gd")
 const AddressMeEnemy := preload("res://content/enemies/address_me/enemy.gd")
 const ClaudeEnemy := preload("res://content/enemies/claude/enemy.gd")
+const ClawdsScript := preload("res://sim/clawds.gd")
+const BeaconScript := preload("res://sim/beacon.gd")
 const CoilEnemy := preload("res://content/enemies/coil/enemy.gd")
 const GinBehavior := preload("res://content/enemies/gin/enemy.gd")
 const Isagi := preload("res://content/enemies/isagi/enemy.gd")
@@ -38,7 +40,7 @@ const LAND_TICK := 411          # coil: spawn 30 + idle 180 + cue 36 + flight 16
 func run() -> Array[String]:
 	var f: Array[String] = []
 	_check(f, "address_me: the countdown's expiry kills (D-ADDR)", _claim_address_me(true), _claim_address_me(false))
-	_check(f, "claude: the drum ring kills the grounded player (D-CLAUDE)", _claim_claude(true), _claim_claude(false))
+	_check(f, "claude: 180 s with no clawd collected kills (D-CLAUDE)", _claim_claude(true), _claim_claude(false))
 	_check(f, "coil: the landing on the player kills (D-COIL)", _claim_coil(true), _claim_coil(false))
 	_check(f, "gift_larper: contact through the ladder kills (D-MINE)", _claim_gift_larper(true), _claim_gift_larper(false))
 	_check(f, "gin: the void zone kills a player standing in it (D-GIN)", _claim_gin(true), _claim_gin(false))
@@ -168,27 +170,30 @@ func _claude_cfg() -> Dictionary:
 	return (doc as Dictionary)["stats"].duplicate(true)
 
 
+## The revamped claim (D-T4-5): Claude does nothing himself, so the claim is the ANGER TIMER -
+## 180 s (10800 ticks) with no clawd collected kills the player with D-CLAUDE. The mechanism
+## toggle is the swarm itself: with no clawds attached there is no timer and no death.
 func _claim_claude(enabled: bool) -> bool:
 	var w := Util.world_from_tiles(_flat_3(10, 10))
 	w["dais"] = [0, 0, 0]
 	var ctl = _spent_ctl(w)
-	var rt = EnemyRuntime.new()
 	var padded: Array = []
 	for t in _flat_3(10, 10):
 		padded.append([t[0], t[1], t[2], 0, 0])
-	rt.setup({"beacon": [0, 0, 0], "spawns": [[0, 0, 0]], "anchors": [],
-			"tiles": padded, "props": [], "pads": []}, w, [ctl], 4242)
-	var row: Dictionary = {}
+	var L := {"beacon": [0, 0, 0], "spawns": [[0, 0, 0]], "anchors": [],
+			"tiles": padded, "props": [], "pads": [],
+			"seed": 4242, "level": 1, "gen_version": 1, "attempt": 0}
+	var lv := {"clawds": null, "beacon": null}
 	if enabled:
-		ctl.x = 6.5
-		row = rt.spawn_at("claude", "Claude", ClaudeEnemy.new(), _claude_cfg(),
-				Vector3(12.5, 0.0, 0.5))
+		ClawdsScript.attach(L, ClaudeEnemy.clawd_cfg())
+		lv["clawds"] = ClawdsScript.create(L)
+		lv["beacon"] = BeaconScript.create(L)
 	var deaths: Array = []
-	for i in range(120):
-		if not row.is_empty():
-			row["agitation"] = 0.0   # pin the beat grid, as the source test does
-		for e in rt.step(DT):
-			if str(e.get("e", "")) == "death":
+	for i in range(10800):
+		var ev: Array = []
+		ClawdsScript.tick(lv, [ctl], w, i + 1, ev)
+		for e in ev:
+			if str((e as Dictionary).get("e", (e as Dictionary).get("type", ""))) == "death":
 				deaths.append(e)
 	return _has_death(deaths, "D-CLAUDE")
 

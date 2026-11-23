@@ -254,6 +254,9 @@ func _full_hud(gold_phase: bool):
 			"kit": "dasher", "ability_remaining": 1.2, "ability_total": 3.0,
 			"curses": curses, "upgrades": ups, "roster": roster,
 			"collapse": {"active": true, "cracking": true, "seconds": 4.2, "zones_left": 3},
+			# T4 (D-T4-8): the clawd counter + anger meter pill, live so the layout leg counts it
+			"clawds": {"active": true, "taken": 3, "total": 8, "anger_ticks": 3600,
+				"warned": 1, "kill_ticks": 10800, "next_at": 7200, "paused": false},
 			"mouse_locked": true})
 	hud.cartographer_map.visible = true   # the footprint-map owner's worst case
 	# in the tree, so theme constants and panel margins resolve for the fit checks

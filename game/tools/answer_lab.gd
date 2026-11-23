@@ -78,7 +78,9 @@ static var TRACE := false           # --trace: print each trial's death cause
 ## Extra knobs, each read from the doc's own arithmetic (D-T075-4, [CONTESTABLE]):
 ##   lag         ticks AFTER the anchor the first input lands. Default the
 ##               addendum's DELAY_TICKS. "ON the cue" rows (seal: "jump ON the
-##               bark", claude: "jump on the beat") get 0 - the doc says ON.
+##               bark") get 0 - the doc says ON. Claude has no case here any more:
+##               the cycle-7 revamp (D-T4-5) made his answer a ROUTE (collect
+##               clawds), not an input sequence, so there is no telegraph to time.
 ##               you: 75 - the cue is the 90-tick rumble's END (the ring
 ##               releases there; the doc's answer times the jump to the ring,
 ##               "as the ring reaches you" - 5/6 of the rumble in).
@@ -107,7 +109,6 @@ static func _pairs() -> Array:
 		{"enemy": "address_me", "level": "flat_lane", "telegraph": "address_me", "standoff": 0.0},
 		{"enemy": "isagi", "level": "flat_lane", "telegraph": "aim", "standoff": 7.0},
 		{"enemy": "isagi", "level": "stepped_lane", "telegraph": "aim", "standoff": 7.0},
-		{"enemy": "claude", "level": "flat_lane", "telegraph": "drum_ring", "standoff": 8.0, "lag": 0},
 		{"enemy": "gin", "level": "flat_lane", "telegraph": "mark", "standoff": 10.0},
 	]
 
