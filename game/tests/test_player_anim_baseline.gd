@@ -52,7 +52,46 @@ func run() -> Array[String]:
 		if digest != want:
 			f.append("baseline %s: the posed transforms changed (%s, want %s)"
 					% [case[0], digest, want])
+	_no_bleed(f)
 	return f
+
+
+## The hash above pins the ARTICULATED pose of the three frozen cases, which is what the
+## owner approved. This pins the other half of "unchanged": the lobby gait (D-ANIM-15) must
+## contribute NOTHING to an airborne frame. The figure runs on the ground first, so the
+## lobby gait is fully showing when it takes off; every frame of the jump and the fall must
+## then be posed by the articulated rig alone. If the weight were eased out instead of
+## dropped, the tuck and the braced fall would be drawn part-lobby for ~0.08 s and this
+## fails on the first airborne frame.
+func _no_bleed(f: Array[String]) -> void:
+	for name in ["jump", "fall"]:
+		var pose: Array = AnimTest.POSES[11 if name == "jump" else 12]
+		var world = WorldScript.new()
+		(Engine.get_main_loop() as SceneTree).root.add_child(world)
+		world.set_process(false)
+		AnimTest.stage(world, pose)
+		AnimTest.warm_up(world, pose)
+		var span: float = pose[8] if float(pose[8]) > 0.0 else 1.0
+		var frames := int(round(span / RENDER_DT))
+		var worst := 0.0
+		var airborne := 0
+		for frame in frames:
+			if frame % 2 == 0:
+				var held: Array[bool] = AnimTest.buttons_at(pose, frame)
+				AnimTest.tick(world, pose, held[0], held[1])
+			world._process(RENDER_DT)
+			if not bool(world.ctl.grounded):
+				airborne += 1
+				worst = maxf(worst, float(world._rigid_weight))
+		if airborne == 0:
+			f.append("no-bleed %s: the span holds no airborne frame" % name)
+		elif worst > 0.0:
+			f.append("no-bleed %s: the lobby gait was still showing on an airborne frame (%.4f)"
+					% [name, worst])
+		else:
+			print("BASELINE no-bleed %s: %d airborne frames, lobby gait weight 0 on all"
+					% [name, airborne])
+		world.free()
 
 
 ## Stages the case's sheet pose, runs it to the last sampled frame, and hashes every posed

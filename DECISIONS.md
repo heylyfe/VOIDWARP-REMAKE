@@ -9655,9 +9655,12 @@ crouches 0.115 u below it - the drawn figure is 0.13 u taller on flat ground tha
 stance, and it is the price of a straight leg; the crossing into and out of it is eased over 0.08 s. (2) The idle is
 now the lobby's idle: the limbs sit at rest and do not sway. (3) The run's lean, twist and bob are gone on flat
 ground, because the lobby has none. (4) The feet no longer plant: the lobby's boot swings with the leg and only
-touches the floor at the neutral angle, so the in-game boot does the same (the drawn body is lifted just enough that
-no corner ever cuts the floor). (5) Leaving the lobby gait - take-off, stairs, a slope, a landing, dash, glide - is
-instant, so the airborne poses are exactly the owner's.
+touches the floor at the neutral angle, so the in-game boot does the same. The drawn body is lifted just enough that
+no corner ever cuts the floor, which leaves the boot's lowest corner 0.0117 u above the floor at rest and 0.0020 u at
+3 and 9 u/s (the parity test measures both) - the lobby's own boot sits on the floor at rest, so this is the one
+place the level is deliberately 1.2 cm off the reference, and it is the price of never drawing a boot through the
+ground. (5) Leaving the lobby gait - take-off, stairs, a slope, a landing, dash, glide - is instant, so the airborne
+poses are exactly the owner's.
 
 **Tests.** `tests/test_player_gait.gd` (new) is the parity test: it drives the REAL lobby walker and the REAL level
 figure at the same phase and amplitude (0, 3 and 9 u/s) and compares the ACTUAL posed transforms of the four limb
@@ -9667,6 +9670,10 @@ floor. Worst divergence: 1e-7 rad on the limb angles, 0 on the phase, +0.0020 u 
 angle 2.03 rad and the phase off by 3.13 rad. `tests/test_player_anim_baseline.gd` (new) hashes the local transforms
 of the six limbs, two shins, two boots and two forearms at three frames of the jump, fall and up-stairs poses; the
 baseline was captured from aac250b (jump 92c5ee56..., fall 2361fa8a..., up_stairs 6ff3d1dc...) and still matches.
+Its second leg pins the other half of "unchanged": the figure runs on the ground first, so the lobby gait is fully
+showing at take-off, and every airborne frame of the jump (84 of them) and the fall (4) must then be posed by the
+articulated rig alone. **Teeth:** easing the weight out instead of dropping it fails that leg with the lobby gait
+still at 0.9011 on the jump's first airborne frame and 0.0113 on the fall's.
 `tests/test_player_anim.gd`'s gait leg now asserts the lobby contract on flat ground (cadence RATE x amp - 0.557 at
 3 u/s and 1.671 at 9, arm swing SWING x amp, no lean, no bob, no plant, one rigid leg, the same 5.386 u stride at
 every speed) and keeps the ramp/stair checks as absolute numbers (10 and 5 plants, slide 0.0042 and 0.0096, knee
