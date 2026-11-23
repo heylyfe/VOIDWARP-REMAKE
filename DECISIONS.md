@@ -9614,11 +9614,14 @@ is the restructured SPAWN AHEAD, byte-for-byte the same call.
 
 **Scrollable, permanently.** An OptionButton popup with no height cap is only reachable while it fits the
 window; a growing registry (12 today, more later) plus Peter makes that fragile. Both dropdowns now cap
-their popups at 60 % of the viewport height (`_cap_popups()` on every refresh, `POPUP_MAX_H_SHARE`);
-`PopupMenu.max_height` makes the popup scroll past the cap, so every entry stays reachable by wheel,
-click and keyboard. `_api()` also stops lying: its comment promised a fresh registry load when no level
-is live, the code returned null - so opening F10 in the menu or the lobby showed an EMPTY list. The
-fallback load now exists, and `on_world_built()` re-refreshes, so the list is complete wherever the
+their popups at 60 % of the viewport height (`_cap_popups()` on every refresh, `POPUP_MAX_H_SHARE`).
+This engine build REMOVED `PopupMenu.max_height` (the first cut used it and the engine threw "Invalid
+access to property 'max_height'" - caught in the suite run), so the cap is the popup WINDOW's
+`max_size` height half (`PopupMenu` inherits `Window`), the shape this 4.7.2 build supports: the popup
+clamps to it and `PopupMenu`'s own scrolling (`scroll_to_item` is exposed) keeps every entry reachable
+by wheel, click and keyboard. `_api()` also stops lying: its comment promised a fresh registry load when
+no level is live, the code returned null - so opening F10 in the menu or the lobby showed an EMPTY list.
+The fallback load now exists, and `on_world_built()` re-refreshes, so the list is complete wherever the
 panel is opened.
 
 **Peter rides the boss machinery, never a second spawn path.** The boss is not registry content
@@ -9634,7 +9637,8 @@ enemy added under `content/enemies/` is swept automatically. Per id: (a) the dro
 (b) picking it and driving the panel's own `_spawn` puts a live row in `world.rt.enemies` (id, in play,
 finite position, body mirror grown) with the panel's own status line reporting the spawn. The Peter leg
 asserts the arena was NOT entered before the tick, IS entered after one `world.step` (the queued D-T2-9
-job), and the status line says boss. Two layout teeth: the popup `max_height` must be capped at ~60 % of
+job), and the status line says boss. Two layout teeth: the popup's `max_size` height half must be capped
+at ~60 % of
 the window, and every HBox row of the panel column must fit the scroll column's width - the pre-fix 432-px
 enemies row fails both. Reverting the Peter entry fails the Peter leg; reverting `_api()`'s fallback turns
 list-content coverage green-or-nothing in the lobby but stays asserted by the WORLD boot; reverting the

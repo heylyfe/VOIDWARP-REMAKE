@@ -429,14 +429,6 @@ func _report_list_contents(f: Array[String], panel) -> void:
 ## cycle-8 bug was a 432-px enemies row inside a 370-px column, its spawn buttons off
 ## the viewport.
 func _report_list_geometry(f: Array[String], panel, root: Window) -> void:
-	var vh := float(root.size.y)
-	var cap := int(panel._content.get_popup().max_height)
-	if cap <= 0:
-		f.append("spawn: the enemy popup's max_height is 0 - an uncapped list runs past"
-			+ " the window and its tail is unreachable")
-	elif float(cap) > vh * 0.61:
-		f.append("spawn: the enemy popup's max_height %d exceeds the 60%% cap of the %d-px window"
-			% [cap, int(vh)])
 	var scroll: ScrollContainer = panel._layer.get_child(0)
 	var avail := float(scroll.get_rect().size.x)
 	if avail <= 0.0:
@@ -455,6 +447,17 @@ func _report_list_geometry(f: Array[String], panel, root: Window) -> void:
 		if rw > avail:
 			f.append("spawn: a panel row is %d px wide inside the %d-px column - it is cut off"
 				% [int(rw), int(avail)])
+	# the popup cap: max_size's height half (this engine has no PopupMenu.max_height);
+	# 0 means uncapped, an uncapped list can run past the window
+	var vh := float(root.size.y)
+	var pop: PopupMenu = panel._content.get_popup()
+	var cap := int(pop.max_size.y)
+	if cap <= 0:
+		f.append("spawn: the enemy popup's max_size height is 0 - an uncapped list can run"
+			+ " past the window and its tail is unreachable")
+	elif float(cap) > vh * 0.61:
+		f.append("spawn: the enemy popup's max_size height %d exceeds the 60%% cap of the %d-px window"
+			% [cap, int(vh)])
 
 
 ## (b) of the ask, the registry LOOP: for every id the registry reports, pick it in the

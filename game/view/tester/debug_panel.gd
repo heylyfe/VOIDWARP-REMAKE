@@ -396,9 +396,11 @@ func _refresh_options() -> void:
 	_cap_popups()
 
 
-## Cap both dropdown popups to a share of the viewport height (D-T2-10): PopupMenu
-## scrolls past the cap, so nothing below the fold is unreachable. A no-op outside the
-## tree (nothing to measure) - the cap is re-applied on every refresh while open.
+## Cap both dropdown popups to a share of the viewport height (D-T2-10): the popup is a
+## Window, so max_size (height half) clamps it and PopupMenu scrolls inside it - entries
+## below the fold stay reachable (this engine build has NO PopupMenu.max_height; the
+## Window cap is the supported equivalent). A no-op outside the tree (nothing to
+## measure) - the cap is re-applied on every refresh while open.
 func _cap_popups() -> void:
 	var vp := get_viewport()
 	if vp == null:
@@ -407,7 +409,7 @@ func _cap_popups() -> void:
 	for pick in [_content, _upgrade_pick]:
 		if pick != null:
 			var pop: PopupMenu = pick.get_popup()
-			pop.max_height = cap
+			pop.max_size = Vector2i(0, cap)
 
 
 ## T8 (merged) worked buttons: the labels say what the press will act on.
