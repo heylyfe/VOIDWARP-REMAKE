@@ -22,6 +22,11 @@ extends RefCounted
 ##   - the attack cadence gains a data-driven cooldown_ticks between attacks. Without it
 ##     the two attacks arrive one tick apart and a single jump clears both, which makes
 ##     the fight one dodge instead of two.
+##   - the bowling lane is committed at the windup tick and carried as `aim` on the
+##     boss_attack_windup event, and `_aim` is in snapshot(). The ball rolls down that
+##     lane instead of re-aiming at release, so the view's lane marker is truthful and
+##     the player can read the dodge. `aim` is a unit XZ direction; it is zero for the
+##     green_fn, which aims at the player's position at release by design.
 ## Projectile rows keep the T8a shape (attack, position, velocity, radius, height) and add
 ## id, spawn_tick, age and life_ticks; the whole row is hashed through _projectiles.
 
