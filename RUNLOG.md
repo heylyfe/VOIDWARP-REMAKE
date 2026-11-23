@@ -900,3 +900,41 @@ and pays boss_died through the arena beacon. To clear and award via Bankai, emit
 events from damage() through the same tick return. BossView.on_events receives
 the whole stream. The existing controller keeps the player alive during an ordinary
 void respawn, while a direct boss hit ends the run.
+
+## Cycle 7 T8b attacks: the two attacks, the laugh and the Bankai
+
+Branch `t3/peter-boss-attacks`, on top of the T8a framework (`origin/t3/74cf6538`,
+merged here as `54e1742`). The framework's contract is unchanged except for the additive
+extensions listed in `game/sim/boss.gd`'s header.
+
+What T8b adds:
+
+- **Bowling ball.** Rolls flat on the arena floor at `floor + height_u / 2`; the hit test
+  is a horizontal cylinder, so the player clears it by getting their feet above
+  `floor + 0.45`. A normal jump is above that height for ticks 2.4..42.6 of its 45-tick
+  airtime and the ball's own hit window is 7.3 ticks, so the jump covers it six times
+  over. Verified with the real controller: a bot that jumps 20 ticks before arrival
+  clears it, a bot that stands still is hit.
+- **Green fn.** Peter swaps to `peter_green_fn.png` (a VIEW state driven by the
+  `boss_attack_windup` event, never a sim field) and shoots a basketball at the player's
+  body centre AT RELEASE. 30-tick windup + 40-tick flight = 1150 ms from the visible
+  wind-up to arrival, over the owner's 400 ms floor; the 0.8 u sideways dodge takes 5.3
+  of the 40 flight ticks. A red ground marker runs from Peter to the aim point.
+- **A cooldown between attacks.** Without it the two attacks reached the player ONE TICK
+  apart and a single jump cleared both. `cooldown_ticks: 90` separates them to 91 ticks.
+  This is the one contract extension; `cooldown_tick` and `bankai_tick` join `snapshot()`.
+- **Laugh on death.** Any hit kills and emits `boss_laugh`. The placeholder is a
+  synthesized cue (`synth_cues.gd`, group `boss`, seed 61, 1.40 s, five "heh"
+  syllables). `view/audio/boss_audio.gd` prefers
+  `assets/owner_third_party/peter/laugh.ogg|mp3|wav` when the owner drops one in.
+- **Bankai easter egg.** The T8a roll selects it; the sim owns the clock (`bankai.hit_tick`
+  1260 = the cinematic's first `target_hit`, `end_tick` 1530 = its `TOTAL_DURATION`) and
+  the kill, the view plays the dormant cinematic through `animation_started`,
+  `target_hit` and `animation_finished`. Input is locked sim-side by the existing
+  `not boss.bankai_active` gate. The cinematic never touches `sim/` or the hash.
+
+Tests: `game/tests/test_boss_attacks.gd` (new). The windows are asserted ARITHMETICALLY
+from `data/boss.json` and `data/player.json`, never brute-forced; a negative control with
+`cooldown_ticks: 0` makes the gap assertion fail with "attacks arrive 1 ticks apart".
+`test_audio_cues_synth.gd` gains `BossAudio` and the `boss` group in its MODULES/GROUPS
+tables (extended, not weakened; its `seen < 18` floor is untouched).

@@ -187,6 +187,7 @@ func on_events(events: Array) -> void:
 				if _gift_model != null:
 					var gift: Node3D = _gift_model.instantiate()
 					add_child(gift)
+					_add_body(gift, _gift_material())
 					gift.position = event["position"]
 					_gifts[event["id"]] = gift
 			"boss_gift_moved":
@@ -302,3 +303,27 @@ func _stop_bankai() -> void:
 	if is_instance_valid(_bankai):
 		_bankai.free()
 	_bankai = null
+
+
+## The thrown gift's base pass: unshaded, using the mesh's vertex colours. The .glb
+## carries no material of its own (export_materials="NONE"), so without this the gift
+## renders Godot's default WHITE and the gold palette is never seen - the J3 defect
+## class test_model_materials.gd guards. Same pattern as gifts_view.gd's gold body.
+static func _gift_material() -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.vertex_color_use_as_albedo = true
+	m.albedo_color = Color(1.0, 1.0, 1.0)
+	return m
+
+
+## Adds the base material to every mesh surface under the instance.
+static func _add_body(root: Node3D, mat: StandardMaterial3D) -> void:
+	var stack: Array = [root]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		for c in n.get_children():
+			stack.push_back(c)
+		if n is MeshInstance3D and n.mesh != null:
+			for s in n.mesh.get_surface_count():
+				n.set_surface_override_material(s, mat)
