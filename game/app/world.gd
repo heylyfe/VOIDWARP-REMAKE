@@ -924,7 +924,8 @@ func _enter_boss_arena(events: Array) -> void:
 	rig.pitch_deg = 0.0
 	_boss_view = BossViewScript.new()
 	add_child(_boss_view)
-	_boss_view.setup(_boss_target_position(), float(boss.config["sprite_height_u"]), _hud_layer)
+	_boss_view.setup(_boss_target_position(), float(boss.config["sprite_height_u"]), _hud_layer,
+			boss.floor_y())
 
 
 func _boss_target_position() -> Vector3:

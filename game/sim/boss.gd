@@ -149,7 +149,8 @@ func _spawn_attack(attack: String, _state, ctx: Dictionary) -> Array[Dictionary]
 		row["velocity"] = aim.normalized() * float(cfg["speed_u_per_s"])
 	_projectiles.append(row)
 	return [{"kind": "boss_projectile_spawned", "attack": attack, "id": row["id"],
-		"position": row["position"], "velocity": row["velocity"]}]
+		"position": row["position"], "velocity": row["velocity"],
+		"radius": row["radius"], "height": row["height"]}]
 
 
 ## Advances every live projectile one tick, tests it against the player and expires it.
