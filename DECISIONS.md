@@ -8427,14 +8427,13 @@ list; test_jump_pads checks every row on all three kits, and its negative contro
 **Review objection declined (2026-11-22, Terra / gpt-6.1-terra xhigh, finding 3).** Terra objected that
 `jump_pad_launch()` resets `updraft_used`, which is outside the owner's expressly exhaustive refill list, that the
 test requires the extra reset and so reinforces the deviation, and asked for the write to be removed or the
-requirement changed. Declined by the orchestrator: the write stays. The rise in `controller.step()` is gated on
-`updraft_ready ... and not updraft_used` (controller.gd:475), so setting `updraft_ready` while leaving
-`updraft_used` true would make the refill a refill on paper only; the owner's intent was "the updraft comes
-back", and a flag that is set but unusable does not satisfy it. The `JUMP_PAD_REFILLS` comment now says so.
-Implementer's note, for the record: in the controller as it stands the glide-engage block also clears
-`updraft_used` on every fresh glide engagement (controller.gd:458), and the launch ends any glide, so the rise
-would still be usable without this write - removing it fails only test_jump_pads' flag row, not the new
-usability leg. The write is kept as the refill's own guarantee rather than a reliance on that coupling.
+requirement changed. Declined by the orchestrator: the write stays, as a SAFEGUARD rather than as what makes the
+rise work today. The rise in `controller.step()` is gated on `updraft_ready ... and not updraft_used`
+(controller.gd:475), and the glide-engage block already clears `updraft_used` on every fresh glide engagement
+(controller.gd:458) while a launch ends any glide - so the rise would still be usable without this write, and
+removing it fails only test_jump_pads' flag row, not the new usability leg. The write is kept so the refill is
+self-contained instead of resting on that coupling: a future change to glide engagement cannot then silently
+leave the rise flagged but unusable. The `JUMP_PAD_REFILLS` comment says the same.
 test_jump_pads now also asserts the rise is USABLE after a pad: a drained glider that owns it is flung, presses
 jump on falling ticks (spending its refilled air jumps) and must fire `updraft_rise` exactly once before landing;
 negative controls: the same flight with the rise drained again after the launch, and an unowned glider, fire 0.

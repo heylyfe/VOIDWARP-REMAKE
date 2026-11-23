@@ -644,12 +644,12 @@ func _try_launch_pad(w: Dictionary, ev: Array) -> void:
 # Deliberately NOT refilled: void charges (charges / charge_cap), gold (not controller state),
 # the beacon shield (barrier_shields), Last Light, Field Dressing, invulnerability.
 # updraft_used is on the list although the owner spec names only the rise itself (D-JUMPPAD-3,
-# Terra review finding 3 declined): the rise in step() is gated on
-# "updraft_ready ... and not updraft_used", so a refill that set updraft_ready while leaving
-# updraft_used = true would be a refill only on paper. Today the glide-engage block also
-# clears updraft_used on every fresh engagement, and the launch ends any glide, so that
-# reset would cover it - the write here keeps the refill self-contained instead of resting
-# on that coupling, and the post-launch state reads "rise available" in full.
+# Terra review finding 3 declined). The rise in step() is gated on
+# "updraft_ready ... and not updraft_used", and the glide-engage block already clears
+# updraft_used on every fresh engagement while the launch ends any glide - so the rise would
+# still be usable without this write. The write is a SAFEGUARD, not what makes the rise work
+# today: it keeps the refill self-contained instead of resting on that coupling, so a future
+# change to glide engagement cannot silently leave the rise flagged but unusable.
 const JUMP_PAD_REFILLS := [
 	"air_jumps", "dash_ready", "dash_cd", "bonus_dashes", "bonus_cd",
 	"glide_energy", "updraft_ready", "updraft_cd", "updraft_used", "lock",
