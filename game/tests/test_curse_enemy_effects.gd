@@ -29,7 +29,7 @@ extends RefCounted
 #   quarter_chimes ben begins his smoke at cycle_t 465 and lands ~ tick 900 (control: smoke at 1086, arrival at ~1161)
 #   second_strike a nuke blast records the player's position; the second missile 60 ticks later kills there (control: survives)
 #   spreading_rot the toucher's glitched tiles spread to an adjacent tile 360 ticks after the source appears (control: never)
-#   token_limit  a plushie placement re-arms the clock at 1800 ticks (control: 1500); a pickup removes 20 agitation (control: 35)
+#   token_limit  a clawd pickup leaves 1200 anger ticks (20 s) behind (control: 0, the canon calm)
 #   twin_fangs   gin's mark phase announces a SECOND "mark" telegraph (control: exactly one)
 #
 # Test-side placement (teleporting a row or the player a few u) is the same fixture
@@ -703,17 +703,13 @@ func _spreading_rot(f: Array[String]) -> void:
 
 # ---- on_tick: claude (token_limit) ------------------------------------------------------------------
 
-## token_limit: "plushies remove 20 agitation instead of 35 and spawn every 30 s". The
-## row's own plushie clock is re-armed to 1800 ticks (the sentence's 30 s) by the curse
-## after each placement (the canon behavior arms 1500); and a plushie pickup nets the
-## row 20 agitation, not the canon 35. The pickup is real: the player is teleported onto
-## the plushie tile (the walk-over pickup needs 0.9 u on the horizontal axes). invuln
-## suppresses claude's rings (this case is about the plushie economy, not the drums).
+## token_limit: "a clawd leaves 20 s of anger instead of calming Claude completely" (D-T4-7). The
+## pickup is real: the player is teleported onto a clawd's own centre (the gift pickup's 0.9 u
+## test point), and the anger the pickup leaves behind is read off the sim. The canon calm is 0;
+## the curse leaves 1200 ticks (20 s).
 func _token_limit(f: Array[String]) -> void:
-	var cd_pair := [-1, -1]
-	var drop_pair := [-1.0, -1.0]
-	var pickup_ok := [false, false]
-	var place_ok := [false, false]
+	var anger_pair := [-1, -1]
+	var consumed := [false, false]
 	for k in 2:
 		var held := k == 1
 		var curses := {"token_limit": 1} if held else {}
@@ -721,51 +717,28 @@ func _token_limit(f: Array[String]) -> void:
 		if world == null:
 			f.append("token_limit: build failed (held=%s)" % str(held))
 			continue
-		world.ctl.invuln = 100000.0   # claude's rings are not this case's subject
-		var cd_at_place := -1
-		var drop := -1.0
-		var consumed := false
-		for _t in range(2600):
+		var cl = world.lstate.clawds
+		if cl == null or cl.count() < 1:
+			f.append("token_limit: the level carries no clawd swarm (held=%s)" % str(held))
+			_drop(world)
+			continue
+		world.ctl.invuln = 100000.0   # claude's body is not this case's subject
+		for _t in range(200):
 			world.step(DT)
-			var row := _first_row(world, "claude")
-			if row.is_empty():
-				continue
-			if cd_at_place < 0:
-				if int(row.get("last_plushie_tick", -1)) >= 0:
-					cd_at_place = int(row.get("plushie_cd", -1))
-				continue
-			var plushies: Array = row.get("plushies", [])
-			if plushies.is_empty():
-				continue   # already consumed: keep waiting for the clock read (never happens here)
-			var p: Dictionary = plushies[0]
-			var ag_before := float(row.get("agitation", 0.0))
-			_place_player(world, float(p["x"]), float(p["y"]), float(p["z"]))
-			world.step(DT)
-			var row2 := _first_row(world, "claude")
-			if not row2.is_empty():
-				drop = ag_before - float(row2.get("agitation", 0.0))
-				consumed = (row2.get("plushies", []) as Array).size() < plushies.size()
-			break
-		cd_pair[k] = cd_at_place
-		drop_pair[k] = drop
-		pickup_ok[k] = consumed
-		place_ok[k] = cd_at_place >= 0
+		var before := int(cl.remaining())
+		var p: Vector3 = cl.spot_pos(0)
+		_place_player(world, p.x, p.y - 0.9, p.z)
+		world.step(DT)
+		anger_pair[k] = int(cl.anger_ticks)
+		consumed[k] = int(cl.remaining()) < before
 		_drop(world)
-	_check(f, place_ok[0] and place_ok[1],
-			"token_limit: a plushie never spawned within 2600 ticks in at least one run")
-	_check(f, cd_pair[1] == 1800,
-			"token_limit held: the plushie clock re-armed to %d ticks after the placement, want 1800 (30 s)" % cd_pair[1])
-	_check(f, cd_pair[0] == 1500,
-			"token_limit control: the plushie clock re-armed to %d ticks after the placement, want 1500 (25 s)" % cd_pair[0])
-	_check(f, pickup_ok[0] and pickup_ok[1],
-			"token_limit: the pickup was not consumed in at least one run (control=%s held=%s)" % [str(pickup_ok[0]), str(pickup_ok[1])])
-	if drop_pair[0] >= 0.0 and drop_pair[1] >= 0.0:
-		_check(f, absf(drop_pair[1] - 20.0) < 0.5,
-				"token_limit held: the pickup removed %.2f agitation, want ~20 (the curse's calm)" % drop_pair[1])
-		_check(f, absf(drop_pair[0] - 35.0) < 0.5,
-				"token_limit control: the pickup removed %.2f agitation, want ~35 (the canon calm)" % drop_pair[0])
-		_check(f, absf((drop_pair[0] - drop_pair[1]) - 15.0) < 0.5,
-				"token_limit: the pickup removed %.2f control vs %.2f held, want 15.0 (35 vs 20)" % [drop_pair[0], drop_pair[1]])
+	_check(f, consumed[0] and consumed[1],
+			"token_limit: the clawd pickup was not consumed in at least one run (control=%s held=%s)"
+					% [str(consumed[0]), str(consumed[1])])
+	_check(f, anger_pair[0] == 0,
+			"token_limit control: the pickup left %d anger ticks, want 0 (the canon calm)" % anger_pair[0])
+	_check(f, anger_pair[1] == 1200,
+			"token_limit held: the pickup left %d anger ticks, want 1200 (20 s)" % anger_pair[1])
 
 
 # ---- on_tick: gin (twin_fangs) ---------------------------------------------------------------------
