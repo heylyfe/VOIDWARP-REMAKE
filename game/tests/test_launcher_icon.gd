@@ -56,7 +56,13 @@ func _png_dims(data: PackedByteArray, path: String, f: Array[String]) -> Array:
 	if data.slice(1, 4).get_string_from_ascii() != PNG_SIG:
 		f.append("icon art: %s has no PNG signature" % path)
 		return []
-	return [data.decode_u16(18), data.decode_u16(22)]
+	# IHDR width/height are big-endian u32s at 16 and 20; PackedByteArray's
+	# decode_u16/u32 are little-endian, so compose the bytes explicitly.
+	var w := (data.decode_u8(16) << 24) | (data.decode_u8(17) << 16) \
+			| (data.decode_u8(18) << 8) | data.decode_u8(19)
+	var h := (data.decode_u8(20) << 24) | (data.decode_u8(21) << 16) \
+			| (data.decode_u8(22) << 8) | data.decode_u8(23)
+	return [w, h]
 
 
 # One failure per broken thing: the ICONDIR header, the entry count, and then
