@@ -9594,3 +9594,81 @@ hash VALUE changes for every level that has pads - that is the point of the reva
 golden fixture pins a state hash: `test_replay.gd` compares runs against each other, and the jump-pad suite
 compares a run against its own replay, so nothing had to be re-pinned. The determinism tests are unchanged and
 none was weakened.
+
+## D-ANIM-15 (2026-11-24): in-game idle/walk/run IS the Antechamber's gait - one shared module, a rigid leg on flat ground
+
+**The owner's ruling (U1, cycle 8).** "In-game locomotion (idle/walk/run) must be IDENTICAL to the lobby animation,
+on the R6 blocky model. Keep the current in-game JUMP and FALL poses (owner says they are good) and the stairs-up
+pose (fine). Reuse the lobby animator code/params rather than a second copy if possible. View-only, no sim/hash
+change."
+
+**What the lobby actually does.** `view/lobby/lobby_player.gd`'s whole gait is four rigid limb nodes rotated about
+their joints: the phase advances at GAIT_RATE 10.5 rad/s scaled by `amp = clamp(speed / run_speed, 0, 1)`, and
+ArmL/ArmR/LegL/LegR take `[swing, -swing, -swing, swing]` with `swing = sin(phase) * 0.9 * amp`. Nothing else moves:
+no lean, no twist, no bob, no elbow bend, no foot plant. The in-game rig (`view/player_locomotion.gd`) is a different
+machine - the authored limb blocks cut into thigh + shin + boot per leg, placed by a two-bone IK with a clamped
+reach, world-space foot plants, a stance/swing cycle, terrain sampling and per-sole contacts - so "identical" could
+not be a copy-paste.
+
+**Ruling: one shared gait, and the leg is ONE rigid block on flat ground.** `view/player_gait.gd` (new, 39 lines)
+holds RATE, SWING, LIMB_NAMES, `amplitude(speed, run_speed)`, `advance(phase, amp, delta)` and
+`limb_angles(phase, amp) -> [swing, -swing, -swing, swing]`. It is a pure function of (phase, amplitude): no nodes,
+no clock, no sim. BOTH call sites read it - `lobby_player.gd`'s `_anim()` and `world.gd`'s `_pose_lobby_gait()` -
+so there is no second copy of the numbers anywhere, and the lobby is the reference: its output is byte-identical to
+the old inline formula (phase 0.175/frame at 9 u/s, angles 0.156697...).
+
+On flat ground the level now poses the leg as ONE rigid block at the hip (`player_locomotion.pose_leg_rigid`):
+thigh, shin and boot collinear, rotated by the shared hip angle, which is exactly the block the lobby's walker
+rotates. The articulated rig still runs underneath every frame, so the feet are already planted the moment the
+ground stops being flat. `_rigid_weight` (1 = the lobby gait, 0 = the articulated rig) is 1 only when the figure is
+on the ground, the ground is level (`_climb_weight` and `_descent_weight` both below RIGID_FLAT 0.02) and the
+landing window is over; it eases over RIGID_BLEND 0.08 s.
+
+**Why route (b) - a rigid leg - and not route (a), driving the IK to a straight leg.** Route (a) would have to feed
+the solver a foot target at full reach derived from the shared hip angle. The solver then still owns the boot's
+pitch (`pose_leg` blends the boot between the shin's basis and a level `flat` basis by `_contact_weight`), so the
+boot would stay level while the lobby's boot rotates with the leg - not identical. It would also have to fight the
+stance/swing bookkeeping, the plant grace and the fold/reach limits that exist to keep the feet on stairs. Route (b)
+leaves all of that untouched and makes the flat pose a pure rotation, which is what the lobby is.
+
+**What was deliberately NOT changed.** Jump, fall, the stairs-up pose, the ramps, the landing compression, dash and
+glide all keep the articulated rig bit for bit. The lobby gait is LEFT THE INSTANT the figure leaves the ground
+(`_rigid_weight = 0.0`, no ease), so no part of it bleeds into the owner's airborne poses; the hip angle still eases
+through the existing pose filter, so the leg does not snap. The articulated rig keeps its own `_anim_phase` clock,
+untouched, and the lobby gait runs on its own `_gait_phase`. `_body_lift` decouples the articulated hip height from
+the drawn pose, so the plants are read from the same hip they always were. Nothing under `game/sim/` changed and the
+state hash is byte-identical (`test_player_anim`'s purity leg: 75 identical tick hashes and controller samples with
+the animation pass on and off; `test_replay` and `test_state_hash` unchanged and green).
+
+**The crossing between the two rigs.** `pose_leg_rigid` blends in JOINT ANGLE space, never in transform space: the
+thigh slerps toward the lobby angle, the knee flex straightens on the curve that makes the leg's LENGTH linear in
+the weight (`cos(flex / 2)` is what sets it), and the boot's pitch slerps to the leg's. Every segment keeps its own
+length and only its rotation moves, so the constant-limb-length rule (D-ANIM-1) holds through the crossing as well
+as at both ends - a transform-space lerp of the shin's origin shortened the thigh by up to 0.092 u mid-crossing and
+the test caught it. The drawn body's height blends linearly too, so the boot stays on the floor across the crossing;
+whatever the blended leg still needs, `_rigid_floor_clear()` adds as a pure translation of the posed nodes (no bone
+changes length, and the solver's plants are read from the articulated hip, not the drawn one).
+
+**What the owner will see, stated plainly.** (1) On flat ground the figure now stands at the lobby's height: the
+rigid leg is straight, so the drawn body rides `_rigid_lift` 0.0157 u above its rest hip, while the articulated run
+crouches 0.115 u below it - the drawn figure is 0.13 u taller on flat ground than it was. That is the lobby's
+stance, and it is the price of a straight leg; the crossing into and out of it is eased over 0.08 s. (2) The idle is
+now the lobby's idle: the limbs sit at rest and do not sway. (3) The run's lean, twist and bob are gone on flat
+ground, because the lobby has none. (4) The feet no longer plant: the lobby's boot swings with the leg and only
+touches the floor at the neutral angle, so the in-game boot does the same (the drawn body is lifted just enough that
+no corner ever cuts the floor). (5) Leaving the lobby gait - take-off, stairs, a slope, a landing, dash, glide - is
+instant, so the airborne poses are exactly the owner's.
+
+**Tests.** `tests/test_player_gait.gd` (new) is the parity test: it drives the REAL lobby walker and the REAL level
+figure at the same phase and amplitude (0, 3 and 9 u/s) and compares the ACTUAL posed transforms of the four limb
+nodes, the two shins and the two boots, plus the phase advance per frame and the boot's lowest corner against the
+floor. Worst divergence: 1e-7 rad on the limb angles, 0 on the phase, +0.0020 u on the boot corner. **Teeth:** with
+`RIGID_FLAT := -1.0` (the rigid path never engages, i.e. the old solver output) it prints 1090 FAIL lines, worst
+angle 2.03 rad and the phase off by 3.13 rad. `tests/test_player_anim_baseline.gd` (new) hashes the local transforms
+of the six limbs, two shins, two boots and two forearms at three frames of the jump, fall and up-stairs poses; the
+baseline was captured from aac250b (jump 92c5ee56..., fall 2361fa8a..., up_stairs 6ff3d1dc...) and still matches.
+`tests/test_player_anim.gd`'s gait leg now asserts the lobby contract on flat ground (cadence RATE x amp - 0.557 at
+3 u/s and 1.671 at 9, arm swing SWING x amp, no lean, no bob, no plant, one rigid leg, the same 5.386 u stride at
+every speed) and keeps the ramp/stair checks as absolute numbers (10 and 5 plants, slide 0.0042 and 0.0096, knee
+-0.049 and 0.077, lift 0.255 and 0.561, swing bend 1.90 and 2.07, peak frame angle 0.237 and 0.243). The 16 contact
+sheets are regenerated from the same POSES table.
