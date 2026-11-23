@@ -1110,3 +1110,7 @@ Both tracks are re-dispatched under R2 into new worktrees that start ON those co
 
 18:59Z cycle 8 U4 sweep L5-8 (vote-mode random) + VERDICT: `--vote-mode random` also EXIT=0 and `SWEEP DONE entries=160 built=160 build_failures=0`; it prints 0 for the same ten patterns, and its only extra output is 5 exit-time leak lines after SWEEP DONE (752 ShapedTextData / 376 CanvasItem / 764 ObjectDB / 2 DummyTexture), which two small probes reproduce in BOTH vote modes (44 ObjectDB on random, 18 on all) - shutdown accounting of unreleased views, not a level crash. Report `docs/crashhunt/sweep_levels_L5-8.md`: **levels 5-8 CLEAN**, 320 entries (40 seeds x 4 levels x 2 vote modes) with boss/bankai/collapse/beacon on every row and clawds/gin/gin_sword 40/40 per level on the all-votes run (0 by construction on random, whose empty ledger replays the lobbies). It also records that the first `--import` on this fresh checkout segfaulted (exit 139) and the second passed with 580 imported files, so the one-pass import trap is documented rather than assumed away. Nothing to fix; raw logs stay in gitignored `game/out/`.
 
+
+DISPATCHED crash sweep features cycle-8 seeds 41+ (samples 5x2 legs) levels 1-12 both vote-modes
+RESPONSE all vote-mode EXIT=0 sweep_features.log; random vote-mode EXIT=0 sweep_features_random.log
+VERDICT levels 1-12 CLEAN (0 findings)
