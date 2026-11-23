@@ -147,8 +147,8 @@ func _test_panel_headless(f: Array[String]) -> void:
 		f.append("tester: the panel built without its list/picker/layer (headless _init)")
 	if panel._enemy_host == null or panel._enemy_scroll == null:
 		f.append("tester: the panel built without its enemy list viewport (D-T2-11)")
-	if not (panel._content is ItemList):
-		f.append("tester: the enemy picker is not an in-panel ItemList (D-T2-11)")
+	if not (panel._content is VBoxContainer):
+		f.append("tester: the enemy picker is not an in-panel row list (D-T2-11)")
 	if panel._status_line == null or panel._meta_line == null or panel._hash_line == null:
 		f.append("tester: the panel built without its status/hash lines (headless _init)")
 	if panel.is_open():
@@ -425,9 +425,10 @@ func _report_list_contents(f: Array[String], panel) -> void:
 	for id in api.enemy_ids():
 		ids.append(str(id))
 	var listed: Array[String] = []
-	for i in panel._content.item_count:
-		listed.append(str(panel._content.get_item_metadata(i)))
-		var txt := str(panel._content.get_item_text(i)).strip_edges()
+	for i in panel._content.get_child_count():
+		var row: Button = panel._content.get_child(i)
+		listed.append(str(row.get_meta("id", "")))
+		var txt := str(row.text).strip_edges()
 		if txt == "":
 			f.append("spawn: enemy list row %d has a blank label" % i)
 	if listed.size() != ids.size() + 1:
@@ -469,7 +470,7 @@ func _owner_named_enemies(f: Array[String], panel) -> void:
 		if idx < 0:
 			f.append("spawn: the owner's named enemy %s has no row in the panel list" % id)
 			continue
-		var label := str(panel._content.get_item_text(idx))
+		var label := str((panel._content.get_child(idx) as Button).text)
 		if label.to_lower().find(nm.to_lower()) < 0:
 			f.append("spawn: the %s row's label does not say the name (row %d: %s)"
 					% [id, idx, label])
@@ -502,12 +503,13 @@ func _report_list_geometry(f: Array[String], panel, root: Window) -> void:
 		f.append("spawn: the enemy list viewport grew to %d px - it must stay bounded at %d"
 				+ " px so the spawn buttons under it are on screen at any window size"
 				% [int(host_min.y), int(panel.LIST_CAP_H)])
-	var rows: int = panel._content.item_count
-	if absf(list_min.y - float(rows) * panel.LIST_ROW_H) > 0.5:
-		f.append("spawn: the enemy list's content height is %d px, want all %d rows at full"
-				+ " height (%d) - a list that does not carry its whole content cannot"
-				+ " scroll to its last row" % [int(list_min.y), rows,
-				int(float(rows) * panel.LIST_ROW_H)])
+	var rows: int = panel._content.get_child_count()
+	# every row carries at least LIST_ROW_H px of list content: a list that did not hold
+	# its whole roster could not scroll to its last row
+	if list_min.y < float(rows) * panel.LIST_ROW_H - 0.5:
+		f.append("spawn: the enemy list's content height is %d px but %d rows at %d px each"
+				+ " need more - rows are being folded away inside the viewport"
+				% [int(list_min.y), rows, int(panel.LIST_ROW_H)])
 	if list_min.y > host_min.y + 0.5 \
 			and panel._enemy_scroll.vertical_scroll_mode == ScrollContainer.SCROLL_MODE_DISABLED:
 		f.append("spawn: the enemy roster overflows its viewport (%d px in %d px) but the"
@@ -581,7 +583,10 @@ static func _first_window_under(p_node: Node) -> Window:
 ## leaving the schedule's idle phase. Each of these is the panel's own action function -
 ## the same callable the button wiring presses.
 func _panel_actions_regression(f: Array[String], panel, world, app) -> void:
-	panel._process(0.0)
+	# the panel's own probe cadence: _process refreshes the meta/hash lines every 15th
+	# frame, so drive its own function 15 times (nothing else in this boot does)
+	for i in 15:
+		panel._process(0.0)
 	if not str(panel._meta_line.text).contains("SEED %d" % SPAWN_SEED):
 		f.append("panel: the meta line no longer reports the run (%s)"
 				% str(panel._meta_line.text))
@@ -594,27 +599,48 @@ func _panel_actions_regression(f: Array[String], panel, world, app) -> void:
 		f.append("panel: GIVE GOLD left a wrong purse delta (%d for %d gold)"
 				% [int(world._economy.purse_centi) - gold_before,
 				int(panel._gold_spin.value)])
-	var purse_before := int(world._economy.purse_centi)
-	panel._give_gifts()
-	world.step(SPAWN_DT)
-	if not str(panel._status_line.text).begins_with("collected"):
-		f.append("panel: GIVE N GIFTS left the status line at \"%s\" - the queued tick"
-				+ " job never ran in the world's step" % str(panel._status_line.text))
-	elif int(world._economy.purse_centi) <= purse_before:
-		f.append("panel: the gift collect paid no gold (purse %d -> %d)"
-				% [purse_before, int(world._economy.purse_centi)])
+	# GIVE N GIFTS through the queued tick job (D-T2-4/D-T2-9), one gift: a partial
+	# black-phase collect (the all-40 sweep is the level's own completion path - a test
+	# that collected everything would tear the world down here). The honest observable is
+	# the gift bitset: after the step exactly one more slot must read collected, with the
+	# phase still black.
+	var g0 = world.lstate.gifts
+	var present0 := 0
+	for i in int(g0.get("slots").size()):
+		if bool(g0.call("present", i)):
+			present0 += 1
+	if present0 < 2:
+		f.append("panel: the level carries %d present gifts - the gift leg cannot pin the"
+				+ " queued job on this level" % present0)
+	else:
+		var before_col := _gift_collected_count(world)
+		panel._gift_spin.value = 1
+		panel._give_gifts()
+		world.step(SPAWN_DT)
+		if not str(panel._status_line.text).begins_with("collected 1"):
+			f.append("panel: GIVE N GIFTS left the status line at \"%s\" - the queued tick"
+					+ " job never ran in the world's step" % str(panel._status_line.text))
+		if _gift_collected_count(world) != before_col + 1:
+			f.append("panel: the queued gift collect never reached the bitset (%d -> %d)"
+					% [before_col, _gift_collected_count(world)])
+		if str(world.lstate.gifts.get("phase")) != "black":
+			f.append("panel: a ONE-gift collect flipped the phase (%s) - it collected more"
+					+ " than one" % str(world.lstate.gifts.get("phase")))
+		if not world.is_inside_tree():
+			f.append("panel: the gift collect tore the level down - it hit the level's"
+					+ " own completion path")
+	# the tester build's level still carries its jump pads (the cycle-7 T6 floor of 2 on
+	# this deterministic level/seed - the "pads still work" regression read)
+	if world.lstate.jump_pads == null or world.lstate.jump_pads.pads.size() < 2:
+		var n_pads := -1 if world.lstate.jump_pads == null \
+				else int(world.lstate.jump_pads.pads.size())
+		f.append("panel: the tester build's level 1 carries %d jump pads (this seed pins 2)"
+				% n_pads)
 	var up_ids: Array = panel._api().upgrade_ids()
 	if up_ids.is_empty():
 		f.append("panel: the registry reports no upgrades - the give-stack leg cannot run")
 	else:
-		var up := str(up_ids[0])
-		panel._refresh_options()
-		var up_row := -1
-		for i in panel._upgrade_pick.item_count:
-			if str(panel._upgrade_pick.get_item_metadata(i)) == up:
-				up_row = i
-		if up_row >= 0:
-			panel._upgrade_pick.selected = up_row
+		var up := str(panel._upgrade_pick.get_item_metadata(0))
 		var stacks: Dictionary = world.run_ledger().get("stacks", {})
 		var had := int(stacks.get(up, 0))
 		panel._give_upgrade()
@@ -637,11 +663,29 @@ func _panel_actions_regression(f: Array[String], panel, world, app) -> void:
 		f.append("panel: FORCE COLLAPSE left the schedule IDLE - the cracks never arm")
 
 
+
+## Slots whose gift reads collected in the current phase (the bitset the game's own
+## readers use - the honest observable of a collect that really happened).
+static func _gift_collected_count(world) -> int:
+	var g = world.lstate.gifts
+	if g == null:
+		return -1
+	var n := 0
+	for i in int(g.get("slots").size()):
+		if bool(g.call("collected", i)):
+			n += 1
+	return n
+
+
 ## FORCE BANKAI's fallback: no boss is live yet (the Peter leg comes later), so the
 ## button's honest no-boss path must run - the standalone preview - without touching the
 ## world or crashing the live level. The with-boss path is exercised by its own track's
 ## suite (T8); what must not regress is the button's no-live-boss behaviour.
 func _bankai_fallback_action(f: Array[String], panel, world) -> void:
+	if not world.is_inside_tree():
+		f.append("panel: the level died BEFORE the bankai fallback read - an earlier pin"
+				+ " broke it")
+		return
 	var boss = world.lstate.get("boss") if world.lstate != null else null
 	if boss != null and bool(boss.get("arena_entered")):
 		f.append("panel: a boss arena claim exists BEFORE the Peter leg - ordering broke")
@@ -657,6 +701,10 @@ func _bankai_fallback_action(f: Array[String], panel, world) -> void:
 ## SKIP LEVEL, last - it tears the live world down. The app's own completion path runs
 ## (the Antechamber opens), proving the panel's skip wiring still reaches it.
 func _skip_level_action(f: Array[String], panel, app) -> void:
+	if app._world == null or not app._world.is_inside_tree():
+		f.append("panel: the level died BEFORE the skip-level read - an earlier pin"
+				+ " broke it")
+		return
 	var lv := int(app._world.call("level_number"))
 	panel._skip_level()
 	if str(app.state()) != "LOBBY" or app._lobby == null:
@@ -672,13 +720,16 @@ func _skip_level_action(f: Array[String], panel, app) -> void:
 func _spawn_every_registry_enemy(f: Array[String], panel, world, p_at_cursor: bool) -> void:
 	var api: RefCounted = panel._api()
 	var kind := "at the cursor" if p_at_cursor else "ahead"
+	if not world.is_inside_tree():
+		f.append("spawn: the level died BEFORE the %s pass - an earlier pin broke it, and"
+				+ " garbage reads must not fake a pass" % kind)
+		return
 	for id in api.enemy_ids():
 		var id_s := str(id)
 		var idx := _panel_row_of(panel, id_s)
 		if idx < 0:
 			continue   # _report_list_contents already reported the missing row
-		panel._content.deselect_all()
-		panel._content.select(idx)
+		(panel._content.get_child(idx) as Button).pressed.emit()
 		var before := _rows_of(world, id_s)
 		var mirrors_before: int = (world.w["enemies"] as Array).size()
 		panel._spawn(p_at_cursor)
@@ -722,13 +773,15 @@ static func _rows_of(world, p_id: String) -> int:
 ## the enemy runtime. A panel that tried the runtime instead never makes
 ## arena_entered true, and a row that queues nothing fails the tick's assertion.
 func _spawn_peter_through_boss_path(f: Array[String], panel, world) -> void:
+	if not world.is_inside_tree():
+		f.append("spawn: the level died BEFORE the Peter leg - an earlier pin broke it")
+		return
 	var idx := _panel_row_of(panel, SPAWN_PETER_ID)
 	if idx < 0:
 		f.append("spawn: the Peter row is missing, nothing to pick")
 		return
 	var rt_rows_before: int = world.rt.enemies.size()
-	panel._content.deselect_all()
-	panel._content.select(idx)
+	(panel._content.get_child(idx) as Button).pressed.emit()
 	panel._spawn(false)
 	var boss = world.lstate.get("boss") if world.lstate != null else null
 	if boss == null:
@@ -754,8 +807,9 @@ func _spawn_peter_through_boss_path(f: Array[String], panel, world) -> void:
 
 ## The list row carrying p_id, or -1.
 func _panel_row_of(panel, p_id: String) -> int:
-	for i in panel._content.item_count:
-		if str(panel._content.get_item_metadata(i)) == p_id:
+	for i in panel._content.get_child_count():
+		var row: Button = panel._content.get_child(i)
+		if str(row.get_meta("id", "")) == p_id:
 			return i
 	return -1
 
