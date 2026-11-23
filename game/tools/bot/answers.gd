@@ -46,10 +46,11 @@ extends RefCounted
 # the entries - per the section 4 rule.
 #
 # KNOWN GAPS (copied from section 4, each also noted on its entry):
-#   - claude's wind shots have NO answer on an open walkway as numbered
-#     (10 u/s homing vs 9 u/s run, 5.0 s life); the owner's CONTESTABLE fix
-#     (7.0 u/s / 4.0 s) would make "run straight" and "drop one tread" the
-#     answers. The closest sequence is stored, marked as not surviving.
+#   - claude's answer is a ROUTE (collect clawds), not an input sequence: the bot
+#     now routes to the nearest reachable clawd once the anger timer passes its
+#     first warning tick (tools/bot_run.gd _clawd_urgent, review round 1), so a
+#     Claude-voting run answers the clock instead of dying at 180 s. A clawd the
+#     follower cannot reach is released after 10 s and the next one is tried.
 #   - isagi with Egoist down a flat in-line lane has no answer (F6).
 #   - address me is answerable only with F8 (co-arrival with a chaser).
 
@@ -70,30 +71,14 @@ const TABLE := {
 	},
 	"claude": {
 		"enemy": "claude",
-		"answer": "drums: jump on the beat; strings: get behind a height step or a prop, jump it when you are >= 6 u from Claude; wind: none on an open walkway as numbered",
-		"trigger": "drums: chime on beats 1 and 3; strings: telegraph line for one beat (0.6 s); wind: ping on beats 1, 2, 3",
-		"anchor": "beat",
+		"answer": "collect clawds: each pickup resets his anger timer to 0, and the timer freezes once the beacon opens",
+		"trigger": "a warning chime at 60 s, a louder alarm at 120 s, the insta-kill at 180 s",
+		"anchor": "warning",
 		"inputs": [
-			{"tick_offset": 0, "action": "jump", "note": "the drums answer; the window matches YOU?!'s ring (ring 12 u/s, crossing 0.12 s)"},
+			{"tick_offset": 0, "action": "move_around", "note": "route to the nearest clawd; the pickup radius is the gift radius (1.6 u) and the clawds are spread over the walkable tiles"},
 		],
-		"source": "research/fable-enemies.md section 4 (counter-play map), rows 'Claude - drums / strings / wind'",
-		"caveat": "strings and wind have their own answers and are keyed below; wind is UNANSWERABLE as numbered",
-		"modes": {
-			"drums": {
-				"anchor": "beat",
-				"inputs": [{"tick_offset": 0, "action": "jump", "note": "jump on the chime, same window as YOU?!'s ring"}],
-			},
-			"strings": {
-				"anchor": "telegraph_line",
-				"inputs": [{"tick_offset": 0, "action": "step_behind_rise",
-					"note": "get behind a height step or a prop; jumping it only works when >= 6 u from Claude (beam crosses a body in 0.26 s at 10 u; 0.88 s at 3 u - not jumpable)"}],
-			},
-			"wind": {
-				"anchor": "ping",
-				"inputs": [{"tick_offset": 0, "action": "move_out",
-					"note": "CLOSEST SEQUENCE ONLY, NOT AN ANSWER as numbered: the shot homes at 10 u/s vs 9 u/s run over a 5.0 s life on a thin walkway. Proposed CONTESTABLE numbers (7.0 u/s, 4.0 s, dies on any slab incl. a >= 1 HU riser) would make 'run in a straight line for 4 s' and 'drop one tread' the answers"}],
-			},
-		},
+		"source": "research/fable-enemies.md section 4 (counter-play map), row 'Claude' - rewritten for the cycle-7 revamp (D-T4-5): content/enemies/claude/enemy.json, sim/clawds.gd",
+		"caveat": "the bot routes to the nearest reachable clawd once the first warning sounds; a clawd it cannot reach is released after 10 s, and with every clawd released the 180 s kill lands",
 	},
 	"coil": {
 		"enemy": "coil",

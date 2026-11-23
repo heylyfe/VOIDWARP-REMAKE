@@ -22,7 +22,7 @@ extends RefCounted
 #   on_tick         overwound  (the live coil row's idle 3.0 -> 2.0 s)
 #                   litter     (a real kitten body spawns behind the cat - and only one)
 #                   pup_pack   (a real second seal body spawns - and only one)
-#                   crescendo  (claude's agitation rises faster)
+#                   crescendo  (the anger timer runs 1.5x faster)
 #   on_beacon_open  curfew     (60 s after the open, overtime is +2 tiers)
 #                   rearguard  (an extra enemy body spawns at the beacon)
 #   on_void_fall    leaky_purse (a fall drops 5% of this level's earned gold)
@@ -234,10 +234,11 @@ func _pup_pack(f: Array[String]) -> void:
 		_drop(world)
 
 
-## crescendo: claude's agitation rises 3/s instead of 2/s - after the same ticks the cursed
-## row holds 1/s x elapsed more (clamped at 100, so the window stays short of the clamp).
+## crescendo: "the anger timer runs 1.5x faster" (D-T4-7). The rate is measured as a DELTA over
+## 600 ticks after the first two (the curse's on_tick runs after the clawd tick, so tick 1 is at
+## the sim's own rate): the control adds 600 ticks, the cursed run 900.
 func _crescendo(f: Array[String]) -> void:
-	var agi := [0.0, 0.0]
+	var delta := [0, 0]
 	for k in 2:
 		var held := k == 1
 		var curses := {"crescendo": 1} if held else {}
@@ -245,15 +246,20 @@ func _crescendo(f: Array[String]) -> void:
 		if world == null:
 			f.append("crescendo: build failed (held=%s)" % str(held))
 			continue
-		_steps(world, 420)
-		var row := _first_row(world, "claude")
-		if row.is_empty():
-			f.append("crescendo: no claude on the level after 420 ticks (held=%s)" % str(held))
-		else:
-			agi[k] = float(row.get("agitation", 0.0))
+		var cl = world.lstate.clawds
+		if cl == null:
+			f.append("crescendo: the level carries no clawd swarm (held=%s)" % str(held))
+			_drop(world)
+			continue
+		_steps(world, 2)
+		var a0 := int(cl.anger_ticks)
+		_steps(world, 600)
+		delta[k] = int(cl.anger_ticks) - a0
 		_drop(world)
-	_check(f, agi[1] > agi[0] + 0.5,
-			"crescendo: agitation held %.3f vs control %.3f, want held higher by ~1/s" % [agi[1], agi[0]])
+	_check(f, delta[0] == 600,
+			"crescendo control: the anger timer added %d ticks over 600, want 600" % delta[0])
+	_check(f, delta[1] == 900,
+			"crescendo held: the anger timer added %d ticks over 600, want 900 (1.5x)" % delta[1])
 
 
 # ---- on_beacon_open ------------------------------------------------------------------------

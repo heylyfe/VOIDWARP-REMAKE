@@ -86,6 +86,9 @@ const BeaconViewScript := preload("res://view/beacon_view.gd")
 const JumpPadPlaceScript := preload("res://terrain/jump_pads.gd")
 const JumpPadsScript := preload("res://sim/jump_pads.gd")
 const JumpPadViewScript := preload("res://view/jump_pad_view.gd")
+# T4 (D-T4-2): the clawd swarm + the anger timer, and its level-wide sprite layer.
+const ClawdsScript := preload("res://sim/clawds.gd")
+const ClawdViewScript := preload("res://view/clawd_view.gd")
 # The glitched-floor decal layer. The body is one of the `boards` billboards; the decals are
 # a separate world-origin node in floor-only mode, because the sim's glitched entries carry
 # absolute tile coordinates and the body node moves.
@@ -171,6 +174,7 @@ var hud: Control = null
 var gifts_view: Node3D = null
 var tripmine_view: Node3D = null
 var jump_pad_view: Node3D = null
+var clawd_view: Node3D = null   # T4: the clawd swarm's sprites (level-wide, like the gifts)
 var beacon_view: Node3D = null
 var toucher_floor: Node3D = null   # the glitched-floor decals (floor-only mode)
 # The enemy presentation layer (see the preloads): telegraphs + their cues, Coil's own
@@ -399,6 +403,12 @@ func build(seed_value: int, level: int, p_ledger: Dictionary = {}) -> bool:
 	# D-JUMPPAD-1: the jump pads, a pure function of the Level dict (the canonical text and the
 	# level hash are untouched); LevelState.build picks them up from L["jump_pads"].
 	JumpPadPlaceScript.attach(lv)
+	# T4 (D-T4-2): the clawd swarm, a pure function of the Level dict plus the roster module's own data - the
+	# same shape as the jump pads. The module that wants a swarm declares clawd_cfg(); this file names no
+	# content id (the boundary scan forbids one here), so the probe is by method name.
+	var clawd_cfg: Dictionary = _clawd_cfg_for(plan.get("votes", {}) as Dictionary)
+	if not clawd_cfg.is_empty():
+		ClawdsScript.attach(lv, clawd_cfg)
 	# The spawn is the level's own spawn tile (the collision default, spawns[0] - the same
 	# assembly feel_probe.gd and perf_probe.gd use). The bot_run override {"dais": beacon}
 	# plants the spawn inside the beacon monument, which encloses the 1.8 u figure and
@@ -631,6 +641,10 @@ func build(seed_value: int, level: int, p_ledger: Dictionary = {}) -> bool:
 	jump_pad_view = JumpPadViewScript.new()
 	add_child(jump_pad_view)
 	jump_pad_view.setup(lv, lstate.jump_pads)
+	# T4: the clawd swarm's sprites, level-wide (the swarm is not one body's property, D-T4-8).
+	clawd_view = ClawdViewScript.new()
+	add_child(clawd_view)
+	clawd_view.setup(lstate.clawds)
 	beacon_view = BeaconViewScript.new()
 	add_child(beacon_view)
 	beacon_view.setup(lv)
@@ -675,6 +689,7 @@ func build(seed_value: int, level: int, p_ledger: Dictionary = {}) -> bool:
 		"rt": rt, "players": [ctl], "economy": _economy, "beacon": lstate.beacon,
 		"spawn_plan": _roster.duplicate(true), "enemy_factory": Callable(self, "_curse_enemy"),
 		"seed": seed_value, "level": level, "tick": int(lstate.tick),
+		"clawds": lstate.clawds,   # T4 (D-T4-7): the anger timer a curse can re-point
 	})
 	_curses.level_start(int(lstate.tick))
 	# The mines ask the held curses for their blast radius, their chain targets and their
@@ -795,6 +810,9 @@ func step(dt: float, command: Dictionary = {}) -> void:
 	# D-JUMPPAD-2/4. A launch writes its new vy / grounded back into lstate.players[0] (the row
 	# above was copied before the pad fired - sim/jump_pads.gd _sync_row, Terra finding 1).
 	JumpPadsScript.tick(lstate, [ctl], w, lstate.tick, ev)
+	# T4 (D-T4-5): the clawd pickup + the anger timer. Same slot as the pads: after the player row is synced,
+	# before the beacon entry, so a pickup on the tick the beacon opens still calms him.
+	ClawdsScript.tick(lstate, [ctl], w, lstate.tick, ev)
 	if lstate.boss != null and not ctl.dead and lstate.gifts.all_black_collected():
 		_enter_boss_arena(ev)
 		_economy_pass(ev)
@@ -1385,6 +1403,7 @@ func teardown() -> void:
 	gifts_view = null
 	tripmine_view = null
 	jump_pad_view = null
+	clawd_view = null
 	beacon_view = null
 	collapse_view = null
 	_collapse = {}
@@ -1623,6 +1642,8 @@ func _collapse_sweep(keys: Array) -> void:
 				m.drop(slot_id)
 	if lstate.jump_pads != null:
 		lstate.jump_pads.sweep(keys)   # a pad goes down with its tile (D-JUMPPAD-4)
+	if lstate.clawds != null:
+		lstate.clawds.sweep(keys)      # a clawd goes down with its tile (T4)
 
 
 ## Apply the tile events raised at index >= from: fell erases the tile from collision
@@ -1780,6 +1801,24 @@ func _behavior_for(id: String):
 	if inner != null:
 		return inner.new()
 	return K.new()   # the file-as-behavior module
+
+
+## T4 (D-T4-2): the clawd swarm's data block, from whichever voted roster module declares one. The probe is by
+## method name (the extra_mines() idiom), so this file names no content id and a second enemy could own a swarm
+## by declaring clawd_cfg(). {} = no swarm on this level.
+func _clawd_cfg_for(votes: Dictionary) -> Dictionary:
+	var ids: Array = votes.keys()
+	ids.sort()
+	for id in ids:
+		if int(votes[id]) <= 0:
+			continue
+		var K = load("res://content/enemies/%s/enemy.gd" % str(id))
+		if K == null or not K.has_method("clawd_cfg"):
+			continue
+		var cfg: Variant = K.call("clawd_cfg")
+		if cfg is Dictionary and not (cfg as Dictionary).is_empty():
+			return cfg
+	return {}
 
 
 ## The module's inner behavior class: a script constant whose value is a Script whose
@@ -2524,6 +2563,8 @@ func _billboard_pass(dt: float, ev: Array = []) -> void:
 		"dt": dt, "cam": cam_pos,
 		"player": {"x": feet.x, "y": feet.y, "z": feet.z},
 		"curses": _curses.state if _curses != null else {},
+		# T4 (D-T4-8): the anger timer, so the body view can redden and flash its warnings.
+		"clawds": lstate.clawds if lstate != null else null,
 	}
 	for i in rt.enemies.size():
 		var e: Dictionary = rt.enemies[i]
@@ -2658,6 +2699,9 @@ func _view_pass() -> void:
 	if jump_pad_view != null:
 		jump_pad_view.set_removed(removed)
 		jump_pad_view.sync(lstate.jump_pads, int(lstate.tick))
+	if clawd_view != null:
+		clawd_view.set_removed(removed)
+		clawd_view.sync(lstate.clawds, int(lstate.tick))
 	if beacon_view != null and lstate.beacon != null:
 		beacon_view.sync_from(lstate.beacon, lstate.gifts, lstate.tick)
 	if toucher_floor != null and rt != null:
@@ -2911,6 +2955,7 @@ func _sync_hud() -> void:
 		"collapse": _collapse_feed(),
 		"gold": gold,
 		"mouse_locked": _mouse_locked,
+		"clawds": _clawd_feed(),
 	})
 
 
@@ -2934,6 +2979,29 @@ func _collapse_feed() -> Dictionary:
 		"cracking": ph == CollapseScript.PHASE_CRACKING,
 		"seconds": maxf(secs, 0.0),
 		"zones_left": maxi(left, 0),
+	}
+
+
+## T4 (D-T4-8): the clawd swarm + the anger timer for the HUD pill. An absent dict keeps the pill hidden (the
+## level carries no swarm). Pure read of sim/clawds.gd - the HUD never writes sim state.
+func _clawd_feed() -> Dictionary:
+	if lstate == null or lstate.clawds == null:
+		return {}
+	var cl: RefCounted = lstate.clawds
+	var next_at := int(cl.kill_ticks)
+	for t in cl.warning_ticks:
+		if int(t) > int(cl.anger_ticks):
+			next_at = int(t)
+			break
+	return {
+		"active": true,
+		"taken": int(cl.count()) - int(cl.remaining()),
+		"total": int(cl.count()),
+		"anger_ticks": int(cl.anger_ticks),
+		"warned": int(cl.warned),
+		"kill_ticks": int(cl.kill_ticks),
+		"next_at": next_at,
+		"paused": bool(cl.paused(lstate)),
 	}
 
 

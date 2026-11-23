@@ -56,6 +56,7 @@ const GinScript := preload("res://content/enemies/gin/enemy.gd")
 
 const Aftershock := preload("res://content/curses/aftershock.gd")
 const BunkerBuster := preload("res://content/curses/bunker_buster.gd")
+const ClawdsScript := preload("res://sim/clawds.gd")
 const Crescendo := preload("res://content/curses/crescendo.gd")
 const DirectShot := preload("res://content/curses/direct_shot.gd")
 const DoubleRing := preload("res://content/curses/double_ring.gd")
@@ -223,6 +224,26 @@ func _state(rt: RefCounted, held: Dictionary, tick: int) -> Dictionary:
 			"economy": null, "beacon": null, "events": [], "tick": tick,
 			"curse_st": {}, "curses_held": stacks}
 
+## A real clawd runtime (sim/clawds.gd) over a flat fixture level, for the two curses that push
+## their knobs onto it (D-T4-7).
+func _clawds():
+	var tiles: Array = []
+	for x in range(-8, 9):
+		for z in range(-8, 9):
+			tiles.append([x, z, 0, 0, 0])
+	var L := {"seed": 7, "level": 1, "gen_version": 1, "attempt": 0,
+			"beacon": [0, 0, 0], "spawns": [[0, 0, 0]], "tiles": tiles,
+			"props": [], "pads": [], "gifts": [], "pieces": []}
+	ClawdsScript.attach(L, {})
+	return ClawdsScript.create(L)
+
+
+## _state() plus the clawd runtime the two clawd curses read (D-T4-7).
+func _state_cl(rt: RefCounted, held: Dictionary, tick: int, cl) -> Dictionary:
+	var st := _state(rt, held, tick)
+	st["clawds"] = cl
+	return st
+
 
 func _norm(text: String) -> String:
 	var merged := text.replace("#", " ").replace("\n", " ")
@@ -365,44 +386,32 @@ func _t_bunker_buster(f: Array[String]) -> void:
 	_check(f, w2["prop_cols"].has("5,5"), "bunker_buster: a not-held run deleted props")
 
 
-## "agitation rises 3/s instead of 2/s"
+## "the anger timer runs 1.5x faster"
 func _t_crescendo(f: Array[String]) -> void:
-	_eqf(f, Crescendo.BASE_RISE_PER_S, 2.0, "crescendo: the behavior's base rise moved")
-	_eqf(f, Crescendo.TOTAL_RISE_PER_S, 3.0, "crescendo: the cursed total rise is not 3/s")
-	_eqf(f, Crescendo.EXTRA_PER_S, 1.0, "crescendo: the curse's own slice is not the +1/s")
-	_eqf(f, Crescendo.extra_after_ticks(60), 1.0,
-			"crescendo: 60 ticks of the curse are not +1.0 agitation")
-	var rt := _rt()
-	var claude := _row(rt, "claude", Vector3(1.0, 0.0, 1.0), {})
-	claude["agitation"] = 10.0
-	var other := _row(rt, "coil", Vector3(2.0, 0.0, 1.0), {})
-	other["agitation"] = 10.0
-	var api := FakeApi.new()
-	var st := _state(rt, _held("crescendo"), 0)
-	for t in 60:
-		st["tick"] = t
-		Crescendo.on_tick(st, api)
-	_eqf(f, float(claude["agitation"]), 11.0,
-			"crescendo: 60 ticks on top of the 2/s base are not the 3/s sentence")
-	_eqf(f, float(other["agitation"]), 10.0, "crescendo: a non-Claude row rose")
-	# the clamp is the same 100 the base rise uses (the Deadline ceiling) ...
-	for t in range(60, 180):
-		st["tick"] = t
-		Crescendo.on_tick(st, api)
-	_eqf(f, float(claude["agitation"]), 13.0, "crescendo: the extra rise drifted")
-	claude["agitation"] = 100.0
-	Crescendo.on_tick(st, api)
-	_eqf(f, float(claude["agitation"]), 100.0, "crescendo: agitation left the 100 clamp")
-	# ... and the pure helper applies the same one-tick slice with the same clamp
-	var probe := {"agitation": 99.9}
-	Crescendo.apply_extra(probe, 30)
-	_eqf(f, float(probe["agitation"]), 100.0, "crescendo: apply_extra left the 100 clamp")
-	# not held: no rise from the curse
-	var rt2 := _rt()
-	var claude2 := _row(rt2, "claude", Vector3(1.0, 0.0, 1.0), {})
-	claude2["agitation"] = 10.0
-	Crescendo.on_tick(_state(rt2, {}, 0), api)
-	_eqf(f, float(claude2["agitation"]), 10.0, "crescendo: a not-held run still rose")
+	_eqf(f, Crescendo.ANGER_RATE_MUL, 1.5, "crescendo: the cursed rate is not 1.5x")
+	_eqf(f, Crescendo.BASE_RATE_MUL, 1.0, "crescendo: the sim's own rate moved off 1.0")
+	_eqf(f, Crescendo.anger_rate_mul({"curses_held": {}}), 1.0,
+			"crescendo: a not-held run changed the rate")
+	_eqf(f, Crescendo.anger_rate_mul(_held("crescendo")), 1.5,
+			"crescendo: the held rate is not 1.5x")
+	# the three thresholds land at 40 s / 80 s / 120 s instead of 60 / 120 / 180
+	_eqi(f, Crescendo.ticks_at_rate(3600, 1.5), 2400, "crescendo: warning 1 is not at 40 s")
+	_eqi(f, Crescendo.ticks_at_rate(7200, 1.5), 4800, "crescendo: warning 2 is not at 80 s")
+	_eqi(f, Crescendo.ticks_at_rate(10800, 1.5), 7200, "crescendo: the kill is not at 120 s")
+	_eqi(f, Crescendo.ticks_at_rate(3600, 1.0), 3600, "crescendo: the plain rate moved a threshold")
+	# on_tick pushes the multiplier onto the clawd state
+	var cl = _clawds()
+	var st := _state_cl(_rt(), _held("crescendo"), 0, cl)
+	Crescendo.on_tick(st, FakeApi.new())
+	_eqf(f, float(cl.anger_rate_mul), 1.5, "crescendo: the clawd state did not take the 1.5x")
+	# not held: the sim's own rate
+	var cl2 = _clawds()
+	var st2 := _state_cl(_rt(), {}, 0, cl2)
+	Crescendo.on_tick(st2, FakeApi.new())
+	_eqf(f, float(cl2.anger_rate_mul), 1.0, "crescendo: a not-held run still sped the timer up")
+	# a level with no swarm: the hook is a no-op, not a crash
+	var st3 := _state(_rt(), _held("crescendo"), 0)
+	Crescendo.on_tick(st3, FakeApi.new())
 
 
 ## "balls ricochet once off tiles/props"
@@ -1456,76 +1465,28 @@ func _t_unannounced(f: Array[String]) -> void:
 			"unannounced: the rumble was silenced")
 
 
-## "plushies remove 20 agitation instead of 35 and spawn every 30 s"
+## "a clawd leaves 20 s of anger instead of calming Claude completely"
 func _t_token_limit(f: Array[String]) -> void:
-	_eqf(f, TokenLimit.PLUSHIE_CALM_BASE, 35.0,
-			"token_limit: Claude's own calm moved off 35")
-	_eqf(f, TokenLimit.PLUSHIE_CALM_HELD, 20.0, "token_limit: the held calm is not 20")
-	_eqi(f, TokenLimit.PLUSHIE_INTERVAL_BASE_TICKS, 1500,
-			"token_limit: Claude's own interval moved off 1500")
-	_eqi(f, TokenLimit.PLUSHIE_INTERVAL_HELD_TICKS, 1800,
-			"token_limit: the held interval is not 30 s")
-	_eqf(f, TokenLimit.plushie_calm({"curses_held": {}}), 35.0,
+	_eqi(f, TokenLimit.CALM_LEFTOVER_TICKS, 1200, "token_limit: the leftover is not 20 s")
+	_eqi(f, TokenLimit.CALM_FULL_TICKS, 0, "token_limit: the sim's own calm moved off 0")
+	_eqi(f, TokenLimit.calm_leftover_ticks({"curses_held": {}}), 0,
 			"token_limit: a not-held run changed the calm")
-	_eqf(f, TokenLimit.plushie_calm(_held("token_limit")), 20.0,
-			"token_limit: the held calm is not 20")
-	_eqi(f, TokenLimit.plushie_interval_ticks({"curses_held": {}}), 1500,
-			"token_limit: a not-held run changed the interval")
-	_eqi(f, TokenLimit.plushie_interval_ticks(_held("token_limit")), 1800,
-			"token_limit: the held interval is not 30 s")
-	# a placement re-arms the clock at 30 s
-	var rt := _rt()
-	var claude := _row(rt, "claude", Vector3(5.0, 0.5, 5.0), {})
-	claude["agitation"] = 50.0
-	claude["plushies"] = []
-	claude["last_plushie_tick"] = -1
-	claude["plushie_cd"] = 0
-	var st := _state(rt, _held("token_limit"), 0)
+	_eqi(f, TokenLimit.calm_leftover_ticks(_held("token_limit")), 1200,
+			"token_limit: the held leftover is not 20 s")
+	# on_tick pushes the leftover onto the clawd state
+	var cl = _clawds()
+	var st := _state_cl(_rt(), _held("token_limit"), 0, cl)
 	TokenLimit.on_tick(st, FakeApi.new())
-	claude["plushies"] = [{"x": 1.0, "y": 0.5, "z": 1.0}]
-	claude["last_plushie_tick"] = 100
-	claude["plushie_cd"] = 1500   # the behavior's own re-arm
-	st["tick"] = 100
-	TokenLimit.on_tick(st, FakeApi.new())
-	_eqi(f, int(claude["plushie_cd"]), 1800, "token_limit: the plushie clock is not 30 s")
-	# a pickup removes exactly 20, not 35 (the behavior left 50 + rise - 35)
-	claude["agitation"] = 50.0 + 2.0 / 60.0 - 35.0
-	claude["plushies"] = []
-	st["tick"] = 101
-	TokenLimit.on_tick(st, FakeApi.new())
-	_eqf(f, float(claude["agitation"]), 50.0 + 2.0 / 60.0 - 20.0,
-			"token_limit: the pickup did not remove exactly 20")
-	# and on a calm bar the behavior's clamp at 0 does not leave 15 behind
-	claude["agitation"] = 10.0
-	st["tick"] = 102
-	TokenLimit.on_tick(st, FakeApi.new())
-	claude["plushies"] = [{"x": 1.0, "y": 0.5, "z": 1.0}]
-	claude["last_plushie_tick"] = 200
-	claude["plushie_cd"] = 1500
-	st["tick"] = 200
-	TokenLimit.on_tick(st, FakeApi.new())
-	claude["agitation"] = 0.0   # the behavior's own clamp at 0
-	claude["plushies"] = []
-	st["tick"] = 201
-	TokenLimit.on_tick(st, FakeApi.new())
-	_eqf(f, float(claude["agitation"]), 0.0,
-			"token_limit: a calm bar kept agitation after the pickup")
-	# not held: the row is never touched
-	var rt2 := _rt()
-	var c2 := _row(rt2, "claude", Vector3(5.0, 0.5, 5.0), {})
-	c2["agitation"] = 50.0
-	c2["plushies"] = []
-	c2["last_plushie_tick"] = -1
-	c2["plushie_cd"] = 0
-	var st2 := _state(rt2, {}, 0)
+	_eqi(f, int(cl.calm_leftover_ticks), 1200,
+			"token_limit: the clawd state did not take the 20 s leftover")
+	# not held: the sim's own calm (a pickup resets the timer to 0)
+	var cl2 = _clawds()
+	var st2 := _state_cl(_rt(), {}, 0, cl2)
 	TokenLimit.on_tick(st2, FakeApi.new())
-	c2["plushies"] = [{"x": 1.0, "y": 0.5, "z": 1.0}]
-	c2["last_plushie_tick"] = 100
-	c2["plushie_cd"] = 1500
-	st2["tick"] = 100
-	TokenLimit.on_tick(st2, FakeApi.new())
-	_eqi(f, int(c2["plushie_cd"]), 1500, "token_limit: a not-held run re-armed the clock")
-	_eqf(f, float(c2["agitation"]), 50.0, "token_limit: a not-held run moved the agitation")
+	_eqi(f, int(cl2.calm_leftover_ticks), 0, "token_limit: a not-held run still left anger behind")
+	# a level with no swarm: the hook is a no-op, not a crash
+	var st3 := _state(_rt(), _held("token_limit"), 0)
+	TokenLimit.on_tick(st3, FakeApi.new())
 
 
 ## "each strike marks two patches: yours and where you will be in 1.0 s"

@@ -462,6 +462,42 @@ def _string_sweep():
     return fn
 
 
+# ---- T4 (cycle 7): the two Claude anger warnings -------------------------------------------
+# The owner's words (CYCLE7_BRIEF.md T4): "If no clawd is collected for 60 s, Claude releases a warning sound
+# (a new synth cue). At 120 s, a second, more urgent sound." Both are NEW voices - nothing here is copied from
+# Nullscape or from the old musical kit (ENEMIES.md: "All sounds are brand-new"). The first is a two-note rising
+# chime with a soft bell tail; the second is a three-note alarm, higher, faster and with a detuned second voice
+# so it reads as urgent rather than merely louder.
+
+def _claude_warning_1():
+    # 60 s: a calm two-note rising chime (A5 -> E6) with a bell tail.
+    def fn(t):
+        s = 0.0
+        if t < 0.16:
+            s += sine(880.0, t) * attack(t, 0.004) * math.exp(-7.0 * t) * 0.7
+        if t >= 0.14:
+            lt = t - 0.14
+            s += sine(1318.5, lt) * attack(lt, 0.004) * math.exp(-5.0 * lt) * 0.8
+            s += 0.25 * sine(2637.0, lt) * math.exp(-9.0 * lt)      # the bell partial
+        return s
+    return fn
+
+
+def _claude_warning_2():
+    # 120 s: a three-note alarm (E6 -> A6 -> E6), faster, with a detuned second voice beating against the first.
+    notes = [(0.0, 1318.5), (0.13, 1760.0), (0.26, 1318.5)]
+    def fn(t):
+        s = 0.0
+        for start, f in notes:
+            lt = t - start
+            if 0.0 <= lt < 0.13:
+                env = attack(lt, 0.003) * math.exp(-9.0 * lt)
+                s += (sine(f, lt) + 0.55 * sine(f * 1.012, lt)) * env * 0.75
+                s += 0.3 * sine(f * 2.0, lt) * env
+        return s
+    return fn
+
+
 # cue name -> (length_seconds, factory). Lengths follow research/fable-tickets.md
 # section 3 where a cue maps to its row; enemy.json names are kept verbatim.
 RECIPES = {
@@ -490,6 +526,9 @@ RECIPES = {
     "squeak_pop": (0.2, _squeak_pop),
     "beat": (0.05, _beat),
     "string_sweep": (3.0, _string_sweep),
+    # claude, cycle 7 (T4): the two anger warnings
+    "claude_warning_1": (0.45, _claude_warning_1),
+    "claude_warning_2": (0.42, _claude_warning_2),
     # seal
     "bark": (0.25, _bark),
     "flipper_flap": (2.0, _flipper_flap),

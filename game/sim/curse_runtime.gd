@@ -222,6 +222,8 @@ func setup(curses_held: Dictionary, loader: Callable, ctx: Dictionary) -> void:
 		"economy": api.economy,
 		"beacon": ctx.get("beacon", null),
 		"spawn_plan": ctx.get("spawn_plan", []),
+		# T4 (D-T4-7): the clawd swarm + the anger timer, so a curse can re-point its rate or its calm.
+		"clawds": ctx.get("clawds", null),
 	}
 
 

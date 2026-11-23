@@ -8964,3 +8964,249 @@ fixture are byte-identical to merged main's; the panel's actions remain app-laye
 public functions, now delivered at tick boundaries. test_tester_build.gd pins the hook (`var
 tester_tick_hook`), the arena god guard (`boss_projectile_hit_player` + `not tester_god`), the
 dispatcher rebuild line, and the `on_world_built` handoff.
+## D-T4-1 (2026-11-23): the Claude revamp replaces the musical attack kit outright (cycle 7, T4)
+
+**Owner's words (CYCLE7_BRIEF.md, T4, verbatim).** "Claude enemy revamp (spawns 5-15 clawds, collect to calm,
+warning sounds at 1 and 2 min, insta-kill at 3 min)". "The current Claude is not what the owner asked." "Claude
+does NOTHING by himself: no attack, no movement."
+
+**Ruling.** `content/enemies/claude/enemy.gd` loses drums, strings, wind, the beat clock, agitation and the
+plushies. The behavior is now: a body that stands still, fades in over the anim block's 30-tick spawn row, and
+emits exactly two anim states, `spawn` then `idle`. It never moves, never telegraphs, never fires, never kills by
+its own action. Everything the old kit did is deleted, not disabled: no dead code path survives, because a
+disabled attack that still runs its clock is a lie in the state hash.
+
+**What is kept and why.** (a) The body: `world_height` 2.0, `hit_diameter` 1.6 - the SR-2 row, unchanged, so
+`tools/check_enemy_data.gd` stays green. (b) `base_speed` 4.0 and
+`pursuit_ceiling` 0.55 stay in `enemy.json` because the SR-5 table pins them and the checker compares the file to
+the table; the behavior simply never calls the float body, so the numbers are inert data, not a movement rule.
+(c) The 30-tick spawn fade, because the anim block's `spawn` row is the sheet's contract and `test_anim_sync.gd`
+drives it. (d) `content/enemies/claude/sprites.json` is NOT edited: its nine T-083 states stay as dormant art data
+(the same "dormant, wired by a later ticket" status the owner's Bankai cinematic has), so `tools/check_anim_data.gd`
+and `test_anim_sync.gd` stay green without a threshold moving.
+
+**Contact kill REMOVED (review round 1, 2026-11-23).** The first cut kept `contact_kill: true` and called it
+[CONTESTABLE]: "does nothing by himself" was read as "no attack, no movement", not "no body". Terra's review
+rejected that reading, and it is right - killing a player who walks into him IS an additional lethal behaviour,
+and the owner's sentence rules out every lethal act except the one he named. `contact_kill` is now **false** in
+both places `enemy.json` carries it (top level and `stats`) and in `enemy.gd`'s `cfg()` mirror, so the framework's
+body-contact path skips him entirely (`sim/enemy_runtime.gd` `_contact_kills` reads the flag). The 180 s anger
+timer is Claude's ONLY lethal act. The spawn fade stays (the anim block's `spawn` row is the sheet's contract and
+`test_anim_sync.gd` drives it) but it is now purely cosmetic: the old code zeroed `diameter_u` for its 30 ticks to
+gate the contact kill, and that zeroing is deleted with the kill it gated - the body mirror keeps the real 1.6 u
+diameter from tick 1. `DESIGN.md` section 5.11 and the SR-2 row say so, and `test_enemy_claude.gd` asserts a
+player standing inside the body for 600 ticks is never killed.
+
+## D-T4-2 (2026-11-23): the clawd swarm and the anger timer live in sim/clawds.gd, not in the behavior
+
+**Ruling.** `game/sim/clawds.gd` owns the clawd entities, their placement and the anger timer. It is a sim module
+in the same shape as `sim/jump_pads.gd`: `attach(L, cfg)` computes the spots and stores
+`L["clawds"] = {"cfg": ..., "spots": [[x, z, y], ...]}`; `LevelState.build` picks that up as `lv.clawds` (null when
+the key is absent, so every level without Claude keeps byte-identical dumps); `tick(lv, ctls, w, tick, events)` runs
+once per sim tick after the player row is synced, in the same slot `sim/mines.gd` and `sim/jump_pads.gd` use.
+
+**Why not in the behavior.** The timer must be in the state hash, and enemy rows are not hashed (they are the
+runtime's own dictionaries). A timer living on a row would be invisible to `sim/state_hash.gd` and two runs that
+diverged on it would hash alike - the exact hole D-JUMPPAD-4 closed for the pads. The clawds are also level-wide
+entities, not one body's property: they exist across the whole map and outlive any single row.
+
+**Why not in voidgen.gd.** Terrain parity compares `terrain/voidgen.gd` against the Python goldens byte for byte;
+a placement function there would move the level hash. Placement is a pure function of the Level dict plus the
+roster module's data, exactly like `terrain/jump_pads.gd`, and `voidgen.to_text()` never reads the key.
+
+**No content id in sim.** `sim/clawds.gd` names no enemy: the killer id, the death code, the cue names and every
+number arrive in `cfg` from the roster module (`content/enemies/claude/enemy.gd`'s `clawd_cfg()`), which
+`app/world.gd` and `tools/bot_run.gd` probe for by method name - the same idiom `extra_mines()` already uses. The
+boundary scan stays clean.
+
+## D-T4-3 (2026-11-23): the clawd count formula is a data table over the level's tile count
+
+**Owner's words.** "On level start he spawns mini CLAWDS across the map: minimum 5, scaling with level size up to
+15 on very big maps (count formula in data ...)".
+
+**Ruling.** `enemy.json` `stats.clawd_count_by_tiles` is the formula: the row with the largest `tiles` <= the
+level's tile count wins, clamped to `[clawd_count_min, clawd_count_max]` = `[5, 15]`. The rows are
+`<800 -> 5`, `<1100 -> 7`, `<1400 -> 10`, `<1700 -> 12`, `>=1700 -> 15`. Measured tile counts on this generator
+(seeds 1 / 7 / 42): level 1 = 585 / 743 / 720, level 10 = 919 / 1005 / 874, level 20 = 1404 / 1356 / 1434,
+level 30 = 1765 / 1610 / 1524 - so the shipped range 585..1778 walks the whole 5..15 ladder and level 1 always
+sits at the floor of 5. "Level size" is read as the tile count, not the level number: the owner said "very big
+maps", and the generator's tile count is what actually varies.
+
+## D-T4-4 (2026-11-23): clawd placement - walkable, clear of every hazard, spread out, seeded
+
+**Owner's words.** "placed by the terrain generator seed, on walkable tiles, never on mines/beacon/hub/pads,
+spread out".
+
+**Ruling.** `place_clawds(L, cfg)` is a pure function of the Level dict and the cfg. Candidates are tiles with
+`kind` 0 (floor) or 1 (walkway), not a ramp tile (`t[3] == 0`), whose piece is not the hub, and with no prop on
+them. Banned outright, with their 8 XZ neighbours: every gift slot (which is also every tripmine slot - the mine
+set IS the `occ == 1` gift slots), the beacon tile, every launch pad and its landing tile, every jump pad, and
+every player spawn. The candidate list is shuffled by a `VoidRng` stream seeded from the Level's own
+`(seed, level, gen_version, attempt)` mixed with the tag `0x434C4157` ("CLAW"), so the level hash still determines
+the swarm and no runtime RNG exists. Greedy selection keeps pairwise XZ distance >= `clawd_min_spacing_tiles`
+(8); if that leaves fewer than the wanted count the ladder retries at 4, then 2, then takes any remaining
+candidate, so a small map still reaches its floor of 5 rather than silently shipping 3.
+
+## D-T4-5 (2026-11-23): the anger timer - 3600 / 7200 / 10800 ticks, paused in the gold phase, reset per level
+
+**Owner's words.** "If no clawd is collected for 60 s, Claude releases a warning sound (a new synth cue). At
+120 s, a second, more urgent sound. At 180 s he INSTA-KILLS the player, death screen cause \"Claude\"." "The timer
+runs in sim ticks, deterministic, in the state hash. It pauses when the beacon opens (gold phase) and resets per
+level."
+
+**Ruling.** `anger_ticks` counts up one per sim tick from 0 at level start. At exactly 3600 it raises
+`clawd_warning` with `level` 1, at exactly 7200 with `level` 2, at 10800 it kills. A pickup sets it to 0 on the
+tick of the pickup and that tick does not advance it, so a clawd collected on the tick a warning was due cancels
+the warning - "collecting a clawd CALMS Claude" is read as strictly stronger than the timer. The timer does not
+advance while `lv.beacon.is_open()` (the gold phase begins on exactly that tick, `app/world.gd`'s `_gold_began`),
+and it never advances after the kill has fired. It is per level because `lv.clawds` is rebuilt by
+`LevelState.build` on every `load_level`.
+
+**The kill goes through the controller's kill ladder.** `ctl.try_kill(cfg.death_code, cfg.killer_id, w, ev)` - the
+one kill path every enemy uses (DESIGN.md section 12: "kill saves nothing and subtracts nothing: the player's
+controller answers"). So Last Light can save the player once from it and respawn invulnerability suppresses it,
+exactly as for a body contact; the kill test runs with Last Light already spent (D-057). "Insta-kill" is read as
+"no counter-play once the timer lands", not as "bypasses the save the owner designed".
+
+**Death screen.** `death_code` is `D-CLAUDE`, which `core/roster.gd` maps to the roster row's display name, so the
+run-over screen reads cause "Claude" with no new table.
+
+## D-T4-6 (2026-11-23): the state hash line, and why the coordinates are in it
+
+**Ruling.** `sim/state_hash.gd` appends, only when `lv.clawds != null`:
+
+`CLAWDS <spots x:z:y csv> <taken hex> <anger_ticks> <warned> <kill_ticks> <warning ticks csv> <pickup radius bits>`
+
+The spots are dumped because placement depends on `enemy.json`'s count/spacing data, which `LEVELHASH` does not
+cover - the same reason D-JUMPPAD-4 dumps the pad coordinates. `taken` is the live bitset, `anger_ticks` and
+`warned` are the live timer, and the three knobs are data pinned so two runs whose data differed cannot hash alike
+before the first pickup. A level with no clawds writes no line, so the random-input replay, the bot fixtures and
+every older dump are byte-identical.
+
+## D-T4-7 (2026-11-23): the two Claude-linked curses are re-pointed at the anger timer
+
+**Ruling.** `crescendo` and `token_limit` were written against agitation and plushies, which no longer exist. They
+keep their ids, names, min levels, severity and their intent (Claude gets angrier faster / calming him is weaker),
+and their rule sentences in DESIGN.md section 7.1 are rewritten to the new mechanic:
+
+- `crescendo` - "the anger timer runs 1.5x faster" (warnings at 40 s and 80 s, the kill at 120 s). Counter-play
+  "collect clawds first". Implemented as `ANGER_RATE_MUL` applied by the curse's `on_tick` to
+  `state["clawds"].anger_ticks`; the sim's own rate stays 1 tick per tick.
+- `token_limit` - "a clawd leaves 20 s of anger instead of calming Claude completely". Counter-play "route for
+  clawds". Implemented as `CALM_LEFTOVER_TICKS` 1200: the pickup sets `anger_ticks` to 1200 instead of 0.
+
+**Dropped clause.** `token_limit`'s old second clause ("and spawn every 30 s") has no referent: clawds spawn once
+at level start in the new design, there is no periodic spawn to slow down. Recorded here rather than invented into
+a different mechanic.
+
+## D-T4-8 (2026-11-23): the view side - clawd sprites, the anger pill, and the two warning cues
+
+**Owner's words.** "HUD: a small anger/timer indicator and a clawd counter (view side), plus clawd sprites (reuse
+the Claude logo sprite shrunk, or a simple procedural clawd icon)." "Audio: two new warning cues."
+
+**Ruling.** (a) `game/view/clawd_view.gd` draws one billboarded sprite per live clawd, reusing the Claude logo
+frame (`sprites/idle_00.png`) shrunk to 0.6 u, bobbing on the sim tick, with a 9-tick white pop on the pickup tick
+- the same stand-in the plushies used, now driven by `lv.clawds` instead of a row. It is a level-wide node like
+`gifts_view` / `jump_pad_view`, not a child of the enemy view, because the swarm is not the body's property.
+(b) `game/view/claude_view.gd` keeps the body, the metronome idle and the spawn fade, drops the rings / beams /
+shots / plushies, and tints the logo red as `anger_ticks` approaches the kill. (c) `game/view/hud/anger_meter.gd`
+is one top-centre pill under the collapse warning: `CLAWD 3 / 8` plus the calm countdown, its border lighting at
+warning 1 and pulsing at warning 2; hidden when the level carries no clawds. (d) Two new cues,
+`claude_warning_1` and `claude_warning_2`, synthesised by `tools/synth_audio.py` (a two-note rising chime and a
+three-note urgent alarm, both new voices, nothing copied), registered in `view/audio/claude_audio.gd` and played
+on the `clawd_warning` event's `level`.
+
+## D-T4-9 (2026-11-23): the fixtures, the docs and the bot answer that had to follow the revamp
+
+**Ruling.** The revamp deletes the musical kit, so every artefact that asserted the kit had to move with it. None
+of these is a threshold change; each is a fixture whose subject no longer exists.
+
+- `game/tests/test_enemy_claude.gd` - rewritten (1073 -> 970 lines). Kept: the roster-data-vs-mirror leg (now also
+  `clawd_cfg()` and `sim/clawds.gd`'s `DEFAULTS`), the body/contact leg, the 30-tick spawn fade, the anim-block
+  wiring and the lobby exhibit. Replaced the attack legs with: the count across level sizes (5..15, the table's own
+  boundaries, the clamp, four real generated levels), the placement rules (walkable, clear of gifts/mines/beacon/
+  pads/spawns, spacing, seed-pure, ramp-only and hub-only maps place nothing), "does nothing by himself" (600 ticks,
+  no ring/shot/sweep/plushie, no motion, no telegraph), the timer at exactly 3600/7200/10800 with cause "Claude",
+  the pickup reset, the gold-phase freeze, and the CLAWDS hash line with a two-replay determinism leg.
+- `game/tests/test_audio_cues.gd` - the claude leg now runs the real clawd runtime and the real `claude_view.gd`:
+  the sim's `clawd_warning` event names the cue at exactly 3600 and 7200, both cue files exist, and the view
+  recorded both warnings. The negative control leaves the view unwired, so the same checker fails. The
+  `strings_line -> string_sweep` row is gone from the table leg because the strings attack is gone.
+- `game/tests/test_app_fx_wiring.gd` - the synthetic `strings_line` telegraph still beeps `keystroke_tick` (the
+  view's own TELL_CUES map) but no longer plays `string_sweep` (that mapping came from claude's `audio_cue_timing`
+  row, deleted with the attack). The expected cue count is 6, not 7.
+- `game/tests/test_curse_dispatch.gd` / `test_curse_enemy_effects.gd` / `test_curses_scripted_enemy.gd` - the
+  crescendo and token_limit legs measure the anger timer and the pickup leftover instead of agitation and plushies.
+  The dispatch leg measures a DELTA over 600 ticks after the first two, because the curse's `on_tick` runs after
+  the clawd tick in `app/world.gd` (tick 1 is at the sim's own rate): control +600, cursed +900.
+- `game/tests/test_enemy_negcontrols.gd` - claude's claim is the anger timer (10800 ticks with no clawd collected
+  kills with D-CLAUDE); the mechanism toggle is the swarm itself.
+- `game/tests/test_loading.gd` + `game/data/tips.json` - `tip_claude_drums` -> `tip_claude_clawds` and
+  `tip_claude_plushie` -> `tip_claude_anger`, each pinned to the new data (`clawd_count_min/max`,
+  `anger_warning_ticks`, `anger_kill_ticks`, `anger_pause_when_beacon_open`). The pool stays at 30 tips. The
+  now-unused `_beats_are_1_and_3` helper is deleted.
+- `game/tests/test_hud_gui.gd` - `_full_hud()` carries a live `"clawds"` snapshot so the new pill is visible and
+  the layout leg's `shown == panels.size() - 1` still holds.
+- `game/tools/bot/answers.gd` - claude's answer is a ROUTE ("collect clawds"), not an input sequence; the entry
+  keeps its `fable-enemies.md` source line and records the gap that the bot does not path to clawds.
+  `game/tools/answer_lab.gd` drops its claude `drum_ring` case (there is no telegraph to time any more).
+- `DESIGN.md` - section 5.11 rewritten to the revamp (the `tell` and `counter_play` lines are the enemy.json text
+  verbatim, which `test_panel_lines.gd` requires), and the SR-2 note for Claude no longer claims it keeps its
+  distance. The SR-5 row (4.0 / 0.55) is untouched: `tools/check_enemy_data.gd` compares it to the table, and the
+  behavior never calls the float body, so it is inert data (D-T4-1).
+- `game/sim/clawds.gd` - the header's owner quote says "a second, louder one" instead of "a second, more urgent
+  sound": the boundary scan (`test_boundaries.gd`) matches whole words against the content ids, and "more" is a
+  curse id. The verbatim quote lives here, in the D-entries, where the scan does not look.
+
+## D-T4-10 (2026-11-23): review round 1 - the contact kill goes, the warning ladder re-arms, the kill retries, placement never stacks, and the bot answers the clock
+
+**Source.** Terra xhigh reviewed `t3/claude-clawd-revamp` and returned ADOPT WITH FIXES with four merge-blocking
+defects plus one bot-routing gap. All five are fixed in this round; the dropped 30 s periodic-spawn clause, the
+dormant anim states, the unreferenced old WAVs and the inert strings-line machinery were ruled acceptable cleanup
+and are left alone.
+
+**1. The contact kill contradicted the owner.** Fixed in D-T4-1 (amended above): `contact_kill` is false in
+`enemy.json` (both places), in `enemy.gd`'s `cfg()` mirror, and the fade's `diameter_u` zeroing is deleted with
+the kill it gated. The 180 s anger timer is Claude's only lethal act.
+
+**2. A pickup reset the timer but not `warned`.** `sim/clawds.gd` `pickup()` now sets `warned = 0` with
+`anger_ticks`, so the warning ladder counts the warnings of the CURRENT anger period. Without it every period
+after the first pickup passed in silence. The view side follows: `view/claude_view.gd` gains `rearm()` (clears
+`_last_warned`, no flash, no cue) and `view/enemies/enemy_view_host.gd` calls it when the sim's count goes
+BACKWARDS, so the next 60 s / 120 s warnings flash and play their cues again. `test_enemy_claude.gd`'s
+`_warned_rearms_on_pickup` asserts the second period fires both warnings at exactly 3600 and 7200 ticks after the
+reset; `test_audio_cues.gd` asserts `rearm()` and the warning after it.
+
+**3. The kill was marked spent before it landed.** `advance()` used to set `killed = true` and then call
+`_kill()`. Last Light, respawn invulnerability or a barrier can turn the blow aside, and the timer then never
+tried again - the specified 180 s kill silently did not happen. Now `_kill()` returns whether a player actually
+died (`ctl.dead` after `try_kill`), `killed` is set only on that, and while the player is protected the timer
+stays pinned at `kill_ticks` and retries every tick. A suppressed retry emits nothing (the controller's
+`kill_suppressed` events are dropped), so a protected player does not fill the replay with one event per tick.
+`test_enemy_claude.gd`'s `_kill_retries_while_protected` holds the player invulnerable through tick 10800, asserts
+`killed` is still false and anger pinned, then drops the shield and asserts the kill lands on the very next tick
+with `D-CLAUDE`, one `clawd_kill` event, and nothing after.
+
+**4. The spacing ladder could pick one tile twice.** At the bottom rung (spacing 0) the distance test passes for
+every candidate, including the ones already chosen, so a small map could stack two clawds on one tile.
+`place_clawds()` now keeps a `used` set of candidate indices and never returns a tile twice; if the candidates run
+out the swarm is simply smaller than the count formula asked for (a map with fewer legal tiles than the floor),
+never overlapping. `test_enemy_claude.gd`'s `_placement_never_overlaps` sweeps the small maps where the ladder
+reaches that rung and a hand-built 3-legal-tile map that must place exactly 3.
+
+**5. The bot did not route to clawds.** `tools/bot_run.gd` gains a clawd goal kind: `_clawd_urgent()` (urgent from
+the DATA's first warning tick, `anger_warning_ticks[0]`, and never while the timer is frozen or spent),
+`_nearest_clawd()` (nearest reachable uncollected clawd on the route distances, skipping released slots),
+`_goal_point()`/`_goal_stale()` for the new kind, `mem["clawd_tiles"]` built from `lv.clawds.spots` with the gift
+slots' own mapping, and a repath on `clawd_collected`. Before the first warning the bot plays the level normally,
+which is what PACES the swarm instead of eating it at once; from the first chime on, the nearest clawd outranks
+the nearest gift. A clawd the follower cannot actually reach (a deep drop the jump validator refuses) is released
+for the level after `CLAWD_GIVE_UP_TICKS` (600 = 10 s, the `_stuck_window` window) and the next nearest is tried,
+so an unreachable clawd cannot pin the bot while the timer climbs. With every clawd released the bot falls back to
+gifts and takes the kill - honest, and no longer systematic. `tools/bot/answers.gd`'s claude caveat and KNOWN GAPS
+note say so. `test_bot_run.gd`'s `_clawd_routing` asserts the decision functions directly and pins one integration
+run (seed 20, level 15, a Claude vote) that used to die at tick 14140 with `D-CLAUDE` and now does not.
+
+**Measured.** 20 level-15 runs that vote Claude (seeds 23..42): 0 deaths with `D-CLAUDE` (8 complete, 10 stuck, 1
+mine death, 1 timeout - the stuck/timeout outcomes are the bot's pre-existing behaviour on those maps and are
+identical with and without the Claude vote).

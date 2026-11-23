@@ -9,10 +9,11 @@ extends RefCounted
 #
 #   coil    coil_boing on the coil_ring telegraph tick, 201 ticks (lethal_attacks
 #           attack_offset_ticks) before the coil_land kill tick (row 13)
-#   claude  drums: a quieter ui_chime pre-hit exactly one beat before every ring leaves
-#           Claude, the full chime on the ring tick; wind: a quieter notification_ping
-#           one beat before every shot, the full ping on the launch tick; strings:
-#           string_sweep on the strings_line telegraph tick, before the beam (row 14)
+#   claude  the CYCLE 7 revamp: the two anger warnings. The sim is the real clawd runtime
+#           (sim/clawds.gd) and the view is the real view/claude_view.gd - the sim's
+#           clawd_warning event names the cue, on_warning() plays it. Warning 1 at exactly
+#           3600 ticks (60 s), warning 2 at exactly 7200 (120 s), and both cue files exist
+#           (D-T4-5, D-T4-8)
 #   gin     crack_rumble on the mark tick, shing + whoosh binding_cue_ticks (18) before
 #           the zone opens, zone_open on the zone-open (kill) tick, the zone 138 ticks
 #           after the mark (row 15)
@@ -28,13 +29,14 @@ const GinBehavior := preload("res://content/enemies/gin/enemy.gd")
 const TelegraphView := preload("res://view/vfx/telegraph_view.gd")
 const ThreatCues := preload("res://view/audio/threat_cues.gd")
 const Util := preload("res://tests/sim_testutil.gd")
+const ClawdsScript := preload("res://sim/clawds.gd")
+const BeaconScript := preload("res://sim/beacon.gd")
+const ClaudeViewScript := preload("res://view/claude_view.gd")
 
 const DT := 1.0 / 60.0
-const BEAT_TICKS := 36          # 100 BPM at agitation 0 (pinned below)
-# The sim's beat grid accumulates beat_pos in floats (claude enemy.gd _advance_music), so a
-# beat boundary lands 35 or 36 ticks after the previous one (and beat 1 lands 35 ticks after
-# spawn); "one beat earlier" is the previous boundary, so a pre-hit leads by 35..37.
-const BEAT_SLACK := 1
+## The two anger thresholds the owner named, in ticks at the fixed 60 Hz sim rate.
+const WARN_1 := 3600
+const WARN_2 := 7200
 
 
 func run() -> Array[String]:
@@ -135,7 +137,7 @@ static func _cues(tv, cue: String, full: int = -1) -> Array:
 
 func _table(f: Array[String]) -> void:
 	var tc = ThreatCues.new()
-	for pair in [["coil_ring", "coil_boing"], ["strings_line", "string_sweep"],
+	for pair in [["coil_ring", "coil_boing"],
 			["ground_ring", "rocket_booster_roar"], ["teleport", "thicc_ben_chime"]]:
 		var found := false
 		for entry in tc.by_kind.get(pair[0], []):
@@ -204,94 +206,73 @@ func _coil(f: Array[String]) -> void:
 		f.append("coil negative control: the checker passed with the boing unwired")
 
 
-# ---- claude (PARKED.md #14) -------------------------------------------------------
+# ---- claude (the CYCLE 7 revamp: the two anger warnings) --------------------------
 
-## Problems with Claude's drums / wind / strings cues in one run (agitation pinned at 0:
-## the beat is exactly 36 ticks). Births are recorded by object identity per step.
+## Problems with Claude's two anger warnings in one run. The sim is the real clawd runtime
+## (sim/clawds.gd) at 60 Hz with the player standing still; the cue names come from the sim's own
+## clawd_warning event, and the view is the real view/claude_view.gd - on_warning() is what plays
+## them. wired == false leaves the view unwired (the cue layer off), so the same checker must fail.
 func _claude_check(wired: bool) -> Array[String]:
 	var p: Array[String] = []
-	var rt = _runtime(10)
-	var tv = _view(rt, wired)
-	var cfg: Dictionary = _json("claude").get("stats", {})
-	var row: Dictionary = rt.spawn_at("claude", "Claude", ClaudeEnemy.new(), cfg,
-			Vector3(6.5, 0.0, 0.5))
-	var all: Array = []
-	var rings: Array = []      # birth step ticks
-	var shots: Array = []
-	var seen_r: Array = []
-	var seen_s: Array = []
-	var strings_at: Array = []
-	var sweep_at: Array = []
-	var last_sweep := int(row.get("last_sweep_tick", -1))
-	for _i in range(36 + 3 * 4 * BEAT_TICKS + 20):
-		row["agitation"] = 0.0
-		var t := _step(rt, tv, wired, all)
-		for r in row["rings"]:
-			if not seen_r.has(r):
-				seen_r.append(r)
-				rings.append(t)
-		for s in row["shots"]:
-			if not seen_s.has(s):
-				seen_s.append(s)
-				shots.append(t)
-		for e in rt.events:
-			if str(e.get("e", "")) == "telegraph" and str(e.get("kind", "")) == "strings_line":
-				strings_at.append(t)
-		if int(row.get("last_sweep_tick", -1)) != last_sweep:
-			last_sweep = int(row["last_sweep_tick"])
-			sweep_at.append(t)
-	if rings.size() < 2 or shots.size() < 3 or strings_at.is_empty() or sweep_at.is_empty():
-		p.append("claude: the sim ran rings %s shots %s strings %s sweeps %s - want a full cycle"
-				% [str(rings), str(shots), str(strings_at), str(sweep_at)])
-		tv.free()
-		return p
-	# drums: quieter ui_chime exactly one beat before each ring, the full one on it
-	var pre_d: Array = _cues(tv, "ui_chime", 0)
-	var hit_d: Array = _cues(tv, "ui_chime", 1)
-	for a in rings:
-		if not hit_d.has(a):
-			p.append("claude drums: no full ui_chime on the ring tick %d (%s)" % [a, str(hit_d)])
-		if not _one_beat_before(pre_d, a):
-			p.append("claude drums: no pre-hit ui_chime one beat (%d +/- %d) before the ring at %d (pre %s)"
-					% [BEAT_TICKS, BEAT_SLACK, a, str(pre_d)])
-	if pre_d.size() != rings.size():
-		p.append("claude drums: %d pre-hits for %d rings (%s vs %s)"
-				% [pre_d.size(), rings.size(), str(pre_d), str(rings)])
-	# wind: quieter ping one beat before each shot, the full ping on the launch tick
-	var pre_w: Array = _cues(tv, "notification_ping", 0)
-	var hit_w: Array = _cues(tv, "notification_ping", 1)
-	for a in shots:
-		if not hit_w.has(a):
-			p.append("claude wind: no full notification_ping on the launch tick %d (%s)"
-					% [a, str(hit_w)])
-		if not _one_beat_before(pre_w, a):
-			p.append("claude wind: no pre-hit ping one beat before the shot at %d (pre %s)"
-					% [a, str(pre_w)])
-	if pre_w.size() != shots.size():
-		p.append("claude wind: %d pre-hits for %d shots" % [pre_w.size(), shots.size()])
-	# strings: the binding string_sweep starts on the telegraph tick, before the beam
-	var sweep_cue: Array = _cues(tv, "string_sweep")
-	var atk: Dictionary = _attack("claude", "strings_beam_kill")
-	for i in range(strings_at.size()):
-		var s := int(strings_at[i])
-		if not sweep_cue.has(s):
-			p.append("claude strings: string_sweep not on the strings_line tick %d (%s)"
-					% [s, str(sweep_cue)])
-		if i < sweep_at.size() and not (s < int(sweep_at[i])):
-			p.append("claude strings: the cue (%d) does not lead the beam (%d)" % [s, sweep_at[i]])
-		if i < sweep_at.size() and s + int(atk.get("binding_cue_ticks", 0)) <= int(sweep_at[i]):
-			p.append("claude strings: the %s-tick cue ends before the beam starts (%d)"
-					% [str(atk.get("binding_cue_ticks")), sweep_at[i]])
-	tv.free()
+	var L: Dictionary = _level(10)
+	# the clawd placement stream is seeded from the Level (D-T4-4): the fixture needs the four keys
+	L["seed"] = 4242
+	L["level"] = 1
+	L["gen_version"] = 1
+	L["attempt"] = 0
+	ClawdsScript.attach(L, ClaudeEnemy.clawd_cfg())
+	var lv := {"clawds": ClawdsScript.create(L), "beacon": BeaconScript.create(L)}
+	var w: Dictionary = Util.world_from_tiles(_tiles(10))
+	w["dais"] = [0, 0, 0]
+	var ctl = Util.ControllerScript.new()
+	ctl.setup("dasher", Util.consts())
+	ctl.place(w)
+	ctl.last_light_spent = true
+	var v = ClaudeViewScript.new()
+	v.setup()
+	var warn_at: Array = []
+	var warn_cue: Array = []
+	var ev: Array = []
+	for t in range(1, WARN_2 + 1):
+		ev.clear()
+		ClawdsScript.tick(lv, [ctl], w, t, ev)
+		for e in ev:
+			if str((e as Dictionary).get("type", "")) != "clawd_warning":
+				continue
+			warn_at.append(t)
+			warn_cue.append(str(e["cue"]))
+			if wired:
+				v.on_warning(int(e["level"]))
+	if warn_at.size() != 2:
+		p.append("claude: %d warnings in %d ticks, want 2 (at %d and %d)"
+				% [warn_at.size(), WARN_2, WARN_1, WARN_2])
+	else:
+		if int(warn_at[0]) != WARN_1 or int(warn_at[1]) != WARN_2:
+			p.append("claude: the warnings fired at %s, want [%d, %d] (60 s and 120 s)"
+					% [str(warn_at), WARN_1, WARN_2])
+		if str(warn_cue[0]) != "claude_warning_1" or str(warn_cue[1]) != "claude_warning_2":
+			p.append("claude: the sim named the cues %s, want the two new synth cues" % str(warn_cue))
+		# the cue names ARE the file names (T-055's contract): both files must exist
+		for cue in warn_cue:
+			var path := "res://assets/audio/enemies/claude/%s.wav" % str(cue)
+			if not ResourceLoader.exists(path):
+				p.append("claude: the cue file %s is missing" % path)
+		# the view's own record: it played both warnings (the negative control fails here)
+		if int(v._last_warned) != 2:
+			p.append("claude: the view recorded %d warnings, want 2 (the cue layer is off)"
+					% int(v._last_warned))
+		if int(v._flash) <= 0:
+			p.append("claude: the view left no warning flash on the logo")
+		# review round 1: a clawd pickup resets the sim's warning count, so the view must re-arm - the next
+		# period's warnings have to flash and play again instead of being swallowed by a stale counter
+		v.rearm()
+		if int(v._last_warned) != 0:
+			p.append("claude: rearm() left _last_warned at %d, want 0" % int(v._last_warned))
+		v.on_warning(1)
+		if int(v._last_warned) != 1:
+			p.append("claude: the warning after a rearm recorded %d, want 1" % int(v._last_warned))
+	v.free()
 	return p
-
-
-static func _one_beat_before(pre: Array, a: int) -> bool:
-	for c in pre:
-		var lead := a - int(c)
-		if lead >= BEAT_TICKS - BEAT_SLACK and lead <= BEAT_TICKS + BEAT_SLACK:
-			return true
-	return false
 
 
 func _claude(f: Array[String]) -> void:

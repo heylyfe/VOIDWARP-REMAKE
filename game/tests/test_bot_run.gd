@@ -16,6 +16,9 @@ extends RefCounted
 # byte-identical reports.
 
 const BotRun := preload("res://tools/bot_run.gd")
+const ClawdsScript := preload("res://sim/clawds.gd")
+const ClaudeEnemy := preload("res://content/enemies/claude/enemy.gd")
+const ContentApiScript := preload("res://core/content_api.gd")
 
 const SEED_BASE := 60717
 const RUNS := 3
@@ -29,6 +32,7 @@ func run() -> Array[String]:
 	_route_honours_menace(f)
 	_replan_keeps_goal_markers(f)
 	_goal_stale_reads_present(f)
+	_clawd_routing(f)
 	_threats_skip_out_of_play(f)
 	_chaser_survival_pins(f)
 	return f
@@ -224,6 +228,90 @@ func _goal_stale_reads_present(f: Array[String]) -> void:
 		f.append("a beacon goal reads stale while the beacon is shut")
 
 
+## T4 (review round 1): the bot answers Claude's anger clock. The routing decision is a pure function of the
+## sim's own clawd runtime, so it is asserted directly - urgency starts at the DATA's first warning tick, the
+## nearest reachable uncollected clawd wins, a collected or released clawd is skipped, the goal point is the
+## clawd's own hover point - and one integration run pins that a Claude-voting level no longer ends in the
+## anger kill.
+func _clawd_routing(f: Array[String]) -> void:
+	var cfg: Dictionary = ClaudeEnemy.clawd_cfg()
+	var L := {"seed": 5, "level": 1, "gen_version": 1, "attempt": 0,
+		"beacon": [0, 0, 0], "spawns": [[0, 0, 0]], "tiles": [], "props": [], "pads": [],
+		"gifts": [], "pieces": []}
+	for x in range(-8, 9):
+		for z in range(-8, 9):
+			(L["tiles"] as Array).append([x, z, 0, 0, 0])
+	ClawdsScript.attach(L, cfg)
+	var cl = ClawdsScript.create(L)
+	if cl == null or cl.count() < 3:
+		f.append("clawd routing: the fixture swarm has %d clawds, want >= 3"
+			% (0 if cl == null else cl.count()))
+		return
+	var lv := _StubClawdLevel.new()
+	lv.clawds = cl
+	lv.beacon = _StubBeacon.new()
+	# calm is not urgent
+	if BotRun._clawd_urgent(cl, lv):
+		f.append("clawd routing: the timer is urgent at anger 0")
+	# urgent from the DATA's first warning tick on, not one tick before
+	var w0 := int((cl.warning_ticks as Array)[0])
+	cl.anger_ticks = w0 - 1
+	if BotRun._clawd_urgent(cl, lv):
+		f.append("clawd routing: urgent one tick before the first warning (%d)" % (w0 - 1))
+	cl.anger_ticks = w0
+	if not BotRun._clawd_urgent(cl, lv):
+		f.append("clawd routing: not urgent at the first warning tick (%d)" % w0)
+	# a frozen timer (the beacon is open) is not urgent
+	lv.beacon = _StubOpenBeacon.new()
+	if BotRun._clawd_urgent(cl, lv):
+		f.append("clawd routing: urgent while the beacon is open (the timer is frozen)")
+	lv.beacon = _StubBeacon.new()
+	# the nearest reachable uncollected clawd wins; a collected or released one is skipped
+	var dist := PackedInt32Array()
+	dist.resize(400)
+	dist.fill(-1)
+	var mem := {"clawd_tiles": [], "clawd_released": {}}
+	for i in cl.count():
+		var gi: int = i * 3
+		(mem["clawd_tiles"] as Array).append(gi)
+		dist[gi] = 10 + i * 10          # clawd 0 is the nearest
+	var pick: Array = BotRun._nearest_clawd(cl, dist, mem)
+	if int(pick[1]) != 0:
+		f.append("clawd routing: picked clawd %d, want 0 (the nearest)" % int(pick[1]))
+	cl.taken[0] |= 1                                  # clawd 0 collected
+	pick = BotRun._nearest_clawd(cl, dist, mem)
+	if int(pick[1]) != 1:
+		f.append("clawd routing: picked clawd %d after 0 was collected, want 1" % int(pick[1]))
+	(mem["clawd_released"] as Dictionary)[1] = true    # clawd 1 given up as unreachable
+	pick = BotRun._nearest_clawd(cl, dist, mem)
+	if int(pick[1]) != 2:
+		f.append("clawd routing: picked clawd %d after 1 was released, want 2" % int(pick[1]))
+	# the goal point is the clawd's own hover point (the pickup centre)
+	var gp: Vector3 = BotRun._goal_point({"goal_kind": "clawd", "goal_slot": 2}, lv)
+	if gp.distance_to(cl.spot_pos(2)) > 0.0001:
+		f.append("clawd routing: the goal point %s is not the clawd's spot %s"
+			% [str(gp), str(cl.spot_pos(2))])
+	# a live clawd goal is not stale; a collected one is
+	var gmem := {"goal_kind": "clawd", "goal_slot": 2}
+	if BotRun._goal_stale(gmem, lv):
+		f.append("clawd routing: a live clawd goal reads stale")
+	cl.taken[0] |= 4                                  # clawd 2 collected
+	if not BotRun._goal_stale(gmem, lv):
+		f.append("clawd routing: a collected clawd goal does not read stale")
+	# the integration control: a level-15 run that votes Claude must not end in the anger kill
+	var api := ContentApiScript.load()
+	if not bool(api.is_ok()):
+		f.append("clawd routing: content boot refused: %s" % " / ".join(api.boot_errors()))
+		return
+	var ledger := {"votes": {"claude": 1}, "curses": {}, "stacks": {}, "purse": 0,
+		"tithes": 0, "hunger": 0, "last_vote": "claude", "class": "dasher",
+		"charges": 0, "last_light_spent": false}
+	var r: Dictionary = BotRun._play_level(api, ledger, 20, 15)
+	if str(r.get("death_code", "")) == "D-CLAUDE":
+		f.append("clawd routing: a bot run that votes Claude still died to the anger timer at tick %s"
+			% str(r.get("death_tick", -1)))
+
+
 ## A body that is out of play cannot kill - sim/enemy_runtime.gd skips it in _contact_kills
 ## by is_out_of_play() - so the bot must not route around it either. The collapse starts on
 ## the beacon-open tick, so a fallen body is exactly what the gold phase is full of. Both
@@ -350,3 +438,14 @@ class _StubLevel:
 	var tick := 10
 	var beacon: RefCounted
 	var gifts: RefCounted
+
+
+class _StubClawdLevel:
+	var tick := 10
+	var beacon: RefCounted
+	var clawds: RefCounted
+
+
+class _StubOpenBeacon:
+	func is_open() -> bool:
+		return true

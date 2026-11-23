@@ -20,6 +20,10 @@ const EV_ALTAR_SELECTED := "altar_selected"  # + bay: String ("E"|"C"|"U"|"REST"
                                              #   "hunger"|"tithe"|"reroll"), id: String,
                                              #   cost: int (gold spent; bounty = negative cost)
 const EV_GATE_OPENED := "gate_opened"        # player -1: every mandatory bay is resolved
+# T4 (cycle 7, the clawd swarm and the anger timer; D-T4-5):
+const EV_CLAWD_COLLECTED := "clawd_collected"  # + clawd: int, remaining: int, anger_ticks: int
+const EV_CLAWD_WARNING := "clawd_warning"      # player -1: + level: int (1|2), anger_ticks: int, cue: String
+const EV_CLAWD_KILL := "clawd_kill"            # player -1: + killer: String, code: String
 
 
 static func make(p_type: String, p_tick: int, p_player: int) -> Dictionary:

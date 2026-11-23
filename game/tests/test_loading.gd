@@ -384,12 +384,6 @@ func _pin(f: Array[String], by_id: Dictionary, id: String, needle: String, ok: b
 		f.append("tip %s says \"%s\" but the build disagrees" % [id, needle])
 
 
-func _beats_are_1_and_3(v: Variant) -> bool:
-	if typeof(v) != TYPE_ARRAY or (v as Array).size() != 2:
-		return false
-	return int((v as Array)[0]) == 1 and int((v as Array)[1]) == 3
-
-
 func _jump_window(h: float) -> Array:
 	var v: float = float(ControllerScript.DEFAULTS["jump_velocity"])
 	var g: float = float(ControllerScript.DEFAULTS["gravity"])
@@ -481,15 +475,14 @@ func _test_tips_thirty_and_pinned(f: Array[String]) -> void:
 	var addr := _enemy_stats("address_me")
 	_pin(f, by_id, "tip_address_me", "1.5 s", int(addr.get("still_ticks", 0)) == 90)
 	var claude := _enemy_stats("claude")
-	_pin(f, by_id, "tip_claude_drums", "100 BPM", is_equal_approx(float(claude.get("bpm_base", 0.0)), 100.0))
-	_pin(f, by_id, "tip_claude_drums", "beats 1 and 3", _beats_are_1_and_3(claude.get("drum_beats", [])))
-	_pin(f, by_id, "tip_claude_plushie", "angrier by 2", is_equal_approx(float(claude.get("agitation_rise_per_s", 0.0)), 2.0))
-	_pin(f, by_id, "tip_claude_plushie", "at 100", is_equal_approx(float(claude.get("agitation_max", 0.0)), 100.0))
-	_pin(f, by_id, "tip_claude_plushie", "every 25 s", is_equal_approx(float(claude.get("plushie_interval_s", 0.0)), 25.0))
-	_pin(f, by_id, "tip_claude_plushie", "10-25 u", is_equal_approx(float(claude.get("plushie_min_u", 0.0)), 10.0)
-			and is_equal_approx(float(claude.get("plushie_max_u", 0.0)), 25.0))
-	_pin(f, by_id, "tip_claude_plushie", "three at most", int(claude.get("plushie_max", 0)) == 3)
-	_pin(f, by_id, "tip_claude_plushie", "takes 35 off", is_equal_approx(float(claude.get("plushie_calm", 0.0)), 35.0))
+	_pin(f, by_id, "tip_claude_clawds", "5 to 15", int(claude.get("clawd_count_min", 0)) == 5
+			and int(claude.get("clawd_count_max", 0)) == 15)
+	var wt: Array = claude.get("anger_warning_ticks", [])
+	_pin(f, by_id, "tip_claude_anger", "60 s", wt.size() == 2 and int(wt[0]) == 3600)
+	_pin(f, by_id, "tip_claude_anger", "120 s", wt.size() == 2 and int(wt[1]) == 7200)
+	_pin(f, by_id, "tip_claude_anger", "180 s", int(claude.get("anger_kill_ticks", 0)) == 10800)
+	_pin(f, by_id, "tip_claude_anger", "freezes",
+			bool(claude.get("anger_pause_when_beacon_open", false)))
 	# hurdle heights: the tip names each body height, SR-2 / enemy.json world_height
 	_pin(f, by_id, "tip_hurdle", "kiwi cat (1.0 u)", is_equal_approx(float(kiwi.get("world_height", 0.0)), 1.0))
 	_pin(f, by_id, "tip_hurdle", "toucher (1.4 u)", is_equal_approx(float(toucher.get("world_height", 0.0)), 1.4))

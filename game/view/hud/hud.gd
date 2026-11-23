@@ -66,6 +66,7 @@ const CartographerMapScript := preload("res://view/hud/cartographer_map.gd")
 const CollapseWarningScript := preload("res://view/hud/collapse_warning.gd")
 const GoldCounterScript := preload("res://view/hud/gold_counter.gd")
 const MouseHintScript := preload("res://view/hud/mouse_hint.gd")
+const AngerMeterScript := preload("res://view/hud/anger_meter.gd")
 
 var gift_counter: Control
 var purse_chain: Control
@@ -78,6 +79,7 @@ var cartographer_map: Control
 var collapse_warning: Control   # D-B12-1: the outside-in collapse countdown, top-centre
 var gold_counter: Control   # D-GUI-1: the gold-phase counter, gift_counter's slot
 var mouse_hint: Control     # D-GUI-1: the CTRL mouse-lock hint under the counter
+var anger_meter: Control    # T4: the clawd counter + anger timer, under the collapse warning
 var screen_fx: Control   # T-086: full-screen void flash / white bloom / death black-out
 
 signal blackout_finished
@@ -107,6 +109,9 @@ func _init() -> void:
 	add_child(cartographer_map)
 	collapse_warning = CollapseWarningScript.new()
 	add_child(collapse_warning)
+	# T4: the clawd counter + anger timer, in the top-centre column under the collapse warning
+	anger_meter = AngerMeterScript.new()
+	add_child(anger_meter)
 	# the radar chevrons are an overlay: drawn above every panel (D-GUI-1)
 	radar_arrows = RadarArrowsScript.new()
 	add_child(radar_arrows)
@@ -137,6 +142,8 @@ func sync(snapshot: Dictionary) -> void:
 	var col: Dictionary = snapshot.get("collapse", {})
 	collapse_warning.sync(bool(col.get("active", false)), bool(col.get("cracking", false)),
 			float(col.get("seconds", 0.0)), int(col.get("zones_left", 0)))
+	# T4: the clawd counter + anger timer. An absent dict keeps the pill hidden (no swarm on this level).
+	anger_meter.sync(snapshot.get("clawds", {}))
 	# The footprint map draws only for a run that owns the footprint map; otherwise
 	# it stays hidden and clears itself (sync(null)) at zero cost.
 	var cart: Dictionary = snapshot.get("footprint_map", {})
@@ -158,7 +165,7 @@ func panel_elements() -> Dictionary:
 		"purse_chain": purse_chain, "void_pips": void_pips,
 		"ability_cooldown": ability_cooldown, "icon_rows": icon_rows,
 		"enemy_roster": enemy_roster, "cartographer_map": cartographer_map,
-		"collapse_warning": collapse_warning,
+		"collapse_warning": collapse_warning, "anger_meter": anger_meter,
 	}
 
 

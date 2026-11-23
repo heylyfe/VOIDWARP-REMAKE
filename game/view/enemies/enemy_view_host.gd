@@ -188,6 +188,18 @@ func sync(row: Dictionary, ctx: Dictionary) -> void:
 			_face(view.billboard, cam)
 		"you", "address_me", "claude":
 			view.position = pos
+			if id == "claude":
+				# T4 (D-T4-8): the anger timer lives in sim/clawds.gd, not on the row, so the body view is
+				# fed it here; a warning the sim raised this tick flashes the logo and plays its cue.
+				var cl = ctx.get("clawds", null)
+				if cl != null:
+					view.set_anger(float(cl.anger_ticks) / maxf(float(cl.kill_ticks), 1.0))
+					# A pickup resets the sim's warning count (review round 1): re-arm the view's own
+					# counter so the next 60 s / 120 s warnings flash and play their cues again.
+					if int(cl.warned) < int(view._last_warned):
+						view.rearm()
+					if int(cl.warned) > int(view._last_warned):
+						view.on_warning(int(cl.warned))
 			view.sync(row, dt, cam)
 		"gin":
 			view.position = pos
