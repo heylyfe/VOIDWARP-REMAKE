@@ -3,6 +3,11 @@ extends RefCounted
 const World := preload("res://app/world.gd")
 const DT := 1.0 / 60.0
 const CUE_TICKS := {"hum": 0, "charge": 612, "impact": 750, "volley": 1200, "kill": 1290}
+## The mix is judged on the WAVEFORM, not on the gain settings (Terra, cycle 8): a cue whose
+## PCM is loud enough to mask the voice would pass a volume_db comparison. Each cue's own
+## peak and RMS are read out of its samples, its gain is added, and the result must sit at
+## least this far below the voice's nominal 0 dBFS.
+const CUE_HEADROOM_DB := 12.0
 
 
 class TesterApp extends Node:
@@ -57,6 +62,7 @@ func _smoke(f: Array[String], fps: int) -> void:
 	var opening_gold: int = world._economy.purse_centi
 	var previous: Transform3D = camera.transform
 	var fired := {}
+	var revealed := 0
 	_check_audio(f, anim, fired, 0)
 	var voice_tick := -1
 	var cmd := {"move_x": 127, "move_z": 0, "buttons": 9}
@@ -83,6 +89,10 @@ func _smoke(f: Array[String], fps: int) -> void:
 			anim._process(1.0 / fps)
 			_check_camera(f, anim, camera, previous, fps, float(frame + 1) / fps)
 			previous = camera.transform
+			if anim.player_model.visible:
+				revealed += 1
+	if revealed == 0:
+		f.append("at %d FPS the avatar was never revealed during the pull-back" % fps)
 	if fired != CUE_TICKS:
 		f.append("at %d FPS cue ticks were %s" % [fps, str(fired)])
 	if voice_tick != 468 or anim._voice_player.stream == null \
@@ -116,8 +126,39 @@ func _check_audio(f: Array[String], anim: Node3D, fired: Dictionary, tick: int) 
 			f.append("%s has no synthesized audio" % cue)
 		if player.volume_db >= anim._voice_player.volume_db:
 			f.append("%s is mixed at or above the voice" % cue)
+		var peak_db := _wav_peak_db(wav) + player.volume_db
+		var rms_db := _wav_rms_db(wav) + player.volume_db
+		if peak_db > -CUE_HEADROOM_DB:
+			f.append("%s peaks at %.1f dBFS after its gain, inside the voice's headroom"
+					% [cue, peak_db])
+		if rms_db > -CUE_HEADROOM_DB - 6.0:
+			f.append("%s sits at %.1f dBFS RMS after its gain, too loud under the voice"
+					% [cue, rms_db])
 		if cue == "hum" and wav.loop_mode != AudioStreamWAV.LOOP_FORWARD:
 			f.append("hum does not loop under the cinematic")
+
+
+## Peak of a 16-bit PCM stream in dBFS, read from the samples themselves.
+static func _wav_peak_db(wav: AudioStreamWAV) -> float:
+	var peak := 0.0
+	var stride := 4 if wav.stereo else 2
+	var n := wav.data.size() / stride
+	for i in n:
+		peak = maxf(peak, absf(float(wav.data.decode_s16(i * stride)) / 32768.0))
+	return linear_to_db(maxf(peak, 1e-6))
+
+
+## RMS of a 16-bit PCM stream in dBFS, read from the samples themselves.
+static func _wav_rms_db(wav: AudioStreamWAV) -> float:
+	var stride := 4 if wav.stereo else 2
+	var n := wav.data.size() / stride
+	if n <= 0:
+		return -120.0
+	var acc := 0.0
+	for i in n:
+		var v := float(wav.data.decode_s16(i * stride)) / 32768.0
+		acc += v * v
+	return linear_to_db(maxf(sqrt(acc / float(n)), 1e-6))
 
 
 func _check_camera(f: Array[String], anim: Node3D, camera: Camera3D, previous: Transform3D,
@@ -143,3 +184,17 @@ func _check_camera(f: Array[String], anim: Node3D, camera: Camera3D, previous: T
 	if t >= 16.0 and (pos.z < 3.5 or not anim.player_model.visible
 			or not camera.is_position_in_frustum(anim.player_model.global_position + Vector3.UP)):
 		f.append("camera lost the avatar after pulling back at %.3fs" % t)
+	# The avatar must never be revealed while it still fills the lens: the reveal waits until
+	# its bounding sphere fits inside REVEAL_SHARE of the half-FOV (Terra, cycle 8). This
+	# recomputes the rule from the camera and the model's own bounds rather than asking the
+	# cinematic whether it thinks it is clear.
+	if anim.player_model.visible and not anim._fps_rig.visible:
+		var share: float = anim.get_script().get_script_constant_map()["REVEAL_SHARE"]
+		var sphere: Array = anim._model_sphere()
+		var centre: Vector3 = sphere[0]
+		var radius: float = sphere[1]
+		var d := camera.position.distance_to(centre)
+		var half_fov := deg_to_rad(camera.fov) * 0.5
+		if d <= radius or asin(clampf(radius / d, 0.0, 1.0)) > half_fov * share:
+			f.append("avatar revealed while it still fills the lens at %.3fs (%d FPS): %.2f u"
+					% [t, fps, d])

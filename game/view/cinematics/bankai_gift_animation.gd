@@ -24,6 +24,18 @@ const DROP_POINT: Vector3 = Vector3(0.0, 0.0, -0.78)
 const CUSTOM_VOICE_PATH: String = "res://view/cinematics/custom_voiceline.mp3"
 const GIFT_COUNT: int = 1400
 const SCRAP_COUNT: int = 54
+## The avatar is revealed only once the pull-back has CLEARED it. The old test was a bare
+## distance (length_squared > 3.6, i.e. 1.9 u), which put the camera inside the figure's own
+## head-and-torso sweep: the tick-810 capture showed the head and body filling and clipping
+## across the frame, briefly hiding the scene (Terra, cycle 8). The reveal now waits until the
+## model's largest half-extent subtends at most REVEAL_SHARE of the camera's half-FOV, so the
+## player is framed with the arena around it instead of obscuring it. Measured on the shipped
+## figure the box is 3.08 x 2.39 x 2.19 u (the antlers and the spread arms set the width), so
+## the largest half-extent is 1.54 u and the reveal lands at about t = 15.6 s, inside the
+## pull-back that completes at 17.0 s.
+const REVEAL_SHARE := 0.55
+const MODEL_CENTRE_FALLBACK: Vector3 = Vector3(0.0, 0.9, 0.0)
+const MODEL_RADIUS_FALLBACK := 1.0
 
 ## Optional: Your player's first-person camera (restored automatically when finished).
 @export var fps_camera: Camera3D
@@ -53,6 +65,9 @@ var _player_was_visible := false
 var _cue_players: Dictionary = {}
 var _clock_tick := 0
 var _tick_fraction := 0.0
+var _sphere_ready := false
+var _model_centre: Vector3 = MODEL_CENTRE_FALLBACK
+var _model_radius := MODEL_RADIUS_FALLBACK
 
 # Internal nodes
 var _anim_cam: Camera3D
@@ -616,8 +631,8 @@ func _update_animation(t: float) -> void:
 
 	_anim_cam.transform = _camera_pose(t, target_local)
 	if is_instance_valid(player_model):
-		# Reveal the avatar once its head clears the near plane during the pull-back.
-		player_model.visible = not is_fp and _anim_cam.position.length_squared() > 3.6
+		# Reveal the avatar once the pull-back has cleared it (see REVEAL_SHARE).
+		player_model.visible = not is_fp and _avatar_cleared()
 
 	# 2. FIRST-PERSON PHASES (1: Inspect, 2: Unwrap & Reveal, 3: Slow Water Drop)
 	if is_fp:
@@ -842,6 +857,50 @@ func _camera_pose(t: float, target_local: Vector3) -> Transform3D:
 	var focus := Vector3(0.0, 1.05, 0.0).lerp(target_local, lerpf(0.12, 0.36, pull))
 	var orbit_basis := Basis.looking_at(focus - cam_pos, Vector3.UP)
 	return Transform3D(first_person.basis.slerp(orbit_basis, pull), cam_pos)
+
+
+## The player model's bounding sphere in this node's space, measured from its own meshes once.
+## Falls back to the figure's authored height when the model is absent or not yet in the tree,
+## so the reveal threshold is always defined.
+func _model_sphere() -> Array:
+	if _sphere_ready:
+		return [_model_centre, _model_radius]
+	if not is_instance_valid(player_model):
+		return [MODEL_CENTRE_FALLBACK, MODEL_RADIUS_FALLBACK]
+	var box := AABB()
+	var have := false
+	var stack: Array = [player_model]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		for c in n.get_children():
+			stack.push_back(c)
+		if n is MeshInstance3D and (n as MeshInstance3D).mesh != null:
+			var mi := n as MeshInstance3D
+			var b: AABB = mi.global_transform * mi.get_aabb()
+			box = b if not have else box.merge(b)
+			have = true
+	if not have or box.size.length() <= 0.0:
+		return [MODEL_CENTRE_FALLBACK, MODEL_RADIUS_FALLBACK]
+	# The largest half-extent, not the box diagonal: the diagonal of a 3.08 x 2.39 x 2.19 box
+	# is 2.23 u, which no pull-back distance in this cinematic ever clears, so the avatar would
+	# never be revealed at all.
+	_model_radius = maxf(box.size.x, maxf(box.size.y, box.size.z)) * 0.5
+	_model_centre = to_local(box.get_center()) if is_inside_tree() else MODEL_CENTRE_FALLBACK
+	_sphere_ready = true
+	return [_model_centre, _model_radius]
+
+
+## True once the camera is far enough that the avatar fits inside REVEAL_SHARE of the
+## half-FOV - i.e. it is framed with the scene around it, not filling the lens.
+func _avatar_cleared() -> bool:
+	var sphere := _model_sphere()
+	var centre: Vector3 = sphere[0]
+	var radius: float = sphere[1]
+	var d := _anim_cam.position.distance_to(centre)
+	if d <= radius:
+		return false
+	var half_fov := deg_to_rad(_anim_cam.fov) * 0.5
+	return asin(clampf(radius / d, 0.0, 1.0)) <= half_fov * REVEAL_SHARE
 
 
 # ==============================================================================

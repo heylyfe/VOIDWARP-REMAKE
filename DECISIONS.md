@@ -9651,3 +9651,34 @@ kills at 1290 and releases input at 1530, when the view restores the first-perso
 camera and model visibility. FORCE BANKAI activates this same clock in an active
 fight, including the ordinary kill, 300 gold award and beacon. The headless
 test exercises the real buttons and the full sequence at 30 and 144 FPS.
+
+## D-T8B-12 (2026-11-23) Cycle 8: Terra's two should-fix findings on the Bankai track
+
+Terra reviewed U3 and returned ADOPT with two should-fix findings. Both are fixed here
+rather than deferred, because both are the kind of thing that passes a green gate and
+still looks wrong to the owner.
+
+1. THE MIX WAS JUDGED ON GAIN, NOT ON SOUND. `test_bankai_cinematic.gd` asserted
+   `player.volume_db >= anim._voice_player.volume_db`, which compares two settings and
+   never looks at the waveform: a cue whose PCM was loud enough to mask the voice would
+   pass as long as its gain was the lower number. The test now reads each cue's own
+   samples, computes peak and RMS in dBFS, adds the cue's gain, and holds the result at
+   least 12 dB below the voice's nominal 0 dBFS (peak) and 18 dB below it (RMS). Teeth
+   checked by raising the kill cue from -16 dB to -5 dB, which the old gain check passes
+   (it is still below the voice) and the new waveform check fails at -7.5 dBFS.
+
+2. THE AVATAR WAS REVEALED INSIDE ITS OWN HEAD. The reveal was a bare distance,
+   `_anim_cam.position.length_squared() > 3.6` (1.9 u), which put the camera inside the
+   figure's head-and-torso sweep: Terra's tick-810 capture showed the head and body
+   filling and clipping across the frame and briefly hiding the scene. The reveal now
+   waits until the model's largest half-extent subtends at most REVEAL_SHARE (0.55) of
+   the camera's half-FOV, measured from the model's own meshes. The largest half-extent
+   is used rather than the box diagonal on purpose: the shipped figure's box is
+   3.08 x 2.39 x 2.19 u, so the diagonal is 2.23 u and no pull-back distance in this
+   cinematic ever clears it - the avatar would never be revealed at all. With the
+   half-extent (1.54 u) the reveal lands at about t = 15.6 s, inside the pull-back that
+   completes at 17.0 s. Teeth checked by restoring the old bare distance: 379 failures,
+   the first at t = 13.4 s (tick 804), which is Terra's finding reproduced.
+
+A third assertion was added so the fix cannot be satisfied by hiding the avatar forever:
+the test now fails if the model is never revealed during the pull-back.
