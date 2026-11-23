@@ -450,12 +450,9 @@ func _report_list_geometry(f: Array[String], panel, root: Window) -> void:
 				var kc := k as Control
 				parts.append("%s[%s] min=%d" % [str(kc.name), str(kc.get("text")),
 					int(kc.get_combined_minimum_size().x)])
-			print("DIAG row over width=%s avail=%d sep=%d kids=%s" % [str(row.name), int(rw),
-				int(avail), (row as HBoxContainer).get_theme_constant("separation")])
-			for pt in parts:
-				print("DIAG kid %s" % pt)
-			f.append("spawn: a panel row is %d px wide inside the %d-px column - it is cut off"
-				% [int(rw), int(avail)])
+			f.append("spawn: a panel row is %d px wide inside the %d-px column - it is cut"
+				+ " off (row %s: %s)" % [int(rw), int(avail), str(row.name),
+				" | ".join(parts)])
 	# the popup cap: max_size's height half (this engine has no PopupMenu.max_height);
 	# 0 means uncapped, an uncapped list can run past the window
 	var vh := float(root.size.y)

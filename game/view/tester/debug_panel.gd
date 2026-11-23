@@ -176,16 +176,19 @@ func _init() -> void:
 	atcur.name = "SpawnCursor"
 
 	# ---- upgrades / gold / gifts -------------------------------------------------------
+	# D-T2-10: the same shape as the enemies section - the option's CONTENT (its widest
+	# item) sets its minimum, so an upgrade id can force the picker wider than the paired
+	# button row ever fits (337 + 64 + 8 = 409 px inside the 370-px column). The picker
+	# owns a full-width row; GIVE +1 lives under it.
 	column.add_child(_section_label("UPGRADE"))
-	var uh := HBoxContainer.new()
-	uh.add_theme_constant_override("separation", UiStyle.SP_2)
-	column.add_child(uh)
 	_upgrade_pick = OptionButton.new()
-	_upgrade_pick.custom_minimum_size = Vector2(260.0, UiStyle.BUTTON_H)
+	_upgrade_pick.name = "UpgradePick"
+	_upgrade_pick.custom_minimum_size = Vector2(0.0, UiStyle.BUTTON_H)
+	_upgrade_pick.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_upgrade_pick.add_theme_font_size_override("font_size", UiStyle.FS_SMALL)
 	UiStyle.style_button(_upgrade_pick, UiStyle.SECONDARY)
-	uh.add_child(_upgrade_pick)
-	var give_up := _mkbtn(uh, "+1", _give_upgrade, UiStyle.PRIMARY, 64.0)
+	column.add_child(_upgrade_pick)
+	var give_up := _mkbtn(column, "GIVE +1 STACK", _give_upgrade, UiStyle.PRIMARY, -1.0)
 	give_up.name = "GiveUpgrade"
 
 	var gh := HBoxContainer.new()
