@@ -9594,3 +9594,48 @@ hash VALUE changes for every level that has pads - that is the point of the reva
 golden fixture pins a state hash: `test_replay.gd` compares runs against each other, and the jump-pad suite
 compares a run against its own replay, so nothing had to be re-pinned. The determinism tests are unchanged and
 none was weakened.
+
+## D-T2-10 (2026-11-23): the enemy list is registry-driven, complete, capped-scrollable, and Peter rides the boss machinery (cycle 8, U2)
+
+**Owner's words (cycle 8, verbatim).** "tester build enemy spawn list is buggy and cut off (cannot spawn
+enemies). Tester list must show ALL enemies incl. Claude, Gin, Peter, scrollable, and spawning must work;
+add a test that every enemy id in the registry is in the list and spawnable."
+
+**The cut-off was a layout arithmetic bug, not a registry bug.** Claude and Gin were always IN the registry
+(`content_api.enemy_ids()` scans all 12 `content/enemies/` folders and the panel already looped it). The
+enemies section packed a 232-px dropdown plus two 92-px AHEAD/CURSOR buttons plus separations - 432 px of
+minimum width - into a scroll column whose own `custom_minimum_size` is 370 px: the row never fit, the
+CURSOR button sat outside the viewport, the horizontal gap read as "the list is cut off". The panel column
+is vertical-scroll only in practice, so the fix is layout, not scroll plumbing: the dropdown owns a full
+width row of its own (`SIZE_EXPAND_FILL`, every label readable), and SPAWN AHEAD / SPAWN AT CURSOR share
+a 320-px button row below it; every row of the column now fits 370 px with 50 px to spare. The duplicate
+full-width "SPAWN ENEMY (AHEAD)" button is deleted with the row that caused the overflow - its behaviour
+is the restructured SPAWN AHEAD, byte-for-byte the same call.
+
+**Scrollable, permanently.** An OptionButton popup with no height cap is only reachable while it fits the
+window; a growing registry (12 today, more later) plus Peter makes that fragile. Both dropdowns now cap
+their popups at 60 % of the viewport height (`_cap_popups()` on every refresh, `POPUP_MAX_H_SHARE`);
+`PopupMenu.max_height` makes the popup scroll past the cap, so every entry stays reachable by wheel,
+click and keyboard. `_api()` also stops lying: its comment promised a fresh registry load when no level
+is live, the code returned null - so opening F10 in the menu or the lobby showed an EMPTY list. The
+fallback load now exists, and `on_world_built()` re-refreshes, so the list is complete wherever the
+panel is opened.
+
+**Peter rides the boss machinery, never a second spawn path.** The boss is not registry content
+(`data/boss.json` + `sim/boss.gd`), so the panel pins ONE fixed row after the registry ids
+(`PETER_LABEL`, metadata `PETER_ID`), and `_spawn()` routes that id to `_force_boss()` - the FORCE PETER
+machinery D-T2-7-amend built: the boss instance on a non-boss level, the queued tick job, the real
+`_enter_boss_arena()` entry on the tick hook (D-T2-9). The enemy runtime is never handed a `peter` row;
+the FORCE PETER BOSS button stays and does the same thing.
+
+**The test, per the owner's spec.** `test_tester_build.gd` gains the (h) leg: it boots the REAL app to a
+live WORLD level, hosts the real panel, and LOOPS over `enemy_ids()` - nothing names a content id, so an
+enemy added under `content/enemies/` is swept automatically. Per id: (a) the dropdown carries it,
+(b) picking it and driving the panel's own `_spawn` puts a live row in `world.rt.enemies` (id, in play,
+finite position, body mirror grown) with the panel's own status line reporting the spawn. The Peter leg
+asserts the arena was NOT entered before the tick, IS entered after one `world.step` (the queued D-T2-9
+job), and the status line says boss. Two layout teeth: the popup `max_height` must be capped at ~60 % of
+the window, and every HBox row of the panel column must fit the scroll column's width - the pre-fix 432-px
+enemies row fails both. Reverting the Peter entry fails the Peter leg; reverting `_api()`'s fallback turns
+list-content coverage green-or-nothing in the lobby but stays asserted by the WORLD boot; reverting the
+`_spawn` peter routing fails the arena assertion with a `peter` enemy row spawned instead.
