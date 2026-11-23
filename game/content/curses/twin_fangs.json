@@ -5,8 +5,8 @@
   "min_level": 17,
   "requires_enemy": "gin",
   "max_stacks": 1,
-  "rule": "each strike marks two patches: yours and where you will be in 1.0 s",
-  "counter_play": "change direction during the mark",
+  "rule": "two swords converge together, requiring more jump clearance",
+  "counter_play": "time your jump so both swords pass near its apex",
   "modifiers": [],
   "script": true,
   "hooks": []

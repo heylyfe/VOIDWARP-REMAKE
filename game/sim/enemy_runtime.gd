@@ -83,6 +83,9 @@ class EnemyBehavior:
 	func on_vote(_row: Dictionary, _api, _count: int) -> void:
 		pass
 
+	func hash_state(_row: Dictionary) -> Array:
+		return []
+
 
 # A fixture behavior: a stationary body whose contact kills (the KILL RULE default); used by
 # the T-027 tests and drop-in fixtures until real Wave-3 behaviors land.
@@ -636,6 +639,8 @@ func _spawn_one(plan_row: Dictionary, spot: Dictionary, copy_index: int, copies:
 	var diameter_u: float = float(body["diameter_u"])
 	if cfg.has("hit_diameter"):
 		diameter_u = maxf(float(cfg["hit_diameter"]), 0.0)
+	if bool(cfg.get("bodyless", false)):
+		diameter_u = 0.0
 	var row := {
 		"id": plan_row["id"], "name": plan_row["name"], "behavior": plan_row["behavior"],
 		"cfg": cfg, "x": float(spot["x"]), "y": float(spot["y"]), "z": float(spot["z"]),
@@ -659,8 +664,9 @@ func _spawn_one(plan_row: Dictionary, spot: Dictionary, copy_index: int, copies:
 		row["float"] = FloatBody.from_cfg(cfg)
 	enemies.append(row)
 	var mirror := {"x": row["x"], "y": row["y"], "z": row["z"], "r": row["diameter_u"] * 0.5}
-	row["body_mirror"] = mirror
-	world["enemies"].append(mirror)
+	if not bool(cfg.get("bodyless", false)):
+		row["body_mirror"] = mirror
+		world["enemies"].append(mirror)
 	var api := Api.new()
 	api.rt = self
 	api.row = row
@@ -979,6 +985,8 @@ static func resting_key(w: Dictionary, px: float, pz: float, feet: float, limit:
 ## and it can no longer kill (see _contact_kills).
 func _support_pass(dt: float) -> void:
 	for e in enemies:
+		if bool(e["cfg"].get("bodyless", false)):
+			continue
 		if bool(e.get("gone", false)):
 			continue
 		if not bool(e.get("falling", false)):
@@ -1023,6 +1031,8 @@ static func is_out_of_play(row: Dictionary) -> bool:
 ## and radar tick see the pushed body, never the point it stood on.
 func push_bodies(origin: Vector3, radius: float) -> void:
 	for e in enemies:
+		if bool(e["cfg"].get("bodyless", false)):
+			continue
 		var dx: float = float(e["x"]) - origin.x
 		var dz: float = float(e["z"]) - origin.z
 		var d: float = sqrt(dx * dx + dz * dz)

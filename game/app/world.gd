@@ -451,6 +451,7 @@ func build(seed_value: int, level: int, p_ledger: Dictionary = {}) -> bool:
 
 	rt = EnemyRuntimeScript.new()
 	rt.setup(lv, w, [ctl], seed_value, {})
+	lstate.enemy_runtime = rt
 	for id in (plan["votes"] as Dictionary).keys():
 		var n := int(plan["votes"][id])
 		if n <= 0:

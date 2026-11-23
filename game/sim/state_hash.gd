@@ -155,6 +155,12 @@ static func dump(rs: RefCounted) -> PackedStringArray:
 		out.append("JUMPPADS %s %s %s %d %s" % [str(jp.pads_csv()), str(jp.ready_csv()),
 				(jp.lost as PackedByteArray).hex_encode(), int(jp.rearm_ticks),
 				bits(float(jp.launch_speed))])
+	var rt = lv.enemy_runtime
+	if rt != null:
+		for row in rt.enemies:
+			var state: Array = row["behavior"].hash_state(row)
+			if not state.is_empty():
+				out.append("ENEMY %s %d %s" % [row["id"], rt.tick, var_to_bytes(state).hex_encode()])
 	return out
 
 

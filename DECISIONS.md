@@ -8613,3 +8613,15 @@ squashes to 35 % in 0.06 s and springs back through ~1.19x (settled by 0.9 s), t
 0.45 u to 2.1 u over 0.45 s. Audio: `player/jump_pad` (synth_cues.gd seed 24, 0.55 s) - a 140 -> 620 Hz
 rising sine with a decaying 26 Hz wobble over a 70 Hz thump, played on the `jump_pad_launch` event. No
 first-use hint (optional in the spec). Screenshot proof: tools/shot_jump_pad.gd (windowed).
+
+## D-T5-1 (2026-11-23) Gin's ground sword
+
+Owner request: "Gin enemy revamp (bye bye voice with background noise removed, throws a sword, jump window 500-750 ms)". The real roster uses a bodyless Gin with a screen-space warning, recorded voice, and a ground sword. The throw takes 39 ticks (650 ms at 60 Hz). Every tick the sword closes the remaining distance divided by the remaining ticks, so range and running sideways do not change the arrival tick. At arrival it tests the player's feet against terrain support plus the data clearance. The usual controller kill and Last Light rules apply. Existing address me deferral and vote-based cooldowns remain, and multiple Gin rows take turns. The old mark/void branch remains available to historical fixtures that omit the new attack config.
+
+## D-T5-2 (2026-11-23) Twin Fangs and replay checkpoints
+
+Twin Fangs now sends two swords from opposite sides which arrive on the same tick, with a higher data-driven clearance so one well-timed normal jump answers both. Gin hashes the attack configuration, spawn and phase clocks, target, trajectory and result in runtime row order. The world and bot attach the live enemy runtime to LevelState. The ENEMY line is emitted only for behaviours that supply hash data. No golden fixtures change.
+
+## D-T5-3 (2026-11-23) Gin presentation and owner audio
+
+The procedural portrait shows silver hair, a dark profile and a narrow smile. A screen-space sword track shows the throw countdown even when the world sword starts outside the camera. The owner sword was keyed from its white background and rotated to point along its sprite axis. The voice uses miniaudio MP3 decode and SciPy/NumPy spectral subtraction, with the quietest non-padding frames as the noise profile. Same 36 quietest 1024-sample frames before/after: 0.00001834 to 0.00000237 FS (-94.73 to -112.49 dBFS). Quiet non-padding profile frames: 0.02775310 to 0.00734312 FS (-31.13 to -42.68 dBFS). The game ships mono 44.1 kHz 16-bit PCM and starts the throw after the 1.724 s clip.

@@ -82,6 +82,9 @@ static func on_tick(state: Dictionary, api) -> void:
 		var row = rt.enemies[i]
 		if str(row.get("id", "")) != GIN_ID:
 			continue
+		if row.get("cfg", {}).has("sword_attack"):
+			row["gin_twin_fangs"] = true
+			continue
 		var phase := str(row.get("phase", ""))
 		var prev_key := "tf_prev_%d" % i
 		var patch_key := "tf_patch_%d" % i

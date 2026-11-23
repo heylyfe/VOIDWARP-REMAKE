@@ -50,6 +50,8 @@ var collapse: Dictionary = {}
 ## D-JUMPPAD-4: the jump pads' re-arm ticks + lost bitset (sim/jump_pads.gd); null when the
 ## Level carries no "jump_pads" (a level built without terrain/jump_pads.gd attach()).
 var jump_pads: RefCounted = null
+## Attached by the runtime-driving world and replay bot.
+var enemy_runtime: RefCounted = null
 
 
 ## level_number is 1-based (the run's current level). player_count in 1..8 (TERRAIN_SPEC.md spawns).
