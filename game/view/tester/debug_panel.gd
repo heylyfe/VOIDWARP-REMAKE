@@ -35,12 +35,9 @@ extends Control
 #                          and void charges never run out (D-T2-6)
 #   force a collapse       sim/collapse.gd CollapseScript.start() on the live schedule -
 #                          world.step() then drives the cracks/falls exactly as normal
-#   force Peter boss /     through the REAL T8 API (merged main): _enter_boss_arena() -
-#   force Bankai           the arena's own full entry (teleport, first-person rig, HUD) -
-#                          as a queued tick job; Bankai plays the dormant owner cinematic
-#                          THROUGH its signals (target_hit drives boss.damage(hp_max) -
-#                          the easter egg's insta-kill); an explicit boss-API force
-#                          entry, if the T8b track adds one, wins over the fallback
+#   force Peter boss       queue the real arena entry (teleport, first-person rig, HUD)
+#   force Bankai           activate the live fight cinematic on the arena clock
+#                          or play a standalone preview outside a live fight
 #   state hash             sim/state_hash.gd's digest over the LIVE level: the same dump
 #                          every replay checkpoint pins, minus the RNG lines (D-T2-8: the
 #                          app driver holds no sim rng streams - the sim-driver contexts
@@ -71,7 +68,7 @@ const GROUND_LIMIT_U := 12.0  # ground snap window over the target's feet plane
 ## the HUD), so the panel routes FORCE PETER through it, never through boss.start alone.
 const BossScript := preload("res://sim/boss.gd")
 ## Bankai: an explicit force entry on the boss object (the T8b attack track may add one)
-## is preferred when present; otherwise the panel plays the dormant owner cinematic
+## is preferred when present; otherwise the panel activates the arena Bankai
 ## through its own signals (D-T2-7-amend): target_hit drives boss.damage() - the
 ## contract's insta-kill - animation_finished frees the node.
 const BANKAI_FORCE_METHODS: Array[String] = ["force_bankai", "play_bankai"]
@@ -842,10 +839,8 @@ func _run_force_boss(ev: Array) -> bool:
 
 ## FORCE BANKAI (D-T2-7-amend). Preferred: an explicit force entry on the live boss
 ## object (the T8b attack track may add one) - probed with has_method(). Otherwise the
-## dormant owner cinematic is played THROUGH its signals: bankai_active stands the boss
-## down (the contract's own flag), target_hit drives boss.damage(hp_max) - the easter
-## egg's insta-kill - through the world's own _apply_boss_events (reward, beacon), and
-## animation_finished frees the node. With no live boss it plays as a standalone preview.
+## regular Bankai path takes over using its fight clock, input lock, kill and reward.
+## With no live boss it plays as a standalone preview.
 func _force_bankai() -> void:
 	var w := _world()
 	var ls: RefCounted = w.get("lstate") if w != null else null
@@ -857,12 +852,15 @@ func _force_bankai() -> void:
 			_status("bankai forced via the boss API (%s())" % str(forced["method"]))
 			return
 		if bool(boss.get("active")) and not bool(boss.get("bankai_active")):
-			_play_bankai(w, boss)
+			boss.bankai_active = true
+			boss.bankai_tick = 0
+			w.call("_publish_boss_tick", [{"kind": "bankai_started"}])
+			_status("Bankai forced: input locked while the cinematic plays")
 			return
 	_status("no active boss to bankai - FORCE PETER BOSS first (this previews standalone)")
 	var anim = _make_bankai_anim(w)
 	if anim == null:
-		_status("bankai: the dormant cinematic did not load")
+		_status("bankai: the cinematic did not load")
 		return
 	anim.play()
 	_status("bankai: standalone preview (no active boss on this level)")
@@ -886,31 +884,6 @@ func _make_bankai_anim(w: Node):
 				if is_instance_valid(anim):
 					anim.queue_free())
 	return anim
-
-
-## The in-arena force: the boss stands down via bankai_active (its tick() returns nothing
-## while it plays - the contract's own mechanism), and the cinematic's target_hit drives
-## the insta-kill through the sim API + the world's own event handling.
-func _play_bankai(w: Node, boss) -> void:
-	var anim = _make_bankai_anim(w)
-	if anim == null:
-		_status("bankai: the dormant cinematic did not load")
-		return
-	boss.set("bankai_active", true)
-	if anim.has_signal("animation_started"):
-		anim.animation_started.connect(func() -> void:
-				_status("bankai forced: cinematic playing - input stays yours meanwhile"))
-	if anim.has_signal("target_hit"):
-		anim.target_hit.connect(func(_target) -> void:
-				var dmg: Array = boss.call("damage", int(boss.get("hp_max")), false)
-				var world_now := _world()
-				if world_now == null:
-					return
-				world_now.call("_apply_boss_events", dmg, dmg)
-				world_now.call("_publish_boss_tick", dmg)
-				_status("bankai target_hit: Peter insta-killed through boss.damage()"))
-	var target = w.get("_boss_view") if w != null else null
-	anim.play(target)
 
 
 # ---- the live state hash (D-T2-8) ------------------------------------------------------------

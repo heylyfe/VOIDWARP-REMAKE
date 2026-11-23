@@ -974,6 +974,12 @@ func _enter_boss_arena(events: Array) -> void:
 	add_child(_boss_view)
 	_boss_view.setup(_boss_target_position(), float(boss.config["sprite_height_u"]), _hud_layer,
 			boss.floor_y(), int(boss.config["bankai"]["grace_ticks"]))
+	var extent := float(boss.config["arena"]["half_extent_tiles"])
+	# Keep the cinematic camera and its near plane within the playable floor.
+	_boss_view.bankai_bounds = Rect2(-extent + 0.25, -extent + 0.25,
+			2.0 * extent + 0.5, 2.0 * extent + 0.5)
+	_boss_view.bankai_model = player_model
+	_boss_view.bankai_hit_tick = int(boss.config["bankai"]["hit_tick"])
 
 
 func _boss_target_position() -> Vector3:
@@ -1041,7 +1047,11 @@ func _publish_boss_tick(events: Array) -> void:
 		"vz": ctl.vz, "grounded": ctl.grounded, "prev_buttons": ctl.prev_buttons}
 	lstate.arena_purse_centi = int(_economy.purse_centi)
 	last_events = events
+	if _has_boss_event(events, "bankai_started"):
+		var floor_pos := Vector3(feet.x, lstate.boss.floor_y(), feet.z)
+		_boss_view.bankai_feet = to_global(floor_pos) if is_inside_tree() else floor_pos
 	_boss_view.on_events(events)
+	_boss_view.sync_bankai_tick(lstate.boss.bankai_tick)
 	_fx_events(events)
 	rig.position = _boss_eye(feet)
 	rig.rotation_degrees = Vector3(rig.pitch_deg, rig.yaw_deg, 0.0)
