@@ -163,14 +163,16 @@ changes them. A jump pad is a movement toy that sits beside the route.
   block that misses its centre lane, which is why the pads left the walkways. Never on the hub (beacon),
   a ramp tile, a prop, a gift slot, a tripmine, the beacon tile, a launch pad or its landing tile; never
   under overhead geometry within 18 HU of the block's own columns. A pad also sits **adjacent to the
-  paths**, as a hard rule: at least one tile **edge-adjacent** to the block (the 4-neighbourhood of its 9
-  cells — never a diagonal) is a walkway tile within 4 HU vertically. A block that touches no path is not
-  a candidate at all. The 4 HU tolerance is the generator's own junction step: a walkway is stepped 1–2 HU
-  off the platform it runs beside, so a same-height rule would place almost nothing (D-JUMPPAD-7 has the
-  measurements). Count by level number (2 / 3 / 4 / 5 / 6 from levels 1 / 4 / 8 / 14 / 20), ≥ 4 tiles
-  apart (one empty tile between two 3×3 blocks); fewer only when no further legal block can be added —
-  on levels 1–5 that happens on a minority of seeds, and the shortfall is pinned by `SHORT_MAX` in the
-  test. All numbers live in `game/data/jump_pads.json`.
+  paths**, as a hard rule: at least one tile on the **ring outside the block** — the 12 cells that share a
+  side with its 3×3 footprint, never a corner and never a cell inside it — is a walkway tile within 4 HU
+  vertically. A block that touches no path is not a candidate at all, and a walkway directly above or
+  below a block tile does not count. The 4 HU tolerance is the generator's own junction step: a walkway is
+  stepped 1–2 HU off the platform it runs beside, so a same-height rule would place almost nothing
+  (D-JUMPPAD-7 has the measurements). Count by level number (2 / 3 / 4 / 5 / 6 from levels 1 / 4 / 8 / 14
+  / 20), ≥ 4 tiles apart (one empty tile between two 3×3 blocks). If the greedy pass lands below 2 pads an
+  exhaustive pair scan looks for a two-pad arrangement, and only then is a shortfall accepted — on levels
+  1–5 that happens on a minority of seeds, and the shortfall is pinned by `SHORT_MAX` in the test. All
+  numbers live in `game/data/jump_pads.json`.
 - **Launch**: a grounded player whose feet are on the top of **any of the block's 9 tiles** is flung
   straight up at **20 u/s** (apex 6.25 u, about 1.25 s back to the pad's height; a normal jump is
   2.25 u). The horizontal velocity is kept.

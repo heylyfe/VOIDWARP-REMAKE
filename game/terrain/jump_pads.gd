@@ -42,7 +42,6 @@ const DATA_PATH := "res://data/jump_pads.json"
 # streams are, with a value no ST_* constant uses ("JPAD").
 const ST_JUMP_PADS := 0x4A504144
 const CLEAR := 12                     # voidgen.CLEAR: two layers are distinct at >= 12 HU
-const N4 := [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
 
 # Mirrors data/jump_pads.json; the file wins for every key it carries.
 const DEFAULTS := {
@@ -225,9 +224,15 @@ static func _block_ok(L: Dictionary, ix: Dictionary, x: int, z: int, y: int, hal
 	return true
 
 
-## True when at least one tile EDGE-adjacent to the block is a path tile: the 4-neighbourhood
-## of the block's 9 cells (never a diagonal), at a height within step_hu of the block's own.
-## This is the owner's "outside the paths (adjacent to them)" as a HARD rule (D-JUMPPAD-7).
+## True when at least one tile on the RING OUTSIDE the block is a path tile: the 4-neighbourhood
+## of the block's 9 cells MINUS the 9 cells themselves - 12 cells, three along each side, never a
+## diagonal. This is the owner's "outside the paths (adjacent to them)" as a HARD rule
+## (D-JUMPPAD-7).
+##
+## The ring, not the footprint. A walkway directly above or below a block tile is in the block's
+## own column, not beside its edge, and must not satisfy adjacency (Terra review round 2): the
+## first version walked the 4-neighbourhood of every block cell, so an interior cell's neighbour
+## - another block cell - let a walkway one step up or down count as "adjacent".
 ##
 ## The height tolerance is not a loophole. voidgen steps a walkway 1-2 HU off the platform it
 ## runs beside at the junction, so a path tile is NEVER at the same height as the platform
@@ -237,14 +242,17 @@ static func _block_ok(L: Dictionary, ix: Dictionary, x: int, z: int, y: int, hal
 ## CLEAR (12 HU), so a walkway on another storey can never satisfy it.
 static func _edge_adjacent(walk: Dictionary, x: int, z: int, y: int, half: int,
 		step_hu: int) -> bool:
-	for dx in range(-half, half + 1):
-		for dz in range(-half, half + 1):
-			for n in N4:
-				var nx := x + dx + int(n.x)
-				var nz := z + dz + int(n.y)
-				for dy in range(-step_hu, step_hu + 1):
-					if walk.has(Vector3i(nx, nz, y + dy)):
-						return true
+	for dx in range(-half - 1, half + 2):
+		for dz in range(-half - 1, half + 2):
+			if absi(dx) <= half and absi(dz) <= half:
+				continue                       # inside the block: not the ring
+			if absi(dx) == half + 1 and absi(dz) == half + 1:
+				continue                       # a corner: diagonal, not edge-adjacent
+			var nx := x + dx
+			var nz := z + dz
+			for dy in range(-step_hu, step_hu + 1):
+				if walk.has(Vector3i(nx, nz, y + dy)):
+					return true
 	return false
 
 
@@ -293,4 +301,28 @@ static func place_jump_pads(L: Dictionary, cfg: Dictionary) -> Array:
 		if not ok:
 			continue
 		out.append([int(c[0]), int(c[1]), int(c[2])])
+	# D-JUMPPAD-7: the greedy can strand a legal pair - it takes a block that is too close to
+	# BOTH members of a pair that would have satisfied the spacing, and then reports a shortfall
+	# that is not real (Terra review round 2: level 3 seed 11 placed 1 pad while two candidates
+	# 4 tiles apart were legal). Below the owner's floor of 2, search for a two-pad arrangement
+	# before accepting the shortfall. The candidate count is 6..17 per level, so the exhaustive
+	# pair scan is at most ~136 distance checks and is deterministic (shuffled order, first pair).
+	if out.size() < mini(want, 2):
+		var pair := _first_pair(cand, sp2)
+		if not pair.is_empty():
+			out = pair
 	return out
+
+
+## The first two candidates, in the pad stream's shuffled order, that satisfy min_spacing_tiles -
+## as [[x, z, y], [x, z, y]] - or [] when no pair exists at all. Exhaustive, so a shortfall it
+## reports is a property of the level, not of the greedy.
+static func _first_pair(cand: Array, sp2: float) -> Array:
+	for i in cand.size():
+		for j in range(i + 1, cand.size()):
+			var dx := float(int(cand[i][0]) - int(cand[j][0]))
+			var dz := float(int(cand[i][1]) - int(cand[j][1]))
+			if dx * dx + dz * dz >= sp2:
+				return [[int(cand[i][0]), int(cand[i][1]), int(cand[i][2])],
+						[int(cand[j][0]), int(cand[j][1]), int(cand[j][2])]]
+	return []

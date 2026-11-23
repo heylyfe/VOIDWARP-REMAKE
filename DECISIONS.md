@@ -8651,16 +8651,36 @@ adjacency is enforced (D-JUMPPAD-7 has the numbers - 15 of 160 measured levels g
 asserts that a level which gets fewer than it wants is MAXIMAL - no further legal block could be added without
 overlapping a placed pad - and that no more than `SHORT_MAX` of its 64 levels fall short.
 
-## D-JUMPPAD-7 (2026-11-23, rewritten in review round 1): edge adjacency is a HARD rule
+## D-JUMPPAD-7 (2026-11-23, rewritten in review rounds 1 and 2): edge adjacency is a HARD rule
 
 **Owner's words (cycle 7 brief, T6):** "jump pads revamp (3x3 tiles, outside paths, 2 to 6 per level)" and
 "Pads must be 3x3 TILES big and NOT on the paths: outside the paths (adjacent to them)".
 
 **Ruling.** A block is a candidate only when BOTH hold: (a) none of its 9 tiles is a path tile (D-JUMPPAD-6),
-and (b) at least one tile EDGE-adjacent to the block - the 4-neighbourhood of its 9 cells, never a diagonal -
-is a path tile within `path_step_hu` (data, 4 HU) vertically. A block with no such neighbour is not a
-candidate at all, so a pad can never sit out on a platform away from every path. Candidates are then taken in
-the pad stream's shuffled order, greedily with `min_spacing_tiles`.
+and (b) at least one tile on the RING OUTSIDE the block - the 12 cells that share a side with its 3x3
+footprint, never a diagonal and never a cell inside the footprint - is a path tile within `path_step_hu`
+(data, 4 HU) vertically. A block with no such neighbour is not a candidate at all, so a pad can never sit out
+on a platform away from every path. Candidates are then taken in the pad stream's shuffled order, greedily
+with `min_spacing_tiles`, and if that lands below the floor of 2 a two-pad arrangement is searched for before
+a shortfall is accepted.
+
+**The ring, not the footprint (review round 2).** The first version walked the 4-neighbourhood of every block
+cell, which includes the neighbours of the INTERIOR cells - other block cells - so a walkway one or two HU
+above or below a block tile counted as "adjacent" without being beside the block's edge. Terra caught it. The
+ring is now walked directly: offsets of exactly `half + 1` on one axis and at most `half` on the other, which
+is 12 cells for a 3x3 block. The test's checker is written from the rule (the four sides of the block's
+rectangle) rather than copied from the implementation, and a synthetic fixture pins it: a 5x5 platform with
+one walkway tile either under the block's centre (must NOT be a candidate) or on its ring (must be). Real
+levels almost never stack a walkway on a platform within `path_step_hu`, so no sweep could have caught this.
+
+**The greedy can strand a legal pair (review round 2).** Taking candidates in shuffled order can pick a block
+that is too close to BOTH members of a pair that would have satisfied the spacing, and then report a shortfall
+that is not real - Terra's case is level 3 seed 11, which placed 1 pad while two candidates 4 tiles apart were
+legal. `place_jump_pads` now runs an exhaustive pair scan (`_first_pair`) whenever the greedy lands below the
+floor of 2, and only accepts the shortfall when no pair exists. The candidate count is 6..17 per level, so the
+scan is at most ~136 distance checks and is deterministic (shuffled order, first pair). The test's shortfall
+assertion is the same proof from the other side: `_no_pair` scans every candidate pair, so a level is only
+excused when no two-pad arrangement exists at all - "can one be added to what we placed" is not enough.
 
 **This replaces the round-1 rule, which was wrong.** Round 1 ordered candidates by a "gap" to the nearest
 walkway and took them nearest-first, but never filtered on it: a block at gap 99 was still a candidate. Terra
@@ -8686,16 +8706,17 @@ those, edge-adjacent blocks average 6.0 at level 1, 4.8 at level 2, 6.1 at level
 level 8, 13.2 at level 12, 16.9 at level 20 and 15.7 at level 30. Pads PLACED average 1.75 / 1.80 / 1.75 /
 2.60 / 3.25 / 3.85 / 5.50 / 5.65 on the same levels.
 
-**The floor of 2 does not hold everywhere, and this is the honest number.** Over those 160 levels, 15 get
-fewer than 2 pads: level 1 seeds 7, 11, 29, 37; level 2 seeds 17, 37, 43, 2024; level 3 seeds 1, 11, 17, 31,
-53; level 5 seeds 7 and 60717. Every one of them is MAXIMAL - no further legal block could be added without
-overlapping a placed pad - so the shortfall is the level's geometry, not the greedy's. Levels 8, 12, 20 and 30
-always reach 2. The test's own sweep (8 seeds x 8 levels = 64 levels) has 5 such levels - level 1 seed 7,
-level 2 seed 2024, level 3 seed 1, level 5 seeds 7 and 60717 - and `SHORT_MAX` pins that number: the test
-asserts every short level is maximal AND that no more than 5 of the 64 fall short, so a regression that
-starves more levels fails instead of hiding behind "the level had no room". The brief's escape clause ("never
-fewer than 2 unless the level genuinely has no room - if that can happen, say so in a D-entry and in the
-test") is what this paragraph is.
+**The floor of 2 does not hold everywhere, and this is the honest number.** Over those 160 levels, 14 get
+fewer than 2 pads: level 1 seeds 7, 11, 29, 37; level 2 seeds 17, 37, 43, 2024; level 3 seeds 1, 17, 31, 53;
+level 5 seeds 7 and 60717. Every one is PROVEN pair-free - the closest candidate pair is 1.00, 2.00 or 2.24
+tiles apart against a spacing of 4, or the level has fewer than 2 candidates at all (level 1 seed 37 has
+none) - so the shortfall is the level's geometry, not the greedy's. Levels 8, 12, 20 and 30 always reach 2.
+The test's own sweep (9 seeds x 8 levels = 72 levels, seed 11 included because it is Terra's stranded-pair
+case) has 6 such levels - level 1 seeds 7 and 11, level 2 seed 2024, level 3 seed 1, level 5 seeds 7 and
+60717 - and `SHORT_MAX` pins that number: the test asserts every short level is pair-free AND that no more
+than 6 of the 72 fall short, so a regression that starves more levels fails instead of hiding behind "the
+level had no room". The brief's escape clause ("never fewer than 2 unless the level genuinely has no room -
+if that can happen, say so in a D-entry and in the test") is what this paragraph is.
 
 **`min_spacing_tiles` 8 -> 4.** 4 is the smallest spacing that leaves a gap between two 3x3 blocks (centres
 4 apart = one empty tile between). 8 was tried and cost pads on the big levels (level 20 average 5.25 instead

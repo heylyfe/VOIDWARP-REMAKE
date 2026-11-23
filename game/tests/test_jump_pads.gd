@@ -8,14 +8,16 @@ extends RefCounted
 #      and never on a walkway's centre lane (the route), never on the hub (beacon) piece, a
 #      ramp tile, a prop, a gift slot, a tripmine, the beacon, a launch pad or its landing;
 #      headroom over the block's own columns; AND the block is EDGE-ADJACENT to the path
-#      (D-JUMPPAD-7: at least one tile in the 4-neighbourhood of its 9 cells is a walkway tile
-#      within path_step_hu vertically - never a diagonal, never a walkway on another storey);
+#      (D-JUMPPAD-7: at least one tile on the RING OUTSIDE the block - the 12 cells that share a
+#      side with its 3x3 footprint, never a corner, never a cell inside it - is a walkway tile
+#      within path_step_hu vertically, so a walkway above or below a block tile does not count);
 #      the count is min(count_by_level, legal spots) and never above 6; two pads never overlap
 #      and keep min_spacing_tiles; placement is deterministic and does not move the level hash.
-#      The floor of 2 is asserted on every level that HAS two non-overlapping edge-adjacent
-#      blocks, and the levels that do not are counted against a pinned number (SHORT_MAX) and
-#      must each be MAXIMAL - the shortfall is the level's geometry, never the greedy's. The
-#      checker is then run over deliberately bad pads (one per rule) and must report each;
+#      The floor of 2 is asserted on every level that HAS a legal pair of blocks, and the levels
+#      that do not are counted against a pinned number (SHORT_MAX) and must each be PROVEN
+#      pair-free by an exhaustive scan - the shortfall is the level's geometry, never the
+#      greedy's. The checker is then run over deliberately bad pads (one per rule) and must
+#      report each;
 #   2. the trigger: a player standing on ANY of the block's 9 tiles is flung, and one standing
 #      on the tile just outside the block is not (D-JUMPPAD-8);
 #   3. the refill list: jump_pad_launch() refills air jumps, dash + twin dash, glider energy
@@ -43,7 +45,10 @@ const RunStateScript := preload("res://sim/run_state.gd")
 const HashScript := preload("res://sim/state_hash.gd")
 const ViewScript := preload("res://view/jump_pad_view.gd")
 
-const PLACE_SEEDS := [1, 7, 42, 99, 123, 2024, 31337, 60717]
+# Seed 11 is here because it is the level Terra found the greedy stranding a legal pair on
+# (level 3 seed 11: 6 candidates, the greedy took one that blocked the rest, a pair 4 tiles apart
+# was legal). Without the pair search this seed places 1 pad and _no_pair fails it.
+const PLACE_SEEDS := [1, 7, 11, 42, 99, 123, 2024, 31337, 60717]
 const PLACE_LEVELS := [1, 2, 3, 5, 8, 12, 20, 30]
 const DT := 1.0 / 60.0
 const NC_SEED := 1
@@ -53,12 +58,13 @@ const NC_LEVEL := 30
 const MIN_PADS := 2
 const MAX_PADS := 6
 # Levels that cannot host 2 non-overlapping EDGE-ADJACENT blocks, measured over PLACE_SEEDS x
-# PLACE_LEVELS with the shipped data (D-JUMPPAD-7): 5 of 64 - level 1 seed 7, level 2 seed 2024,
-# level 3 seed 1, level 5 seeds 7 and 60717. Each gets 1 pad and is maximal. A wider sweep (20
-# seeds x 8 levels = 160) puts 15 levels below the floor, all on levels 1-5; levels 8, 12, 20 and
-# 30 always reach 2. This is a ceiling on the shortfall, not a licence: if the placement starts
-# starving more levels, this test fails.
-const SHORT_MAX := 5
+# PLACE_LEVELS with the shipped data (D-JUMPPAD-7): 6 of 72 - level 1 seeds 7 and 11, level 2
+# seed 2024, level 3 seed 1, level 5 seeds 7 and 60717. Each gets 1 pad, and each is PROVEN
+# pair-free by _no_pair (an exhaustive scan of the level's candidates, not "can one be added to
+# what we placed"). A wider sweep (20 seeds x 8 levels = 160) puts 14 levels below the floor, all
+# on levels 1-5; levels 8, 12, 20 and 30 always reach 2. This is a ceiling on the shortfall, not
+# a licence: if the placement starts starving more levels, this test fails.
+const SHORT_MAX := 6
 
 
 class Holder:
@@ -69,6 +75,7 @@ class Holder:
 func run() -> Array[String]:
 	var f: Array[String] = []
 	_placement(f)
+	_adjacency_ring(f)
 	_trigger(f)
 	_refill(f)
 	_updraft_usable(f)
@@ -125,11 +132,13 @@ func _placement(f: Array[String]) -> void:
 				for msg in _not_maximal(L, pads, cfg):
 					f.append("placement seed %d level %d: %s" % [sd, lvn, msg])
 			if pads.size() < MIN_PADS:
-				# D-JUMPPAD-7: this level has no room for a second non-overlapping
-				# edge-adjacent block. Counted against SHORT_MAX, and _not_maximal above has
-				# already proved the greedy left nothing usable behind.
+				# D-JUMPPAD-7: a shortfall is only honest when NO two-pad arrangement exists.
+				# The placement searches for a pair before giving up, so this scan must agree.
 				short_levels += 1
 				short_list.append("L%d/seed%d:%d" % [lvn, sd, pads.size()])
+				if not _no_pair(L, cfg):
+					f.append("placement: %d pad(s) on seed %d level %d but a legal PAIR of blocks exists" % [
+							pads.size(), sd, lvn])
 			min_seen = mini(min_seen, pads.size())
 			max_seen = maxi(max_seen, pads.size())
 			if not pads.is_empty():
@@ -193,22 +202,32 @@ func _placement(f: Array[String]) -> void:
 		f.append("placement NC: no legal fixture block on seed %d level %d" % [NC_SEED, NC_LEVEL])
 
 
-## D-JUMPPAD-7, the test's own copy: is at least one tile EDGE-adjacent to the block a walkway
-## tile within step_hu vertically? The 4-neighbourhood of the block's 9 cells only - a diagonal
-## path tile does not count, and neither does a walkway on another storey.
+## D-JUMPPAD-7, written from the RULE rather than from the implementation (Terra review round
+## 2: the first version copied the implementation's loop, so it could not catch the bug where an
+## interior cell's neighbour counted). The block is the rectangle [x-half, x+half] x
+## [z-half, z+half]. Its EDGE RING is the 12 cells that share a side with that rectangle and are
+## not part of it - three along each of the four sides. A path tile on the ring, within step_hu
+## vertically, is what "adjacent to the path" means. A path tile above or below a block tile is
+## NOT on the ring and must not count, and neither does a corner.
 func _adjacent(L: Dictionary, x: int, z: int, y: int, half: int, step_hu: int) -> bool:
-	for dx in range(-half, half + 1):
-		for dz in range(-half, half + 1):
-			for n in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
-				var nx := x + dx + int(n.x)
-				var nz := z + dz + int(n.y)
-				for t in L["tiles"]:
-					if int(L["pieces"][int(t[4])]["kind"]) != 1:
-						continue
-					if int(t[0]) != nx or int(t[1]) != nz:
-						continue
-					if absi(int(t[2]) - y) <= step_hu:
-						return true
+	var lo_x := x - half
+	var hi_x := x + half
+	var lo_z := z - half
+	var hi_z := z + half
+	var ring: Dictionary = {}
+	for i in range(lo_x, hi_x + 1):
+		ring[Vector2i(i, lo_z - 1)] = true          # the side below the block
+		ring[Vector2i(i, hi_z + 1)] = true          # the side above the block
+	for j in range(lo_z, hi_z + 1):
+		ring[Vector2i(lo_x - 1, j)] = true          # the side to the left
+		ring[Vector2i(hi_x + 1, j)] = true          # the side to the right
+	for t in L["tiles"]:
+		if int(L["pieces"][int(t[4])]["kind"]) != 1:
+			continue
+		if absi(int(t[2]) - y) > step_hu:
+			continue
+		if ring.has(Vector2i(int(t[0]), int(t[1]))):
+			return true
 	return false
 
 
@@ -233,6 +252,22 @@ func _not_maximal(L: Dictionary, pads: Array, cfg: Dictionary) -> Array:
 		if not blocked:
 			out.append("not maximal: legal block %s could be added (spacing clear)" % key)
 	return out
+
+
+## D-JUMPPAD-7: the floor of 2 is excused ONLY when no two candidates satisfy the spacing. This
+## is an exhaustive pair scan over the level's own candidates - not "can one be added to the pads
+## we placed", which a greedy satisfies while missing a legal pair (Terra review round 2: level 3
+## seed 11 placed 1 pad with two legal candidates 4 tiles apart). True when no pair exists.
+func _no_pair(L: Dictionary, cfg: Dictionary) -> bool:
+	var cand: Array = PlaceScript.candidates(L, cfg)
+	var sp: float = float(cfg["min_spacing_tiles"])
+	for i in cand.size():
+		for j in range(i + 1, cand.size()):
+			var dx := float(int(cand[i][0]) - int(cand[j][0]))
+			var dz := float(int(cand[i][1]) - int(cand[j][1]))
+			if dx * dx + dz * dz >= sp * sp:
+				return false
+	return true
 
 
 ## The cells a pad must never cover, as Vector2i -> the rule name the checker reports.
@@ -423,6 +458,64 @@ func _bad_pads(L: Dictionary, cfg: Dictionary) -> Dictionary:
 	L9["tiles"] = keep
 	out["adjacent"] = [L9, legal]
 	return out
+
+
+# ---- 1b. the adjacency RING: a walkway inside the footprint's column is not adjacent --------
+
+## D-JUMPPAD-7 (Terra review round 2): adjacency is the RING OUTSIDE the 3x3 footprint. A walkway
+## directly above or below a block tile sits in the block's own column, not beside its edge, and
+## must not make the block a candidate. Real levels almost never stack a walkway on a platform
+## within path_step_hu, so a sweep cannot catch this - it needs a fixture: a 5x5 platform with
+## ONE walkway tile, either under the block's centre (not adjacent) or on its ring (adjacent).
+func _adjacency_ring(f: Array[String]) -> void:
+	var cfg: Dictionary = PlaceScript.load_config()
+	var half: int = PlaceScript.half_extent(cfg)
+	var step: int = int(cfg["path_step_hu"])
+	var under: Dictionary = _flat_platform([[2, 2, -2]])
+	var ring: Dictionary = _flat_platform([[2, 4, 0]])
+	# the rule, through the test's own checker
+	if _adjacent(under, 2, 2, 0, half, step):
+		f.append("adjacency: a walkway UNDER the block's centre counted as adjacent")
+	if not _adjacent(ring, 2, 2, 0, half, step):
+		f.append("adjacency: a walkway on the block's ring did not count as adjacent")
+	# and the implementation must agree - this is the assertion that catches the round-2 bug
+	if _has_cand(PlaceScript.candidates(under, cfg), 2, 2, 0):
+		f.append("adjacency: candidates() offered a block whose only walkway is under its centre")
+	if not _has_cand(PlaceScript.candidates(ring, cfg), 2, 2, 0):
+		f.append("adjacency: candidates() rejected a block with a walkway on its ring")
+	# the checker must report a pad placed on the non-adjacent block, and pass the adjacent one
+	var hit := false
+	for msg in _violations(under, [[2, 2, 0]], cfg):
+		if str(msg).begins_with("adjacent:"):
+			hit = true
+	if not hit:
+		f.append("adjacency: a pad on the non-adjacent block was not reported")
+	var clean := _violations(ring, [[2, 2, 0]], cfg)
+	if not clean.is_empty():
+		f.append("adjacency: the adjacent fixture block was reported: %s" % str(clean))
+
+
+## A 5x5 flat platform at y = 0 (piece 0, role ROLE_ROOM) plus one walkway tile per [x, z, y].
+func _flat_platform(walk: Array) -> Dictionary:
+	var tiles: Array = []
+	for x in range(0, 5):
+		for z in range(0, 5):
+			tiles.append([x, z, 0, 0, 0])
+	for w in walk:
+		tiles.append([int(w[0]), int(w[1]), int(w[2]), 0, 1])
+	return {
+		"seed": 1, "level": 1, "gen_version": 1, "attempt": 0,
+		"tiles": tiles,
+		"pieces": [{"id": 0, "kind": 0, "role": 1}, {"id": 1, "kind": 1, "role": 3}],
+		"props": [], "gifts": [], "pads": [], "beacon": [0, 0, 0],
+	}
+
+
+func _has_cand(cand: Array, x: int, z: int, y: int) -> bool:
+	for c in cand:
+		if int(c[0]) == x and int(c[1]) == z and int(c[2]) == y:
+			return true
+	return false
 
 
 # ---- 2. the trigger: any of the block's 9 tiles ------------------------------------------
