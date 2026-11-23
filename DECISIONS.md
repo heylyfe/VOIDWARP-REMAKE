@@ -8614,7 +8614,6 @@ squashes to 35 % in 0.06 s and springs back through ~1.19x (settled by 0.9 s), t
 rising sine with a decaying 26 Hz wobble over a 70 Hz thump, played on the `jump_pad_launch` event. No
 first-use hint (optional in the spec). Screenshot proof: tools/shot_jump_pad.gd (windowed).
 
-<<<<<<< HEAD
 ## D-T2-1 (2026-11-23): the tester panel is compiled OUT of the public build, three layers deep
 
 **Ruling.** The owner's words: "tester build with debug panel (owner only, never in public releases)". The
@@ -9455,7 +9454,6 @@ park it anywhere (repo convention: game/out/tools/, gitignored), then
 Editor Settings > Export > Windows > rcedit = that path. Verified locally on this
 machine: exporting preset.0 with the key set produces an exe whose .rsrc carries
 the six 16/32/48/64/128/256 png frames and one RT_GROUP_ICON (dump_pe_icons output).
-=======
 ## D-JUMPPAD-6 (2026-11-23): a jump pad is a 3x3 BLOCK of floor tiles, outside the paths
 
 **Owner's words (cycle 7 brief, T6):** "jump pads revamp (3x3 tiles, outside paths, 2 to 6 per level)" and
@@ -9596,4 +9594,3 @@ hash VALUE changes for every level that has pads - that is the point of the reva
 golden fixture pins a state hash: `test_replay.gd` compares runs against each other, and the jump-pad suite
 compares a run against its own replay, so nothing had to be re-pinned. The determinism tests are unchanged and
 none was weakened.
->>>>>>> origin/t3/jump-pads-revamp
