@@ -77,7 +77,12 @@ var _fh: FileAccess = null
 
 ## Opens the run's file user://runs/<run_seed>_<start_tick>.jsonl and writes run_start.
 ## start_tick is the accumulated tick this log begins at (0 for a fresh run).
-func run_started(p_run_seed: int, class_id: String, p_start_tick: int = 0) -> void:
+## p_extra (D-T2-3) carries additive header fields: the closed record TYPE list is
+## untouched, the payload only gains the caller's keys. The tester build passes
+## {"tester": true} so a run log read back names the build it came from; the public
+## build passes nothing and its records are byte-identical to before.
+func run_started(p_run_seed: int, class_id: String, p_start_tick: int = 0,
+		p_extra: Dictionary = {}) -> void:
 	total_t = p_start_tick
 	path = "%s/%d_%d.jsonl" % [dir_base, p_run_seed, p_start_tick]
 	DirAccess.make_dir_recursive_absolute(dir_base)
@@ -85,7 +90,10 @@ func run_started(p_run_seed: int, class_id: String, p_start_tick: int = 0) -> vo
 	open_ok = _fh != null
 	phase = "lobby"
 	level_number = 0
-	_record("run_start", {"seed": p_run_seed, "class": class_id})
+	var payload := {"seed": p_run_seed, "class": class_id}
+	for k in p_extra.keys():
+		payload[k] = p_extra[k]
+	_record("run_start", payload)
 
 
 ## The app layer announces a level: the slot counts come from the Level dict (terrain,

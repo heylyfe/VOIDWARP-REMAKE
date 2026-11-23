@@ -129,6 +129,11 @@ var _class_altar: Control = null
 # The loading clock ran out while the altar was still open: the run is held (state stays
 # LOADING, the world stays out of the tree) until the player confirms or skips.
 var _held_for_altar := false
+# The tester debug panel (cycle 7 T2): non-null ONLY in a build exported with the custom
+# "tester" feature tag (export_presets.cfg preset "Tester"). The public presets exclude
+# view/tester/ from the pack and never set the tag, so this hook never runs there and the
+# public build carries no reference to the panel at all - see _try_load_tester_panel().
+var _tester_panel: Control = null
 
 
 func _ready() -> void:
@@ -137,6 +142,25 @@ func _ready() -> void:
 	_pause_codes = _load_pause_codes()
 	_apply_saved_volume()
 	_show_menu()
+	_try_load_tester_panel()
+
+
+## The tester build's only entry point (D-T2-2): load() - never preload(), which would bake
+## the panel into every build's dependency graph - behind the custom "tester" feature tag.
+## Editor runs get the same tag with: tools\godot\godot.exe --path game --features tester.
+## In a public build the tag is absent (the branch is dead code) AND the file is not in the
+## pack (exclude_filter="view/tester/*"), so there is no reference to it at all.
+func _try_load_tester_panel() -> void:
+	if not OS.has_feature("tester"):
+		return
+	var TesterPanelScript = load("res://view/tester/debug_panel.gd")
+	if TesterPanelScript == null:
+		push_warning("app: tester feature set, but res://view/tester/debug_panel.gd did not load")
+		return
+	_tester_panel = TesterPanelScript.new()
+	_tester_panel.setup(self)
+	add_child(_tester_panel)
+	print("app: tester debug panel loaded (F10)")
 
 
 ## The saved master volume reaches the audio bus at BOOT, not only when the settings screen
@@ -548,7 +572,11 @@ func _end_run() -> void:
 		_records.load_from(records_path)
 	_records.record_run(_run_level_reached, _run_purse)
 	var log := RunLogScript.new()
-	log.run_started(_seed, _run_class)
+	# D-T2-3: a tester build names itself in the run log's header (the "replay is flagged
+	# tester" rule). _tester_panel is non-null exactly when the tester panel loaded, which
+	# happens only behind the "tester" feature tag, so a public build writes what it always did.
+	log.run_started(_seed, _run_class, 0,
+			{"tester": true} if _tester_panel != null else {})
 	log.run_finished(_run_level_reached, _run_purse)
 	log.close()
 

@@ -913,6 +913,59 @@ func _upgrade_knobs(plan: Dictionary, kit: String) -> Dictionary:
 	return out
 
 
+## TESTER (cycle 7 T2, D-T2-5): fold ONE more owned stack of upgrade `id` into the LIVE run.
+## Called only by the tester debug panel (view/tester/debug_panel.gd, which exists only in
+## "Tester" feature-tag exports); nothing in the public game calls it. The ledger carries the
+## stack into every later level through run_ledger(), and the build()'s stat pipeline is
+## re-run here so the stack is (mostly) live on the current level too:
+##   - _stats_black/_stats_gold, _upgrade_knobs' assignments and _apply_phase_stats() are
+##     re-computed - all set-based, so re-running them is the rebuild's own semantics;
+##   - the set-based consumers (straggler band, gift yield, twin dash, updraft) re-run over
+##     the whole ledger, unchanged by repetition;
+##   - the one ADDITIVE consumer, the athletic double-jump count, is applied as the delta
+##     only, so repeated grants do not inflate air jumps;
+##   - NOT re-applied: Field Dressing's per-level free-fall budget (granted once per level)
+##     and the per-level event-hook dispatcher _upgrades (the new stack's event hooks go
+##     live from the next level's build - the panel's status line says so).
+func apply_tester_upgrade_stack(id: String) -> void:
+	if ctl == null or _ledger.is_empty() or not _ledger.has("stacks"):
+		return
+	var before_jump: int = _signature_stacks(_ledger, [], "athletic", "", false)
+	var stacks: Dictionary = _ledger["stacks"]
+	stacks[id] = int(stacks.get(id, 0)) + 1
+	var kit := str(_ledger.get("class", ""))
+	if kit == "":
+		kit = FALLBACK_CLASS
+	_gift_radar_range = _gift_radar_range_for(stacks)
+	var mods: Array = _run_modifiers(_ledger, kit)
+	var base: Dictionary = ctl.base_stats()
+	_stats_black = ContentApiScript.apply_modifiers(base, mods, {"phase": "", "class": kit})
+	_stats_gold = ContentApiScript.apply_modifiers(base, mods,
+			{"phase": "gold_phase", "class": kit})
+	var knobs := _upgrade_knobs(_ledger, kit)
+	ctl.push_mul = float(knobs.get("push_mul", 1.0))
+	ctl.coyote_add = float(knobs.get("coyote_add", 0.0))
+	ctl.cooldown_mul = float(knobs.get("cooldown_mul", 1.0))
+	ctl.feather_fall = bool(knobs.get("feather_fall", false))
+	var glide_bonus := float(knobs.get("glide_energy_bonus", 0.0))
+	ctl.glide_energy_bonus = glide_bonus
+	if glide_bonus > 0.0:
+		ctl.glide_energy = minf(ctl.glide_energy + glide_bonus,
+				float(ctl.C.get("glide_energy", 3.0)) + glide_bonus)
+	if lstate != null and lstate.gifts != null:
+		lstate.gifts.apply_straggler_band(_signature_stacks(_ledger, [], "", "", false))
+	var jump_now: int = _signature_stacks(_ledger, [], "athletic", "", false)
+	if jump_now > before_jump:
+		ctl.apply_double_jump_stacks(jump_now - before_jump)
+	if _signature_stacks(_ledger, [], "*", "dasher", true) > 0:
+		ctl.apply_twin_dash()
+	if _signature_stacks(_ledger, [], "*", "glider", true) > 0:
+		ctl.apply_updraft()
+	if _economy != null:
+		_economy.apply_gift_yield(_signature_stacks(_ledger, ["on_gift_collected"], "", "", false))
+	_apply_phase_stats()
+
+
 ## The owned stacks of every upgrade carrying the free-fall signature (FREE_FALL_HOOK).
 func _free_fall_stacks(plan: Dictionary) -> int:
 	var total := 0
