@@ -162,9 +162,10 @@ static func dump(rs: RefCounted) -> PackedStringArray:
 		out.append("JUMPPADS %s %s %s %d %s" % [str(jp.pads_csv()), str(jp.ready_csv()),
 				(jp.lost as PackedByteArray).hex_encode(), int(jp.rearm_ticks),
 				bits(float(jp.launch_speed))])
-	var boss: RefCounted = lv.get("boss")
-	if boss != null:
-		var encounter: Dictionary = boss.snapshot()
+	# .get(): a test StubLevel has no boss key (T8b gate fix, same as sim/gifts.gd).
+	var boss_ref = lv.get("boss")
+	if boss_ref != null:
+		var encounter: Dictionary = boss_ref.snapshot()
 		if lv.arena_controller != null:
 			encounter["controller"] = _arena_controller_fields(lv.arena_controller)
 			encounter["gift_fire"] = lv.boss_gifts.snapshot()

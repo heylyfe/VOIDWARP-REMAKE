@@ -28,9 +28,10 @@ const UiAudio := preload("res://view/audio/ui_audio.gd")
 const WorldAudio := preload("res://view/audio/world_audio.gd")
 const AmbienceAudio := preload("res://view/audio/ambience_audio.gd")
 const EnemyCue := preload("res://view/audio/enemy_cue.gd")
+const BossAudio := preload("res://view/audio/boss_audio.gd")
 
-const MODULES := [PlayerAudio, UiAudio, WorldAudio, AmbienceAudio]
-const GROUPS := ["player", "ui", "world", "ambience"]
+const MODULES := [PlayerAudio, UiAudio, WorldAudio, AmbienceAudio, BossAudio]
+const GROUPS := ["player", "ui", "world", "ambience", "boss"]
 const AUDIO_ROOT := "res://assets/audio"
 
 # The negative control's stated count: the broken table below has exactly this many bad rows.

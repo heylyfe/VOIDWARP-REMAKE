@@ -919,3 +919,95 @@ void respawn, while a direct boss hit ends the run.
 T2 (`9e8f9c9`, merged) is the owner-only TESTER build. Terra xhigh answered the one question that mattered first: the panel CANNOT leak into a public build - only `view/tester/debug_panel.gd` exists in that folder (no scene, .tres or import sidecar to exclude), all three public presets carry `exclude_filter="view/tester/*"` and no `tester` feature, the CI matrix names only those three presets, and the only production load is `load()` behind `OS.has_feature("tester")` with no preload. The worker built the tester exe for real (`game/out/tester/voidwrap_tester.exe`, 120 MB) and smoke-ran it headless: the panel loads, zero script errors. Round 1 found five real defects, all fixed: FORCE PETER and FORCE BANKAI were dead buttons because their probe names did not match the boss API - they now go through `world._enter_boss_arena()` so the teleport, arena rebuild, first-person rig and HUD all come up, and the Bankai force plays the cinematic through its signals with `target_hit` driving `boss.damage(hp_max)`; GIVE GIFTS discarded the collection events and now queues through the tick so the economy, upgrade hooks and beacon all see them; `purse_gold` was read as a property instead of called; granted upgrades' hooks did not work until the next level; and god mode left a one-frame gap on a new world. Zero files under `game/sim`, `game/data`, `game/content` or `game/terrain` changed, and tester runs are flagged `tester` in the run-log header. The TESTER build is NOT part of any release.
 
 T4 (`a7fc33e`, merged `3e4e7d4`) is the Claude revamp: Claude does nothing by himself, spawns 5-15 clawds by level size on walkable tiles, a pickup resets the anger timer, warnings at 3600 and 7200 ticks, insta-kill at 10800 with cause "Claude", the timer in the state hash and paused in the gold phase. Terra xhigh round 1 returned ADOPT WITH FIXES and ruled the kept body-contact kill contradicts the owner's "does NOTHING by himself" - it is gone, so the 180 s timer is his only lethal act. Four more real defects fixed: a pickup reset the timer but not `warned`, so every later warning was missed; the kill was marked spent BEFORE `try_kill`, so Last Light could swallow it and the timer never retried; placement could re-pick a taken tile and stack clawds; and the bot did not route to clawds, so a Claude-voting bot run always died at 180 s - it now routes, and 20 level-15 runs (seeds 23-42) produce 0 `D-CLAUDE` deaths. The T4 merge conflicted in `world.gd`, `level_state.gd`, `state_hash.gd` and two tests; I resolved the sim files as a union (clawd tick then boss entry, both hash blocks kept) and hand-resolved the two test tables, because the union was WRONG there: T5 had retired Gin's mark cues and T4 had retired Claude's strings_line, so `test_audio_cues.gd` keeps only the live pairs (coil_ring, ground_ring, teleport), and `test_curse_enemy_effects.gd` takes T4's token_limit line with T5's twin_fangs line.
+## Cycle 7 T8b attacks: the two attacks, the laugh and the Bankai
+
+Branch `t3/peter-boss-attacks`, on top of the T8a framework (`origin/t3/74cf6538`,
+merged here as `54e1742`). The framework's contract is unchanged except for the additive
+extensions listed in `game/sim/boss.gd`'s header.
+
+What T8b adds:
+
+- **Bowling ball.** Rolls flat on the arena floor at `floor + height_u / 2`; the hit test
+  is a horizontal cylinder, so the player clears it by getting their feet above
+  `floor + 0.45`. A normal jump is above that height for ticks 2.4..42.6 of its 45-tick
+  airtime and the ball's own hit window is 7.3 ticks, so the jump covers it six times
+  over. Verified with the real controller: a bot that jumps 20 ticks before arrival
+  clears it, a bot that stands still is hit.
+- **Green fn.** Peter swaps to `peter_green_fn.png` (a VIEW state driven by the
+  `boss_attack_windup` event, never a sim field) and shoots a basketball at the player's
+  body centre AT RELEASE. 30-tick windup + 40-tick flight = 1150 ms from the visible
+  wind-up to arrival, over the owner's 400 ms floor; the 0.8 u sideways dodge takes 5.3
+  of the 40 flight ticks. A red ground marker runs from Peter to the aim point.
+- **A cooldown between attacks.** Without it the two attacks reached the player ONE TICK
+  apart and a single jump cleared both. `cooldown_ticks: 90` separates them to 91 ticks.
+  This is the one contract extension; `cooldown_tick` and `bankai_tick` join `snapshot()`.
+- **Laugh on death.** Any hit kills and emits `boss_laugh`. The placeholder is a
+  synthesized cue (`synth_cues.gd`, group `boss`, seed 61, 1.40 s, five "heh"
+  syllables). `view/audio/boss_audio.gd` prefers
+  `assets/owner_third_party/peter/laugh.ogg|mp3|wav` when the owner drops one in.
+- **Bankai easter egg.** The T8a roll selects it; the sim owns the clock (`bankai.hit_tick`
+  1260 = the cinematic's first `target_hit`, `end_tick` 1530 = its `TOTAL_DURATION`) and
+  the kill, the view plays the dormant cinematic through `animation_started`,
+  `target_hit` and `animation_finished`. Input is locked sim-side by the existing
+  `not boss.bankai_active` gate. The cinematic never touches `sim/` or the hash.
+
+Tests: `game/tests/test_boss_attacks.gd` (new). The windows are asserted ARITHMETICALLY
+from `data/boss.json` and `data/player.json`, never brute-forced; a negative control with
+`cooldown_ticks: 0` makes the gap assertion fail with "attacks arrive 1 ticks apart".
+`test_audio_cues_synth.gd` gains `BossAudio` and the `boss` group in its MODULES/GROUPS
+tables (extended, not weakened; its `seen < 18` floor is untouched).
+
+Gate on `t3/peter-boss-attacks` at `aed765e`: `GATE_EXIT=0`, `GATE OK (9 ran, 0 skipped,
+738 s)`, TESTS 140 passed 0 failed, PARITY 56/56, SELFTEST 18/18, GALLERY 16/16. Two
+gate failures were found and fixed on the way, both inherited from the T8a framework and
+both real defects rather than test noise: `boss_view.gd` instantiated `gold_gift.glb`
+with no base material, so the thrown gift would have rendered Godot's default white
+(`test_model_materials.gd`, the J3 defect class), and `sim/gifts.gd` plus
+`sim/state_hash.gd` read `lv.boss` directly, which raises "Invalid access to property or
+key 'boss'" on every test `StubLevel` and is read by the gate as a script error. Both are
+fixed at the source (a vertex-colour base pass; `.get("boss")`), not allow-listed.
+
+### T8b review round 2: the telegraphs, the sequence, the lock and the tests
+
+Terra xhigh returned ADOPT WITH FIXES on `777c8ab` with five defects and a replay ask.
+All five are fixed, plus the replay.
+
+1. **The bowling wind-up had no visible cue.** The delay was real but unreadable. The
+   lane is now committed at wind-up in the sim (`_aim`, hashed, carried on the wind-up
+   event) so the marker can be truthful, and the view shows a held-ball pose, a
+   `BOWLING_TINT` and a lane marker. This is the one contract extension: an additive
+   `aim` key on the wind-up event and an `_aim` field in `snapshot()`, both noted in
+   `boss.gd`'s header.
+2. **The green marker was frame-rate dependent and a lie.** It expired after 40 RENDER
+   frames (~278 ms at 144 FPS, before the 500 ms wind-up ended) and marked the wind-up
+   position while the shot aims at the release position. Lifetime is now tick-driven
+   (`_age_marker()` at the top of `on_events`, `_process` removed), the wind-up shows a
+   charge disc that claims no line, and the real aim line is drawn on release from
+   `boss_projectile_spawned`'s position and velocity.
+3. **The Bankai was not sequenced.** `hit_tick` moved 1260 -> 1290 so the swarm lands
+   before Peter dies; the sprite hides on the cinematic's `target_hit` rather than the
+   sim's `bankai_hit`; `_release_bankai()` calls `stop()` before `queue_free()` on every
+   path; and `bankai_finished` arms a bounded `grace_ticks` (60, in data) so a drifted
+   cinematic is stopped explicitly rather than freed mid-play.
+4. **The input lock missed the look.** `world.gd` `_unhandled_input` now returns early on
+   `bankai_active`, so mouse-look is locked too.
+5. **The window tests did not test the window.** Both calculations added a flight time in
+   seconds to a wind-up in ticks and multiplied by DT. Everything is in ticks now, travel
+   is measured to CONTACT (`dist - (radius + half_width)`), and a new `_measured_windows`
+   leg runs the real sim and asserts the measured wind-up-to-arrival count against the
+   data within 2 ticks. Measured: bowling 103 vs predicted 104, green_fn 67 vs 68. The
+   leg has teeth - with the old centre-distance arithmetic it failed by 5 ticks.
+6. **The replay was not a replay.** `_record_and_replay` now records the command stream
+   in run one and feeds it back verbatim in run two, comparing `StateHash.sha256` every
+   30th tick - the shape `test_replay.gd` uses. It runs for an ordinary fight and for a
+   Bankai fight (past `hit_tick`, so the Bankai clock and the death are hashed).
+
+Three source fixes fell out of driving the dormant cinematic headless, all real defects:
+`play()` read `get_viewport().get_camera_3d()` unguarded (null outside the tree), the
+procedural rig was built only in `_ready()` so `_anim_cam` was null outside the tree (now
+`_ensure_built()`, called from both), and `_update_animation` called
+`to_local(target.global_position)` with neither node in a tree (now skipped, falling back
+to the cinematic's own target point). None are allow-list changes.
+
+D-entries: D-T8B-5 (telegraphs), D-T8B-6 (Bankai sequencing), D-T8B-7 (input lock),
+D-T8B-8 (window tests and the real replay). D-T8B-4's `hit_tick` rationale updated.

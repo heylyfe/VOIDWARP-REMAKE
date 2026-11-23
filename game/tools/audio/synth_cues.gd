@@ -46,6 +46,7 @@ const CUES := [
 	["ui", "menu_click", 0.14, 42],
 	["ambience", "lobby_ambience", 4.00, 51],
 	["ambience", "music_bed", 8.00, 52],
+	["boss", "laugh", 1.40, 61],
 ]
 
 # cues that must loop seamlessly (generated long, crossfaded back to their declared length)
@@ -116,6 +117,7 @@ func _render(cue: String, n: int, rng: Lcg) -> PackedFloat32Array:
 			"menu_click": _menu_click(buf, n, rng)
 			"lobby_ambience": _lobby_ambience(buf, n, rng)
 			"music_bed": _music_bed(buf, n, rng)
+			"laugh": _laugh(buf, n, rng)
 			_: pass   # an unknown name stays silent rather than failing the whole run
 	return buf
 
@@ -351,8 +353,33 @@ func _music_bed(buf: PackedFloat32Array, n: int, rng: Lcg) -> void:
 			v += sin(TAU_F * float(hz) * 1.005 * t) * 0.12
 		lp += _lp_coef(1800.0) * (rng.next() - lp)
 		buf[i] = v * env * 0.5 + lp * 0.03
-# ---- buffer plumbing --------------------------------------------------------------
 
+
+# Peter's laugh (T8b): a PLACEHOLDER for the owner's real clip, which the game prefers when
+# it is present (view/audio/boss_audio.gd checks assets/owner_third_party/peter/laugh.*
+# first). Five "heh" syllables over 1.4 s - a glottal buzz around 104 Hz stepping up a
+# little each syllable, two nasal formants, and a breath of noise. The shape of a laugh,
+# not an impression of one.
+func _laugh(buf: PackedFloat32Array, n: int, rng: Lcg) -> void:
+	var syllables := 5
+	var span := 1.40 / float(syllables)
+	var a := _lp_coef(2600.0)
+	var lp := 0.0
+	var phase := 0.0
+	for i in n:
+		var t := float(i) / float(RATE)
+		var idx := mini(int(t / span), syllables - 1)
+		var local := t - float(idx) * span
+		var hz := (104.0 + 9.0 * float(idx)) * (1.0 + 0.06 * sin(TAU_F * 7.0 * t))
+		phase += TAU_F * hz / float(RATE)
+		var env := minf(1.0, local / 0.018) * exp(-9.0 * local)
+		var buzz := sin(phase) * 0.62 + sin(phase * 2.0) * 0.22 + sin(phase * 3.0) * 0.10
+		var nasal := sin(TAU_F * 880.0 * t) * 0.16 + sin(TAU_F * 2350.0 * t) * 0.07
+		lp += a * (rng.next() - lp)
+		buf[i] = (buzz + nasal) * env + lp * env * 0.18
+
+
+# ---- buffer plumbing --------------------------------------------------------------
 # Folds the tail into the head and returns the buffer cut back to its declared length, so
 # the last sample runs into the first one with no step. `fade` samples of the tail are
 # mixed into the head with an equal-gain ramp.
