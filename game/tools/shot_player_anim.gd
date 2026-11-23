@@ -366,7 +366,16 @@ func _cameras(world: World, pose: Array) -> Array:
 	var sloped: bool = pose[4] != "flat"
 	var side := Vector3(3.4, 0.0 if sloped else 0.55, 0.0)
 	# A descent's rear camera stands in the figure's LEFT rear quarter, 2.7 u out (azimuth
-	# ~27 deg off straight behind, 1.8 u over the aim point, sight line ~34 deg down). From
+	# ~37 deg off straight behind, 1.8 u over the aim point, sight line ~34 deg down).
+	# Chosen from a sweep of 11 rear offsets (re-review of 642b41a): straight behind
+	# (0, 1.8, 2.7) shows the boots side by side with no depth at the crossing; low
+	# (y 1.0) loses the feet behind the slope; high (-1.2, 2.6, 2.0) loses the left boot
+	# under the robe in frames 5-7; ~27 deg (-1.2, 1.8, 2.4) keeps both boots but they read
+	# adjacent at the crossing; 45 deg and wider (-1.9, 1.8, 1.9) shows the fore-aft offset
+	# best but hides the right boot behind the left leg in frames 1-3 and 9-10 (and 3-6 of
+	# the stairs). At ~37 deg both boots show in all 10 frames of both descents and the
+	# crossing reads as one boot passing ahead of the other. No rear angle shows the legs
+	# fully apart in every frame. From
 	# the right rear quarter (1.1, 2.7, 2.9) the near right (cyan) leg, the robe and the
 	# back-swinging arm hid the far left (orange) boot through the crossing (rear frames 5-7
 	# of down_ramp, 8 of down_stairs; re-review of cf9aeb1); from the left both boots sit
@@ -374,7 +383,7 @@ func _cameras(world: World, pose: Array) -> Array:
 	# figure 1.2 u under a 2.5 u eye, so the uphill tread still clears the boots (review of
 	# 1b7bb7d), and they sit against the wide course (_add_tread) below them.
 	var descent: bool = name in ["down_ramp", "down_stairs"]
-	var rear := Vector3(-1.2, 1.8, 2.4) if descent else Vector3(1.1, 1.5, 2.9)
+	var rear := Vector3(-1.6, 1.8, 2.15) if descent else Vector3(1.1, 1.5, 2.9)
 	# The jump's side camera swings ~23 deg toward the front and drops to 0.1 u over the
 	# aim point (from 0.55): from square side-on the near right leg stacked over the far
 	# one and the robe hem hid the knee (re-review of cf9aeb1). From here the thigh, the
