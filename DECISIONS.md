@@ -8758,3 +8758,45 @@ warning 1 and pulsing at warning 2; hidden when the level carries no clawds. (d)
 `claude_warning_1` and `claude_warning_2`, synthesised by `tools/synth_audio.py` (a two-note rising chime and a
 three-note urgent alarm, both new voices, nothing copied), registered in `view/audio/claude_audio.gd` and played
 on the `clawd_warning` event's `level`.
+
+## D-T4-9 (2026-11-23): the fixtures, the docs and the bot answer that had to follow the revamp
+
+**Ruling.** The revamp deletes the musical kit, so every artefact that asserted the kit had to move with it. None
+of these is a threshold change; each is a fixture whose subject no longer exists.
+
+- `game/tests/test_enemy_claude.gd` - rewritten (1073 -> 970 lines). Kept: the roster-data-vs-mirror leg (now also
+  `clawd_cfg()` and `sim/clawds.gd`'s `DEFAULTS`), the body/contact leg, the 30-tick spawn fade, the anim-block
+  wiring and the lobby exhibit. Replaced the attack legs with: the count across level sizes (5..15, the table's own
+  boundaries, the clamp, four real generated levels), the placement rules (walkable, clear of gifts/mines/beacon/
+  pads/spawns, spacing, seed-pure, ramp-only and hub-only maps place nothing), "does nothing by himself" (600 ticks,
+  no ring/shot/sweep/plushie, no motion, no telegraph), the timer at exactly 3600/7200/10800 with cause "Claude",
+  the pickup reset, the gold-phase freeze, and the CLAWDS hash line with a two-replay determinism leg.
+- `game/tests/test_audio_cues.gd` - the claude leg now runs the real clawd runtime and the real `claude_view.gd`:
+  the sim's `clawd_warning` event names the cue at exactly 3600 and 7200, both cue files exist, and the view
+  recorded both warnings. The negative control leaves the view unwired, so the same checker fails. The
+  `strings_line -> string_sweep` row is gone from the table leg because the strings attack is gone.
+- `game/tests/test_app_fx_wiring.gd` - the synthetic `strings_line` telegraph still beeps `keystroke_tick` (the
+  view's own TELL_CUES map) but no longer plays `string_sweep` (that mapping came from claude's `audio_cue_timing`
+  row, deleted with the attack). The expected cue count is 6, not 7.
+- `game/tests/test_curse_dispatch.gd` / `test_curse_enemy_effects.gd` / `test_curses_scripted_enemy.gd` - the
+  crescendo and token_limit legs measure the anger timer and the pickup leftover instead of agitation and plushies.
+  The dispatch leg measures a DELTA over 600 ticks after the first two, because the curse's `on_tick` runs after
+  the clawd tick in `app/world.gd` (tick 1 is at the sim's own rate): control +600, cursed +900.
+- `game/tests/test_enemy_negcontrols.gd` - claude's claim is the anger timer (10800 ticks with no clawd collected
+  kills with D-CLAUDE); the mechanism toggle is the swarm itself.
+- `game/tests/test_loading.gd` + `game/data/tips.json` - `tip_claude_drums` -> `tip_claude_clawds` and
+  `tip_claude_plushie` -> `tip_claude_anger`, each pinned to the new data (`clawd_count_min/max`,
+  `anger_warning_ticks`, `anger_kill_ticks`, `anger_pause_when_beacon_open`). The pool stays at 30 tips. The
+  now-unused `_beats_are_1_and_3` helper is deleted.
+- `game/tests/test_hud_gui.gd` - `_full_hud()` carries a live `"clawds"` snapshot so the new pill is visible and
+  the layout leg's `shown == panels.size() - 1` still holds.
+- `game/tools/bot/answers.gd` - claude's answer is a ROUTE ("collect clawds"), not an input sequence; the entry
+  keeps its `fable-enemies.md` source line and records the gap that the bot does not path to clawds.
+  `game/tools/answer_lab.gd` drops its claude `drum_ring` case (there is no telegraph to time any more).
+- `DESIGN.md` - section 5.11 rewritten to the revamp (the `tell` and `counter_play` lines are the enemy.json text
+  verbatim, which `test_panel_lines.gd` requires), and the SR-2 note for Claude no longer claims it keeps its
+  distance. The SR-5 row (4.0 / 0.55) is untouched: `tools/check_enemy_data.gd` compares it to the table, and the
+  behavior never calls the float body, so it is inert data (D-T4-1).
+- `game/sim/clawds.gd` - the header's owner quote says "a second, louder one" instead of "a second, more urgent
+  sound": the boundary scan (`test_boundaries.gd`) matches whole words against the content ids, and "more" is a
+  curse id. The verbatim quote lives here, in the D-entries, where the scan does not look.
