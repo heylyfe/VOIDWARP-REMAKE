@@ -252,6 +252,8 @@ static func tick(lv: RefCounted, player_index: int, events: Array) -> void:
 			g.collect(i, lv.tick, player_index, events)
 			if g.phase == PHASE_GOLD and not opened:
 				opened = true
+				if lv.get("boss") != null:
+					return
 	if opened:
 		# The last real black gift opens the beacon on the same tick
 		# (DESIGN.md section 3 step 3); the beacon owns its state machine.

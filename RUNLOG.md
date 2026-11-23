@@ -883,3 +883,22 @@ OPERATIONAL NOTES
 09:59Z cycle 7 DISPATCHED - all 8 tracks in parallel, one worktree each. The owner's brief is `game/out/owner_refs/CYCLE7_BRIEF.md` (8 tracks, model map, hard rules). T8's framework worker went out FIRST so its boss interface is committed and pushed before the attack worker starts on top of it; the other seven went out in the same batch. Branches: T1 `t3/you-enemy-strike-tuning` (deepseek-v4 high), T2 `t3/tester-debug-panel` (glm-5-3), T3 `t3/custom-voidwarp-launcher-icon` (zai-glm-5-3-flash), T4 `t3/claude-clawd-revamp` (deepseek-v4 high), T5 `t3/gin-sword-jump-revamp` (gpt-6.2-sol medium), T6 `t3/jump-pads-revamp` (deepseek-v4 high), T7 `t3/refined-player-animator` (gpt-6.2-sol medium), T8a `t3/74cf6538` (gpt-6.2-sol medium). Every brief carries the same hard rules: determinism at 60 Hz ticks with no RNG but the level seed, view-only tracks stay out of `sim/`, numbers in data, no weakened thresholds, R15 chunked writes, commit WIP often, push your own branch, never push main, never move a tag, and the orchestrator re-runs the gate on merged main and reads `GATE_EXIT` itself. No Claude/Opus and no Qwen anywhere in the fleet. Terra xhigh reviews each track, two rounds maximum. The TESTER build (T2) is not part of any release.
 
 Cycle 7 · T7 · codex gpt-6.2-sol medium · partial adoption (D-T7-1, D-T7-2). Refined the shared blocky figure with a squared brim, lower and wider silver cone band, recessed tip, fuller silver hair and wraparound shades. The approved charcoal torso, branching dark antlers, neck hierarchy and limb mesh bounds carry over. The proposal's animator would move the hip mounts independently, stretch the rig on takeoff and landing, and replace knee articulation and per-sole terrain contacts with single blocks rotated at the hip. Its absolute speed cutoffs also replace the shipped normalized gait thresholds. The existing solver drives all six requested states and the other ten review poses. The tip aura, custom face decal and runtime hat animation were left out of the baked adaptation.
+
+## Cycle 7 T8a boss interface
+
+Boss.new().start(run_seed, level_no) returns arena_entered and boss_spawned. Call
+tick(level_state, {tick, player_position, boss_position}) at 60 Hz. The positions use
+world units. Call damage(final_amount, is_crit) and dispatch its events exactly like
+tick events. projectiles() returns live attack rows backed by _projectiles. See
+game/sim/boss.gd for the event contract and snapshot() for the hashed fields.
+bankai_selected holds the once-per-fight roll. T8b owns activation, flight, lethal
+hit emission, and laugh/cinematic timing. T8a handles lethal hit dispatch, rewards
+and beacon exit. Build arena geometry with BossArena.build(level, boss.config).
+
+T8a framework integration: world.step(dt, command) can replay captured commands.
+The arena tick passes player feet as player_position and the centred boss hit target
+as boss_position. Its world event dispatcher applies lethal boss_projectile_hit_player
+and pays boss_died through the arena beacon. To clear and award via Bankai, emit the
+events from damage() through the same tick return. BossView.on_events receives
+the whole stream. The existing controller keeps the player alive during an ordinary
+void respawn, while a direct boss hit ends the run.

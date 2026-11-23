@@ -59,6 +59,10 @@ extends Node3D
 # frame from there on (death black-out -> run-over screen).
 
 const VoidGenScript := preload("res://terrain/voidgen.gd")
+const BossScript := preload("res://sim/boss.gd")
+const BossArenaScript := preload("res://terrain/boss_arena.gd")
+const BossGiftsScript := preload("res://sim/boss_gifts.gd")
+const BossViewScript := preload("res://view/boss_view.gd")
 const CollisionScript := preload("res://sim/collision.gd")
 const MesherScript := preload("res://view/level_mesher.gd")
 const CollapseScript := preload("res://sim/collapse.gd")          # platform collapse schedule
@@ -191,6 +195,8 @@ var bespoke_enemy_views := true
 # negative control through this one field instead of asserting nothing. Owned by the
 # feed-off path only; the sim's own memory is untouched either way.
 var radar_feed := true
+var _boss_view: Node3D = null
+var _run_seed := 0
 var lstate: RefCounted = null   # the sim LevelState (gifts / mines / beacon); bot_run.gd's lv
 var player_model: Node3D = null # the T-015 player figure, feet on the controller's position
 var _player_yaw := 0.0          # facing yaw, follows the camera's forward while captured
@@ -394,6 +400,12 @@ func build(seed_value: int, level: int, p_ledger: Dictionary = {}) -> bool:
 	# lstate.upgrades null exactly as before for an un-upgraded run.
 	lstate = LevelStateScript.build(lv, level, 1, seed_value,
 			UpgradeRolesScript.roles_for(plan.get("stacks", {}) as Dictionary))
+	_run_seed = seed_value
+	var boss_config := BossScript.load_config()
+	if level == int(boss_config["level"]):
+		lstate.boss = BossScript.new()
+		lstate.boss.config = boss_config
+		lstate.gifts.black_quota = -1
 	_gift_radar_range = _gift_radar_range_for(plan.get("stacks", {}) as Dictionary)
 	_facing = -PI / 2.0
 	_map_colours = {}
@@ -687,13 +699,16 @@ func build(seed_value: int, level: int, p_ledger: Dictionary = {}) -> bool:
 ## rides ctl.step itself. The completion
 ## signal fires at the end of the tick that entered the beacon; the death signal fires at
 ## the end of the tick the player died on, and every later call is a no-op.
-func step(dt: float) -> void:
+func step(dt: float, command: Dictionary = {}) -> void:
 	if ctl == null or rt == null or lstate == null:
 		return
-	if _run_over_emitted:
+	if _run_over_emitted or (_boss_view != null and _completed_emitted):
 		return   # the run is over: a dead run never ticks again (DESIGN.md section 3)
-	var a_in: Dictionary = _capture_input()
+	var a_in: Dictionary = _capture_input() if command.is_empty() else command
 	_mouse_lock_pass(int(a_in.get("app", 0)))
+	if lstate.boss != null and lstate.boss.arena_entered:
+		_step_boss_arena(dt, a_in)
+		return
 	# The respawn safe-tile search reads w["hazards"] (controller.gd valid_safe_tile). Nothing
 	# published that list before, so a void-fall could put the player back down inside a mine.
 	# Built from the live mine set plus the runtime's LIVE telegraph rows - the same one-tick
@@ -750,6 +765,11 @@ func step(dt: float) -> void:
 	# D-JUMPPAD-2/4. A launch writes its new vy / grounded back into lstate.players[0] (the row
 	# above was copied before the pad fired - sim/jump_pads.gd _sync_row, Terra finding 1).
 	JumpPadsScript.tick(lstate, [ctl], w, lstate.tick, ev)
+	if lstate.boss != null and not ctl.dead and lstate.gifts.all_black_collected():
+		_enter_boss_arena(ev)
+		_economy_pass(ev)
+		_publish_boss_tick(ev)
+		return
 	# The curse entry gate (a crowded dais, an unserved dwell): a refused player simply
 	# does not enter this tick; the beacon stays open and the next tick asks again.
 	if _curses == null or bool(_curses.entry_allowed(0)):
@@ -815,6 +835,10 @@ func step(dt: float) -> void:
 	_billboard_pass(dt, ev)
 	_view_pass()
 	_sync_hud()
+	_finish_tick()
+
+
+func _finish_tick() -> void:
 	# Death ends the run (DESIGN.md section 3). The row is sim/death.gd's own screen_data()
 	# plus the charges held at death - the controller's death event carries the same pair.
 	# Death is checked first: a dead player cannot enter the beacon (try_enter refuses a
@@ -835,6 +859,147 @@ func step(dt: float) -> void:
 		_completed_emitted = true
 		WorldAudioScript.play_level_complete(self)
 		level_completed.emit()
+
+
+func _enter_boss_arena(events: Array) -> void:
+	var boss: RefCounted = lstate.boss
+	events.append_array(boss.start(_run_seed, _level_number))
+	lv = BossArenaScript.build(lv, boss.config)
+	w = CollisionScript.make_world(lv["tiles"], [], [], {"dais": lv["arena_spawn"]})
+	var previous_tick: int = lstate.tick
+	lstate = LevelStateScript.build(lv, _level_number, 1, _run_seed)
+	lstate.tick = previous_tick
+	lstate.boss = boss
+	lstate.boss_gifts = BossGiftsScript.new()
+	lstate.arena_controller = ctl
+	_collapse = {}
+	ctl.tile_step_hook = Callable()
+	ctl.push_hook = Callable()
+	ctl.ring.clear()
+	ctl.dwell = 0.0
+	ctl.dash_ticks = 0
+	ctl.pad_flight = false
+	ctl.gliding = false
+	ctl.place(w)
+	_roster.clear()
+
+	for mesh in _mesh_instances:
+		if is_instance_valid(mesh):
+			mesh.free()
+	_mesh_instances.clear()
+	for view in [collapse_view, gifts_view, tripmine_view, jump_pad_view,
+			toucher_floor, straggler_beam, telegraph_view, coil_view, projectile_view,
+			danger_text]:
+		if is_instance_valid(view):
+			view.free()
+	collapse_view = null
+	gifts_view = null
+	tripmine_view = null
+	jump_pad_view = null
+	toucher_floor = null
+	straggler_beam = null
+	telegraph_view = null
+	coil_view = null
+	projectile_view = null
+	danger_text = null
+	for view in boards + enemy_views:
+		if is_instance_valid(view):
+			view.free()
+	boards.clear()
+	enemy_views.clear()
+	if _glide_player != null:
+		PlayerAudioScript.stop_glide(_glide_player)
+		_glide_player = null
+	var mesher: Dictionary = MesherScript.build(lv)
+	for key in mesher["meshes"]:
+		var instance := MeshInstance3D.new()
+		instance.mesh = mesher["meshes"][key]
+		add_child(instance)
+		_mesh_instances.append(instance)
+	beacon_view.setup(lv)
+	beacon_view.hide()
+	if player_model != null:
+		player_model.hide()
+	rig.yaw_deg = 0.0
+	rig.pitch_deg = 0.0
+	_boss_view = BossViewScript.new()
+	add_child(_boss_view)
+	_boss_view.setup(_boss_target_position(), float(boss.config["sprite_height_u"]), _hud_layer)
+
+
+func _boss_target_position() -> Vector3:
+	var tile: Array = lv["arena_boss"]
+	return Vector3(float(tile[0]) + 0.5,
+			float(tile[2]) * LevelStateScript.HU + float(lstate.boss.config["arena"]["boss_height_u"]),
+			float(tile[1]) + 0.5)
+
+
+func _step_boss_arena(dt: float, command: Dictionary) -> void:
+	var boss: RefCounted = lstate.boss
+	lstate.tick += 1
+	var events: Array = []
+	var feet := Vector3(float(ctl.x), float(ctl.y), float(ctl.z))
+	if not boss.bankai_active:
+		events.append_array(ctl.step(dt, command, w))
+		feet = Vector3(float(ctl.x), float(ctl.y), float(ctl.z))
+	var ctx := {"tick": lstate.tick, "player_position": feet, "boss_position": _boss_target_position()}
+	if not ctl.dead:
+		var boss_events: Array = boss.tick(lstate, ctx)
+		events.append_array(boss_events)
+		_apply_boss_events(boss_events, events)
+		if not ctl.dead and ctl.respawn_t < 0.0:
+			var gift_events: Array = lstate.boss_gifts.tick(boss, lstate.tick, command,
+					_boss_eye(feet), ctx["boss_position"], dt)
+			events.append_array(gift_events)
+			_apply_boss_events(gift_events, events)
+		# Give the newly opened beacon its own tick before it can finish the level.
+		if lstate.beacon.is_open() and not _has_boss_event(events, "boss_died"):
+			if lstate.beacon.try_enter(ctl, lstate.tick, 0, events):
+				events.append({"kind": "arena_exited"})
+	_economy_pass(events)
+	_publish_boss_tick(events)
+
+
+func _apply_boss_events(incoming: Array, events: Array) -> void:
+	for event in incoming:
+		match event["kind"]:
+			"boss_projectile_hit_player":
+				if not ctl.dead:
+					ctl._die("D-PETER", "Peter Griffin", events)
+			"boss_died":
+				if not lstate.beacon.is_open():
+					_economy.add_gold(int(lstate.boss.config["reward_gold"]))
+					events.append(lstate.beacon.open(lstate.tick))
+
+
+static func _has_boss_event(events: Array, kind: String) -> bool:
+	for event in events:
+		if event.get("kind") == kind:
+			return true
+	return false
+
+
+func _boss_eye(feet: Vector3) -> Vector3:
+	return feet + Vector3.UP * float(lstate.boss.config["eye_height_u"])
+
+
+func _publish_boss_tick(events: Array) -> void:
+	var feet := Vector3(float(ctl.x), float(ctl.y), float(ctl.z))
+	lstate.players[0] = {"x": ctl.x, "y": ctl.y, "z": ctl.z, "vx": ctl.vx, "vy": ctl.vy,
+		"vz": ctl.vz, "grounded": ctl.grounded, "prev_buttons": ctl.prev_buttons}
+	lstate.arena_purse_centi = int(_economy.purse_centi)
+	last_events = events
+	_boss_view.on_events(events)
+	_fx_events(events)
+	rig.position = _boss_eye(feet)
+	rig.rotation_degrees = Vector3(rig.pitch_deg, rig.yaw_deg, 0.0)
+	if lstate.beacon.is_open():
+		beacon_view.show()
+		beacon_view.sync_from(lstate.beacon, null, lstate.tick)
+	_player_audio_pass()
+	_sync_hud()
+	hud.gift_counter.hide()
+	_finish_tick()
 
 
 ## Read sim -> economy mapping over this tick's event list (both event shapes: sim events
@@ -1118,6 +1283,7 @@ func teardown() -> void:
 	fog = null
 	hud = null
 	_hud_layer = null
+	_boss_view = null
 	gifts_view = null
 	tripmine_view = null
 	jump_pad_view = null
@@ -1606,9 +1772,17 @@ func _capture_input():
 		var l := sqrt(float(mx * mx + mz * mz))
 		aim_x = float(mx) / l
 		aim_z = float(mz) / l
-	return {"move_x": mx, "move_z": mz, "buttons": int(pi.buttons),
-			"aim_x": aim_x, "aim_z": aim_z,
-			"app": int(res.get("app", 0))}
+	var command := {"move_x": mx, "move_z": mz, "buttons": int(pi.buttons),
+		"aim_x": aim_x, "aim_z": aim_z, "app": int(res.get("app", 0))}
+	if _boss_view != null:
+		var angles := Vector3(deg_to_rad(rig.pitch_deg), deg_to_rad(rig.yaw_deg), 0.0)
+		var forward := Basis.from_euler(angles) * Vector3.FORWARD
+		command["gift_aim"] = forward
+		command["aim_x"] = forward.x
+		command["aim_z"] = forward.z
+		if _mouse_locked and Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+			command["buttons"] = int(pi.buttons) | InputScript.BUTTON_FIRE
+	return command
 
 
 ## The mouse-capture state machine (J5): Ctrl toggles, the APP_PAUSE edge and the death /
@@ -1844,7 +2018,7 @@ func _anim_sample() -> Dictionary:
 
 
 func _process(delta: float) -> void:
-	if player_model == null or ctl == null or _run_over_emitted:
+	if player_model == null or ctl == null or _run_over_emitted or _boss_view != null:
 		return
 	# App owns pause and drops its fixed-step remainder on a five-tick catch-up.
 	if get_parent().get("_paused") == true:
