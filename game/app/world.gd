@@ -228,7 +228,12 @@ const POSE_KEYS := ["torso", "head", "arm_l", "arm_r", "leg_l", "leg_r"]  # same
 const ANIM_BLEND_TIME := 0.08    # s, pose blend constant (1 - e^(-dt/tau) toward target)
 const POSE_EXTRAS := ["arm_spread", "elbow_l", "elbow_r", "twist", "body_y", "knee_l", "knee_r"]
 const ANIM_RISE_TIME := 0.085   # s, body height catch-up to the sim feet (stairs)
-const LAND_TIME := 0.30          # s, the touchdown knee-dip
+const ANIM_SEAT_MAX := 0.22      # u the drawn body may sit below the sim's footprint support (D-ANIM-8)
+const AIR_TUCK_VY := -5.0        # u/s: the jump tuck holds through the apex until the fall is this fast
+const AIR_TUCK_CLEAR := 1.0      # u: ...or until the floor under the figure is this close
+const LAND_TIME := 0.42          # s, the touchdown knee-dip: down and back up (D-ANIM-10)
+const LAND_DOWN := 0.07          # s from touchdown to the deepest point of the dip
+const LAND_DEPTH := 0.20         # u the hips sink at the deepest point
 ## Field Dressing (DESIGN.md section 8, D-086): the controller's free-fall budget. It has no
 ## module for the upgrade dispatcher to call, so the app grants the budget itself at level
 ## start (controller apply_field_dressing). No content id is named here (test_boundaries.gd): the upgrade is
@@ -251,11 +256,16 @@ var _anim_height := INF
 var _contact_weight := 0.0
 var _climb_weight := 0.0
 var _descent_weight := 0.0
+var _descent_pace := 0.0         # the descent share fed to the cadence, eased slower (D-ANIM-8)
 var _fold_lift := 0.0            # u, hips raised for a high step (see _step_up)
+var _reach_drop := 0.0           # u, hips lowered to a foot on a lower tread (see _step_down)
+var _seat_crouch := 0.0          # u, hips lowered for boots seated along a slope (eased, see _pose_locomotion)
+var _seat_snap := true           # the view snapped to the sim (a teleport, a new course): no easing
 var _rise_rate := 0.0            # u/s, low-passed vertical speed of the grounded samples
 var _side_weight := 0.0
 var _land_clock := -1.0          # s since touchdown while < LAND_TIME, else -1
 var _was_airborne := false
+var _air_rose := false           # this airborne spell rose (a jump), so the tuck holds to AIR_TUCK_VY
 var _feet: Array[Vector3] = [Vector3.ZERO, Vector3.ZERO]
 var _run_speed := 9.0            # data/player.json shared_kit.run_speed (read in build())
 
@@ -1751,23 +1761,37 @@ static func _pose_idle(phase: float) -> Dictionary:
 	}
 
 
-## Jump (rising): both legs tucked back, arms swung back-up, torso leaning into the rise.
+## Jump (the arc, up to AIR_TUCK_VY): a deliberate knee tuck - both thighs drawn up
+## level in front of the hips, the shins folded back under them at the fold limit
+## (Locomotion.MIN_FOLD) - and the arms swung BACK (a positive arm angle swings forward,
+## like a leg), so from the side they do not hang across the tucked thighs. The torso leans
+## back a little to open the space in front of its hem for the knees (a forward lean drew
+## the hem down over them). The 0.65 rad thigh and forward arms of the first cut read as
+## legs trailing below the body (review of 1b7bb7d). The thighs ride 1.90 rad, past level,
+## so from the side the knees stand up and out ahead of the robe with the shins folded
+## under them (1.60 read as lower legs bent back, no forward knee: re-review of 642b41a).
+## The ceiling is the folded BOOT, not the thigh: past 1.90 it swings up into the torso
+## block (D-ANIM-5 boot margin, 2.05 at any lean from -0.06 to 0.34), and leaning the torso
+## further back brings its rear lower edge onto that boot sooner (1.90 at 0.18 fails too).
 static func _pose_jump() -> Dictionary:
 	return {
-		"torso": -0.22,
+		"torso": 0.10,
 		"head": 0.0,
-		"arm_l": 0.95,
-		"arm_r": 0.95,
-		"leg_l": 0.65,
-		"leg_r": 0.65,
-		"knee_l": 1.35,
-		"knee_r": 1.35,
+		"arm_l": -0.85,
+		"arm_r": -0.85,
+		"leg_l": 1.90,
+		"leg_r": 1.90,
+		"knee_l": 2.35,
+		"knee_r": 2.35,
 	}
 
 
-## Fall (sinking): flail - arms up over the head, legs trailing, one knee higher.
+## Fall (sinking): flail - arms up over the head, legs trailing, one knee higher. The hips
+## sit 0.10 u low (bent knees braced for the ground), so a touchdown finds both soles
+## inside the legs' reach and they plant instead of lifting off at once (D-ANIM-10).
 static func _pose_fall() -> Dictionary:
 	return {
+		"body_y": -0.10,
 		"torso": 0.10,
 		"head": 0.0,
 		"arm_l": 2.55,
@@ -1844,6 +1868,7 @@ func _render_animation(delta: float, alpha: float) -> void:
 	var on_ground: bool = _anim_next.grounded and not dash and not glide
 	if _anim_height == INF:
 		_anim_height = root_pos.y
+		_seat_snap = true
 	# Spread the vertical displacement of a stair riser over several render frames.
 	# Soles remain in world space while the body catches up to the new tread.
 	# (A 0.5 u riser over ~0.09 s: fast enough to read as a step, slow enough that the hips
@@ -1860,19 +1885,37 @@ func _render_animation(delta: float, alpha: float) -> void:
 	if on_ground and flat.length() > Locomotion.MIN_SPEED:
 		var dir := flat.normalized()
 		var ahead := Locomotion.tile_height(w, root_pos + dir * 0.5, root_pos.y + 0.55)
-		var behind := Locomotion.tile_height(w, root_pos - dir * 0.5, root_pos.y + 0.05)
+		# Both samples reach 0.55 u up: the sim's footprint stands the body on the highest
+		# ground under it, so going DOWN a 1:2 ramp the ground half a unit behind sits right
+		# at root + 0.05 and a +0.05 limit dropped it - the feed-forward read zero and the
+		# drawn body lagged up to 0.2 u above the slope (D-ANIM-8).
+		var behind := Locomotion.tile_height(w, root_pos - dir * 0.5, root_pos.y + 0.55)
 		if ahead != -INF and behind != -INF:
 			climb_rate = clampf(ahead - behind, -0.6, 0.6) * flat.length()
 	_rise_rate = lerpf(_rise_rate, climb_rate, 1.0 - exp(-delta / 0.10))
 	var feed := _rise_rate * ANIM_RISE_TIME if on_ground else 0.0
-	_anim_height = lerpf(_anim_height, root_pos.y + feed, 1.0 - exp(-delta / ANIM_RISE_TIME))
+	# The sim stands its 0.8 u square footprint on the HIGHEST ground under it, so on a 1:2
+	# ramp (or over a stair nosing) the body is held up to 0.2 u above the ground under its
+	# centre. Drawn there, the legs hang at full reach and never plant going downhill
+	# (review of v0.1.13-alpha.3). The drawn body is seated on the ground under its centre,
+	# by at most ANIM_SEAT_MAX, going DOWNHILL only (a climb keeps the D-ANIM-4 heights its
+	# fold-limit and step-up logic were tuned to); the sim position is untouched.
+	var seat := 0.0
+	if on_ground:
+		var centre := Locomotion.tile_height(w, root_pos, root_pos.y + 0.05)
+		if centre != -INF:
+			seat = clampf(root_pos.y - centre, 0.0, ANIM_SEAT_MAX) * _descent_weight
+	_anim_height = lerpf(_anim_height, root_pos.y + feed - seat, 1.0 - exp(-delta / ANIM_RISE_TIME))
 	if not on_ground and not _anim_prev.grounded:
 		_anim_height = move_toward(_anim_height, root_pos.y, absf(velocity.y) * delta)
 	player_model.position = Vector3(root_pos.x, _anim_height, root_pos.z)
 	player_model.rotation.y = lerp_angle(_anim_prev.yaw, _anim_next.yaw, alpha)
 	var k := 1.0 - exp(-delta / ANIM_BLEND_TIME)
 	var contact := 1.0 if on_ground else 0.0
-	_contact_weight = contact if _pose.is_empty() else lerpf(_contact_weight, contact, k)
+	# A touchdown sheds the airborne tuck faster than a take-off gathers it (0.05 s), so the
+	# landing frames show planted, bending legs rather than a fading tuck.
+	var settle := 1.0 - exp(-delta / 0.05) if contact > _contact_weight else k
+	_contact_weight = contact if _pose.is_empty() else lerpf(_contact_weight, contact, settle)
 	if absf(_contact_weight - contact) < 0.001:
 		_contact_weight = contact
 
@@ -1881,13 +1924,27 @@ func _render_animation(delta: float, alpha: float) -> void:
 	elif _land_clock >= 0.0:
 		_land_clock = _land_clock + delta if on_ground and _land_clock < LAND_TIME else -1.0
 	_was_airborne = not on_ground
+	if on_ground or dash or glide:
+		_air_rose = false
 	var target: Dictionary
 	if dash:
 		target = _pose_dash()
 	elif glide:
 		target = _pose_glide()
 	elif not on_ground:
-		target = _pose_jump() if velocity.y >= -0.4 else _pose_fall()
+		# The tuck holds over the apex and opens into the braced fall pose only late in a
+		# drop (a 12 u/s jump lands at -12 u/s): switching at -0.4 u/s put the trailing
+		# fall legs on every frame after the apex (review of 1b7bb7d). It also opens once
+		# the floor is within AIR_TUCK_CLEAR, so the legs reach for the ground before a
+		# touchdown (a short hop keeps the old apex switch and its braced landing).
+		# Only a jump that rose holds the tuck: a glide released or a ledge walked off
+		# drops straight into the fall pose.
+		if velocity.y > 0.4:
+			_air_rose = true
+		var floor_y := Locomotion.tile_height(w, root_pos, root_pos.y + 0.05) if w != null else -INF
+		var high := floor_y == -INF or root_pos.y - floor_y > AIR_TUCK_CLEAR
+		var tuck := velocity.y >= -0.4 or (_air_rose and high and velocity.y >= AIR_TUCK_VY)
+		target = _pose_jump() if tuck else _pose_fall()
 	else:
 		target = _pose_locomotion(root_pos, velocity, delta, k)
 	if not on_ground:
@@ -1919,7 +1976,18 @@ func _pose_locomotion(root_pos: Vector3, velocity: Vector3, delta: float, blend:
 	_climb_weight = lerpf(_climb_weight, rise, blend)
 	_descent_weight = lerpf(_descent_weight, Locomotion.descent(w, root_pos, direction), blend)
 	_side_weight = lerpf(_side_weight, absf(local_dir.x) if speed >= Locomotion.MIN_SPEED else 0.0, blend)
-	var gait := Locomotion.profile(speed, _run_speed, _climb_weight, _side_weight, _descent_weight)
+	# The cadence follows the descent over 0.25 s: a quicker re-time would move a foot
+	# between stance and swing in one frame.
+	_descent_pace = lerpf(_descent_pace, _descent_weight, 1.0 - exp(-delta / 0.25))
+	var gait := Locomotion.profile(speed, _run_speed, _climb_weight, _side_weight, _descent_pace)
+	# Touchdown: the gait restarts with the left foot at the start of its stance (the old
+	# phase could leave both feet mid-swing for 0.1 s after landing, so nothing took the
+	# weight), and the heel kick and swing lift are held back while the hips sink (passed
+	# as `down`), so the landing reads as a compression, not as the next stride.
+	var landing := _land_weight()
+	var touch := 1.0 - smoothstep(0.0, LAND_TIME, _land_clock) if _land_clock >= 0.0 else 0.0
+	if _land_clock == 0.0:
+		_anim_phase = 0.0
 	if speed < Locomotion.MIN_SPEED:
 		gait.x = 0.0
 		velocity = Vector3.ZERO
@@ -1929,7 +1997,11 @@ func _pose_locomotion(root_pos: Vector3, velocity: Vector3, delta: float, blend:
 	var target := _pose_idle(_breath_phase)
 	var run_pose := _pose_run(_anim_phase, gait.z)
 	var ahead := clampf(-local_dir.z, -0.35, 1.0) if speed >= Locomotion.MIN_SPEED else 0.0
-	target["torso"] = lerpf(target.torso, (float(run_pose.torso) - 0.06) * ahead
+	# On stairs and slopes the run lean eases off (to 0.4 of it): leaning, the torso pivots
+	# on its bottom centre and its front-bottom edge drops onto the high-stepping thigh,
+	# measured 0.07 u deep on 1 HU stairs at a run (D-ANIM-9).
+	var upright := 1.0 - 0.6 * maxf(_climb_weight, _descent_weight)
+	target["torso"] = lerpf(target.torso, (float(run_pose.torso) - 0.06) * ahead * upright
 			- 0.04 * _climb_weight + 0.05 * _descent_weight, moving)
 	target["twist"] = sin(_anim_phase) * lerpf(0.11, 0.19, gait.z) * moving * (1.0 - 0.7 * _side_weight)
 	target["head"] = float(target.head) * (1.0 - moving)
@@ -1941,6 +2013,7 @@ func _pose_locomotion(root_pos: Vector3, velocity: Vector3, delta: float, blend:
 	var forward := Vector3.FORWARD.rotated(Vector3.UP, yaw)
 	var bob := 0.0
 	var fold_lift := 0.0
+	var reach_drop := 0.0
 	var lift := float(_pose.get("body_y", target.body_y))
 	for side in 2:
 		var phase := fposmod(_anim_phase / TAU + side * 0.5, 1.0)
@@ -1949,17 +2022,50 @@ func _pose_locomotion(root_pos: Vector3, velocity: Vector3, delta: float, blend:
 		var hip := player_model.position + (hip_local + Vector3.UP * (Locomotion.HIP_RISE + lift)).rotated(
 				Vector3.UP, yaw)
 		var sole: Vector3 = _leg_rig.place_foot(side, rest, velocity, phase, gait, _climb_weight,
-				yaw, w, delta, hip, root_pos, _descent_weight)
+				yaw, w, delta, hip, root_pos, maxf(_descent_weight, touch))
+		if not _leg_rig.stance[side]:
+			# A swinging ankle stays SWING_DROP below its hip (the ground permitting: then the
+			# body steps up, below). Higher, the folded knee juts forward at waist height and
+			# the shin runs back under the leaning torso, through its front-bottom edge
+			# (D-ANIM-9, measured up to 0.08 u deep at a flat run, 0.13 u on stairs).
+			var ceiling := hip.y - Locomotion.SOLE_HEIGHT - Locomotion.SWING_DROP
+			if sole.y > ceiling:
+				var under := _leg_rig.floor_under(w, sole, _leg_rig.foot_yaw[side], sole.y + 0.01)
+				sole.y = maxf(maxf(ceiling, _leg_rig.swing_floor(side)), under + 0.002)
 		_feet[side] = (sole - player_model.position).rotated(Vector3.UP, -yaw)
+		var under := _leg_rig.floor_under(w, sole, _leg_rig.foot_yaw[side], sole.y + 0.05)
+		_leg_rig.floors[side] = under - player_model.position.y if under != -INF else -INF
+		# The slope under the sole: four samples 0.1 u around it. A step between samples
+		# (a stair nosing, a ledge) is not a slope: the boot stays level there.
+		_leg_rig.grades[side] = Vector3.ZERO
+		_leg_rig.slope_floor[side] = -INF
+		_leg_rig.seat_drop[side] = 0.0
+		var grad := Locomotion.slope_at(w, sole)
+		if grad != Vector3.ZERO:
+			_leg_rig.grades[side] = grad.rotated(Vector3.UP, -yaw)
+			_leg_rig.slope_floor[side] = Locomotion.tile_height(w, sole, sole.y + 0.3) 					- player_model.position.y
+		_leg_rig.seat_drop[side] = under - (_leg_rig.slope_floor[side] + player_model.position.y) 				if _leg_rig.slope_floor[side] != -INF and under != -INF else 0.0
 		if _leg_rig.stance[side]:
 			# A planted sole the lagging hips have caught up on (a fresh tread): the body
-			# rises so the knee never folds past its limit onto that tread.
-			fold_lift = maxf(fold_lift, Locomotion.fold_height(sole, hip))
+			# rises so the knee never folds past its limit onto that tread (on a slope, onto
+			# the boot as drawn: seated along it, seat_drop below the gait's plant).
+			# (Going down, a trailing foot left on the upper tread peels off instead of
+			# holding the hips up against the leading foot's step-down.)
+			var seated := sole
+			seated.y -= _leg_rig.seat_drop[side]
+			fold_lift = maxf(fold_lift, Locomotion.fold_height(seated, hip) * (1.0 - _descent_weight))
+			# Going down only: the leading foot is set down on the lower tread or the slope
+			# and the hips follow it (a climb keeps the D-ANIM-4 step-up alone). On a slope
+			# the boot is drawn seated along it, seat_drop below the gait's level-boot
+			# plant (pose_leg), and the hips follow THAT sole.
+			reach_drop = maxf(reach_drop, Locomotion.reach_drop(seated, hip) * smoothstep(0.1, 0.3, _descent_weight))
 		else:
 			# A swinging sole headed for a tread near hip height: the body steps up with
-			# it, so the thigh never comes up past level into the chest.
-			fold_lift = maxf(fold_lift, _leg_rig.swing_floor(side) + Locomotion.SOLE_HEIGHT
-					+ Locomotion.SWING_DROP - hip.y)
+			# it, so the thigh never comes up past level into the chest. (Over a slope the
+			# floor is read for a level boot; the boot drawn along the slope sits
+			# seat_drop lower, as do the hips.)
+			fold_lift = maxf(fold_lift, _leg_rig.swing_floor(side) - _leg_rig.seat_drop[side]
+					+ Locomotion.SOLE_HEIGHT + Locomotion.SWING_DROP - hip.y)
 		var key := "arm_l" if side == 0 else "arm_r"
 		var travel := (sole - rest).dot(forward)
 		var counter := clampf(-travel / 0.34, -1.0, 1.0) * lerpf(0.30, 0.79, gait.z)
@@ -1970,10 +2076,24 @@ func _pose_locomotion(root_pos: Vector3, velocity: Vector3, delta: float, blend:
 			bob = maxf(bob, pow(sin(PI * phase / gait.y), 2.0))
 	bob *= lerpf(0.024, 0.064, gait.z) * (1.0 - 0.90 * _climb_weight)
 	# Slopes and stairs: the hips sit lower so both soles stay inside the leg's reach.
-	var crouch := (0.10 * _climb_weight + 0.06 * _descent_weight) * moving
+	# On a slope the boots are drawn seated along it, about half a boot length times the
+	# grade below the gait's level-boot plants: the hips sit that much lower too, read
+	# from the ground under the body and eased over 0.25 s (no bob), or the seated feet
+	# would hang out of reach (D-ANIM-8).
+	var half_boot := _leg_rig.boots[0].get_aabb().size.z * 0.5 if _leg_rig.boots.size() == 2 else 0.0
+	var seat_target := half_boot * Locomotion.slope_at(w, root_pos).length()
+	_seat_crouch = seat_target if _seat_snap else lerpf(_seat_crouch, seat_target, 1.0 - exp(-delta / 0.25))
+	_seat_snap = false
+	var crouch := (0.10 * _climb_weight + 0.10 * _descent_weight) * moving + _seat_crouch
 	# A run sits lower than a walk: the hips drop with the run blend so the bob's peak
 	# (mid-stance, sole under the hip) still leaves the stance leg inside its reach.
-	target["body_y"] = lerpf(float(target.body_y), -0.065 - 0.05 * gait.z + bob, moving) 			- crouch - _land_dip() + _step_up(fold_lift, delta)
+	target["body_y"] = lerpf(float(target.body_y), -0.065 - 0.05 * gait.z + bob, moving) 			- crouch - _land_dip() + _step_up(fold_lift, delta) - _step_down(reach_drop, delta)
+	# The touchdown compression also reads in the upper body: the chest comes half upright
+	# over the bent knees (a leaning chest drops its hem onto the deep-bent knees, D-ANIM-9)
+	# and the arms come forward for balance, then both recover with the hips.
+	target["torso"] = float(target.torso) * (1.0 - 0.5 * landing)
+	for key in ["arm_l", "arm_r"]:
+		target[key] = lerpf(float(target[key]), -0.45, 0.8 * landing)
 	return target
 
 
@@ -1986,12 +2106,31 @@ func _step_up(demand: float, delta: float) -> float:
 	return _fold_lift
 
 
+## The body's step-down: follows a demanded drop quickly (a foot set down on a lower tread
+## holds for STEP_GRACE while the hips come to it), settles back over 0.12 s.
+func _step_down(demand: float, delta: float) -> float:
+	if demand > _reach_drop:
+		_reach_drop = minf(demand, _reach_drop + 12.0 * delta)
+	else:
+		_reach_drop = lerpf(_reach_drop, demand, 1.0 - exp(-delta / 0.12))
+	return _reach_drop
+
+
 ## The touchdown dip: the hips sink and recover over LAND_TIME (knees bend, the IK keeps
 ## the soles planted).
 func _land_dip() -> float:
+	return LAND_DEPTH * _land_weight()
+
+
+## 0..1 compression of the touchdown: a fast drop to the deepest point in LAND_DOWN, then
+## an eased recovery to standing by LAND_TIME.
+func _land_weight() -> float:
 	if _land_clock < 0.0:
 		return 0.0
-	return 0.11 * sin(PI * clampf(_land_clock / LAND_TIME, 0.0, 1.0))
+	if _land_clock < LAND_DOWN:
+		return sin(0.5 * PI * _land_clock / LAND_DOWN)
+	var t := clampf((_land_clock - LAND_DOWN) / (LAND_TIME - LAND_DOWN), 0.0, 1.0)
+	return 0.5 + 0.5 * cos(PI * t)
 
 
 func _cache_player_limbs(figure: Node3D) -> void:
@@ -2005,11 +2144,16 @@ func _cache_player_limbs(figure: Node3D) -> void:
 	_anim_height = INF
 	_climb_weight = 0.0
 	_descent_weight = 0.0
+	_descent_pace = 0.0
 	_rise_rate = 0.0
 	_fold_lift = 0.0
+	_reach_drop = 0.0
+	_seat_crouch = 0.0
+	_seat_snap = true
 	_side_weight = 0.0
 	_land_clock = -1.0
 	_was_airborne = false
+	_air_rose = false
 	_contact_weight = 0.0
 	_breath_phase = 0.0
 	for i in LIMB_NAMES.size():
@@ -2037,6 +2181,12 @@ func _apply_pose() -> void:
 		var under := Locomotion.tile_height(w, player_model.position, player_model.position.y + 0.3)
 		if under != -INF:
 			ground = under - player_model.position.y
+	# The torso block the legs keep clear of (posed first, below), and the thigh length
+	# buried in it at the hip by design (the hip pivot's height above its bottom face).
+	var hem := _limbs[0] as MeshInstance3D
+	var socket := 0.0
+	if hem != null:
+		socket = _limb_rest[4].y + _limb_mounts[4].y + Locomotion.HIP_RISE 				- (_limb_rest[0].y + hem.get_aabb().position.y)
 	for i in LIMB_NAMES.size():
 		var node = _limbs[i]
 		if node == null or not _pose.has(POSE_KEYS[i]):
@@ -2069,7 +2219,9 @@ func _apply_pose() -> void:
 		elif i >= 4 and _leg_rig.shins.size() == 2:
 			_leg_rig.pose_leg(i - 4, node, joint, mount, _feet[i - 4],
 					player_model.rotation.y, _contact_weight, angle,
-					float(_pose.get("knee_l" if i == 4 else "knee_r", 0.0)), ground)
+					float(_pose.get("knee_l" if i == 4 else "knee_r", 0.0)), ground,
+					hem.transform if hem != null else Transform3D(),
+					hem.get_aabb() if hem != null else AABB(), socket)
 
 
 ## The enemy body pass: every live runtime row gets ONE body - its bespoke view host when

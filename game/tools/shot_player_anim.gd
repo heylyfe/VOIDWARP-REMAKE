@@ -5,10 +5,12 @@ extends SceneTree
 ##   <godot> --path game --script res://tools/shot_player_anim.gd -- <abs_out_dir> [pose]
 ##
 ## Every pose runs the REAL controller (sim/controller.gd) on a staged course and the REAL
-## world.gd animation pass, then captures labelled frames from two fixed-offset cameras: a
-## side-on view (the gait) and a rear three-quarter view (the owner's angle; legs crossing
-## or swapping shows here). Writes <out>/<pose>/side_NN.png, <out>/<pose>/rear_NN.png and a
-## labelled sheet <out>/sheet_<pose>.png (top row side, bottom row rear). Cyclic poses
+## world.gd animation pass, then captures labelled frames from three fixed-offset cameras:
+## a side-on view (the gait), a rear three-quarter view (the owner's angle; legs crossing
+## or swapping shows here) and a third view per pose (_third_view: "downhill" for descents,
+## "xray" with a see-through torso for climbs, else "front"). Writes
+## <out>/<pose>/<view>_NN.png and a labelled sheet <out>/sheet_<pose>.png (rows: side, rear,
+## third view). The land sheet carries a red bar at the running hip height. Cyclic poses
 ## sample ONE gait cycle in FRAMES frames. Prints "SHOT <path>" per sheet and
 ## "SHOTANIM OK" / "SHOTANIM FAIL <why>". Named shot_*, so tests/run_all.gd skips it.
 
@@ -22,6 +24,20 @@ const FRAME := 1.0 / 120.0
 const FRAMES := 10
 const VIEW := Vector2i(640, 640)
 const THUMB := 256
+const NARROW_LAYER := 2         # render layer of the narrow sloped course (side, third, climb rear)
+const WIDE_LAYER := 4           # render layer of the full-width sloped course (descent rear)
+## Poses whose legs are drawn in proof colours (_leg_tint). The body material is UNSHADED
+## vertex colour (world.gd _player_body_material), so a light cannot help: the robe hem,
+## the thighs, the shins and the boots are all near-black and merge into one shape on the
+## sheet (review of 3a77375 - no knee, no boot edge, no left/right in the descent rear
+## views or the jump tuck). The tint is a material_override on the shot's own figure only.
+const LEG_TINT_POSES := ["down_ramp", "down_stairs", "jump", "land"]
+## [thigh, shin, boot] per side: left warm, right cool; each segment a different value, so
+## the knee and the ankle are colour edges and the two feet never share a colour.
+const LEG_TINT := [
+	[Color("#ffb066"), Color("#e2701e"), Color("#7a2e00")],
+	[Color("#8fe8ff"), Color("#1ea7d6"), Color("#004a78")],
+]
 
 ## name, kit, speed, move (world x/z input), course, start (x, z), yaw (facing, rad),
 ## warm (ticks before capture), span (s captured; 0 = one gait cycle), and an optional
@@ -40,7 +56,7 @@ const POSES := [
 	["up_stairs", "dasher", 9.0, Vector2(0, -1), "stairs", Vector2(0.5, 1.5), 0.0, 44, 0.0, ""],
 	["down_stairs", "dasher", 9.0, Vector2(0, 1), "stairs", Vector2(0.5, -16.5), PI, 44, 0.0, ""],
 	["jump", "dasher", 9.0, Vector2(0, -1), "flat", Vector2(0.5, 8.5), 0.0, 40, 0.75, "jump"],
-	["land", "dasher", 9.0, Vector2(0, -1), "flat", Vector2(0.5, 8.5), 0.0, 40, 0.45, "land"],
+	["land", "dasher", 9.0, Vector2(0, -1), "flat", Vector2(0.5, 8.5), 0.0, 40, 0.50, "land"],
 	["dash", "dasher", 9.0, Vector2(0, -1), "flat", Vector2(0.5, 8.5), 0.0, 40, 0.30, "dash"],
 	["glide", "glider", 9.0, Vector2(0, -1), "flat", Vector2(0.5, 8.5), 0.0, 40, 0.90, "glide"],
 	["idle", "dasher", 9.0, Vector2.ZERO, "flat", Vector2(0.5, 0.5), 0.0, 30, 3.0, ""],
@@ -49,6 +65,7 @@ const POSES := [
 var _out := ""
 var _fail := ""
 var _label: Label
+var _legend: Label
 
 
 class StillRig extends Node3D:
@@ -80,6 +97,13 @@ func _run() -> void:
 	_label.add_theme_color_override("font_outline_color", Color.BLACK)
 	_label.add_theme_constant_override("outline_size", 6)
 	overlay.add_child(_label)
+	_legend = Label.new()
+	_legend.position = Vector2(12, VIEW.y - 44)
+	_legend.add_theme_font_size_override("font_size", 20)
+	_legend.add_theme_color_override("font_color", Color("#ffe066"))
+	_legend.add_theme_color_override("font_outline_color", Color.BLACK)
+	_legend.add_theme_constant_override("outline_size", 6)
+	overlay.add_child(_legend)
 	root.add_child(overlay)
 	var shots := 0
 	for pose in POSES:
@@ -108,33 +132,27 @@ func _capture(pose: Array) -> bool:
 	root.add_child(world)
 	world.set_process(false)
 	var heights := _stage(world, pose)
+	var tinted: bool = name in LEG_TINT_POSES
+	if tinted:
+		_leg_tint(world)
+	_legend.text = "proof tint: L orange, R cyan; thigh > shin > boot" if tinted else ""
 	var input := {"move_x": int(pose[3].x), "move_z": int(pose[3].y), "buttons": 0,
 			"aim_x": 0, "aim_z": -1}
 	var action: String = pose[9]
 	var tick := 0
-	# Warm-up: run up to speed (and for "land", jump and come back down).
-	for i in int(pose[7]):
-		_tick(world, input, pose, i == int(pose[7]) - 30 and action == "land")
-		world._process(FRAME)
-		world._process(FRAME)
-		tick += 1
-	if action == "land":
-		var guard := 0
-		while not bool(world.ctl.grounded) and guard < 240:
-			_tick(world, input, pose, false)
-			world._process(FRAME)
-			world._process(FRAME)
-			guard += 1
+	# Warm-up: the test's own (run up to speed; for "land", jump and stop just before the
+	# touchdown), so the sheet and the gate see the same motion.
+	tick += AnimTest.warm_up(world, pose)
 	var span: float = pose[8]
 	if span <= 0.0:
 		var gait: Vector3 = Locomotion.profile(float(pose[2]), world._run_speed,
-				world._climb_weight, world._side_weight, world._descent_weight)
+				world._climb_weight, world._side_weight, world._descent_pace)
 		span = 1.0 / gait.x
 	var frames_total := int(round(span / FRAME))
 	var every := maxf(1.0, float(frames_total) / float(FRAMES))
 	var cams := _cameras(world, pose)
-	var side_imgs: Array[Image] = []
-	var rear_imgs: Array[Image] = []
+	var rows: Array = [[], [], []]
+	var third := _third_view(name)
 	var dir := _out.path_join(name)
 	DirAccess.make_dir_recursive_absolute(dir)
 	var next := 0.0
@@ -148,24 +166,56 @@ func _capture(pose: Array) -> bool:
 		if float(f) + 0.001 < next or shot >= FRAMES:
 			continue
 		next += every
-		for view in 2:
+		for view in 3:
 			var cam: Camera3D = cams[view]
 			cam.make_current()
-			_label.text = "%s   %s   %02d/%02d" % [name, "side" if view == 0 else "rear",
-					shot + 1, FRAMES]
+			var label: String = ["side", "rear", third][view]
+			_label.text = "%s   %s   %02d/%02d" % [name, label, shot + 1, FRAMES]
+			# The x-ray view draws the torso (and the arms, which hang in front of the hips
+			# from this angle) see-through, so a raised thigh in front of the body, or
+			# through it, can be told apart.
+			_xray(world, label == "xray")
 			await process_frame
 			await RenderingServer.frame_post_draw
 			var image := root.get_texture().get_image()
-			var path := dir.path_join("%s_%02d.png" % ["side" if view == 0 else "rear", shot])
+			var path := dir.path_join("%s_%02d.png" % [label, shot])
 			if image == null or image.save_png(path) != OK:
 				_fail = "failed to save %s" % path
 				world.free()
 				return false
 			image.resize(THUMB, THUMB, Image.INTERPOLATE_BILINEAR)
-			(side_imgs if view == 0 else rear_imgs).append(image)
+			rows[view].append(image)
 		shot += 1
+	_xray(world, false)
 	world.free()
-	return _sheet(name, side_imgs, rear_imgs)
+	return _sheet(name, rows)
+
+
+func _xray(world: World, on: bool) -> void:
+	var parts: Array = [world._limbs[0], world._limbs[2], world._limbs[3]]
+	parts.append_array(world._leg_rig.forearms)
+	for i in parts.size():
+		(parts[i] as GeometryInstance3D).transparency = (0.6 if i == 0 else 0.85) if on else 0.0
+
+
+## Proof aid, shot tool only: draws each leg's thigh, shin and boot in its own flat colour
+## (LEG_TINT) through material_override on this sheet's figure. The game's body material,
+## the pose and the sim are untouched; the override only replaces what these MeshInstances
+## draw while the sheet is shot (the figure is freed with the world after the pose).
+func _leg_tint(world: World) -> void:
+	for side in 2:
+		var parts: Array = [world._limbs[4 + side]]
+		if world._leg_rig.shins.size() == 2:
+			parts.append(world._leg_rig.shins[side])
+		if world._leg_rig.boots.size() == 2:
+			parts.append(world._leg_rig.boots[side])
+		for i in parts.size():
+			if parts[i] == null:
+				continue
+			var tint := StandardMaterial3D.new()
+			tint.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			tint.albedo_color = LEG_TINT[side][i]
+			(parts[i] as GeometryInstance3D).material_override = tint
 
 
 ## One 60 Hz sim tick through the real controller, then the world's own player pass.
@@ -195,7 +245,14 @@ func _stage(world: World, pose: Array) -> Dictionary:
 		for x in range(-12, 13):
 			tiles.append([x, z, hu, kind, 0])
 		heights[z] = hu
-		_add_tread(world, z, hu, kind == 4)
+		if course == "flat":
+			_add_tread(world, z, hu, kind == 4, false, 1)
+		else:
+			# Two drawings of a sloped course: the narrow strip for the side and third
+			# views (and a climb's rear view), the full-width course for a descent's
+			# rear view (_cameras).
+			_add_tread(world, z, hu, kind == 4, true, NARROW_LAYER)
+			_add_tread(world, z, hu, kind == 4, false, WIDE_LAYER)
 	world.w = Collision.make_world(tiles, [], [], {"dais": [0, 0, 0]})
 	world.ctl = Controller.new()
 	world.ctl.setup(pose[1], Controller.load_constants())
@@ -231,7 +288,17 @@ func _stage(world: World, pose: Array) -> Dictionary:
 	return heights
 
 
-func _add_tread(world: Node3D, z: int, hu: int, ramp: bool) -> void:
+## One visible tread (collision is the staged tile data, not these meshes). A ramp or
+## stair course is DRAWN only 1.2 u wide around the figure's line (the figure is 0.54 u
+## wide), so the level side view sees the slope / stair profile as a silhouette with the
+## soles on its outline, instead of a wall of treads hiding the feet (the 25 u course of
+## the v0.1.13-alpha.3 sheets) or a tread top whose near edge sits below the feet.
+## The rear three-quarter view of a DESCENT sees a full-width copy instead (WIDE_LAYER):
+## looking down the slope past the figure, the 1.2 u strip was a thin band below the
+## boots and the black boots stood dark-on-dark against the empty background (review of
+## 1b7bb7d); the wide course puts lit, striped surface behind every foot.
+func _add_tread(world: Node3D, z: int, hu: int, ramp: bool, narrow: bool, layer: int) -> void:
+	var width := 1.2 if narrow else 25.0
 	var part := MeshInstance3D.new()
 	var slab := BoxMesh.new()
 	var material := StandardMaterial3D.new()
@@ -239,14 +306,15 @@ func _add_tread(world: Node3D, z: int, hu: int, ramp: bool) -> void:
 	material.albedo_color = Color("#444e67") if z % 2 == 0 else Color("#5a6782")
 	part.material_override = material
 	if ramp:
-		slab.size = Vector3(25.0, 0.26, sqrt(1.25))
+		slab.size = Vector3(width, 0.26, sqrt(1.25))
 		part.rotation.x = atan(0.5)
 		part.position = Vector3(0.5, hu * 0.5 + 0.25, z + 0.5) - part.basis.y * 0.13
 	else:
 		var top := hu * 0.5
-		slab.size = Vector3(25.0, top + 1.0, 1.0)
+		slab.size = Vector3(width, top + 1.0, 1.0)
 		part.position = Vector3(0.5, (top - 1.0) * 0.5, z + 0.5)
 	part.mesh = slab
+	part.layers = layer
 	world.add_child(part)
 	# Stripes every 1 u across each tread: the stride and a sideways step read against them.
 	var dark := StandardMaterial3D.new()
@@ -254,42 +322,148 @@ func _add_tread(world: Node3D, z: int, hu: int, ramp: bool) -> void:
 	dark.albedo_color = Color("#2a3145")
 	var stripe := BoxMesh.new()
 	stripe.size = Vector3(0.04, 0.01, slab.size.z)
-	for x in range(-12, 13):
+	var half := int(width * 0.5)
+	for x in range(-half, half + 1):
 		var mark := MeshInstance3D.new()
 		mark.mesh = stripe
 		mark.material_override = dark
+		mark.layers = layer
 		mark.transform = part.transform * Transform3D(Basis.IDENTITY,
 				Vector3(float(x) - 0.5, slab.size.y * 0.5 + 0.006, 0.0))
 		world.add_child(mark)
 
 
-## Two cameras that hold a fixed offset from the figure (set from the pose's starting
-## facing, so a turn in place is seen turning): side-on from the figure's right, and a rear
-## three-quarter from behind and above (the angle of the owner's bad_leg_pose.png).
+## The third view of a pose: "downhill" for a descent (low, from the downhill side, so the
+## slope or the treads can never hide the feet), "xray" for a climb (high oblique with the
+## torso drawn see-through, so a raised thigh's depth against the body reads), else "front".
+static func _third_view(name: String) -> String:
+	if name in ["down_ramp", "down_stairs"]:
+		return "downhill"
+	if name in ["up_ramp", "up_stairs"]:
+		return "xray"
+	return "front"
+
+
+## Three cameras that hold a fixed offset from the figure (set from the pose's starting
+## facing, so a turn in place is seen turning): side-on from the figure's right, a rear
+## three-quarter from behind and above (the angle of the owner's bad_leg_pose.png), and the
+## pose's third view (_third_view). Ground poses follow the figure's height EXACTLY: a
+## lagging camera dropped the feet off the bottom of the frame on a descent (review of
+## v0.1.13-alpha.3). Ramps and stairs get a wider frame centred lower, so a foot reaching
+## down to the next tread stays in shot.
 func _cameras(world: World, pose: Array) -> Array:
-	var side := _FollowCam.new()
-	var rear := _FollowCam.new()
+	var name: String = pose[0]
 	var yaw: float = pose[6]
-	side.offset = Vector3(3.4, 0.55, 0.0).rotated(Vector3.UP, yaw)
-	rear.offset = Vector3(1.1, 1.5, 2.9).rotated(Vector3.UP, yaw)
+	var offsets := {
+		"downhill": Vector3(2.0, -0.15, -2.8),
+		"xray": Vector3(2.7, 1.5, -0.9),
+		"front": Vector3(2.0, 0.25, -2.8),
+	}
+	# On ramps and stairs the side camera is LEVEL with its aim point: with the narrow
+	# course the tread and slope profile is then a clean silhouette and a sole on it sits
+	# exactly on its outline (a camera looking down drew a sole standing mid-tread below the
+	# tread's near edge, so contact could not be judged).
+	var sloped: bool = pose[4] != "flat"
+	var side := Vector3(3.4, 0.0 if sloped else 0.55, 0.0)
+	# A descent's rear camera stands in the figure's LEFT rear quarter, 2.7 u out (azimuth
+	# ~37 deg off straight behind, 1.8 u over the aim point, sight line ~34 deg down).
+	# Chosen from a sweep of 11 rear offsets (re-review of 642b41a): straight behind
+	# (0, 1.8, 2.7) shows the boots side by side with no depth at the crossing; low
+	# (y 1.0) loses the feet behind the slope; high (-1.2, 2.6, 2.0) loses the left boot
+	# under the robe in frames 5-7; ~27 deg (-1.2, 1.8, 2.4) keeps both boots but they read
+	# adjacent at the crossing; 45 deg and wider (-1.9, 1.8, 1.9) shows the fore-aft offset
+	# best but hides the right boot behind the left leg in frames 1-3 and 9-10 (and 3-6 of
+	# the stairs). At ~37 deg both boots show in all 10 frames of both descents and the
+	# crossing reads as one boot passing ahead of the other. No rear angle shows the legs
+	# fully apart in every frame. From
+	# the right rear quarter (1.1, 2.7, 2.9) the near right (cyan) leg, the robe and the
+	# back-swinging arm hid the far left (orange) boot through the crossing (rear frames 5-7
+	# of down_ramp, 8 of down_stairs; re-review of cf9aeb1); from the left both boots sit
+	# apart below the hem in every frame. The 2.4 u setback keeps the ground behind the
+	# figure 1.2 u under a 2.5 u eye, so the uphill tread still clears the boots (review of
+	# 1b7bb7d), and they sit against the wide course (_add_tread) below them.
+	var descent: bool = name in ["down_ramp", "down_stairs"]
+	var rear := Vector3(-1.6, 1.8, 2.15) if descent else Vector3(1.1, 1.5, 2.9)
+	# The jump's side camera swings ~23 deg toward the front and drops to 0.1 u over the
+	# aim point (from 0.55): from square side-on the near right leg stacked over the far
+	# one and the robe hem hid the knee (re-review of cf9aeb1). From here the thigh, the
+	# thigh/shin break and the boot show under the hem with the left leg beside the right.
+	# Lower than 0.1 u and the ground's near edge cuts the takeoff frame's boots.
+	if name == "jump":
+		side = Vector3(3.1, 0.1, -1.3)
+	var views := [side, rear, offsets[_third_view(name)]]
 	# An airborne pose outruns a 2.4 u frame: the arc lifts the figure clean out of the top
-	# of the shot, so the pose cannot be judged. Widen the frame and follow the height
-	# faster for those poses only; the ground poses keep the tight framing.
-	var airborne: bool = pose[0] in ["jump", "land", "glide"]
-	for cam in [side, rear]:
+	# of the shot. Widen the frame and follow the height with a lag for those poses only.
+	var airborne: bool = name in ["jump", "glide"]
+	var cams: Array = []
+	for index in views.size():
+		var offset: Vector3 = views[index]
+		var cam := _FollowCam.new()
 		cam.figure = world.player_model
+		cam.offset = (offset as Vector3).rotated(Vector3.UP, yaw)
 		cam.projection = Camera3D.PROJECTION_ORTHOGONAL
-		cam.size = 3.8 if airborne else 2.4
-		cam.lag = 0.80 if airborne else 0.3
+		cam.size = 3.8 if airborne else (3.1 if sloped else 2.4)
+		cam.lag = 0.80 if airborne else 1.0
+		cam.aim = 0.85 if not sloped else 0.70
+		# The deployed glider's canopy rides ~1.9 u over the boots: in a 3.8 u frame aimed
+		# 0.85 u up it crossed the top edge of every cell from frame 6 on (review of
+		# 1b7bb7d). A 4.4 u frame aimed 1.35 u up holds canopy and boots together.
+		if name == "glide":
+			cam.size = 4.4
+			cam.aim = 1.35
+		if sloped:
+			var wide := descent and index == 1
+			cam.cull_mask &= ~(NARROW_LAYER if wide else WIDE_LAYER)
 		world.add_child(cam)
 		cam.follow()
-	return [side, rear]
+		cams.append(cam)
+	if name == "land":
+		_hip_marker(world)
+	return cams
+
+
+## Land: a thin red bar at the running waistline (the torso block's lower edge in a steady
+## run), travelling with the figure, so the touchdown drop below it and the recovery back
+## up to it can be read off every frame.
+func _hip_marker(world: World) -> void:
+	var bar := _HipBar.new()
+	bar.figure = world.player_model
+	var torso := world._limbs[0] as MeshInstance3D
+	bar.height = world._limb_rest[0].y + torso.get_aabb().position.y - 0.065 - 0.05
+	# A cross (one bar across the figure, one along it), so the side view and the rear
+	# view each see a bar edge-on as a horizontal line.
+	var mesh := BoxMesh.new()
+	mesh.size = Vector3(1.4, 0.014, 0.014)
+	var along := MeshInstance3D.new()
+	var mesh_along := BoxMesh.new()
+	mesh_along.size = Vector3(0.014, 0.014, 1.4)
+	along.mesh = mesh_along
+	var material := StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.albedo_color = Color("#ff5a5a")
+	material.no_depth_test = true
+	bar.mesh = mesh
+	bar.material_override = material
+	along.material_override = material
+	bar.add_child(along)
+	world.add_child(bar)
+
+
+class _HipBar extends MeshInstance3D:
+	var figure: Node3D
+	var height := 0.0
+
+	func _process(_delta: float) -> void:
+		if figure != null:
+			position = figure.position + Vector3.UP * height
+			rotation.y = figure.rotation.y
 
 
 class _FollowCam extends Camera3D:
 	var figure: Node3D
 	var offset := Vector3.ZERO
-	var lag := 0.3
+	var lag := 1.0
+	var aim := 0.85
 	var _y := INF
 
 	func _process(_delta: float) -> void:
@@ -298,24 +472,23 @@ class _FollowCam extends Camera3D:
 	func follow() -> void:
 		if figure == null:
 			return
-		# Follow x/z exactly; height with a short lag, so a climb or a jump still reads.
+		# Follow x/z exactly; height exactly on the ground, with a lag in the air.
 		var feet := figure.position
 		_y = feet.y if _y == INF else lerpf(_y, feet.y, lag)
-		var target := Vector3(feet.x, _y + 0.85, feet.z)
+		var target := Vector3(feet.x, _y + aim, feet.z)
 		position = target + offset
 		look_at(target)
 
 
-func _sheet(name: String, side: Array[Image], rear: Array[Image]) -> bool:
-	var sheet := Image.create(THUMB * FRAMES, THUMB * 2, false, Image.FORMAT_RGBA8)
+func _sheet(name: String, rows: Array) -> bool:
+	var sheet := Image.create(THUMB * FRAMES, THUMB * rows.size(), false, Image.FORMAT_RGBA8)
 	sheet.fill(Color.BLACK)
-	for i in side.size():
-		var s: Image = side[i]
-		var r: Image = rear[i]
-		s.convert(Image.FORMAT_RGBA8)
-		r.convert(Image.FORMAT_RGBA8)
-		sheet.blit_rect(s, Rect2i(Vector2i.ZERO, s.get_size()), Vector2i(i * THUMB, 0))
-		sheet.blit_rect(r, Rect2i(Vector2i.ZERO, r.get_size()), Vector2i(i * THUMB, THUMB))
+	for row in rows.size():
+		for i in (rows[row] as Array).size():
+			var image: Image = rows[row][i]
+			image.convert(Image.FORMAT_RGBA8)
+			sheet.blit_rect(image, Rect2i(Vector2i.ZERO, image.get_size()),
+					Vector2i(i * THUMB, row * THUMB))
 	var path := _out.path_join("sheet_%s.png" % name)
 	if sheet.save_png(path) != OK:
 		_fail = "failed to save %s" % path
