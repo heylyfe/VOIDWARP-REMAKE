@@ -216,6 +216,9 @@ var player_model: Node3D = null # the T-015 player figure, feet on the controlle
 # U4 test seam: the path build() loads the figure from. PLAYER_MODEL in every real run;
 # a test points it at a path that does not exist to prove the blocky fallback.
 var player_model_path := PLAYER_MODEL
+# U4 test seam: the player data file build() reads. res://data/player.json in every
+# real run; a test points it at a missing path to prove the build still runs.
+var player_data_path := "res://data/player.json"
 # U4: the crash breadcrumb (app/run_breadcrumb.gd) and its path. The path is a seam so
 # a test writes to its own file instead of the owner's user://last_run.txt.
 var breadcrumb: RefCounted = null
@@ -637,8 +640,10 @@ func build(seed_value: int, level: int, p_ledger: Dictionary = {}) -> bool:
 	_cache_player_limbs(player_model)
 	_pose = {}
 	_anim_phase = 0.0
+	# U4: the player data file is a guarded read - a missing player.json falls back to
+	# the default run speed instead of erroring inside build().
 	var pstats: Variant = JSON.parse_string(
-			FileAccess.get_file_as_string("res://data/player.json"))
+			AssetLoadScript.text(player_data_path))
 	if pstats is Dictionary and (pstats as Dictionary).has("shared_kit"):
 		_run_speed = float((pstats["shared_kit"] as Dictionary).get("run_speed", 9.0))
 
@@ -1419,6 +1424,13 @@ func is_complete() -> bool:
 ## Free everything build() created and reset the sim references. Safe to call twice; the
 ## app calls it before queue_free-ing the node.
 func teardown() -> void:
+	# U4 (Terra finding 3): release every view's surface-override materials BEFORE the
+	# frees. A MeshInstance3D's override Refs die in ~MeshInstance3D, but its RS instance
+	# is freed later (~VisualInstance3D), whose update still reads the surface-material
+	# RIDs - freeing with the overrides still set leaves a dangling RID and the dummy
+	# renderer prints `ERROR: Parameter "material" is null` from this loop. Clearing them
+	# first sends RID() to the RS, so the free path never sees a dead material RID.
+	AssetLoadScript.release_materials(self)
 	for child in get_children():
 		child.free()
 	_mesh_instances.clear()
@@ -1428,11 +1440,13 @@ func teardown() -> void:
 	for eid in _prebuilt_views.keys():
 		for host in _prebuilt_views[eid]:
 			if is_instance_valid(host):
+				AssetLoadScript.release_materials(host)   # U4: same dangling-RID fix
 				host.free()
 	_prebuilt_views.clear()
 	_warm_pinned.clear()
 	for wr in _warm_refs:
 		if is_instance_valid(wr):
+			AssetLoadScript.release_materials(wr)         # U4: same dangling-RID fix
 			wr.free()
 	_warm_refs.clear()
 	ctl = null
@@ -2714,8 +2728,10 @@ func _make_enemy_view(e: Dictionary):
 
 func _make_board(e: Dictionary):
 	var folder := "res://content/enemies/%s" % str(e["id"])
+	# U4: the sheet is a guarded data-file read - a missing sprites.json is reported once
+	# through asset_load and the billboard is skipped, never an unguarded open error.
 	var doc: Variant = JSON.parse_string(
-			FileAccess.get_file_as_string(folder + "/sprites.json"))
+			AssetLoadScript.text(folder + "/sprites.json"))
 	if not (doc is Dictionary):
 		push_warning("world: sprites.json unreadable for %s; billboard skipped" % str(e["id"]))
 		return null
@@ -2755,7 +2771,7 @@ func _prebuild_enemy_views() -> void:
 			continue
 		_warm_pinned[eid] = true
 		var doc: Variant = JSON.parse_string(
-				FileAccess.get_file_as_string(folder + "/sprites.json"))
+				AssetLoadScript.text(folder + "/sprites.json"))
 		if doc is Dictionary:
 			var bd = BillboardScript.new()
 			bd.setup_from_sheet(doc, folder)

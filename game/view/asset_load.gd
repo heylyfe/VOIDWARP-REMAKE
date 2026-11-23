@@ -3,7 +3,7 @@ extends RefCounted
 # view/asset_load.gd - the one place a missing asset is reported (U4, cycle 8).
 #
 # Terra's bug hunt (game/out/BUGHUNT_terra.md) found godot.log carrying "instantiate on
-# null" for res://assets/models/player_figure.glb when the import cache was missing. A
+# null" for the player figure model when the import cache was missing. A
 # missing asset must never crash the game, and it must never be silent either: a silent
 # fallback hides a broken export until the owner reports "the player is invisible".
 #
@@ -86,3 +86,47 @@ static func script_module(path: String) -> Script:
 		_report(path, "script")
 		return null
 	return res as Script
+
+
+## A data file's text (a JSON document under res://data/ or res://content/), or "".
+## The caller parses and falls back; a missing file is reported once and never fatal.
+static func text(path: String) -> String:
+	if not ResourceLoader.exists(path):
+		_report(path, "data file")
+		return ""
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		_report(path, "data file")
+		return ""
+	var out := f.get_as_text()
+	f.close()
+	return out
+
+
+## U4 (Terra finding 3, the teardown null-material error). Clears every surface
+## override material under root by sending RID() to the rendering server.
+##
+## Why this exists: a MeshInstance3D's surface-override Refs are released by
+## ~MeshInstance3D, but the rendering-server instance is freed later, by
+## ~VisualInstance3D -> free_rid -> instance_free, whose update_dirty_instances() still
+## reads the instance's surface-material RIDs. Freeing a node whose overrides are still
+## set therefore leaves the RS instance holding a DANGLING material RID, and the dummy
+## renderer prints `ERROR: Parameter "material" is null` at
+## material_get_instance_shader_parameters from the free (world.gd teardown backtrace).
+## Clearing the overrides BEFORE the free replaces those RIDs with a valid null, which
+## the update path guards - the error stops because the dangling RID no longer exists,
+## not because anything is suppressed. (material_override / material_overlay need no
+## help: ~GeometryInstance3D clears them itself, before the RS instance is freed.)
+static func release_materials(root: Node) -> void:
+	if root == null:
+		return
+	var stack: Array = [root]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		for c in n.get_children():
+			stack.push_back(c)
+		if n is MeshInstance3D:
+			var mi := n as MeshInstance3D
+			if mi.mesh != null:
+				for s in mi.mesh.get_surface_count():
+					mi.set_surface_override_material(s, null)

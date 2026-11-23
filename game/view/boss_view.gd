@@ -37,6 +37,9 @@ var _bar: ProgressBar
 var _title: Label
 var _overlay: Control
 var _gift_model: PackedScene
+# U4 test seam: the path the thrown gifts load from. GiftsView.GOLD_MODEL in every
+# real run; a test points it at a missing path to prove the arena still runs.
+var gift_model_path := GiftsView.GOLD_MODEL
 var _gifts: Dictionary = {}
 var _balls: Dictionary = {}
 var _marker: MeshInstance3D = null
@@ -53,6 +56,16 @@ var bankai_bounds := Rect2()
 var bankai_hit_tick := 1290
 
 
+
+# U4 (Terra finding 3): release this view's surface-override materials before the node
+# is destroyed, on EVERY free path (the world's teardown or a direct free()). A
+# MeshInstance3D's override Refs die before its rendering-server instance is freed, so
+# freeing with the overrides still set leaves a dangling material RID and the dummy
+# renderer prints `ERROR: Parameter "material" is null`; clearing them here first is
+# the ownership fix (see asset_load.gd release_materials).
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE:
+		AssetLoadScript.release_materials(self)
 func setup(target: Vector3, sprite_height: float, canvas: CanvasLayer,
 		floor_y: float = 0.0, grace_ticks: int = 60) -> void:
 	_floor_y = floor_y
@@ -67,7 +80,7 @@ func setup(target: Vector3, sprite_height: float, canvas: CanvasLayer,
 	if _normal != null:
 		_sprite.pixel_size = sprite_height / float(_normal.get_height())
 	_set_texture(_normal)
-	_gift_model = AssetLoadScript.scene(GiftsView.GOLD_MODEL)
+	_gift_model = AssetLoadScript.scene(gift_model_path)
 
 	_overlay = Control.new()
 	_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -244,6 +257,7 @@ func on_events(events: Array) -> void:
 				_overlay.hide()
 				_clear_balls()
 				for gift in _gifts.values():
+					AssetLoadScript.release_materials(gift)   # U4 dangling-RID fix
 					gift.free()
 				_gifts.clear()
 			"arena_exited":
@@ -252,6 +266,7 @@ func on_events(events: Array) -> void:
 				_clear_balls()
 				_release_bankai()
 				for gift in _gifts.values():
+					AssetLoadScript.release_materials(gift)   # U4 dangling-RID fix
 					gift.free()
 				_gifts.clear()
 			"boss_gift_spawned":
@@ -266,6 +281,7 @@ func on_events(events: Array) -> void:
 					_gifts[event["id"]].position = event["position"]
 			"boss_gift_removed":
 				if _gifts.has(event["id"]):
+					AssetLoadScript.release_materials(_gifts[event["id"]])   # U4 dangling-RID fix
 					_gifts[event["id"]].free()
 					_gifts.erase(event["id"])
 

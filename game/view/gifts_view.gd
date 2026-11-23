@@ -102,6 +102,16 @@ var _tile_key: Array = []
 ## sim's gift state (sim/gifts.gd create()). Re-entrant: a second setup() (a
 ## second level on the same node) drops the previous level's nodes first,
 ## exactly as view/tripmine_view.gd setup() does.
+
+# U4 (Terra finding 3): release this view's surface-override materials before the node
+# is destroyed, on EVERY free path (the world's teardown or a direct free()). A
+# MeshInstance3D's override Refs die before its rendering-server instance is freed, so
+# freeing with the overrides still set leaves a dangling material RID and the dummy
+# renderer prints `ERROR: Parameter "material" is null`; clearing them here first is
+# the ownership fix (see asset_load.gd release_materials).
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE:
+		AssetLoadScript.release_materials(self)
 func setup(level: Dictionary, gifts_state: RefCounted) -> void:
 	_gifts = gifts_state
 	_time = 0.0
