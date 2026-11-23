@@ -217,8 +217,8 @@ func _test_no_public_preload(f: Array[String]) -> void:
 			# preload() is compile-time: no LINE anywhere may preload the panel
 			for line in text.split("\n", false):
 				if line.contains("preload(") and line.contains("view/tester/"):
-					f.append("tester: %s preloads the tester panel on a line -"
-							+ " it must be load()-only: %s"
+					f.append(("tester: %s preloads the tester panel on a line -"
+							+ " it must be load()-only: %s")
 							% [path, line.strip_edges()])
 
 
@@ -382,8 +382,9 @@ func _test_panel_enemy_list_and_spawn(f: Array[String]) -> void:
 		loading.advance(0.25)
 		guard += 1
 	if app.state() != "WORLD" or app._world == null:
-		f.append("spawn: the tester build never reached a live WORLD level (state=%s after"
-				+ " %d advances) - the boot itself is broken" % [str(app.state()), guard])
+		f.append(("spawn: the tester build never reached a live WORLD level (state=%s"
+				+ " after %d advances) - the boot itself is broken")
+				% [str(app.state()), guard])
 		root.remove_child(app)
 		app.free()
 		return
@@ -487,8 +488,8 @@ func _report_list_geometry(f: Array[String], panel, root: Window) -> void:
 	# (a) the failure mode itself: no Window-mode node in the enemy-picking subtree
 	var pick_win := _first_window_under(panel._enemy_host)
 	if pick_win != null:
-		f.append("spawn: the enemy picker involves a popup Window (%s) - D-T2-11: choosing"
-				+ " an enemy must happen in the panel, no Window can take part"
+		f.append(("spawn: the enemy picker involves a popup Window (%s) - D-T2-11:"
+				+ " choosing an enemy must happen in the panel, no Window can take part")
 				% str(pick_win.name))
 	var scroll: ScrollContainer = panel._layer.get_child(0)
 	var avail := float(scroll.get_rect().size.x)
@@ -500,8 +501,8 @@ func _report_list_geometry(f: Array[String], panel, root: Window) -> void:
 	var host_min: Vector2 = panel._enemy_host.get_combined_minimum_size()
 	var list_min: Vector2 = panel._content.get_combined_minimum_size()
 	if host_min.y > panel.LIST_CAP_H + 0.5:
-		f.append("spawn: the enemy list viewport grew to %d px - it must stay bounded at %d"
-				+ " px so the spawn buttons under it are on screen at any window size"
+		f.append(("spawn: the enemy list viewport grew to %d px - it must stay bounded"
+				+ " at %d px so the spawn buttons under it are on screen at any window size")
 				% [int(host_min.y), int(panel.LIST_CAP_H)])
 	var rows: int = panel._content.get_child_count()
 	# every row carries at least LIST_ROW_H px of list content: a list that did not hold
@@ -524,8 +525,8 @@ func _report_list_geometry(f: Array[String], panel, root: Window) -> void:
 	# inside the scroll's wheel range.
 	if rows > 0 and list_min.y <= host_min.y + 0.5 \
 			and float(rows) * panel.LIST_ROW_H > panel.LIST_CAP_H:
-		f.append("spawn: a %d-row list claims to fit its %d-px viewport - the bound or the"
-				+ " content height is lying, one of the two must give" % [rows,
+		f.append(("spawn: a %d-row list claims to fit its %d-px viewport - the bound or"
+				+ " the content height is lying, one of the two must give") % [rows,
 				int(host_min.y)])
 	# (b) the row-fit rule at both resolutions the owner runs
 	var had_size: Vector2i = root.size
@@ -557,9 +558,9 @@ func _rows_fit_column(f: Array[String], panel, avail: float, res: Vector2i) -> v
 				var kc := k as Control
 				parts.append("%s[%s] min=%d" % [str(kc.name), str(kc.get("text")),
 					int(kc.get_combined_minimum_size().x)])
-			f.append("spawn: at %dx%d a panel row is %d px wide inside the %d-px column"
-					+ " - it is cut off (row %s: %s)" % [res.x, res.y, int(rw), int(avail),
-					str(row.name), " | ".join(parts)])
+			f.append(("spawn: at %dx%d a panel row is %d px wide inside the %d-px column"
+					+ " - it is cut off (row %s: %s)") % [res.x, res.y, int(rw),
+					int(avail), str(row.name), " | ".join(parts)])
 
 
 ## The first Window-mode node anywhere under p_node (null when there is none) - the
@@ -610,16 +611,17 @@ func _panel_actions_regression(f: Array[String], panel, world, app) -> void:
 		if bool(g0.call("present", i)):
 			present0 += 1
 	if present0 < 2:
-		f.append("panel: the level carries %d present gifts - the gift leg cannot pin the"
-				+ " queued job on this level" % present0)
+		f.append(("panel: the level carries %d present gifts - the gift leg cannot pin"
+				+ " the queued job on this level") % present0)
 	else:
 		var before_col := _gift_collected_count(world)
 		panel._gift_spin.value = 1
 		panel._give_gifts()
 		world.step(SPAWN_DT)
 		if not str(panel._status_line.text).begins_with("collected 1"):
-			f.append("panel: GIVE N GIFTS left the status line at \"%s\" - the queued tick"
-					+ " job never ran in the world's step" % str(panel._status_line.text))
+			f.append(("panel: GIVE N GIFTS left the status line at \"%s\" - the queued"
+					+ " tick job never ran in the world's step")
+					% str(panel._status_line.text))
 		if _gift_collected_count(world) != before_col + 1:
 			f.append("panel: the queued gift collect never reached the bitset (%d -> %d)"
 					% [before_col, _gift_collected_count(world)])
@@ -708,8 +710,8 @@ func _skip_level_action(f: Array[String], panel, app) -> void:
 	var lv := int(app._world.call("level_number"))
 	panel._skip_level()
 	if str(app.state()) != "LOBBY" or app._lobby == null:
-		f.append("panel: SKIP LEVEL left the app in state %s with lobby %s - the"
-				+ " Antechamber never opened for level %d"
+		f.append(("panel: SKIP LEVEL left the app in state %s with lobby %s - the"
+				+ " Antechamber never opened for level %d")
 				% [str(app.state()), str(app._lobby), lv])
 ## (b) of the ask, the registry LOOP: for every id the registry reports, pick it in the
 ## panel's own list and drive the panel's own spawn path - once through SPAWN AHEAD
@@ -721,8 +723,8 @@ func _spawn_every_registry_enemy(f: Array[String], panel, world, p_at_cursor: bo
 	var api: RefCounted = panel._api()
 	var kind := "at the cursor" if p_at_cursor else "ahead"
 	if not world.is_inside_tree():
-		f.append("spawn: the level died BEFORE the %s pass - an earlier pin broke it, and"
-				+ " garbage reads must not fake a pass" % kind)
+		f.append(("spawn: the level died BEFORE the %s pass - an earlier pin broke it,"
+				+ " and garbage reads must not fake a pass") % kind)
 		return
 	for id in api.enemy_ids():
 		var id_s := str(id)
@@ -736,8 +738,8 @@ func _spawn_every_registry_enemy(f: Array[String], panel, world, p_at_cursor: bo
 		var rows: Array = world.rt.enemies
 		var after := _rows_of(world, id_s)
 		if after != before + 1:
-			f.append("spawn: %s (%s) never reached the runtime by id (%d rows before, %d"
-					+ " after)" % [id_s, kind, before, after])
+			f.append(("spawn: %s (%s) never reached the runtime by id (%d rows before,"
+					+ " %d after)") % [id_s, kind, before, after])
 			continue
 		var row: Dictionary = rows[rows.size() - 1]
 		if str(row["id"]) != id_s:
@@ -794,8 +796,8 @@ func _spawn_peter_through_boss_path(f: Array[String], panel, world) -> void:
 	if not bool(boss.get("arena_entered")):
 		f.append("spawn: the Peter row never entered the boss arena on its tick hook")
 	if world.rt.enemies.size() != rt_rows_before:
-		f.append("spawn: the Peter row reached the ENEMY RUNTIME (rows %d -> %d) - he"
-				+ " rides the boss machinery, not the runtime"
+		f.append(("spawn: the Peter row reached the ENEMY RUNTIME (rows %d -> %d)"
+				+ " - he rides the boss machinery, not the runtime")
 				% [rt_rows_before, world.rt.enemies.size()])
 	if _rows_of(world, SPAWN_PETER_ID) != 0:
 		f.append("spawn: a \"%s\" enemy row exists in the runtime - Peter is boss content"
