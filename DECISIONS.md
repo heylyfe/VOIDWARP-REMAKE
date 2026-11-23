@@ -8613,3 +8613,10 @@ squashes to 35 % in 0.06 s and springs back through ~1.19x (settled by 0.9 s), t
 0.45 u to 2.1 u over 0.45 s. Audio: `player/jump_pad` (synth_cues.gd seed 24, 0.55 s) - a 140 -> 620 Hz
 rising sine with a decaying 26 Hz wobble over a 70 Hz thump, played on the `jump_pad_launch` event. No
 first-use hint (optional in the spec). Screenshot proof: tools/shot_jump_pad.gd (windowed).
+
+## D-T8A-1 (2026-11-23) Boss contract and seeded rolls
+
+The owner asked for "Peter Griffin boss fight at level 10 (teleport to arena, first person gift throwing 1 dmg / 5% crit 5 dmg, 250 HP, bowling ball + green fn basketball attacks, laugh on death, 1/1000 Bankai easter egg using game/view/cinematics/bankai_gift_animation.gd, beacon + 300 gold after the kill)".
+Boss attack cadence, gift tuning and arena dimensions live in boss.json. Bankai uses
+one draw keyed by run seed and level. Crits use a separate draw keyed by the shot
+tick and run seed. The arena uses packed floor tiles assembled outside voidgen.
