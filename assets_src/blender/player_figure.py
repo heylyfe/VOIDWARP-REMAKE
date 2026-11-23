@@ -2,6 +2,7 @@
 # PlayerBody is at the feet. The six limb meshes retain their authored joint
 # origins so the view can rotate them. Head details inherit the neck rotation.
 # The hat terminates at Z = 1.80 u in the rest pose.
+import json
 import math
 import os
 import sys
@@ -10,6 +11,10 @@ from mathutils import Vector
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import t015_common as C
+
+with open(os.path.join(C.ROOT, "game", "data", "player_figure_refinement.json"),
+          encoding="utf-8") as data_file:
+    refinement = json.load(data_file)
 
 C.begin()
 bpy = C.bpy
@@ -75,9 +80,9 @@ def head(mesh):
 
 def brim(mesh):
     front, side, light = tones(mesh, "hat")
-    layers = [(0.251, 0.193, -0.109), (0.263, 0.202, -0.090),
-              (0.255, 0.193, -0.067)]
-    loft(mesh, [ring(x, y, z, slope=-0.17, power=0.62, count=16) for x, y, z in layers],
+    layers = [ring(x, y, z, slope=-0.17, power=refinement["brim_corner_power"], count=16)
+              for x, y, z in refinement["brim_profile"]]
+    loft(mesh, layers,
          lambda i: front if i < 8 else side, light, side)
 
 
@@ -85,19 +90,19 @@ def hat(mesh):
     front, side, light = tones(mesh, "hat")
     band = mesh.col("player_band")
     band_side = mesh.col("player_band_side")
-    layers = [(0.131, -0.073, -0.014), (0.112, -0.014, -0.025),
-              (0.047, 0.285, -0.065), (0.035, 0.327, -0.069),
-              (0.012, 0.400, -0.076)]
+    layers = refinement["cone_profile"]
     rings = [ring(r, r * 0.92, z, center_y=y, count=16) for r, z, y in layers]
     for i, (lower, upper) in enumerate(zip(rings, rings[1:])):
         for j in range(len(lower)):
             k = (j + 1) % len(lower)
-            if i == 2:
+            if i == refinement["cone_band_section"]:
                 color = band if j < 8 else band_side
+            elif i >= refinement["cone_recess_section"]:
+                color = side
             else:
                 color = light if 2 <= j < 6 else front if j < 9 else side
             face(mesh, [lower[j], lower[k], upper[k], upper[j]], color)
-    face(mesh, rings[-1], front)
+    face(mesh, rings[-1], side)
 
 
 def tapered_branch(mesh, knots, colors):
@@ -150,6 +155,10 @@ def ruff(mesh):
             fringe = y > 0.63
             spread = 0.034 + 0.014 * math.sin(i * 4.1 + layer)
             drop = (0.071 if fringe else 0.152) + 0.031 * math.cos(i * 2.9)
+            if layer == 0 and not fringe:
+                drop += refinement["hair_lower_layer_drop"]
+            if layer > 0:
+                spread += refinement["hair_upper_layer_spread"]
             z = -0.088 + layer * 0.082 - y * 0.027
             tapered_branch(mesh, [
                 ((x * 0.099, y * 0.103, z), 0.025),
@@ -161,9 +170,6 @@ def ruff(mesh):
 
 def expression(mesh):
     ink = mesh.col("player_ink")
-    for x in (-0.052, 0.052):
-        face(mesh, [(x + 0.017 * math.cos(a), 0.1305, -0.197 - 0.029 * math.sin(a))
-                    for a in (i * math.tau / 16 for i in range(16))], ink)
     for i in range(16):
         x0 = (i / 16 - 0.5) * 0.108
         x1 = ((i + 1) / 16 - 0.5) * 0.108
@@ -174,11 +180,23 @@ def expression(mesh):
                     (x1, 0.1305, z1 - 0.0055), (x0, 0.1305, z0 - 0.0055)], ink)
 
 
+def shades(mesh):
+    style = refinement["shades"]
+    frame = C.hex_rgba(style["frame"])
+    bridge, size = style["bridge"]
+    mesh.box(bridge, size, frame)
+    for part, color in (("rim", frame), ("glass", C.hex_rgba(style["lens"])),
+                        ("reflection", C.hex_rgba(style["sheen"])), ("temple", frame)):
+        (x, y, z), size = style[part]
+        for side in (-1, 1):
+            mesh.box((side * x, y, z), size, color)
+
+
 build("Torso", root, (0, 0, 0.80),
       lambda m: block(m, (0, 0, 0.017), (0.536, 0.278, 0.554), "cloth"))
 head_joint = build("Head", root, (0, 0, 1.40), head)
 for name, draw in (("WitchHat", hat), ("HatBrim", brim), ("Antlers", antlers),
-                   ("HairRuff", ruff), ("Face", expression)):
+                   ("HairRuff", ruff), ("Face", expression), ("Shades", shades)):
     build(name, head_joint, (0, 0, 0), draw)
 
 for side, suffix in ((-1, "L"), (1, "R")):

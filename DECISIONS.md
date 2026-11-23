@@ -8613,3 +8613,22 @@ squashes to 35 % in 0.06 s and springs back through ~1.19x (settled by 0.9 s), t
 0.45 u to 2.1 u over 0.45 s. Audio: `player/jump_pad` (synth_cues.gd seed 24, 0.55 s) - a 140 -> 620 Hz
 rising sine with a decaying 26 Hz wobble over a 70 Hz thump, played on the `jump_pad_launch` event. No
 first-use hint (optional in the spec). Screenshot proof: tools/shot_jump_pad.gd (windowed).
+
+## D-T7-1 (2026-11-23): fit the refined look to the shipped figure
+
+**Owner:** "evaluate and adopt the refined player model/animator proposal without regressing the locomotion".
+**Ruling.** Keep the approved blocky proportions and charcoal torso, and bake the refined head details
+into the shared figure asset so the lobby, player and respawn shell all use them. The taller reflective
+band, recessed cone tip, wider squared brim, layered silver hair and dark wraparound shades with baked
+highlights take their dimensions from `game/data/player_figure_refinement.json`. Keep the existing
+branching antlers dark against the hat's silver band and hair. Omit the proposed pulsing cyan tip aura
+to preserve the monochrome silhouette and keep cyan accents on gameplay elements.
+
+## D-T7-2 (2026-11-23): keep the shipped locomotion for all six proposed states
+
+**Ruling.** The proposed animator moves the hip pivots independently, uses a single rigid block for
+each leg, and applies nonuniform root scale during jump and landing. Its stair latch uses body
+velocity and floor normals with no per-sole tread sampling. Keep the render-clock solver, rigid
+two-bone legs, joint limits, terrain-aware foot plants, and normalized gait thresholds 0.35 / 0.85
+from v0.1.14-alpha.3. The existing controller-driven pose tests and sheets cover idle, walk, run,
+jump, stairs up and stairs down alongside the other ten cases.
