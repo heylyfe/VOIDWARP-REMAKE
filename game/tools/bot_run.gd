@@ -76,6 +76,8 @@ const MinesScript := preload("res://sim/mines.gd")
 # D-JUMPPAD-1/4: the jump pads (terrain places them on the Level, sim re-arms and fires them)
 const JumpPadPlaceScript := preload("res://terrain/jump_pads.gd")
 const JumpPadsScript := preload("res://sim/jump_pads.gd")
+# T4 (D-T4-2): the clawd swarm + the anger timer, so the bot's sim matches the game's.
+const ClawdsScript := preload("res://sim/clawds.gd")
 const EnemyRuntime := preload("res://sim/enemy_runtime.gd")
 const RunLogScript := preload("res://app/run_log.gd")
 const HashScript := preload("res://sim/state_hash.gd")
@@ -539,6 +541,23 @@ static func _path_to(parent: PackedInt32Array, start: int, goal: int) -> Array[i
 	return out
 
 
+## T4 (D-T4-2): the clawd swarm's data block from whichever voted roster module declares one (the extra_mines
+## idiom - the probe is by method name, so no content id is named here). {} = no swarm on this level.
+static func _clawd_cfg_for(votes: Dictionary) -> Dictionary:
+	var ids: Array = votes.keys()
+	ids.sort()
+	for id in ids:
+		if int(votes[id]) <= 0:
+			continue
+		var K = load("res://content/enemies/%s/enemy.gd" % str(id))
+		if K == null or not K.has_method("clawd_cfg"):
+			continue
+		var cfg: Variant = K.call("clawd_cfg")
+		if cfg is Dictionary and not (cfg as Dictionary).is_empty():
+			return cfg
+	return {}
+
+
 ## Play one level. Returns {"result": "complete" | "dead" | "stuck" | "timeout" | "cut"}.
 ## p_rec: see play_run - record or playback bookkeeping, threaded to the tick loop.
 static func _play_level(api: RefCounted, ledger: Dictionary, seed: int, level: int,
@@ -551,6 +570,10 @@ static func _play_level(api: RefCounted, ledger: Dictionary, seed: int, level: i
 	if L.is_empty():
 		return {"result": "stuck"}
 	JumpPadPlaceScript.attach(L)
+	# T4 (D-T4-2): the clawd swarm, from whichever voted roster module declares one (the extra_mines idiom).
+	var clawd_cfg: Dictionary = _clawd_cfg_for(votes)
+	if not clawd_cfg.is_empty():
+		ClawdsScript.attach(L, clawd_cfg)
 	var rs = RunStateScript.new_run(seed, 1, api.content_ids())
 	# the run's carried enemy set rides the RunState, so the state hash pins it
 	rs.run_votes = votes.duplicate()
@@ -691,6 +714,8 @@ static func _play_level(api: RefCounted, ledger: Dictionary, seed: int, level: i
 			ev.append(e)
 		# a launch re-syncs lv.players[0] itself (sim/jump_pads.gd _sync_row, Terra finding 1)
 		JumpPadsScript.tick(lv, [ctl], w, lv.tick, ev)
+		# T4 (D-T4-5): the clawd pickup + the anger timer, in the world's own slot.
+		ClawdsScript.tick(lv, [ctl], w, lv.tick, ev)
 		lv.beacon.try_enter(ctl, lv.tick, 0, ev)
 		if lv.beacon.is_open() and not bool(mem["overtime_on"]):
 			rt.on_beacon_open()

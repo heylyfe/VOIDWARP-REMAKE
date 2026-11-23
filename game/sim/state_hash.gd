@@ -51,6 +51,13 @@ extends RefCounted
 #                                          knobs (data/jump_pads.json). Only when the level
 #                                          carries jump pads (lv.jump_pads non-null), so every
 #                                          dump of a level built without them is unchanged.
+#   CLAWDS <spots x:z:y csv> <taken hex> <anger_ticks> <warned> <kill_ticks> <warning ticks csv>
+#            <pickup radius bits>          (T4, D-T4-6) the clawd swarm and the anger timer: the
+#                                          ordered clawd coordinates (placement depends on the
+#                                          roster module's data, which the level hash does not
+#                                          cover), the collected bitset, the live timer and the
+#                                          three data knobs. Only when the level carries a swarm
+#                                          (lv.clawds non-null).
 # Level content itself is NOT dumped: it is a pure function of the seed and enters the hash once,
 # via LEVELHASH.
 
@@ -155,6 +162,15 @@ static func dump(rs: RefCounted) -> PackedStringArray:
 		out.append("JUMPPADS %s %s %s %d %s" % [str(jp.pads_csv()), str(jp.ready_csv()),
 				(jp.lost as PackedByteArray).hex_encode(), int(jp.rearm_ticks),
 				bits(float(jp.launch_speed))])
+	# T4 (D-T4-6): the clawd swarm + the anger timer. The coordinates are dumped because placement depends on
+	# the roster module's data (count, spacing), which LEVELHASH does not cover - the same reason the pads are.
+	# taken / anger_ticks / warned are live state; the three knobs are data, pinned so two runs whose data
+	# differed cannot hash alike before the first pickup. Absent for a level with no swarm.
+	var cl = lv.get("clawds")
+	if cl != null:
+		out.append("CLAWDS %s %s %d %d %d %s %s" % [str(cl.spots_csv()),
+				(cl.taken as PackedByteArray).hex_encode(), int(cl.anger_ticks), int(cl.warned),
+				int(cl.kill_ticks), str(cl.warnings_csv()), bits(float(cl.pickup_radius))])
 	return out
 
 

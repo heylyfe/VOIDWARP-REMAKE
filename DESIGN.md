@@ -656,8 +656,8 @@ Severity: M = Mild, H = Harsh, B = Brutal. "st" = max stacks.
 | slipstream_trail | Wet Trail | seal | 2 | M | 1 | a dash leaves a slippery trail (friction ×0.4) for 3 s | don't cross the line |
 | longer_speech | Filibuster | address me | 7 | H | 1 | you must hold still 2.5 s instead of 1.5 s | stop sooner |
 | unannounced | Unannounced | address me | 10 | B | 1 | no trumpet — only the sprite and the rumble | keep it on screen; Radar Module: Threats |
-| crescendo | Crescendo | Claude | 16 | H | 1 | agitation rises 3/s instead of 2/s | plushies first |
-| token_limit | Token Limit | Claude | 18 | B | 1 | plushies remove 20 agitation instead of 35 and spawn every 30 s | route for plushies |
+| crescendo | Crescendo | Claude | 16 | H | 1 | the anger timer runs 1.5x faster | collect clawds first |
+| token_limit | Token Limit | Claude | 18 | B | 1 | a clawd leaves 20 s of anger instead of calming Claude completely | route for clawds |
 | twin_fangs | Twin Fangs | gin ichimaru | 17 | B | 1 | each strike marks two patches: yours and where you will be in 1.0 s | change direction during the mark |
 
 ### 7.2 General (22)

@@ -5,8 +5,8 @@
   "min_level": 18,
   "requires_enemy": "claude",
   "max_stacks": 1,
-  "rule": "plushies remove 20 agitation instead of 35 and spawn every 30 s",
-  "counter_play": "route for plushies",
+  "rule": "a clawd leaves 20 s of anger instead of calming Claude completely",
+  "counter_play": "route for clawds",
   "modifiers": [],
   "script": true,
   "hooks": []

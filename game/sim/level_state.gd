@@ -21,6 +21,8 @@ const MinesScript := preload("res://sim/mines.gd")
 const UpgradesScript := preload("res://sim/upgrades.gd")
 # D-JUMPPAD-4: the jump pad re-arm runtime, built from Level["jump_pads"] (terrain/jump_pads.gd).
 const JumpPadsScript := preload("res://sim/jump_pads.gd")
+# T4 (D-T4-2): the clawd swarm + the anger timer, built from Level["clawds"] (sim/clawds.gd attach()).
+const ClawdsScript := preload("res://sim/clawds.gd")
 
 ## Height (world u) of a tile's top surface; HU = 0.5 u (TERRAIN_SPEC.md section 4).
 const HU := 0.5
@@ -50,6 +52,9 @@ var collapse: Dictionary = {}
 ## D-JUMPPAD-4: the jump pads' re-arm ticks + lost bitset (sim/jump_pads.gd); null when the
 ## Level carries no "jump_pads" (a level built without terrain/jump_pads.gd attach()).
 var jump_pads: RefCounted = null
+## T4 (D-T4-2): the clawd swarm + the anger timer (sim/clawds.gd); null when the Level carries no
+## "clawds" (no swarm on this level), so every dump of a level without one is unchanged.
+var clawds: RefCounted = null
 
 
 ## level_number is 1-based (the run's current level). player_count in 1..8 (TERRAIN_SPEC.md spawns).
@@ -68,6 +73,7 @@ static func build(level: Dictionary, p_level_number: int, p_player_count: int,
 	st.mines = MinesScript.create(level, p_level_number, p_run_seed)
 	st.upgrades = UpgradesScript.create(p_upgrade_roles)
 	st.jump_pads = JumpPadsScript.create(level)
+	st.clawds = ClawdsScript.create(level)
 	if st.upgrades != null:
 		# Skeleton Key (D-T053-4): the beacon-open condition becomes the 90 % quota.
 		if st.upgrades.has(UpgradesScript.ROLE_SKELETON_QUOTA):

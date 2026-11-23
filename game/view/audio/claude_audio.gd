@@ -1,33 +1,38 @@
 extends RefCounted
 #
-# claude placeholder audio hooks (ticket T-040). ENEMIES.md "New sound" line, verbatim:
-# "Claude-themed instrument set - soft UI chimes, keystroke ticks and notification pings
-# for the drums/strings/wind attacks; cute squeak-pop when you pick up a plushie to calm
-# it down." The cue names ARE the file names (T-055's contract; seal_audio/CUE_* idiom):
-#   ui_chime          - soft UI chime, on the tick a drum ring fires (beats 1 and 3)
-#   keystroke_tick    - keystroke tick, on the tick the strings telegraph line appears
-#                       and while the beam sweeps (one per beat)
-#   notification_ping - notification ping, on the tick each wind shot launches
-#   squeak_pop        - cute squeak-pop, on the tick a clawd Crab plushie is picked up
+# claude placeholder audio hooks - the CYCLE 7 REVAMP (track T4; D-T4-8).
 #
-# The wav files are placeholders synthesised by T-055's pipeline and do not exist yet,
-# so play() no-ops SILENTLY while a file is absent - the run never stalls on audio.
-# Cue timings are driven by the sim row's tick stamps (last_drum_tick / last_sweep_tick
-# / last_shot_tick / last_pickup_tick), never by audio length.
+# The owner's words (CYCLE7_BRIEF.md T4): "If no clawd is collected for 60 s, Claude releases a warning sound (a
+# new synth cue). At 120 s, a second, more urgent sound." The cue names ARE the file names (T-055's contract):
+#   claude_warning_1 - the 60 s warning: a two-note rising chime with a bell tail
+#   claude_warning_2 - the 120 s warning: a three-note alarm, higher, faster, detuned
+# Both are synthesised by tools/synth_audio.py (new voices, nothing copied - ENEMIES.md's "all sounds are
+# brand-new"). The old musical-kit cues (ui_chime / keystroke_tick / notification_ping / squeak_pop) are no
+# longer played by this enemy: the revamped behavior has no attacks and no plushies.
+#
+# play() no-ops SILENTLY while a file is absent - the run never stalls on audio. Cue timings are driven by the
+# sim's clawd_warning event, never by audio length.
 
-const CUE_UI_CHIME := "ui_chime"
-const CUE_KEYSTROKE_TICK := "keystroke_tick"
-const CUE_NOTIFICATION_PING := "notification_ping"
-const CUE_SQUEAK_POP := "squeak_pop"
+const CUE_WARNING_1 := "claude_warning_1"
+const CUE_WARNING_2 := "claude_warning_2"
 const DIR := "res://assets/audio/enemies/claude"
 const EXTENSION := ".wav"
+
+
+## The cue name for a warning level (1 or 2); "" for anything else.
+static func cue_for_level(level: int) -> String:
+	if level == 1:
+		return CUE_WARNING_1
+	if level == 2:
+		return CUE_WARNING_2
+	return ""
 
 
 ## Plays one cue. p_volume in [0, 1] scales with distance. Returns true when a file
 ## existed and an AudioStreamPlayer was started; false (silently) otherwise - a missing
 ## placeholder is not an error.
 static func play(parent: Node, cue: String, p_volume: float = 1.0) -> bool:
-	if parent == null or not parent.is_inside_tree():
+	if parent == null or not parent.is_inside_tree() or cue == "":
 		return false
 	var path := "%s/%s%s" % [DIR, cue, EXTENSION]
 	if not ResourceLoader.exists(path):
