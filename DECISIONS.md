@@ -9895,3 +9895,39 @@ rule exists for - and the locomotion rig's `get_surface_override_material` copie
 a real material instead of null), and `asset_load.gd`'s header comment no longer carries the
 literal res:// model path (it is a generic path-parameterized loader, not a model renderer;
 its one load call per type is guarded and reported).
+
+## D-U5-1 (2026-11-23) Cycle 8: the icon-row stack badge is built only when it has a count
+
+The levels 9-12 crash sweep (`docs/crashhunt/sweep_levels_L9-12.md`, finding F1) reported a
+leak that only appeared under `--vote-mode random`: exactly 4 detached `Label` nodes per
+level build, growing to 680 CanvasItem RIDs and 1372 ObjectDB instances at 160 entries, and
+zero under `--vote-mode all`, which leaves both icon rows empty.
+
+OWNER: `game/view/hud/icon_rows.gd:163` in `_rebuild()`. The "xN" stack badge was built for
+EVERY cell and parented only `if stacks > 1`, so a single-stack cell created a styled Label
+and never parented it. Nothing frees what nothing owns, so it survived its row's `free()`.
+The vote modes differ because the empty-ledger path replays the lobbies and lands with
+curses and upgrade stacks voted in, while the full-ledger path in the sweep passes votes but
+no curses, so both rows stay empty and `_rebuild()` never runs on a single-stack cell.
+
+FIX: the badge is created inside the `if stacks > 1` arm, through a new `_stack_badge()`
+helper that always returns a node its caller parents. This is the "creator stops creating
+what it does not need" shape rather than "free what you made": there is no badge object per
+single-stack cell at all, and the helper exists so the rule is one place instead of four
+lines in a loop. No suppression, no verbose flag, no exit-report change - the leak is gone
+because the allocation is gone.
+
+TEETH: the leaked node is DETACHED, so this one cannot be caught the obvious way. Counting
+labels under the row passes with the bug present, and Godot's Performance monitors refresh
+once per frame, which a synchronous `run()` never crosses (measured: five orphan Labels
+moved `OBJECT_NODE_COUNT` by 0). So `test_hud_icon_badges.gd` runs
+`tests/leak_probe_icon_rows.gd` as a CHILD Godot process, builds six rows of single-stack
+curses plus six of upgrades, frees them, and reads the child's `--verbose` exit dump for
+"Leaked instance: Label". Checked against the old code: 48 leaked Labels and the test fails
+with the count in the message; against the fix: 0 and it passes. A second assertion keeps
+the fix from degenerating into "never draw a badge": a 3-stack cell must still show "x3",
+and a rebuild must not accumulate.
+
+NOT FIXED HERE, BY SCOPE: `enemy_roster.gd:113` builds a badge the same way but parents it
+unconditionally, so it does not leak; it is left alone. The unrelated at-exit audio leak the
+same sweep saw in short runs (F2: `AudioStream*` still in use) is untouched and still open.

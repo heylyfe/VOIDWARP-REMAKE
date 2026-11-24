@@ -160,18 +160,28 @@ func _rebuild(row: HBoxContainer, items: Array, kind: String) -> void:
 		var id := str(item.get("id", ""))
 		var stacks := int(item.get("stacks", 1))
 		var cell: Control = _make_cell(id, kind)
-		var badge := Label.new()
-		badge.text = "x%d" % stacks
-		HudStyle.style_label(badge, HudStyle.FONT_SMALL)
-		badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-		badge.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-		badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		badge.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+		# D-U5-1: the badge exists only for a cell that SHOWS a stack count. It used to be
+		# built for every cell and parented only when stacks > 1, so a single-stack cell
+		# dropped a styled Label on the floor - created, never parented, never freed, once
+		# per cell per rebuild. Nothing allocates a badge the row is not going to hold.
 		if stacks > 1:
-			cell.add_child(badge)
+			cell.add_child(_stack_badge(stacks))
 		row.add_child(cell)
 	if shown < items.size():
 		row.add_child(_overflow_cell(items.size() - shown))
+
+
+## The "xN" stack badge, bottom-right of a cell. Built only when N > 1, and always parented
+## by its caller: it is a child of the cell, so the cell's own free takes it with it.
+func _stack_badge(stacks: int) -> Label:
+	var badge := Label.new()
+	badge.text = "x%d" % stacks
+	HudStyle.style_label(badge, HudStyle.FONT_SMALL)
+	badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	badge.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	badge.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+	return badge
 
 
 ## "+N": the items a full row cannot show.
