@@ -29,6 +29,7 @@ extends Node3D
 #
 # Reads sim state only (never writes): set_progress + set_open from the caller.
 
+const AssetLoadScript := preload("res://view/asset_load.gd")   # U4: fail-soft loads
 const BeaconScript := preload("res://sim/beacon.gd")
 const BeaconAudioScript := preload("res://view/audio/beacon_audio.gd")
 
@@ -65,8 +66,18 @@ var _body: Array = []         # the beacon mesh instances
 var _open_mat: StandardMaterial3D
 
 
+
+# U4 (Terra finding 3): release this view's surface-override materials before the node
+# is destroyed, on EVERY free path (the world's teardown or a direct free()). A
+# MeshInstance3D's override Refs die before its rendering-server instance is freed, so
+# freeing with the overrides still set leaves a dangling material RID and the dummy
+# renderer prints `ERROR: Parameter "material" is null`; clearing them here first is
+# the ownership fix (see asset_load.gd release_materials).
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE:
+		AssetLoadScript.release_materials(self)
 func _init() -> void:
-	var ps: PackedScene = load(MODEL)
+	var ps: PackedScene = AssetLoadScript.scene(MODEL)
 	if ps != null:
 		var body: Node3D = ps.instantiate()
 		add_child(body)

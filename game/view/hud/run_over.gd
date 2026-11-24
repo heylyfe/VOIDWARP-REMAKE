@@ -45,6 +45,7 @@ const ENEMIES_DIR := "res://content/enemies"
 const CURSES_DIR := "res://content/curses"
 const MINE_CODE := "D-MINE"
 const RosterScript := preload("res://core/roster.gd")
+const AssetLoadScript := preload("res://view/asset_load.gd")   # U4: fail-soft loads (text/scene/texture/stream)
 const RecordsScript := preload("res://core/records.gd")
 
 ## the D-VOID display name (the only killer no content owns).
@@ -314,7 +315,7 @@ static func death_kind(p_code: String) -> String:
 ## A curse's display name (content/curses/<id>.json "name"), else the id itself.
 static func curse_display_name(curse_id: String) -> String:
 	var doc: Variant = JSON.parse_string(
-			FileAccess.get_file_as_string("%s/%s.json" % [CURSES_DIR, curse_id]))
+			AssetLoadScript.text("%s/%s.json" % [CURSES_DIR, curse_id]))
 	if doc is Dictionary and str((doc as Dictionary).get("name", "")) != "":
 		return str((doc as Dictionary)["name"])
 	return curse_id
@@ -349,7 +350,7 @@ static func enemy_for_code(p_code: String) -> String:
 		var dir := DirAccess.open(ENEMIES_DIR)
 		if dir != null:
 			for sub in dir.get_directories():
-				var doc: Variant = JSON.parse_string(FileAccess.get_file_as_string(
+				var doc: Variant = JSON.parse_string(AssetLoadScript.text(
 						"%s/%s/enemy.json" % [ENEMIES_DIR, sub]))
 				if not (doc is Dictionary):
 					continue

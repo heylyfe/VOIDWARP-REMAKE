@@ -101,6 +101,16 @@ const SettingsScript := preload("res://app/settings.gd")
 # The T-015 player figure. Without it the third-person rig frames empty space and the game
 # reads first-person: the camera sits 7 u behind a body that was never drawn.
 const PLAYER_MODEL := "res://assets/models/player_figure.glb"
+# U4: every asset load goes through view/asset_load.gd, which reports a missing path ONCE
+# and returns null so the caller falls back instead of crashing. The blocky figure is the
+# player model's fallback (view/player_figure_fallback.gd): same six limb names, same
+# boxes, feet at y = 0, so the locomotion rig animates it unchanged.
+const AssetLoadScript := preload("res://view/asset_load.gd")
+const PlayerFallbackScript := preload("res://view/player_figure_fallback.gd")
+# U4: the crash breadcrumb. Writes user://last_run.txt at every level start and
+# refreshes it once a second, so the owner's next crash names its seed, level, tick
+# and phase. View-only: it reads the world's own fields and writes nothing back.
+const BreadcrumbScript := preload("res://app/run_breadcrumb.gd")
 # APP-LOOP: the sim LevelState (gifts / mines / beacon), the gift + mine ticks and the
 # gold-phase economy - the same pieces tools/bot_run.gd ticks on the reference surface.
 const LevelStateScript := preload("res://sim/level_state.gd")
@@ -203,6 +213,19 @@ var _boss_view: Node3D = null
 var _run_seed := 0
 var lstate: RefCounted = null   # the sim LevelState (gifts / mines / beacon); bot_run.gd's lv
 var player_model: Node3D = null # the T-015 player figure, feet on the controller's position
+# U4 test seam: the path build() loads the figure from. PLAYER_MODEL in every real run;
+# a test points it at a path that does not exist to prove the blocky fallback.
+var player_model_path := PLAYER_MODEL
+# U4 test seam: the player data file build() reads. res://data/player.json in every
+# real run; a test points it at a missing path to prove the build still runs.
+var player_data_path := "res://data/player.json"
+# U4: the crash breadcrumb (app/run_breadcrumb.gd) and its path. The path is a seam so
+# a test writes to its own file instead of the owner's user://last_run.txt.
+var breadcrumb: RefCounted = null
+var breadcrumb_path := "user://last_run.txt"
+# The on/off seam: a test builds the same level twice, once with the breadcrumb off,
+# and compares the state hash - the direct proof that it is view-only.
+var breadcrumb_enabled := true
 var _player_yaw := 0.0          # facing yaw, follows the camera's forward while captured
 var _player_light: OmniLight3D = null   # palette.json player_fill_light, rides the figure
 var glider_view: Node3D = null   # view/glider_view.gd, child of player_model; shown while gliding
@@ -576,9 +599,14 @@ func build(seed_value: int, level: int, p_ledger: Dictionary = {}) -> bool:
 
 	# The player figure (T-015): feet on the controller's position, yawed to the motion.
 	# Without it the third-person rig frames empty space and the game reads first-person.
-	var ps: PackedScene = load(PLAYER_MODEL)
+	# U4: a missing model falls back to the blocky figure (view/player_figure_fallback.gd)
+	# rather than leaving the rig framing nothing - and never crashes on a null instantiate.
+	var ps: PackedScene = AssetLoadScript.scene(player_model_path)
 	if ps != null:
 		player_model = ps.instantiate()
+	else:
+		player_model = PlayerFallbackScript.build()
+	if player_model != null:
 		_apply_player_body_material(player_model)
 		player_model.position = Vector3(float(ctl.x), float(ctl.y), float(ctl.z))
 		player_model.rotation.y = _player_yaw
@@ -625,8 +653,10 @@ func build(seed_value: int, level: int, p_ledger: Dictionary = {}) -> bool:
 	_pose = {}
 	_anim_phase = 0.0
 	_gait_phase = 0.0
+	# U4: the player data file is a guarded read - a missing player.json falls back to
+	# the default run speed instead of erroring inside build().
 	var pstats: Variant = JSON.parse_string(
-			FileAccess.get_file_as_string("res://data/player.json"))
+			AssetLoadScript.text(player_data_path))
 	if pstats is Dictionary and (pstats as Dictionary).has("shared_kit"):
 		_run_speed = float((pstats["shared_kit"] as Dictionary).get("run_speed", 9.0))
 
@@ -726,6 +756,9 @@ func build(seed_value: int, level: int, p_ledger: Dictionary = {}) -> bool:
 	if rt != null:
 		rt._round_trip_cached()
 	_prebuild_enemy_views()
+	# U4: the crash breadcrumb's level-start write. Last, so the phase it records is the
+	# one the level actually begins in.
+	_breadcrumb_level_start(seed_value, level)
 	return true
 
 
@@ -743,6 +776,10 @@ func step(dt: float, command: Dictionary = {}) -> void:
 		return
 	if _run_over_emitted or (_boss_view != null and _completed_emitted):
 		return   # the run is over: a dead run never ticks again (DESIGN.md section 3)
+	# U4: the crash breadcrumb's cheap refresh (one write a second, plus one per phase
+	# edge). It reads the world's own fields and writes nothing back, so it cannot
+	# move the state hash or the replay.
+	_breadcrumb_refresh()
 	# TESTER (D-T2-9): the debug panel's per-tick probe, armed before the world ever steps
 	# (app.gd hands every built world to the panel first). Runs BEFORE anything this tick
 	# can kill, so a promised god mode covers a fresh world's first tick, and the panel's
@@ -1400,6 +1437,13 @@ func is_complete() -> bool:
 ## Free everything build() created and reset the sim references. Safe to call twice; the
 ## app calls it before queue_free-ing the node.
 func teardown() -> void:
+	# U4 (Terra finding 3): release every view's surface-override materials BEFORE the
+	# frees. A MeshInstance3D's override Refs die in ~MeshInstance3D, but its RS instance
+	# is freed later (~VisualInstance3D), whose update still reads the surface-material
+	# RIDs - freeing with the overrides still set leaves a dangling RID and the dummy
+	# renderer prints `ERROR: Parameter "material" is null` from this loop. Clearing them
+	# first sends RID() to the RS, so the free path never sees a dead material RID.
+	AssetLoadScript.release_materials(self)
 	for child in get_children():
 		child.free()
 	_mesh_instances.clear()
@@ -1409,11 +1453,13 @@ func teardown() -> void:
 	for eid in _prebuilt_views.keys():
 		for host in _prebuilt_views[eid]:
 			if is_instance_valid(host):
+				AssetLoadScript.release_materials(host)   # U4: same dangling-RID fix
 				host.free()
 	_prebuilt_views.clear()
 	_warm_pinned.clear()
 	for wr in _warm_refs:
 		if is_instance_valid(wr):
+			AssetLoadScript.release_materials(wr)         # U4: same dangling-RID fix
 			wr.free()
 	_warm_refs.clear()
 	ctl = null
@@ -1489,6 +1535,45 @@ func teardown() -> void:
 
 func level_number() -> int:
 	return _level_number
+
+
+# ---- the crash breadcrumb (U4) ------------------------------------------------------------
+#
+# user://last_run.txt holds the last tick, level, seed and phase, so the owner's next crash
+# names where it happened. Written at every level start and refreshed once a second (plus
+# on every phase edge) - never per tick. VIEW-ONLY: these three functions read the world's
+# own fields and write nothing back, draw no RNG and consume no tick, so the state hash and
+# the replay are unchanged with the breadcrumb on (test_replay / test_state_hash prove it).
+
+
+func _breadcrumb_level_start(seed_value: int, level: int) -> void:
+	if not breadcrumb_enabled:
+		breadcrumb = null
+		return
+	breadcrumb = BreadcrumbScript.create(breadcrumb_path)
+	breadcrumb.level_start(seed_value, level, int(lstate.tick) if lstate != null else 0,
+		_breadcrumb_phase())
+
+
+func _breadcrumb_refresh() -> void:
+	if not breadcrumb_enabled or breadcrumb == null or lstate == null:
+		return
+	breadcrumb.refresh(_run_seed, _level_number, int(lstate.tick), _breadcrumb_phase())
+
+
+## The phase the run is in, from the world's own state. "black" is the ordinary level
+## (black gifts), "gold" the gold phase after the beacon opens, "arena" the Peter fight,
+## "dead" a dead controller, "over" a finished run.
+func _breadcrumb_phase() -> String:
+	if _run_over_emitted:
+		return "over"
+	if ctl != null and bool(ctl.dead):
+		return "dead"
+	if lstate != null and lstate.boss != null and bool(lstate.boss.arena_entered):
+		return "arena"
+	if lstate != null and lstate.beacon != null and bool(lstate.beacon.opened):
+		return "gold"
+	return "black"
 
 
 ## The curse dispatcher's module loader: a curse's script module, or null for a curse that
@@ -2768,8 +2853,10 @@ func _make_enemy_view(e: Dictionary):
 
 func _make_board(e: Dictionary):
 	var folder := "res://content/enemies/%s" % str(e["id"])
+	# U4: the sheet is a guarded data-file read - a missing sprites.json is reported once
+	# through asset_load and the billboard is skipped, never an unguarded open error.
 	var doc: Variant = JSON.parse_string(
-			FileAccess.get_file_as_string(folder + "/sprites.json"))
+			AssetLoadScript.text(folder + "/sprites.json"))
 	if not (doc is Dictionary):
 		push_warning("world: sprites.json unreadable for %s; billboard skipped" % str(e["id"]))
 		return null
@@ -2809,7 +2896,7 @@ func _prebuild_enemy_views() -> void:
 			continue
 		_warm_pinned[eid] = true
 		var doc: Variant = JSON.parse_string(
-				FileAccess.get_file_as_string(folder + "/sprites.json"))
+				AssetLoadScript.text(folder + "/sprites.json"))
 		if doc is Dictionary:
 			var bd = BillboardScript.new()
 			bd.setup_from_sheet(doc, folder)

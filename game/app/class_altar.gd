@@ -40,6 +40,7 @@ static var PlayerDataPath := "res://data/player.json"   # static var so tests ca
 
 const ICON_DIR := "res://assets/icons/classes/"
 const UiStyle := preload("res://view/ui_style.gd")
+const AssetLoadScript := preload("res://view/asset_load.gd")   # U4: fail-soft loads (text/scene/texture/stream)
 const UiFocus := preload("res://view/ui_focus.gd")
 const CARD_SIZE := Vector2(256, 320)     # the card's width, and its MINIMUM height
 const ICON_SIZE := 96.0
@@ -65,7 +66,7 @@ var _focus: UiFocus = UiFocus.new()     # cards, then CONFIRM, then SKIP (D-FRON
 
 func _init() -> void:
 	name = "ClassAltar"
-	var doc: Variant = JSON.parse_string(FileAccess.get_file_as_string(PlayerDataPath))
+	var doc: Variant = JSON.parse_string(AssetLoadScript.text(PlayerDataPath))
 	if doc is Dictionary:
 		var raw: Variant = (doc as Dictionary).get("classes", {})
 		if raw is Dictionary:

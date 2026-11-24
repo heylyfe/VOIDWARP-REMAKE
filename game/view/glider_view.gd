@@ -1,4 +1,6 @@
 extends Node3D
+
+const AssetLoadScript := preload("res://view/asset_load.gd")   # U4: fail-soft loads
 #
 # The hang glider the player flies under while gliding (owner request 2026-11-20).
 # Model: assets_src/blender/glider.py -> res://assets/models/glider.glb (origin = the
@@ -58,11 +60,21 @@ var _at_rest := true
 
 ## Load the glb, give it its materials, find the named parts. false when the model or a
 ## part is missing (the caller then drops this node).
+
+# U4 (Terra finding 3): release this view's surface-override materials before the node
+# is destroyed, on EVERY free path (the world's teardown or a direct free()). A
+# MeshInstance3D's override Refs die before its rendering-server instance is freed, so
+# freeing with the overrides still set leaves a dangling material RID and the dummy
+# renderer prints `ERROR: Parameter "material" is null`; clearing them here first is
+# the ownership fix (see asset_load.gd release_materials).
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE:
+		AssetLoadScript.release_materials(self)
 func build() -> bool:
 	name = "Glider"
 	position = MOUNT
 	visible = false
-	var ps: PackedScene = load(GLIDER_MODEL)
+	var ps: PackedScene = AssetLoadScript.scene(GLIDER_MODEL)
 	if ps == null:
 		return false
 	model = ps.instantiate() as Node3D

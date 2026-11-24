@@ -10,6 +10,7 @@ extends Node3D
 # View layer only: reads the sim row, never writes it.
 
 const BillboardScript := preload("res://view/billboard.gd")
+const AssetLoadScript := preload("res://view/asset_load.gd")   # U4: fail-soft loads (text/scene/texture/stream)
 const IsagiViewScript := preload("res://view/isagi_view.gd")
 
 const FLASH_RED := Color(1.0, 0.25, 0.25, 1.0)
@@ -28,10 +29,9 @@ func setup(folder: String) -> void:
 		child.free()
 	var doc: Dictionary = {}
 	var path := folder.path_join("sprites.json")
-	if FileAccess.file_exists(path):
-		var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
-		if parsed is Dictionary:
-			doc = parsed
+	var parsed: Variant = JSON.parse_string(AssetLoadScript.text(path))
+	if parsed is Dictionary:
+		doc = parsed
 	helper = IsagiViewScript.new()
 	helper.setup(doc)
 	billboard = BillboardScript.new()

@@ -33,6 +33,7 @@ extends Node3D
 # hold would accrue twice per frame.
 
 const FogEnvScript := preload("res://view/fog_env.gd")
+const AssetLoadScript := preload("res://view/asset_load.gd")   # U4: fail-soft loads (text/scene/texture/stream)
 const IconArtScript := preload("res://view/icon_art.gd")
 const BillboardScript := preload("res://view/billboard.gd")
 const OffersSim := preload("res://sim/offers.gd")
@@ -172,6 +173,15 @@ var _curses_state: Dictionary = {}
 
 ## Feeds the run's curse state (view/lobby/lobby_scene.gd build()'s ledger). Rebuilds
 ## the selectables on the spot so a mid-visit change is visible at once.
+
+# U4 (Terra finding 3): release this subtree's surface-override materials before the
+# node is destroyed, on EVERY free path (the app's transition or a direct free()):
+# a MeshInstance3D's override Refs die before its RS instance is freed, so freeing with
+# the overrides still set leaves a dangling material RID and the dummy renderer prints
+# `ERROR: Parameter "material" is null` (see asset_load.gd release_materials).
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE:
+		AssetLoadScript.release_materials(self)
 func set_curses_state(p_state: Dictionary) -> void:
 	_curses_state = p_state
 	if lobby != null:
@@ -770,9 +780,7 @@ func _exhibit_enemy(p_anchor: Node3D, p_altar: Dictionary) -> String:
 	var sheet_path := "res://content/enemies/%s/sprites.json" % eid
 	var bb = BillboardScript.new()
 	p_anchor.add_child(bb)
-	var parsed: Variant = null
-	if FileAccess.file_exists(sheet_path):
-		parsed = JSON.parse_string(FileAccess.get_file_as_string(sheet_path))
+	var parsed: Variant = JSON.parse_string(AssetLoadScript.text(sheet_path))
 	if parsed is Dictionary and not (parsed as Dictionary).is_empty():
 		bb.setup_from_sheet(parsed, "res://content/enemies/" + eid)
 		# scale the sheet's own world_height up to the exhibit body height.

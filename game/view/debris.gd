@@ -27,6 +27,7 @@ extends Node3D
 #   var rocks: Array        # the layout rows
 #   var body_material / outline_material: ShaderMaterial
 
+const AssetLoadScript := preload("res://view/asset_load.gd")   # U4: fail-soft data-file read
 const PALETTE_PATH := "res://data/palette.json"
 const POINTS_PER_ROCK := 14
 const SEED_SALT := 0x0DEB215
@@ -78,7 +79,7 @@ var _t := 0.0
 
 
 static func load_config() -> Dictionary:
-	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(PALETTE_PATH))
+	var parsed: Variant = JSON.parse_string(AssetLoadScript.text(PALETTE_PATH))
 	if typeof(parsed) != TYPE_DICTIONARY:
 		push_error("debris: cannot parse %s" % PALETTE_PATH)
 		return {}

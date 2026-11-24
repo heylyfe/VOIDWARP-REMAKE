@@ -1,4 +1,6 @@
 extends Node3D
+
+const AssetLoadScript := preload("res://view/asset_load.gd")   # U4: fail-soft loads
 #
 # Void-fall respawn view (ticket T-085; research/fable-tickets.md section 2.5,
 # DESIGN.md sections 3.1 / 3.2). View layer only: it reads the sim's respawn
@@ -81,7 +83,7 @@ func _build_ring() -> void:
 ## outline around the model the caller owns.
 func _build_rim() -> void:
 	var mi := MeshInstance3D.new()
-	var ps: PackedScene = load(PLAYER_MODEL)
+	var ps: PackedScene = AssetLoadScript.scene(PLAYER_MODEL)
 	if ps != null:
 		var inst: Node3D = ps.instantiate()
 		var src := _first_mesh(inst)

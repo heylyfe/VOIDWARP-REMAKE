@@ -9802,3 +9802,96 @@ shipped code reports "first airborne step 0.1407, worst of the next 8 0.2300".
 
 The owner's requirement is unchanged and still holds: the lobby gait contributes nothing to
 an airborne frame, and the jump, fall and stairs-up poses are the ones that shipped.
+
+## D-U4-1 (2026-11-23) Cycle 8 U4h: the teardown null-material error is an ownership bug, fixed by releasing the materials before the free - not silenced
+
+Terra's finding 3: `world.teardown()`'s `for child in get_children(): child.free()` printed
+`ERROR: Parameter "material" is null` at the dummy renderer's
+`material_get_instance_shader_parameters` (62 times over one suite run). Engine source
+(4.7.2-stable) pins the mechanism: a `MeshInstance3D`'s surface-override `Ref<Material>`s
+are released by `~MeshInstance3D`, but the rendering-server instance is freed later, by
+`~VisualInstance3D` -> `free_rid` -> `instance_free`, whose `update_dirty_instances()`
+still walks the instance's surface-material RIDs (`instance->materials[i]`) and calls
+`materials_append` on them. Freeing a node whose surface overrides are still set therefore
+leaves the RS instance holding a DANGLING material RID, and the dummy storage's
+`material_owner.get_or_null(stale_rid)` returns null -> the exact ERROR. (material_override /
+material_overlay need no help: `~GeometryInstance3D` clears them itself, before the RS
+instance is freed.)
+
+The fix is ownership, at the GDScript layer: `view/asset_load.gd release_materials(root)`
+walks a subtree and calls `set_surface_override_material(s, null)` on every MeshInstance3D,
+which sends `RID()` to the RS and replaces the would-be-dangling RID with a valid null the
+update path guards. It is called from `world.teardown()` BEFORE the children are freed (and
+on the pre-built enemy hosts / warm pins), from a `NOTIFICATION_PREDELETE` hook on the five
+views that own surface-override meshes (gifts_view, beacon_view, boss_view, glider_view,
+gift_larper_view - so a direct `view.free()` in a test is covered too), and before each of
+boss_view's mid-run thrown-gift frees. Nothing is suppressed: no error handler, no log
+filter, no comment-out - the dangling RID no longer exists at free time. Proof:
+suite `Parameter "material" is null` count 62 before -> 0 after (out/suite_before.log vs
+out/suite_after.log), plus the transition repro (build level 1, complete it, build level 2,
+teardown) at 0.
+
+## D-U4-2 (2026-11-23) Cycle 8 U4h: the breadcrumb's fields and its cost
+
+`user://last_run.txt` (Windows path `%APPDATA%\Godot\app_userdata\VOIDWRAP RUN\last_run.txt`,
+measured via `ProjectSettings.globalize_path`) carries one key per line, stable order:
+`version` (the file format's version, 1), `build` (the menu pill's `VERSION_TAG`, so the
+report names the build the owner played), `utc` (the write's UTC time,
+`Time.get_datetime_string_from_system(true)` - the only wall-clock field, asked for by the
+owner's spec), `seed`, `level`, `tick` (the level's own last completed tick), `phase`
+(black|gold|arena|dead|over, derived from the world's own state).
+
+Cost: written at every level start, then refreshed only when 60 ticks (1 s at the sim's fixed
+60 Hz) have passed OR the phase changed - never per tick. A failed open (read-only user://)
+is reported once via push_warning and the breadcrumb goes quiet; it can never crash the run.
+View-only is proven, not asserted: `test_run_breadcrumb.gd` leg D builds the same level twice
+and steps 120 ticks with the breadcrumb on and off and asserts the SAME state hash, and the
+gate's replay/state-hash tests stay green. The utc field never enters the hash (the hash
+covers sim state only).
+
+## D-U4-3 (2026-11-23) Cycle 8 U4h: the fallback policy - one guarded loader, report once, fall back, never fatal
+
+Every model / texture / audio-stream / data-file load on the world/level path now goes through
+`view/asset_load.gd` (`scene`, `texture`, `stream`, `script_module`, `text`): gate on
+`ResourceLoader.exists()` (never `FileAccess.file_exists()` - an export packs the imported
+resource and its remap, not the raw .glb/.mp3), report the path ONCE through push_warning,
+return null, and the caller falls back: the player figure -> the blocky figure
+(`player_figure_fallback.gd`, same six limb names, feet at origin, now with its OWN
+vertex-colour base material so it renders and the locomotion rig's override copies inherit a
+real material); gifts -> a blocky box per slot (still collectable); boss thrown gifts -> no
+gift spawned, arena continues; audio cues -> silent; enemy sprites -> a null frame per the
+T-016 sheet contract (billboard tolerates it); sprites.json / palette / data files -> "" and
+the caller's documented fallback; HUD icons -> the icon hides, the pill still reads. The two
+`preload()`s of a png (purse_chain, lobby_hud) are gone - a preload of a missing resource
+fails the whole script at parse time. Tests: `test_asset_fallback.gd` legs A-H (loader, world
+figure, lobby figure, gift models, audio, boss arena, missing sprite, missing data+icon), all
+asserting the game still builds and steps, the fallback is the blocky figure with real
+limb meshes and materials (not an invisible nothing), and each missing path is reported
+exactly once.
+
+## D-U4-4 (2026-11-23) Cycle 8 U4h: the export DOES pack what the game loads - checked against a real .pck, not the presets' intentions
+
+Command actually run: `godot --headless --path game --export-pack "Windows Desktop"
+out/export/voidwrap.pck` (the preset: `export_filter="all_resources"`, `exclude_filter=
+"view/tester/*"`, `embed_pck=true`). The 11.7 MB pack was then mounted into an EMPTY project
+(`ProjectSettings.load_resource_pack`, so res:// resolves only from the pack) and all 477
+real resource paths under res://assets, res://content, res://data plus the cinematic's voice
+line were checked with `ResourceLoader.exists` + `load()`: 464 ok, 0 unloadable, 13 missing -
+and the 13 are exactly what the game never loads (the launcher .ico, consumed at exe build
+time, and 12 content SOURCES.md docs). All 12 .glb models, BOTH .mp3 voice lines
+(assets/audio/world/beacon_open.mp3, view/cinematics/custom_voiceline.mp3), all 199 .png
+sprites/icons, 60 .wav cues and 123 .json sheets load from the pack alone. Conclusion: a
+resource that is missing only in an export cannot be the owner's crash; the crash hunt stays
+in the editor-runnable paths.
+
+## D-U4-5 (2026-11-23) Cycle 8 U4h: the J12 loader guard and the two U4 files that tripped it
+
+`test_model_materials.gd` rule B scans res://view + res://app for the literal
+"res://assets/models/" and requires "vertex_color_use_as_albedo" in the file or an allow-list
+entry. The predecessor's two new files tripped it in the first suite run. Fixed honestly, not
+by weakening the guard: `player_figure_fallback.gd` now assigns its own unshaded
+vertex-colour base material to every box surface (so it passes rule B by doing the thing the
+rule exists for - and the locomotion rig's `get_surface_override_material` copies now inherit
+a real material instead of null), and `asset_load.gd`'s header comment no longer carries the
+literal res:// model path (it is a generic path-parameterized loader, not a model renderer;
+its one load call per type is guarded and reported).

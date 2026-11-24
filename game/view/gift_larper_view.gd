@@ -21,6 +21,7 @@ extends Node3D
 # dropping the real art in changes nothing here.
 
 const BillboardScript := preload("res://view/billboard.gd")
+const AssetLoadScript := preload("res://view/asset_load.gd")   # U4: fail-soft loads + material release
 const GiftLarperAudioScript := preload("res://view/audio/gift_larper_audio.gd")
 
 const DEFUSE_GREY := 0.55          # modulate greys to this at the end of the defused window
@@ -53,8 +54,19 @@ var _puff: CPUParticles3D = null
 ## Parses sprites.json, builds the billboarded PNG sprite (BILLBOARDING + TRANSPARENCY via
 ## billboard.gd, unchanged) and caches the anim-block effect parameters (read from the block,
 ## never hard-coded). folder_dir is the enemy folder's res:// path.
+
+# U4 (Terra finding 3): release this view's surface-override materials before the node
+# is destroyed, on EVERY free path (the world's teardown or a direct free()). A
+# MeshInstance3D's override Refs die before its rendering-server instance is freed, so
+# freeing with the overrides still set leaves a dangling material RID and the dummy
+# renderer prints `ERROR: Parameter "material" is null`; clearing them here first is
+# the ownership fix (see asset_load.gd release_materials).
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE:
+		AssetLoadScript.release_materials(self)
 func setup(folder_dir: String = "res://content/enemies/gift_larper") -> void:
-	var text := FileAccess.get_file_as_string(folder_dir.path_join("sprites.json"))
+	# U4: a guarded data-file read (ResourceLoader.exists gate, never a raw open).
+	var text := AssetLoadScript.text(folder_dir.path_join("sprites.json"))
 	var doc: Variant = JSON.parse_string(text)
 	if not (doc is Dictionary):
 		push_warning("gift_larper_view: sprites.json unreadable at %s" % folder_dir)
@@ -176,10 +188,21 @@ func sync(eye: Vector3 = Vector3.ZERO) -> void:
 	if _emitter == null or billboard == null:
 		return
 	if eye == Vector3.ZERO:
-		_emitter.emitting = true
+		_set_emitting(true)
 		return
 	var p := billboard.global_position if billboard.is_inside_tree() else billboard.position
-	_emitter.emitting = p.distance_to(eye) <= _tell_range
+	_set_emitting(p.distance_to(eye) <= _tell_range)
+
+
+## U4: CPUParticles3D's `emitting` setter reads the node's global transform, which errors
+## ("Condition !is_inside_tree() is true") when the view is not in the tree - and a view
+## IS synced outside the tree: world.gd pre-builds the enemy hosts detached and the tests
+## build a world outside the tree. The tell is a draw state, so it is simply not written
+## while detached; the next tick after the view enters the tree sets it.
+func _set_emitting(p_on: bool) -> void:
+	if not _emitter.is_inside_tree():
+		return
+	_emitter.emitting = p_on
 
 
 ## Frame locally (BILLBOARDING) - the billboard's own _process is disabled; this file owns it.

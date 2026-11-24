@@ -23,6 +23,7 @@ extends Node3D
 # the band and feet ring stay translucent.
 
 const BillboardScript := preload("res://view/billboard.gd")
+const AssetLoadScript := preload("res://view/asset_load.gd")   # U4: fail-soft loads (text/scene/texture/stream)
 
 const SHEET_REL := "res://content/enemies/you/sprites.json"
 const FOLDER_REL := "res://content/enemies/you"
@@ -56,10 +57,9 @@ func setup(sheet_path: String = SHEET_REL, folder: String = FOLDER_REL) -> void:
 	for child in get_children():
 		child.free()
 	var doc: Dictionary = {}
-	if FileAccess.file_exists(sheet_path):
-		var parsed = JSON.parse_string(FileAccess.get_file_as_string(sheet_path))
-		if parsed is Dictionary:
-			doc = parsed
+	var parsed = JSON.parse_string(AssetLoadScript.text(sheet_path))
+	if parsed is Dictionary:
+		doc = parsed
 	_anim_block = doc.get("anim", {})
 	_read_anim_block()
 	_sprite_wrap = Node3D.new()

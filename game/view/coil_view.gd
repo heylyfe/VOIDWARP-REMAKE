@@ -30,6 +30,7 @@ extends Node3D
 # VFX file that owns it.
 
 const BillboardScript := preload("res://view/billboard.gd")
+const AssetLoadScript := preload("res://view/asset_load.gd")   # U4: fail-soft loads (text/scene/texture/stream)
 
 const TICKS_PER_SECOND := 60.0
 
@@ -69,7 +70,7 @@ var _base_scale := Vector3.ONE
 ## and caches the anim-block timings + the cycle animation's per-frame world heights.
 ## folder_dir is the enemy folder's res:// path.
 func setup(folder_dir: String = "res://content/enemies/coil") -> void:
-	var text := FileAccess.get_file_as_string(folder_dir.path_join("sprites.json"))
+	var text := AssetLoadScript.text(folder_dir.path_join("sprites.json"))
 	var doc: Variant = JSON.parse_string(text)
 	if not (doc is Dictionary):
 		push_warning("coil_view: sprites.json unreadable at %s" % folder_dir)

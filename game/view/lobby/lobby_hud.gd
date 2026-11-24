@@ -16,9 +16,20 @@ extends Control
 # Pure view: nothing here writes sim state.
 
 const UiStyle := preload("res://view/ui_style.gd")
+const AssetLoadScript := preload("res://view/asset_load.gd")
 const EDGE := 24.0
 const ICON_SIZE := 18.0
-const GOLD_BALANCE_ICON := preload("res://assets/icons/gold_balance.png")
+# U4: a guarded load, not a preload - a missing png must not break this file's load.
+const GOLD_BALANCE_ICON_PATH := "res://assets/icons/gold_balance.png"
+# U4 test seam: the icon path, default the real art; a test re-points it and re-runs
+# _load_icon() to prove a missing png only hides the icon.
+var icon_path := GOLD_BALANCE_ICON_PATH
+
+
+func _load_icon() -> void:
+	_icon.texture = AssetLoadScript.texture(icon_path)
+	if _icon.texture == null:
+		_icon.visible = false   # no icon art: the purse number still reads
 
 var _purse_gold := 0
 var _label: Label            # the value ("999999 g")
@@ -42,7 +53,7 @@ func _init() -> void:
 	var row: HBoxContainer = pill.get_node("Row")
 	_label = pill.get_node("Row/Value")
 	_icon = TextureRect.new()
-	_icon.texture = GOLD_BALANCE_ICON
+	_load_icon()
 	_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	_icon.custom_minimum_size = Vector2(ICON_SIZE, ICON_SIZE)

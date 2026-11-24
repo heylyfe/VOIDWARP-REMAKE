@@ -34,6 +34,7 @@ extends Node3D
 # key, first listing wins) and ages them against the rows' shared rt_tick.
 
 const EnemyAnimScript := preload("res://view/enemy_anim.gd")
+const AssetLoadScript := preload("res://view/asset_load.gd")   # U4: fail-soft loads (text/scene/texture/stream)
 const BillboardScript := preload("res://view/billboard.gd")
 
 const SHEET_REL := "res://content/enemies/toucher/sprites.json"
@@ -95,10 +96,9 @@ func setup(sheet_path: String = SHEET_REL, folder: String = FOLDER_REL, floor_on
 		child.free()
 	_folder = folder
 	_floor_only = floor_only
-	if FileAccess.file_exists(sheet_path):
-		var parsed = JSON.parse_string(FileAccess.get_file_as_string(sheet_path))
-		if parsed is Dictionary:
-			_doc = parsed
+	var parsed = JSON.parse_string(AssetLoadScript.text(sheet_path))
+	if parsed is Dictionary:
+		_doc = parsed
 	_anim_block = _doc.get("anim", {})
 	_read_anim_block()
 	if not _floor_only:

@@ -19,6 +19,7 @@ extends Node3D
 # the anim block in sprites.json is the frame source of truth.
 
 const BillboardScript := preload("res://view/billboard.gd")
+const AssetLoadScript := preload("res://view/asset_load.gd")   # U4: fail-soft loads (text/scene/texture/stream)
 const SealAudio := preload("res://view/audio/seal_audio.gd")
 
 const SEG_U := 0.5                  # dash_segment_u (anim block telegraph effect params)
@@ -48,7 +49,7 @@ var _line_total := 45               # telegraph brightening span (ticks)
 ## on the origin, BILLBOARDING + TRANSPARENCY rules live in billboard.gd) and caches the
 ## anim-block parameters. folder_dir is the enemy folder's res:// path.
 func setup(folder_dir: String = "res://content/enemies/seal") -> void:
-	var text := FileAccess.get_file_as_string(folder_dir.path_join("sprites.json"))
+	var text := AssetLoadScript.text(folder_dir.path_join("sprites.json"))
 	var doc: Variant = JSON.parse_string(text)
 	if not (doc is Dictionary):
 		push_warning("seal_view: sprites.json unreadable at %s" % folder_dir)

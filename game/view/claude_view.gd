@@ -25,6 +25,7 @@ extends Node3D
 const BillboardScript := preload("res://view/billboard.gd")
 const EnemyAnimScript := preload("res://view/enemy_anim.gd")
 const ClaudeAudio := preload("res://view/audio/claude_audio.gd")
+const AssetLoadScript := preload("res://view/asset_load.gd")
 
 const SHEET_REL := "res://content/enemies/claude/sprites.json"
 const FOLDER_REL := "res://content/enemies/claude"
@@ -49,11 +50,13 @@ var _last_warned := 0
 func setup(sheet_path: String = SHEET_REL, folder: String = FOLDER_REL) -> void:
 	for child in get_children():
 		child.free()
+	# U4: the sheet is a guarded data-file read (asset_load gates on ResourceLoader.exists,
+	# never FileAccess.file_exists - an export packs the remap, not the raw file), so a
+	# missing sprites.json builds an empty billboard instead of an unguarded open error.
 	var doc: Dictionary = {}
-	if FileAccess.file_exists(sheet_path):
-		var parsed = JSON.parse_string(FileAccess.get_file_as_string(sheet_path))
-		if parsed is Dictionary:
-			doc = parsed
+	var parsed = JSON.parse_string(AssetLoadScript.text(sheet_path))
+	if parsed is Dictionary:
+		doc = parsed
 	_wrap = Node3D.new()
 	_wrap.name = "SpriteWrap"
 	add_child(_wrap)

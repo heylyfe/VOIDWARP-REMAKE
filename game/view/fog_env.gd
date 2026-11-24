@@ -22,6 +22,7 @@ const CYCLE_DENSITY := 0.015  # levels 31+ keep the densest density, D-T014c-1
 const PALETTE_PATH := "res://data/palette.json"
 const BIOME_DIR := "res://content/biomes"
 const RosterScript := preload("res://core/roster.gd")
+const AssetLoadScript := preload("res://view/asset_load.gd")   # U4: fail-soft loads (text/scene/texture/stream)
 const StatsScript := preload("res://core/stats.gd")
 
 var biome_id := ""  # "" = the act-I biome (resolved from content)
@@ -51,7 +52,7 @@ static func biome_id_for_level(level_: int) -> String:
 
 
 static func load_palette() -> Dictionary:
-	var text := FileAccess.get_file_as_string(PALETTE_PATH)
+	var text := AssetLoadScript.text(PALETTE_PATH)
 	var parsed: Variant = JSON.parse_string(text)
 	if typeof(parsed) != TYPE_DICTIONARY:
 		push_error("fog_env: cannot parse %s" % PALETTE_PATH)
@@ -61,7 +62,7 @@ static func load_palette() -> Dictionary:
 
 static func load_biome(biome_id: String) -> Dictionary:
 	var path := "%s/%s.json" % [BIOME_DIR, biome_id]
-	var text := FileAccess.get_file_as_string(path)
+	var text := AssetLoadScript.text(path)
 	var parsed: Variant = JSON.parse_string(text)
 	if typeof(parsed) != TYPE_DICTIONARY:
 		push_error("fog_env: cannot parse %s" % path)
