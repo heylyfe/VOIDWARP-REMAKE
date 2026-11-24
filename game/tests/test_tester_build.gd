@@ -504,6 +504,14 @@ func _report_list_geometry(f: Array[String], panel, root: Window) -> void:
 		f.append(("spawn: the enemy list viewport grew to %d px - it must stay bounded"
 				+ " at %d px so the spawn buttons under it are on screen at any window size")
 				% [int(host_min.y), int(panel.LIST_CAP_H)])
+	# a bound is only a bound if the viewport is really there: a plain Control whose
+	# minimum height is never SET collapses to nothing and shows no row at all - the
+	# owner's "cut off" failure reached from the other side. The same holds for a cap
+	# so small it hides every row. At least one row must be visible.
+	if host_min.y < panel.LIST_ROW_H - 0.5:
+		f.append(("spawn: the enemy list viewport is %d px tall - it must show at least"
+				+ " one %d-px row (a bound of nothing hides the whole roster)")
+				% [int(host_min.y), int(panel.LIST_ROW_H)])
 	var rows: int = panel._content.get_child_count()
 	# every row carries at least LIST_ROW_H px of list content: a list that did not hold
 	# its whole roster could not scroll to its last row

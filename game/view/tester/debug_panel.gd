@@ -22,9 +22,11 @@ extends Control
 #                          is claude and no swarm is live. The panel keeps NO second spawn
 #                          path of its own: one call per enemy, unguarded. The picker is
 #                          an in-panel, height-bounded SCROLL LIST (D-T2-11), no popup
-#                          Window anywhere near choosing an enemy: an ItemList at full
-#                          content height inside its own ScrollContainer inside a plain
-#                          Control host whose fixed minimum height bounds it - so every
+#                          Window anywhere near choosing an enemy: a VBoxContainer of
+#                          full-width row Buttons at full content height inside its own
+#                          ScrollContainer inside a plain Control host whose fixed minimum
+#                          height bounds it (an ItemList cannot carry this: this engine
+#                          build reports no content-driven minimum for it) - so every
 #                          registry enemy plus the pinned Peter row (D-T2-10: the boss is
 #                          not registry content, his row is fixed here and _spawn routes
 #                          it to the FORCE PETER machinery - _enter_boss_arena(), never a
