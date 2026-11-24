@@ -372,6 +372,13 @@ var tester_tick_hook: Callable = Callable()
 # path (boss projectiles dispatch ctl._die directly, not controller.try_kill) respects it.
 # False in every public build - nothing sets it.
 var tester_god := false
+# TESTER (cycle 8 U2b, D-T2-13): the world's OWN queued tick jobs - the same treatment the
+# panel's tester_tick_hook gives its queued commands (D-T2-4/D-T2-9), so a queued job runs
+# inside a real step() tick instead of between ticks and its sim effects are seen by that
+# same tick's passes. Empty in every public build: only tester_spawn_enemy() appends, and
+# only the tester panel calls that; teardown() clears it so a torn-down level's job never
+# lands on the next level's state.
+var _tester_jobs: Array = []
 
 
 func _ready() -> void:
@@ -791,6 +798,18 @@ func step(dt: float, command: Dictionary = {}) -> void:
 			tester_ev = (tres as Dictionary).get("ev", []) as Array
 			if bool((tres as Dictionary).get("skip", false)):
 				return
+	# TESTER (cycle 8 U2b, D-T2-13): drain the world's OWN queued tester jobs - same slot as
+	# the panel's hook, at the tick top before anything can kill - so the job's effects are
+	# live for THIS tick's passes below (a queued swarm attach is picked up by this same
+	# step's ClawdsScript.tick). Each job is a Callable(ev); a public tick pays only the
+	# emptiness check.
+	if not _tester_jobs.is_empty():
+		var jobs := _tester_jobs.duplicate()
+		_tester_jobs.clear()
+		for job in jobs:
+			var job_run: Callable = job
+			if job_run.is_valid():
+				job_run.call(tester_ev)
 	var a_in: Dictionary = _capture_input() if command.is_empty() else command
 	_mouse_lock_pass(int(a_in.get("app", 0)))
 	if lstate.boss != null and lstate.boss.arena_entered:
@@ -1253,6 +1272,68 @@ func apply_tester_upgrade_stack(id: String) -> void:
 	_apply_phase_stats()
 
 
+## TESTER (cycle 8 U2b, D-T2-13): spawn registry enemy `id` at world point `at` - and give
+## the level the clawd swarm when `id` is the swarm-bearing roster entry the votes never
+## carried. Called only by the tester debug panel (absent from every public pack); nothing
+## in the public game calls it. Two halves:
+##   1. the spawn half is the panel's own path verbatim, no shortcut: _behavior_for() +
+##      _cfg_for() (votes 1 - the panel's own call shape) then the runtime's own
+##      spawn_at(), the same row shape the vote plan produces;
+##   2. the swarm half exists ONLY when the id's module declares clawd_cfg() (the
+##      extra_mines() probe idiom; no content id is named here) AND the level carries no
+##      swarm yet (lstate.clawds == null - a level that voted the entry in built its swarm
+##      in build() and must not get a second). The attach is QUEUED, not immediate: it
+##      runs as a world tick job on the NEXT step() through the same placement/create/
+##      view-setup path level construction uses:
+##        ClawdsScript.attach(lv, cfg)     - build()'s own placement step (D-T4-2)
+##        ClawdsScript.create(lv)         - the exact create LevelState.build runs
+##        clawd_view.setup(lstate.clawds) - build()'s own view-setup step (D-T4-8)
+## Idempotent: the entry queues nothing when a swarm exists, and the job re-checks the
+## same guard at run time, so a second spawn of the id (or two spawns before one tick
+## drains) attaches nothing and never doubles the body count. The sim files are untouched:
+## no threshold and no determinism rule changes - the swarm joins the state hash only
+## after it exists, exactly as a voted swarm does.
+## Returns false AND changes nothing when no level is live (no controller / level state /
+## runtime / registry) or the id is not in the registry.
+func tester_spawn_enemy(id: String, at: Vector3) -> bool:
+	if id == "" or ctl == null or lstate == null or rt == null or _api == null:
+		return false
+	var entry: Dictionary = _api.enemy(id)
+	var beh = _behavior_for(id)
+	if entry.is_empty() or beh == null:
+		return false
+	var cfg := _cfg_for(entry, id, _level_number, 1, beh)
+	var row: Dictionary = rt.spawn_at(id, str(entry.get("name", id)), beh, cfg, at)
+	if row.is_empty():
+		return false
+	# D-T2-13: queue the swarm attach only when this id owns one and the level has none.
+	if lstate.clawds == null:
+		var K = load("res://content/enemies/%s/enemy.gd" % id)
+		if K != null and K.has_method("clawd_cfg"):
+			var clawd_cfg: Variant = K.call("clawd_cfg")
+			if clawd_cfg is Dictionary and not (clawd_cfg as Dictionary).is_empty():
+				_tester_jobs.append(Callable(self, "_tester_attach_swarm")
+					.bind(clawd_cfg))
+	return true
+
+
+## The queued D-T2-13 job body, run inside the world's next step(): attach the swarm
+## through the same placement/create/view-setup path build() itself uses, so a
+## tester-spawned swarm owner plays the level exactly like a voted one from the first
+## attached tick on. The guard re-runs here (not only at queue time) for idempotence: a
+## job that lost the race to another attach does nothing.
+func _tester_attach_swarm(_ev: Array, clawd_cfg: Dictionary) -> void:
+	if lstate == null or lstate.clawds != null:
+		return   # no level is live, or a swarm already exists - attach nothing
+	ClawdsScript.attach(lv, clawd_cfg)          # build()'s placement step (D-T4-2)
+	lstate.clawds = ClawdsScript.create(lv)     # LevelState.build's own create step
+	if lstate.clawds != null:
+		if clawd_view == null:
+			clawd_view = ClawdViewScript.new()
+			add_child(clawd_view)
+		clawd_view.setup(lstate.clawds)          # build()'s view-setup step (D-T4-8)
+
+
 ## The owned stacks of every upgrade carrying the free-fall signature (FREE_FALL_HOOK).
 func _free_fall_stacks(plan: Dictionary) -> int:
 	var total := 0
@@ -1476,6 +1557,9 @@ func teardown() -> void:
 	collapse_view = null
 	_collapse = {}
 	last_events = []
+	# TESTER (D-T2-13): a queued tester job belongs to THIS level's state; the next build()
+	# must not inherit it (its guard would attach a swarm the next level never asked for).
+	_tester_jobs = []
 	toucher_floor = null
 	telegraph_view = null
 	coil_view = null

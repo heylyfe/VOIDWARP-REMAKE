@@ -18,7 +18,13 @@ extends RefCounted
 #       three public presets are named by hand and no line sets preset: Tester;
 #   (f) tools/build_tester.ps1 exists and never uploads / creates a release;
 #   (g) the tester run-log header flag: run_started's additive extra payload reaches the
-#       run_start record (the public default stays byte-identical: type + seed + class).
+#       run_start record (the public default stays byte-identical: type + seed + class);
+#   (h) the cycle-8 ask (D-T2-10): the enemy dropdown carries EVERY registry enemy plus
+#       the pinned Peter row, its popup is height-capped so a long list scrolls, every
+#       row fits the panel column, and each entry spawns LIVE through the panel's own
+#       path (enemy_runtime for registry ids, the boss arena entry for Peter). The ids
+#       come from the registry itself - a new enemy added under content/enemies/ is
+#       covered automatically, no name is hardcoded.
 #
 # Sim behaviour is NOT re-asserted here (the brief's "unchanged and green" is the whole
 # suite running green - the sim fixtures are the replay suite's own); this file only
@@ -30,6 +36,11 @@ const DIRS_NO_PRELOAD: Array[String] = [
 ]
 const PRELOAD_RE := "preload\\([^)]*view/tester"
 const RUN_LOG_SCRIPT := preload("res://app/run_log.gd")
+const AppScript := preload("res://app/app.gd")
+const EnemyRuntimeScript := preload("res://sim/enemy_runtime.gd")
+const SPAWN_SEED := 7311     # this leg's scratch seed (distinct from every other run's)
+const SPAWN_DT := 1.0 / 60.0
+const SPAWN_PETER_ID := "peter"   # the pinned boss row's metadata (debug_panel PETER_ID)
 
 
 func run() -> Array[String]:
@@ -42,6 +53,7 @@ func run() -> Array[String]:
 	_test_matrix_cannot_pick_tester(f)
 	_test_build_tester_script(f)
 	_test_run_log_tester_header(f)
+	_test_panel_enemy_list_and_spawn(f)
 	return f
 
 
@@ -322,3 +334,210 @@ func _test_run_log_tester_header(f: Array[String]) -> void:
 		f.append("tester: run_start's seed/class were disturbed by the extra payload")
 	DirAccess.remove_absolute(path)
 
+
+# ---- (h): cycle 8, D-T2-10 - the list is registry-driven, complete, scrollable, spawnable ----
+
+
+## The owner's cycle-8 ask. Boot the real app to a live WORLD level, host the real panel
+## on the tree, then LOOP over the registry: every id enemy_ids() reports must (a) be in
+## the panel's enemy dropdown and (b) spawn a LIVE body through the panel's own path -
+## the OptionButton selection driving _spawn, exactly as a mouse pick does. The pinned
+## Peter row must route to the boss machinery (the arena entry on the tick hook), never
+## to the enemy runtime. A new enemy added under content/enemies/ is swept by the loop
+## with no edit here; a hardcoded roster would defeat that.
+func _test_panel_enemy_list_and_spawn(f: Array[String]) -> void:
+	var scratch := "user://test_tester_spawn_records.json"
+	var log_path := "user://runs/%d_0.jsonl" % SPAWN_SEED
+	_rm(scratch)
+	_rm(log_path)
+	var tree = Engine.get_main_loop()
+	var root: Window = (tree as SceneTree).root if tree is SceneTree else null
+	if root == null:
+		f.append("spawn: no SceneTree root to host the app (the headless driver changed)")
+		return
+	var app = AppScript.new()
+	app.records_path = scratch
+	app.start_run(SPAWN_SEED)
+	root.add_child(app)
+	app._ready()
+	app._menu.play_requested.emit()
+	if app._class_altar != null and app._class_altar.is_open():
+		app._class_altar.skip()
+	var loading = app._loading
+	var guard := 0
+	while app.state() == "LOADING" and loading != null and guard < 400:
+		loading.advance(0.25)
+		guard += 1
+	if app.state() != "WORLD" or app._world == null:
+		f.append("spawn: the app never reached a live WORLD level (state=%s after %d advances)"
+			% [str(app.state()), guard])
+		root.remove_child(app)
+		app.free()
+		return
+	var world = app._world
+	var PanelScript = load("res://view/tester/debug_panel.gd")
+	var panel = PanelScript.new()
+	panel.setup(app)
+	root.add_child(panel)
+	# the app's own handoff (D-T2-9): the panel arms its tick hook before any tick
+	panel.on_world_built(world)
+	panel.open()
+	_report_list_contents(f, panel)
+	_report_list_geometry(f, panel, root)
+	_spawn_every_registry_enemy(f, panel, world)
+	_spawn_peter_through_boss_path(f, panel, world)
+	panel.close()
+	root.remove_child(panel)
+	panel.free()
+	root.remove_child(app)
+	app.free()
+	_rm(scratch)
+	_rm(log_path)
+
+
+## (a) of the ask: the dropdown holds EVERY registry id plus the pinned Peter row, each
+## with a real label - no more, no fewer.
+func _report_list_contents(f: Array[String], panel) -> void:
+	var api: RefCounted = panel._api()
+	if api == null:
+		f.append("spawn: the panel found no content registry")
+		return
+	var ids: Array[String] = []
+	for id in api.enemy_ids():
+		ids.append(str(id))
+	var listed: Array[String] = []
+	for i in panel._content.item_count:
+		listed.append(str(panel._content.get_item_metadata(i)))
+		var txt := str(panel._content.get_item_text(i)).strip_edges()
+		if txt == "":
+			f.append("spawn: enemy list row %d has a blank label" % i)
+	if listed.size() != ids.size() + 1:
+		f.append("spawn: the enemy list holds %d rows; want the %d registry ids plus Peter (%d)"
+			% [listed.size(), ids.size(), ids.size() + 1])
+	for id in ids:
+		if not listed.has(id):
+			f.append("spawn: registry enemy %s is missing from the panel's list" % id)
+	if not listed.has(SPAWN_PETER_ID):
+		f.append("spawn: the pinned Peter row is missing from the panel's list")
+	if listed.has(SPAWN_PETER_ID) and api.enemy_ids().has(SPAWN_PETER_ID):
+		f.append("spawn: Peter must be a pinned row, not registry content")
+
+
+## The "cut off" half of the ask, two teeth: (1) the popup caps at a share of the window
+## height, so a list that outgrows the window SCROLLS and every entry stays reachable;
+## (2) every horizontal row of the panel column fits the scroll column's width - the
+## cycle-8 bug was a 432-px enemies row inside a 370-px column, its spawn buttons off
+## the viewport.
+func _report_list_geometry(f: Array[String], panel, root: Window) -> void:
+	var scroll: ScrollContainer = panel._layer.get_child(0)
+	var avail := float(scroll.get_rect().size.x)
+	if avail <= 0.0:
+		f.append("spawn: the panel's scroll column reports no width (%s)" % str(scroll.get_rect()))
+		return
+	var column: Container = scroll.get_child(0)
+	for row in column.get_children():
+		if not (row is HBoxContainer):
+			continue
+		var rw := 0.0
+		var kids: Array = (row as HBoxContainer).get_children()
+		for k in kids:
+			rw += (k as Control).get_combined_minimum_size().x
+		rw += float(maxi(kids.size() - 1, 0)) * \
+			float((row as HBoxContainer).get_theme_constant("separation"))
+		if rw > avail:
+			var parts: Array[String] = []
+			for k in kids:
+				var kc := k as Control
+				parts.append("%s[%s] min=%d" % [str(kc.name), str(kc.get("text")),
+					int(kc.get_combined_minimum_size().x)])
+			f.append("spawn: a panel row is %d px wide inside the %d-px column - it is cut"
+				+ " off (row %s: %s)" % [int(rw), int(avail), str(row.name),
+				" | ".join(parts)])
+	# the popup cap: max_size's height half (this engine has no PopupMenu.max_height);
+	# 0 means uncapped, an uncapped list can run past the window
+	var vh := float(root.size.y)
+	var pop: PopupMenu = panel._content.get_popup()
+	var cap := int(pop.max_size.y)
+	if cap <= 0:
+		f.append("spawn: the enemy popup's max_size height is 0 - an uncapped list can run"
+			+ " past the window and its tail is unreachable")
+	elif float(cap) > vh * 0.61:
+		f.append("spawn: the enemy popup's max_size height %d exceeds the 60%% cap of the %d-px window"
+			% [cap, int(vh)])
+
+
+## (b) of the ask, the registry LOOP: for every id the registry reports, pick it in the
+## panel's own dropdown and spawn through the panel's own path, then assert a LIVE row
+## reached the world (runtime rows + the body mirror the game's own readers use).
+func _spawn_every_registry_enemy(f: Array[String], panel, world) -> void:
+	var api: RefCounted = panel._api()
+	for id in api.enemy_ids():
+		var idx := _panel_row_of(panel, str(id))
+		if idx < 0:
+			continue   # _report_list_contents already reported the missing row
+		panel._content.selected = idx
+		var before: int = world.rt.enemies.size()
+		var mirrors_before: int = (world.w["enemies"] as Array).size()
+		panel._spawn(false)
+		var rows: Array = world.rt.enemies
+		if rows.size() != before + 1:
+			f.append("spawn: %s never reached the runtime (rows %d -> %d)"
+				% [str(id), before, rows.size()])
+			continue
+		var row: Dictionary = rows[rows.size() - 1]
+		if str(row["id"]) != str(id):
+			f.append("spawn: the panel spawned %s, want %s" % [str(row["id"]), str(id)])
+		if EnemyRuntimeScript.is_out_of_play(row):
+			f.append("spawn: %s arrived already out of play" % str(id))
+		var pos := Vector3(float(row["x"]), float(row["y"]), float(row["z"]))
+		if not pos.is_finite():
+			f.append("spawn: %s arrived at a bad position %s" % [str(id), str(pos)])
+		var cfg: Dictionary = row["cfg"]
+		var mirrors: int = (world.w["enemies"] as Array).size()
+		if not bool(cfg.get("bodyless", false)) and mirrors != mirrors_before + 1:
+			f.append("spawn: %s spawned without a body mirror (mirrors %d -> %d)"
+				% [str(id), mirrors_before, mirrors])
+		if not str(panel._status_line.text).begins_with("spawned "):
+			f.append("spawn: %s left the status line at \"%s\"" % [str(id),
+				str(panel._status_line.text)])
+
+
+## Peter: the pinned row must spawn through the BOSS machinery - _force_boss queues the
+## arena entry, the world's tick hook runs it (D-T2-9), and the boss instance it created
+## enters the arena. A panel that tried the enemy runtime instead never makes
+## arena_entered true, and a row that queues nothing fails the tick's assertion.
+func _spawn_peter_through_boss_path(f: Array[String], panel, world) -> void:
+	var idx := _panel_row_of(panel, SPAWN_PETER_ID)
+	if idx < 0:
+		f.append("spawn: the Peter row is missing, nothing to pick")
+		return
+	panel._content.selected = idx
+	panel._spawn(false)
+	var boss = world.lstate.get("boss") if world.lstate != null else null
+	if boss == null:
+		f.append("spawn: the Peter row did not create the boss instance")
+		return
+	if bool(boss.get("arena_entered")):
+		f.append("spawn: Peter claims the arena BEFORE the queued tick ran it")
+		return
+	world.step(SPAWN_DT)
+	if not bool(boss.get("arena_entered")):
+		f.append("spawn: the Peter row never entered the boss arena on its tick hook")
+	if str(panel._status_line.text).find("boss") < 0:
+		f.append("spawn: spawning Peter left the status line at \"%s\""
+			% str(panel._status_line.text))
+
+
+## The dropdown row carrying p_id, or -1.
+func _panel_row_of(panel, p_id: String) -> int:
+	for i in panel._content.item_count:
+		if str(panel._content.get_item_metadata(i)) == p_id:
+			return i
+	return -1
+
+
+## Remove one user:// file if it exists (the scratch records + this leg's run log).
+func _rm(path: String) -> void:
+	var dir := DirAccess.open(path.get_base_dir())
+	if dir != null and dir.file_exists(path.get_file()):
+		dir.remove(path.get_file())

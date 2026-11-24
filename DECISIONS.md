@@ -9931,3 +9931,107 @@ and a rebuild must not accumulate.
 NOT FIXED HERE, BY SCOPE: `enemy_roster.gd:113` builds a badge the same way but parents it
 unconditionally, so it does not leak; it is left alone. The unrelated at-exit audio leak the
 same sweep saw in short runs (F2: `AudioStream*` still in use) is untouched and still open.
+
+## D-T2-10 (2026-11-23): the enemy list is registry-driven, complete, capped-scrollable, and Peter rides the boss machinery (cycle 8, U2)
+
+**Owner's words (cycle 8, verbatim).** "tester build enemy spawn list is buggy and cut off (cannot spawn
+enemies). Tester list must show ALL enemies incl. Claude, Gin, Peter, scrollable, and spawning must work;
+add a test that every enemy id in the registry is in the list and spawnable."
+
+**The cut-off was a layout arithmetic bug, not a registry bug.** Claude and Gin were always IN the registry
+(`content_api.enemy_ids()` scans all 12 `content/enemies/` folders and the panel already looped it). The
+enemies section packed a 232-px dropdown plus two 92-px AHEAD/CURSOR buttons plus separations - 432 px of
+minimum width - into a scroll column whose own `custom_minimum_size` is 370 px: the row never fit, the
+CURSOR button sat outside the viewport, the horizontal gap read as "the list is cut off". The panel column
+is vertical-scroll only in practice, so the fix is layout, not scroll plumbing: the dropdown owns a full
+width row of its own (`SIZE_EXPAND_FILL`, every label readable), and SPAWN AHEAD / SPAWN AT CURSOR share
+a 320-px button row below it; every row of the column now fits 370 px with 50 px to spare. The duplicate
+full-width "SPAWN ENEMY (AHEAD)" button is deleted with the row that caused the overflow - its behaviour
+is the restructured SPAWN AHEAD, byte-for-byte the same call.
+
+**Scrollable, permanently.** An OptionButton popup with no height cap is only reachable while it fits the
+window; a growing registry (12 today, more later) plus Peter makes that fragile. Both dropdowns now cap
+their popups at 60 % of the viewport height (`_cap_popups()` on every refresh, `POPUP_MAX_H_SHARE`).
+This engine build REMOVED `PopupMenu.max_height` (the first cut used it and the engine threw "Invalid
+access to property 'max_height'" - caught in the suite run), so the cap is the popup WINDOW's
+`max_size` height half (`PopupMenu` inherits `Window`), the shape this 4.7.2 build supports: the popup
+clamps to it and `PopupMenu`'s own scrolling (`scroll_to_item` is exposed) keeps every entry reachable
+by wheel, click and keyboard. `_api()` also stops lying: its comment promised a fresh registry load when
+no level is live, the code returned null - so opening F10 in the menu or the lobby showed an EMPTY list.
+The fallback load now exists, and `on_world_built()` re-refreshes, so the list is complete wherever the
+panel is opened.
+
+**Peter rides the boss machinery, never a second spawn path.** The boss is not registry content
+(`data/boss.json` + `sim/boss.gd`), so the panel pins ONE fixed row after the registry ids
+(`PETER_LABEL`, metadata `PETER_ID`), and `_spawn()` routes that id to `_force_boss()` - the FORCE PETER
+machinery D-T2-7-amend built: the boss instance on a non-boss level, the queued tick job, the real
+`_enter_boss_arena()` entry on the tick hook (D-T2-9). The enemy runtime is never handed a `peter` row;
+the FORCE PETER BOSS button stays and does the same thing.
+
+**The test, per the owner's spec.** `test_tester_build.gd` gains the (h) leg: it boots the REAL app to a
+live WORLD level, hosts the real panel, and LOOPS over `enemy_ids()` - nothing names a content id, so an
+enemy added under `content/enemies/` is swept automatically. Per id: (a) the dropdown carries it,
+(b) picking it and driving the panel's own `_spawn` puts a live row in `world.rt.enemies` (id, in play,
+finite position, body mirror grown) with the panel's own status line reporting the spawn. The Peter leg
+asserts the arena was NOT entered before the tick, IS entered after one `world.step` (the queued D-T2-9
+job), and the status line says boss. Two layout teeth: the popup's `max_size` height half must be capped
+at ~60 % of
+the window, and every HBox row of the panel column must fit the scroll column's width - the pre-fix 432-px
+enemies row fails both. Reverting the Peter entry fails the Peter leg; reverting `_api()`'s fallback turns
+list-content coverage green-or-nothing in the lobby but stays asserted by the WORLD boot; reverting the
+`_spawn` peter routing fails the arena assertion with a `peter` enemy row spawned instead.
+
+## D-T2-13 (2026-11-24): the tester-spawned swarm owner gets his swarm through a WORLD-queued tick job (cycle 8, U2b)
+
+**Terra's finding 1, verbatim.** "tester-spawned Claude lacks the swarm on a level that did not already vote
+for him." The swarm attached ONLY from the voted plan - build()'s D-T4-2 leg probes the plan's votes for a
+`clawd_cfg()` and calls `ClawdsScript.attach(lv, cfg)` before `LevelState.build` turns the Level dict into
+`lv.clawds` - so a level whose votes carry no swarm-bearing entry has `lv.clawds == null`, `ClawdsScript.tick`
+returns at its null guard every tick, and the panel's direct `enemy_runtime.spawn_at()` row never attaches one.
+
+**The contract.** `world.tester_spawn_enemy(id: String, at: Vector3) -> bool` is the one app-layer entry
+point the panel calls for every spawn. It returns false AND changes nothing when no level is live (no
+controller / level state / runtime / registry) or the id is not in the registry. The spawn half is the
+panel's own path verbatim - `_behavior_for(id)` + `_cfg_for(entry, id, level_number, votes=1, beh)` +
+`rt.spawn_at()` - the same row shape the vote plan produces, no shortcut. The swarm half fires ONLY when
+the id's module declares `clawd_cfg()` (the `extra_mines()` probe idiom; no content id is named in
+app/world.gd) AND `lstate.clawds == null` (a level that DID vote the owner in built its swarm at build()
+and must never get a second).
+
+**The swarm attaches from the app layer, queued - not from the spawn call itself.** The attach is appended
+to `_tester_jobs`, a world-OWNED queue drained at the top of `step()` in the same slot as the panel's
+`tester_tick_hook` probe - so the attach happens inside a real tick and this SAME tick's `ClawdsScript.tick`
+already sees the swarm (the test pins anger moving on the attach tick itself). The job runs the same three
+steps level construction runs, nothing bespoke: `ClawdsScript.attach(lv, cfg)` (build()'s own placement
+step), `lstate.clawds = ClawdsScript.create(lv)` (the exact create `LevelState.build` performs), and
+`clawd_view.setup(lstate.clawds)` (build()'s view-setup step; the view node already exists - build()
+creates it even for a swarmless level - so the job re-setups it, creating it only if absent). Placement is
+therefore the identical pure function of the same Level dict; `test_tester_claude_swarm.gd` proves it
+spot-for-spot against a fresh `attach()` on a duplicate Level dict. NO sim file is touched, no threshold
+moves, and sim determinism is unchanged: the queue is appended to only by this tester-only entry point,
+public builds never call it, and the empty-queue cost of a public tick is one emptiness check. The swarm
+joins the state hash only after it exists, exactly as a voted swarm does. `teardown()` clears the queue, so
+a torn-down level's job never lands on the next build's state.
+
+**The idempotence rule.** Idempotence is enforced at BOTH ends: the entry point queues nothing while a
+swarm exists, and the job re-checks the same guard at run time - so a second spawn of the owner (which
+still spawns its second enemy row) attaches nothing, never replaces the swarm object, never doubles the
+body count, and two spawns racing before one tick drains still end with exactly one swarm. The panel is
+NOT modified: its `_spawn` routes through this entry point (U2a's wire-up), which is why the contract
+lives here.
+
+**The proof.** `test_tester_claude_swarm.gd` runs the real world and the real sim, no stub, on a level
+whose EMPTY votes plan no enemy at all: (A) an unbuilt world refuses the spawn and leaves no state;
+(B) one spawn, one tick, the swarm exists with the count the owner's own `clawd_cfg` asks for on this
+level's tile count - and NOT before that tick, proving the queue; (C) it REALLY ticks and not via the
+null guard's skip - the anger timer climbs exactly one tick per tick, a pickup is OBSERVED (the
+`clawd_collected` event in the world's own `last_events`, the spot taken, remaining down, the timer
+calmed to 0), then resumes; (D) the second spawn leaves the swarm object, spots and count untouched and
+queues no job; (E) two registry ids that own no `clawd_cfg()` still spawn normally and disturb nothing.
+
+**A discovery this fix surfaced (recorded, not fixed here - the panel is U2a's file).** This engine build
+(4.7.2) passes a `Callable`'s call-time arguments BEFORE its `.bind()` arguments, the reverse of what the
+panel's `_run_give_gifts(n: int, ev: Array)` signature expects from `_queue_job(...bind(n))` +
+`run.call(out["ev"])`. U2b's own job uses the engine's order (`_tester_attach_swarm(ev, cfg)`), so it is
+correct here; the panel's give-gifts job may be executing with swapped arguments on this build and belongs
+to the panel track's audit, not this one.
