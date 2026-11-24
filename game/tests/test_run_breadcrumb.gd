@@ -116,12 +116,8 @@ func _leg_b_throttle(f: Array[String]) -> void:
 	if int(bc.write_count()) != after_start:
 		f.append("leg B: the breadcrumb wrote inside the throttle window (%d -> %d)"
 			% [after_start, int(bc.write_count())])
-	# Step until the level's own tick has passed the 60-tick throttle: exactly one more
-	# write. (The refresh runs at the TOP of step(), so it records the last COMPLETED tick -
-	# the one a crash report wants - and the write lands when that tick reaches 60.)
-	# The refresh reads the tick at the TOP of step(), so the write lands on the call whose
-	# last-completed tick is 60 - one call after the tick first reaches 60.
-	while int(w.lstate.tick) < 61:
+	# The refresh records the completed tick, so the write lands on tick 60.
+	for t in 30:
 		w.step(DT, {"move_x": 0, "move_z": 0, "buttons": 0, "app": 0})
 	if int(bc.write_count()) != after_start + 1:
 		f.append("leg B: the breadcrumb did not write at the 60-tick refresh (%d -> %d)"
@@ -156,6 +152,10 @@ func _leg_c_phase(f: Array[String]) -> void:
 	if str(w._breadcrumb_phase()) != "dead":
 		f.append("leg C: a dead controller is not the dead phase (%s)"
 			% str(w._breadcrumb_phase()))
+	w._finish_tick()
+	var fields: Dictionary = w.breadcrumb.read_fields()
+	if fields.get("phase") != "over" or fields.get("tick") != str(w.lstate.tick):
+		f.append("leg C: the breadcrumb did not persist the terminal phase and tick")
 	w.teardown()
 	w.free()
 	_cleanup()

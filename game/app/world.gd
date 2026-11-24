@@ -776,10 +776,6 @@ func step(dt: float, command: Dictionary = {}) -> void:
 		return
 	if _run_over_emitted or (_boss_view != null and _completed_emitted):
 		return   # the run is over: a dead run never ticks again (DESIGN.md section 3)
-	# U4: the crash breadcrumb's cheap refresh (one write a second, plus one per phase
-	# edge). It reads the world's own fields and writes nothing back, so it cannot
-	# move the state hash or the replay.
-	_breadcrumb_refresh()
 	# TESTER (D-T2-9): the debug panel's per-tick probe, armed before the world ever steps
 	# (app.gd hands every built world to the panel first). Runs BEFORE anything this tick
 	# can kill, so a promised god mode covers a fresh world's first tick, and the panel's
@@ -943,6 +939,7 @@ func _finish_tick() -> void:
 	# dead controller), so the two signals never both fire on one tick.
 	if not _run_over_emitted and bool(ctl.dead):
 		_run_over_emitted = true
+		_breadcrumb_refresh()
 		_mouse_locked = false
 		Input.mouse_mode = CameraRigScript.mouse_mode_for(false)   # death screen: release
 		var purse := -1
@@ -953,6 +950,7 @@ func _finish_tick() -> void:
 		WorldAudioScript.play_death(self)
 		run_over.emit(info)
 		return
+	_breadcrumb_refresh()
 	if not _completed_emitted and lstate.beacon != null and bool(lstate.beacon.completed):
 		_completed_emitted = true
 		WorldAudioScript.play_level_complete(self)

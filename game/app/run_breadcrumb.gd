@@ -41,6 +41,7 @@ var path := "user://last_run.txt"
 var _last_tick := -1
 var _last_phase := ""
 var _writes := 0
+var _disabled := false
 
 
 static func create(p_path: String = "user://last_run.txt") -> RefCounted:
@@ -57,20 +58,23 @@ func level_start(seed_value: int, level: int, tick: int, phase: String) -> void:
 ## The cheap refresh: writes only when REFRESH_TICKS have passed or the phase changed.
 ## Returns true when it wrote (the test seam reads it).
 func refresh(seed_value: int, level: int, tick: int, phase: String) -> bool:
-	if phase == _last_phase and _last_tick >= 0 and tick - _last_tick < REFRESH_TICKS:
+	if _disabled or (phase == _last_phase and _last_tick >= 0 and tick - _last_tick < REFRESH_TICKS):
 		return false
+	var previous_writes := _writes
 	write(seed_value, level, tick, phase)
-	return true
+	return _writes > previous_writes
 
 
 ## The unconditional write. Never throws: a read-only or full user:// must not crash the
 ## game, so a failed open is reported once and the breadcrumb goes quiet.
 func write(seed_value: int, level: int, tick: int, phase: String) -> void:
+	if _disabled:
+		return
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	if f == null:
-		if _writes == 0:
-			push_warning("run_breadcrumb: cannot write %s (error %d); the breadcrumb is off"
-				% [path, FileAccess.get_open_error()])
+		_disabled = true
+		push_warning("run_breadcrumb: cannot write %s (error %d); the breadcrumb is off"
+			% [path, FileAccess.get_open_error()])
 		return
 	f.store_line("version=%d" % VERSION)
 	f.store_line("build=%s" % BUILD_TAG)

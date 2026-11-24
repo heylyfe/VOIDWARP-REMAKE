@@ -176,4 +176,4 @@ how the two U4 files now pass it honestly).
 
 ## 9. Gate
 
-GATE_EXIT: _pending - filled after the background gate run_.
+The original U4h worktree at tip `5d402c2` recorded `GATE_EXIT=0`, `GATE OK (9 ran, 0 skipped, 570 s)`, and 145 passing tests in `out/gate.log`. The gate log also contains exit-time RID leak reports. The zero material-null count applies to the specific renderer error measured above.
