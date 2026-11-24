@@ -9981,6 +9981,97 @@ enemies row fails both. Reverting the Peter entry fails the Peter leg; reverting
 list-content coverage green-or-nothing in the lobby but stays asserted by the WORLD boot; reverting the
 `_spawn` peter routing fails the arena assertion with a `peter` enemy row spawned instead.
 
+## D-T2-11 (2026-11-24): the enemy picker is an IN-PANEL scroll list - no popup Window anywhere near choosing an enemy (cycle 8, U2a)
+
+**The owner's words, again.** "make it a scrollable list showing ALL enemies." D-T2-10 capped the OLD
+OptionButton's popup at 60 % of the window, which kept its entries reachable - but a popup is still a
+Window: it raises, it clips against the screen, and the owner's words name a LIST. The cycle-8 rework
+removes the shape itself: choosing an enemy now happens inside the panel's own column, and the test walks
+the panel's node subtree to prove NO Window-mode node (a PopupMenu is one, in this engine) exists in the
+enemy-picking subtree.
+
+**The chain that makes the list bounded AND scrollable in place.** A plain `Control` host (D-T2-10's
+row-fit rule used vertically: a plain Control's minimum size never grows with its children), a
+`ScrollContainer` anchored to fill it with `horizontal_scroll_mode` DISABLED (the container clamps its
+child to the viewport width, so no row can ever run past the 370-px column), and inside that a
+`VBoxContainer` of full-width row Buttons - one per registry enemy plus the pinned Peter row (D-T2-10:
+the boss stays a pinned row, pressed rows route to `_force_boss()`, never the enemy runtime). The host's
+minimum height is `min(list height, LIST_CAP_H = 176)`; the list itself always keeps its full computed
+height. The roster therefore always overflows its bounded viewport (13 rows today ~412 px in 176), and
+the rows below the fold are reached by the in-panel scroll - the LAST row included, at any window size;
+a growing registry can never push entries out of reach again.
+
+**Why not an ItemList.** The obvious control was tried first and rejected on MEASURED facts, not taste:
+this engine build (the custom 4.7.2 fork) has NO `ItemList.fixed_item_height` (assignment errors at
+runtime), and `ItemList.get_combined_minimum_size()` reports `(0, 0)` for a 13-item list even with the
+fork's `set_auto_height(true)` - so neither the cap arithmetic nor the "the whole content exists inside
+the viewport's scroll" reachability proof can be built on it deterministically. Row Buttons in a VBox
+report exactly the deterministic combined-minimum arithmetic the panel itself laid out with D-T2-10
+(the same measurement the 409-px diagnosis used), and the press IS the panel's own selection path
+(`_pick_enemy_row` repaints the picked row PRIMARY).
+
+**The spawn path is ONE call, unguarded (D-T2-12).** `_spawn()` computes the position (unchanged: ahead
+along the look's ground shadow, or at the cursor's ground point) and then makes exactly one call -
+`world.tester_spawn_enemy(id, pos)` (D-T2-13). The panel no longer builds cfgs, probes behaviors or
+talks to `enemy_runtime` itself, it keeps no second spawn path, and there is no `has_method` guard: the
+panel and the world entry land together (merge order U2b first). F10, SPAWN AHEAD and SPAWN AT CURSOR
+are unchanged.
+
+**The tests (test_tester_build.gd, the (h) leg rebuilt on the boot).** The suite boots the REAL app to a
+live WORLD level (which is itself the tester-build-still-starts leg), hosts the real panel, and:
+- list: every `enemy_ids()` id listed EXACTLY ONCE plus exactly one Peter row (a duplicate row would
+  read as "all listed" while hiding one);
+- by name: Claude and gin are additionally asserted BY NAME (the owner names them) - id in the registry,
+  display name says the name, the row's label says the name;
+- geometry: no Window in the picking subtree, the viewport bounded at `LIST_CAP_H`, the list's content
+  height >= rows x row height, vertical scroll on, horizontal scroll off, the "overflow + scroll on =
+  last row reachable" arithmetic, every HBox row of the column fitting the 370-px column at BOTH
+  1280x720 and 1920x1080 (the root size is set and restored around the pass);
+- spawning: for EVERY registry id, both buttons - the row's own `pressed` signal drives the panel's own
+  selection path, `_spawn` runs, and a row with that id is read BACK from `world.rt.enemies` (+1 per id
+  per button, in play, finite position, body mirror grown);
+- Peter: routes to the boss machinery (arena entered after one tick) and NO `peter` row EVER appears in
+  the enemy runtime;
+- no-regression pins on the SAME boot: meta line + sha256 hash probe, GIVE GOLD purse delta, GIVE N GIFTS
+  through the queued tick job (one black gift: bitset +1, phase still black, level still alive), GIVE +1
+  STACK into the ledger, SET CHARGES, GOD MODE mirror + invuln window, FORCE COLLAPSE leaving idle, the
+  dormant bankai fallback reporting standalone, the level's jump pads (this seed pins 2), and SKIP LEVEL
+  opening the Antechamber (last - it tears the world down).
+
+**Hand-run negative controls, each fired then reverted.** Bypassing the Peter routing to the runtime
+fails the Peter leg ("did not create the boss instance" then a `peter` row in the runtime); doubling the
+Peter row fails the contents leg (row count and exactly-once); removing the host cap ("the viewport grew
+to N px") fails the geometry leg twice. A world dying mid-suite can no longer fake a pass either: every
+leg that reads the live world guards `is_inside_tree()` first and reports the death as a failure.
+
+
+## D-T2-12 (2026-11-24): the cycle-8 boot leg exposes and fixes the queued gift job's argument order (cycle 8, U2a)
+
+**The find.** D-T2-4/D-T2-9 queued the panel's give-gifts job as
+`Callable(self, "_run_give_gifts").bind(n)` and the tick hook calls it as `run.call(out["ev"])`. Godot's
+`Callable.bind()` appends its bound values AFTER the call-time arguments, so the call lands as
+`_run_give_gifts(ev, n)` - when the job's signature was `(n: int, ev: Array)`, `n` received the event
+Array and the call died with "Invalid type in function ... Cannot convert argument 1 from Array to int"
+the first time ANYONE drove the button through a real `world.step()`. No earlier test did: the leg was
+new (the cycle-7 suite never queued a gift job through the hook). The fix swaps the signature to
+`(ev: Array, n: int)` - call-time argument first, bound values last, the same shape `_run_force_bos`
+has by carrying no bound value - and documents the order at the function so the next bind does not
+re-trip it.
+
+**Why this entry exists separately from D-T2-11.** The bug is not the picker's: it is a second,
+independent consequence of the cycle-8 boot leg (the first was Terra's finding, answered by D-T2-13),
+and it is the proof the no-regression leg is not decorative - the pin "GIVE N GIFTS must move the gift
+bitset through the world's own step" is what failed, loudly, with the panel's own status line still
+saying "giving 1 gift(s) on the next tick".
+
+**The pin's honest observable.** The gift leg does NOT assert a purse payout: black-phase gifts pay
+nothing (sim/economy's chain is gold-phase-only), and collecting ALL of this level's gifts is the
+level's own completion path - a test that swept all 40 slots tore the world down mid-suite, and the
+suite remodelled that as garbage-read false passes (caught by the is_inside_tree guards, see D-T2-11).
+The pin is the bitset: exactly one more slot reads `collected()` after the step, the phase stays black,
+and the level stays alive. The gold-phase payout path stays pinned where it belongs - sim/economy's own
+suite.
+
 ## D-T2-13 (2026-11-24): the tester-spawned swarm owner gets his swarm through a WORLD-queued tick job (cycle 8, U2b)
 
 **Terra's finding 1, verbatim.** "tester-spawned Claude lacks the swarm on a level that did not already vote

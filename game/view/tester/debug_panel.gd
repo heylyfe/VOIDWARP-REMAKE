@@ -17,14 +17,19 @@ extends Control
 # are untouched; see D-T2-1..D-T2-8 in DECISIONS.md):
 #   F10                    open / close (the mouse is released while it is open)
 #   spawn any enemy        in front of the player or at the cursor's ground point, through
-#                          enemy_runtime.spawn_at() - the runtime's own direct-spawn
-#                          entry. The dropdown carries EVERY registry enemy plus one
-#                          pinned Peter entry (D-T2-10): the boss is not registry
-#                          content, so his row is fixed here and _spawn routes it to the
-#                          FORCE PETER machinery - _enter_boss_arena(), never a second
-#                          boss spawn path. Both dropdowns' popups are capped to the
-#                          window height, so a long list SCROLLS and every entry stays
-#                          reachable (D-T2-10).
+#                          world.tester_spawn_enemy(id, at) - the world's own tester spawn
+#                          entry (U2b), which also attaches the Claude clawds when the id
+#                          is claude and no swarm is live. The panel keeps NO second spawn
+#                          path of its own: one call per enemy, unguarded. The picker is
+#                          an in-panel, height-bounded SCROLL LIST (D-T2-11), no popup
+#                          Window anywhere near choosing an enemy: an ItemList at full
+#                          content height inside its own ScrollContainer inside a plain
+#                          Control host whose fixed minimum height bounds it - so every
+#                          registry enemy plus the pinned Peter row (D-T2-10: the boss is
+#                          not registry content, his row is fixed here and _spawn routes
+#                          it to the FORCE PETER machinery - _enter_boss_arena(), never a
+#                          boss spawn path) is reached by the in-panel scroll, the last
+#                          row included, at any window size.
 #   give any upgrade       +1 owned stack: folded into the ledger (carries to every later
 #                          level) and re-applied to the live stats (world's
 #                          apply_tester_upgrade_stack; the stack's EVENT hooks go live from
@@ -75,8 +80,22 @@ const GROUND_LIMIT_U := 12.0  # ground snap window over the target's feet plane
 ## here and _spawn routes it to the FORCE PETER machinery, never to the enemy runtime.
 const PETER_ID := "peter"
 const PETER_LABEL := "Peter Griffin (peter)"
-## D-T2-10: a dropdown popup caps at this share of the viewport height, so a list that
-## outgrows the window scrolls inside the popup and every entry stays reachable.
+## D-T2-11: the enemy picker is an in-panel SCROLL LIST - no popup Window is involved in
+## choosing an enemy any more (the owner's words: "a scrollable list showing ALL
+## enemies"). The plain Control host bounds the list at LIST_CAP_H (a plain Control's
+## minimum size never grows with its children - D-T2-10's row-fit rule used vertically),
+## the ScrollContainer inside it is the bounded viewport with horizontal scrolling OFF
+## (the container clamps its child to the column width, so no row can run past the 370-px
+## column), and the VBoxContainer of full-width row buttons inside that carries EVERY
+## registry enemy plus the pinned Peter row at its full computed height - so the whole
+## roster, the LAST row included, is reached by the in-panel scroll, at any window size.
+## This engine build's ItemList reports no content-driven minimum (and dropped
+## fixed_item_height), so the rows are plain Buttons in a VBox: the geometry is then the
+## same deterministic combined-minimum arithmetic the panel's own layout runs.
+const LIST_CAP_H := 176.0      # fixed bound of the enemy list viewport
+const LIST_ROW_H := 26.0       # one row button's height (the sum is the list's height)
+## D-T2-10: the UPGRADE picker (still an OptionButton) caps its popup at this share of the
+## viewport height, so a long upgrade list scrolls inside the popup.
 const POPUP_MAX_H_SHARE := 0.6
 
 ## T8 (merged, D-T2-7-amend): the real boss API - sim/boss.gd one instance per arena,
@@ -91,7 +110,10 @@ const BANKAI_CINEMATIC_PATH := "res://view/cinematics/bankai_gift_animation.gd"
 
 var _app: Node = null          # game/app/app.gd (passed by setup(); never a scene ref)
 var _layer: CanvasLayer = null  # every drawn node lives here (PANEL_LAYER)
-var _content: OptionButton = null   # enemy dropdown (content registry ids, runtime-loaded)
+var _enemy_host: Control = null       # D-T2-11: the bounded viewport of the enemy list
+var _enemy_scroll: ScrollContainer = null
+var _content: VBoxContainer = null  # the in-panel enemy list rows (registry ids + Peter)
+var _enemy_selected := -1       # the picked row (D-T2-11); -1 = nothing picked yet
 var _upgrade_pick: OptionButton = null
 var _gold_spin: SpinBox = null
 var _gift_spin: SpinBox = null
@@ -150,18 +172,37 @@ func _init() -> void:
 	column.add_child(UiStyle.rule(28.0))
 
 	# ---- enemies -----------------------------------------------------------------------
-	# D-T2-10: the dropdown owns its row (full column width) and the two spawn buttons
-	# share the row below it - the old single row was 432 u wide inside a 370 u column,
-	# so the CURSOR button sat outside the viewport and pieces of the section were cut
-	# off. Every row now fits the scroll column with room to spare.
+	# D-T2-11: the picker is IN THE PANEL, not a popup - the owner's words are "a
+	# scrollable list showing ALL enemies", so nothing Window-shaped may sit between the
+	# owner and the roster. The chain is: a plain Control host (fixed minimum height, its
+	# own size NEVER grows with its children - D-T2-10's row-fit rule used vertically),
+	# a ScrollContainer anchored to fill it (horizontal scrolling OFF, so the container
+	# clamps the rows to the 370-px column width and nothing can run past it), and a
+	# VBoxContainer of full-width row Buttons inside that - one per registry enemy plus
+	# the pinned Peter row. The viewport the host bounds is LIST_CAP_H tall while the list
+	# itself stays its full computed height, so the in-panel scroll reaches every row,
+	# the LAST one included, at any window size.
 	column.add_child(_section_label("ENEMIES"))
-	_content = OptionButton.new()
-	_content.name = "EnemyPick"
-	_content.custom_minimum_size = Vector2(0.0, UiStyle.BUTTON_H)
+	_enemy_host = Control.new()
+	_enemy_host.name = "EnemyListHost"
+	_enemy_host.mouse_filter = Control.MOUSE_FILTER_PASS
+	column.add_child(_enemy_host)
+	_enemy_scroll = ScrollContainer.new()
+	_enemy_scroll.name = "EnemyListScroll"
+	_enemy_scroll.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_enemy_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_enemy_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	_enemy_host.add_child(_enemy_scroll)
+	_content = VBoxContainer.new()
+	_content.name = "EnemyListRows"
+	_content.mouse_filter = Control.MOUSE_FILTER_PASS
+	_content.add_theme_constant_override("separation", UiStyle.SP_1)
 	_content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_content.add_theme_font_size_override("font_size", UiStyle.FS_SMALL)
-	UiStyle.style_button(_content, UiStyle.SECONDARY)
-	column.add_child(_content)
+	_enemy_scroll.add_child(_content)
+	var ll := UiStyle.label("pick in the list, then spawn (the list scrolls)", "small",
+			UiStyle.TEXT_MUTED)
+	ll.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	column.add_child(ll)
 	var ep := HBoxContainer.new()
 	ep.add_theme_constant_override("separation", UiStyle.SP_2)
 	column.add_child(ep)
@@ -371,21 +412,31 @@ func _status(p_line: String) -> void:
 		_status_line.text = p_line
 
 
-## Refill the enemy / upgrade dropdowns from the content registry - ids are read from the
-## running registry, never named here (the boundary rule holds inside the tester too).
+## Refill the enemy list / upgrade dropdown from the content registry - ids are read from
+## the running registry, never named here (the boundary rule holds inside the tester too).
 ## D-T2-10: the enemy list ends with the pinned Peter row (the boss is not registry
-## content, and the owner wants him pickable from the same list), and both popups are
-## re-capped to the window height so a long list scrolls and every entry is reachable.
+## content, and the owner wants him pickable from the same list). D-T2-11: the list is a
+## VBox of rows inside its capped ScrollContainer viewport - the rows all exist at their
+## full computed height, the host's fixed bound does the capping, and the in-panel scroll
+## reaches every one of them. The upgrade picker keeps its popup cap (D-T2-10).
 func _refresh_options() -> void:
 	var api := _api()
 	if api == null:
 		return
-	_content.clear()
+	for row in _content.get_children():
+		_content.remove_child(row)
+		row.queue_free()
+	var first := true
 	for id in api.enemy_ids():
 		var entry: Dictionary = api.enemy(str(id))
-		_add_option(_content, "%s (%s)" % [str(entry.get("name", id)), str(id)], str(id))
-	_add_option(_content, PETER_LABEL, PETER_ID)
-	_content.selected = 0 if _content.item_count > 0 else -1
+		_add_enemy_row("%s (%s)" % [str(entry.get("name", id)), str(id)], str(id), first)
+		first = false
+	_add_enemy_row(PETER_LABEL, PETER_ID, first)
+	# viewport capped at LIST_CAP_H while the list itself keeps its full height
+	_enemy_host.custom_minimum_size = Vector2(0.0,
+			minf(_content.get_combined_minimum_size().y, LIST_CAP_H))
+	var rows := _content.get_child_count()
+	_pick_enemy_row(0 if rows > 0 else -1, false)
 	_upgrade_pick.clear()
 	for id in api.upgrade_ids():
 		var entry: Dictionary = api.upgrade(str(id))
@@ -394,20 +445,19 @@ func _refresh_options() -> void:
 	_cap_popups()
 
 
-## Cap both dropdown popups to a share of the viewport height (D-T2-10): the popup is a
-## Window, so max_size (height half) clamps it and PopupMenu scrolls inside it - entries
-## below the fold stay reachable (this engine build has NO PopupMenu.max_height; the
-## Window cap is the supported equivalent). A no-op outside the tree (nothing to
-## measure) - the cap is re-applied on every refresh while open.
+## Cap the upgrade picker's popup to a share of the viewport height (D-T2-10): the popup
+## is a Window, so max_size (height half) clamps it and PopupMenu scrolls inside it -
+## entries below the fold stay reachable (this engine build has NO PopupMenu.max_height;
+## the Window cap is the supported equivalent). A no-op outside the tree (nothing to
+## measure) - the cap is re-applied on every refresh while open. The enemy list needs no
+## cap any more: it left the popup world for the in-panel scroll (D-T2-11).
 func _cap_popups() -> void:
 	var vp := get_viewport()
 	if vp == null:
 		return
 	var cap := int(vp.get_visible_rect().size.y * POPUP_MAX_H_SHARE)
-	for pick in [_content, _upgrade_pick]:
-		if pick != null:
-			var pop: PopupMenu = pick.get_popup()
-			pop.max_size = Vector2i(0, cap)
+	var pop: PopupMenu = _upgrade_pick.get_popup()
+	pop.max_size = Vector2i(0, cap)
 
 
 ## T8 (merged) worked buttons: the labels say what the press will act on.
@@ -549,10 +599,55 @@ func _selected_id(p_pick: OptionButton) -> String:
 		if p_pick.get_item_metadata(p_pick.selected) != null else ""
 
 
-## Row ids ride the item metadata (the label is display text).
+## The selected enemy row's id: the picked row's meta carries the id (the label is
+## display text), exactly the OptionButton convention the upgrade picker keeps.
+func _selected_enemy_id() -> String:
+	if _content == null or _enemy_selected < 0 or _enemy_selected >= _content.get_child_count():
+		return ""
+	var row: Button = _content.get_child(_enemy_selected)
+	if row == null or row.get_meta("id", "") == "":
+		return ""
+	return str(row.get_meta("id"))
+
+
+## Row ids ride button meta (the label is display text).
 func _add_option(p_pick: OptionButton, p_label: String, p_id: String) -> void:
 	p_pick.add_item(p_label)
 	p_pick.set_item_metadata(p_pick.item_count - 1, p_id)
+
+
+## One row button of the in-panel enemy list (D-T2-11). Full width, its OWN height
+## (LIST_ROW_H, compact - the roster must read as a list, not a stack of menus), the
+## id on its meta. The press picks the row (the panel's single selection path).
+## p_selected marks the row picked at build time (row 0 after a refresh).
+func _add_enemy_row(p_label: String, p_id: String, p_selected: bool) -> void:
+	var b := Button.new()
+	b.text = p_label
+	b.name = "EnemyRow_" + p_id
+	b.custom_minimum_size = Vector2(0.0, LIST_ROW_H)
+	b.add_theme_font_size_override("font_size", UiStyle.FS_SMALL)
+	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	b.mouse_filter = Control.MOUSE_FILTER_STOP
+	b.set_meta("id", p_id)
+	var idx := _content.get_child_count()
+	b.pressed.connect(_pick_enemy_row.bind(idx, true))
+	_content.add_child(b)
+	UiStyle.style_button(b, UiStyle.PRIMARY if p_selected else UiStyle.SECONDARY)
+
+
+## Pick one row of the enemy list: the single selection path (a press and a refresh both
+## land here). Repaints the picked row PRIMARY, the rest SECONDARY, and keeps the arrow
+## keys away from the rows (mouse-only picker, like the old dropdown).
+func _pick_enemy_row(p_idx: int, _p_from_press: bool) -> void:
+	_enemy_selected = p_idx
+	if _content == null:
+		return
+	var rows := _content.get_child_count()
+	for i in rows:
+		var row: Button = _content.get_child(i)
+		if row is Button:
+			UiStyle.style_button(row, UiStyle.PRIMARY if i == p_idx else UiStyle.SECONDARY)
 
 
 func _spawn_ahead() -> void:
@@ -563,34 +658,33 @@ func _spawn_at_cursor() -> void:
 	_spawn(true)
 
 
-## Spawn through enemy_runtime.spawn_at() - the runtime's own direct-spawn entry (the same
-## row shape the vote plan produces). The view/billboard pass adopts the new row on the
-## next frame, exactly as it does the planned bodies. D-T2-10: the pinned Peter row routes
-## to _force_boss() - the arena's own full entry - so the boss spawns through the boss
-## machinery, never through the enemy runtime (he is not a registry enemy).
+## Spawn through world.tester_spawn_enemy(id, at) - the world's OWN tester spawn entry
+## (U2b), which builds the cfg and hands enemy_runtime.spawn_at() the row (the same shape
+## the vote plan produces) and attaches the Claude clawds when the id is claude and no
+## swarm is live. The panel keeps NO second spawn path of its own and NO has_method
+## guard: the call is unconditional, one path for every enemy (D-T2-11). The view/
+## billboard pass adopts the new row on the next frame, exactly as it does the planned
+## bodies. D-T2-10: the pinned Peter row routes to _force_boss() - the arena's own full
+## entry - so the boss spawns through the boss machinery, never through the enemy
+## runtime (he is not a registry enemy).
 func _spawn(p_at_cursor: bool) -> void:
 	var w := _world()
 	if w == null:
 		_status("no live level - spawn needs a run in WORLD state")
 		return
-	var api := _api()
-	var id := _selected_id(_content)
-	if id == "" or api == null:
-		_status("pick an enemy first (or the registry is down)")
+	var id := _selected_enemy_id()
+	if id == "":
+		_status("pick an enemy in the list first (or the registry is down)")
 		return
 	if id == PETER_ID:
 		_force_boss()
 		return
-	var entry: Dictionary = api.enemy(id)
-	var beh = w.call("_behavior_for", id)
-	var cfg: Dictionary = w.call("_cfg_for", entry, id, int(w.get("_level_number")), 1, beh)
 	var pos := _spawn_position(w, p_at_cursor)
-	var ename := str(entry.get("name", id))
-	var rt = w.get("rt")
-	if rt == null:
-		_status("no enemy runtime on this level")
-		return
-	rt.call("spawn_at", id, ename, beh, cfg, pos)
+	w.call("tester_spawn_enemy", id, pos)
+	var api := _api()
+	var ename := id
+	if api != null:
+		ename = str(api.enemy(id).get("name", id))
 	_status("spawned %s at (%.1f, %.1f, %.1f)%s" % [ename, pos.x, pos.y, pos.z,
 			" at the cursor" if p_at_cursor else " ahead of the player"])
 
@@ -677,8 +771,11 @@ func _give_gifts() -> void:
 			"giving %d gift(s) on the next tick" % n)
 
 
-## The queued job body: returns false (a normal collect; the tick continues).
-func _run_give_gifts(n: int, ev: Array) -> bool:
+## The queued job body: returns false (a normal collect; the tick continues). NOTE the
+## parameter order: _tick_hook calls the job as run.call(ev), and Callable.bind() appends
+## its bound values AFTER the call-time one, so the bound `n` lands LAST - the cycle-8
+## boot leg caught the old (n, ev) signature mis-firing exactly here.
+func _run_give_gifts(ev: Array, n: int) -> bool:
 	var w := _world()
 	if w == null:
 		return false
