@@ -9660,7 +9660,9 @@ child to the viewport width, so no row can ever run past the 370-px column), and
 `VBoxContainer` of full-width row Buttons - one per registry enemy plus the pinned Peter row (D-T2-10:
 the boss stays a pinned row, pressed rows route to `_force_boss()`, never the enemy runtime). The host's
 minimum height is `min(list height, LIST_CAP_H = 176)`; the list itself always keeps its full computed
-height. The roster therefore always overflows its bounded viewport (13 rows today ~412 px in 176), and
+height. The roster therefore always overflows its bounded viewport (13 rows today measure 568 px of
+content against the 176-px cap - a row's theme padding wins over the 26-px `LIST_ROW_H` floor the test
+uses, so the overflow is real and measured, not arithmetic), and
 the rows below the fold are reached by the in-panel scroll - the LAST row included, at any window size;
 a growing registry can never push entries out of reach again.
 
@@ -9686,7 +9688,10 @@ live WORLD level (which is itself the tester-build-still-starts leg), hosts the 
   read as "all listed" while hiding one);
 - by name: Claude and gin are additionally asserted BY NAME (the owner names them) - id in the registry,
   display name says the name, the row's label says the name;
-- geometry: no Window in the picking subtree, the viewport bounded at `LIST_CAP_H`, the list's content
+- geometry: no Window in the picking subtree, the viewport bounded at `LIST_CAP_H` (it must not GROW
+  past the cap), the viewport not collapsed either (it must stay at least one `LIST_ROW_H` tall - a plain
+  Control whose bound is never set shows no row at all, which is the same "cut off" failure from the
+  other side), the list's content
   height >= rows x row height, vertical scroll on, horizontal scroll off, the "overflow + scroll on =
   last row reachable" arithmetic, every HBox row of the column fitting the 370-px column at BOTH
   1280x720 and 1920x1080 (the root size is set and restored around the pass);
@@ -9702,10 +9707,13 @@ live WORLD level (which is itself the tester-build-still-starts leg), hosts the 
   opening the Antechamber (last - it tears the world down).
 
 **Hand-run negative controls, each fired then reverted.** Bypassing the Peter routing to the runtime
-fails the Peter leg ("did not create the boss instance" then a `peter` row in the runtime); doubling the
-Peter row fails the contents leg (row count and exactly-once); removing the host cap ("the viewport grew
-to N px") fails the geometry leg twice. A world dying mid-suite can no longer fake a pass either: every
-leg that reads the live world guards `is_inside_tree()` first and reports the death as a failure.
+fails the Peter leg ("did not create the boss instance"); doubling the Peter row fails the contents leg
+(row count AND the exactly-once tooth); making the bound stop capping (`maxf` instead of `minf`) fails
+the geometry leg twice ("the enemy list viewport grew to 568 px"; "a 13-row list claims to fit its
+568-px viewport"); and REMOVING the bound outright first PASSED - the gap the finishing pass closed by
+adding the not-collapsed tooth, which now fails that same mutation ("the enemy list viewport is 0 px
+tall - it must show at least one 26-px row"). A world dying mid-suite can no longer fake a pass either:
+every leg that reads the live world guards `is_inside_tree()` first and reports the death as a failure.
 
 
 ## D-T2-12 (2026-11-24): the cycle-8 boot leg exposes and fixes the queued gift job's argument order (cycle 8, U2a)
